@@ -1,0 +1,4 @@
+[submodule "references/omniroute"]
+	path = references/omniroute
+	url = https://github.com/diegosouzapw/OmniRoute.git
+	branch = release/v3.8.51
