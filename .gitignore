@@ -1,10 +1,14 @@
 node_modules/
 dist/
 out/
+release/
 coverage/
+apps/desktop/renderer/
 *.log
 .env
 .env.*
 !.env.example
 .DS_Store
 Thumbs.db
+*.exe
+*.blockmap

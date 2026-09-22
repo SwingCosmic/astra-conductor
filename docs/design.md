@@ -167,7 +167,7 @@ OmniRoute 放在 `references/omniroute`，以 Git 子模块记录固定提交。
 
 ### 6.6 本地数据
 
-数据保存在 `%APPDATA%/llm-usage`。逻辑上包含账号、最近用量、通知状态和设置四类信息。具体数据库与加密封装在基础骨架阶段通过 Electron 打包兼容性验证后确定。
+数据保存在 `%APPDATA%/llm-usage`。逻辑上包含账号、最近用量、通知状态和设置四类信息。阶段 1 已确认不含原生模块的 Electron 安装包可以生成。具体数据库与加密封装仍待选定；在引入原生模块之前不需要 electron-rebuild。
 
 凭证使用 Electron `safeStorage` 提供的系统保护能力。若安全存储不可用，应用拒绝保存凭证并给出明确提示。渲染进程、通知和日志只能接收打码后的账号信息。
 
@@ -201,7 +201,7 @@ OmniRoute 放在 `references/omniroute`，以 Git 子模块记录固定提交。
 
 以下问题不阻塞开始实施，但在相关阶段结束前需要给出结论：
 
-- SQLite 方案及其 Electron 打包兼容性；
+- SQLite 方案及其 Electron 打包兼容性。阶段 1 用零原生依赖生成了 Windows asar + NSIS 骨架，因此当前不需要 electron-rebuild。数据库仍未选定，留到实现本地存储时再验证原生模块；
 - Antigravity 与 OmniRoute 数据库耦合的最小拆分方式；
 - GLM 是否能够安全地从 zcode 配置中只读发现凭证；
 - 应用名称、开机启动默认值和按配额窗口设置通知阈值的必要性；

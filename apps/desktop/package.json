@@ -1,0 +1,22 @@
+{
+  "name": "@llm-usage/desktop",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Local desktop view of LLM subscription usage",
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "build:main": "tsc -p tsconfig.build.json && node ./scripts/copy-preload.mjs",
+    "build": "pnpm run build:main && node ./scripts/copy-renderer.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "package": "electron-builder --win nsis --publish never"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "electron": "catalog:",
+    "electron-builder": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

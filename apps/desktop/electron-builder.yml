@@ -1,0 +1,20 @@
+appId: local.llm-usage.app
+productName: llm-usage
+asar: true
+npmRebuild: false
+directories:
+  output: release
+files:
+  - package.json
+  - dist/**
+  - renderer/**
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  artifactName: ${productName}-${version}-setup.${ext}

@@ -1,0 +1,78 @@
+import { app, BrowserWindow, session } from "electron";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const devServer = process.env.LLM_USAGE_DEV_SERVER;
+const smoke = process.env.LLM_USAGE_SMOKE === "1";
+
+function appDir(): string {
+  return path.dirname(fileURLToPath(import.meta.url));
+}
+
+function installProductionCsp(): void {
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        "Content-Security-Policy": [
+          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'",
+        ],
+      },
+    });
+  });
+}
+
+async function createWindow(): Promise<void> {
+  const win = new BrowserWindow({
+    width: 1120,
+    height: 800,
+    minWidth: 760,
+    minHeight: 560,
+    show: false,
+    backgroundColor: "#f3f4f6",
+    title: "llm-usage",
+    webPreferences: {
+      preload: path.join(appDir(), "preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+    },
+  });
+
+  win.once("ready-to-show", () => {
+    win.show();
+  });
+
+  win.webContents.on("did-fail-load", (_event, code, description) => {
+    console.error(`renderer failed: ${code} ${description}`);
+    if (smoke) {
+      app.exit(1);
+    }
+  });
+
+  win.webContents.on("did-finish-load", () => {
+    if (smoke) {
+      console.log("LLM_USAGE_SMOKE_OK");
+      app.quit();
+    }
+  });
+
+  if (devServer) {
+    await win.loadURL(devServer);
+    return;
+  }
+
+  await win.loadFile(path.join(appDir(), "../renderer/index.html"));
+}
+
+app.whenReady().then(async () => {
+  if (!devServer) {
+    installProductionCsp();
+  }
+  await createWindow();
+});
+
+app.on("window-all-closed", () => {
+  app.quit();
+});

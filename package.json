@@ -1,0 +1,27 @@
+{
+  "name": "llm-usage",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.34.4",
+  "engines": {
+    "node": ">=18.18"
+  },
+  "scripts": {
+    "dev": "node scripts/dev-desktop.mjs",
+    "build": "pnpm --filter @llm-usage/core build && pnpm --filter @llm-usage/ui build && pnpm --filter @llm-usage/desktop build",
+    "typecheck": "pnpm --filter @llm-usage/core typecheck && pnpm --filter @llm-usage/ui typecheck && pnpm --filter @llm-usage/desktop typecheck",
+    "test": "pnpm --filter @llm-usage/core test && pnpm --filter @llm-usage/ui test && pnpm --filter @llm-usage/desktop test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "package": "pnpm build && pnpm --filter @llm-usage/desktop package"
+  },
+  "devDependencies": {
+    "prettier": "catalog:"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild"
+    ]
+  }
+}

@@ -1,0 +1,7 @@
+references
+docs
+dist
+release
+coverage
+pnpm-lock.yaml
+apps/desktop/renderer

@@ -1,0 +1,196 @@
+:root {
+  color-scheme: light;
+  font-family: "Segoe UI", sans-serif;
+  background: #f3f4f6;
+  color: #111827;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.page {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 28px 24px 40px;
+}
+
+.page-header h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 650;
+}
+
+.page-header p {
+  margin: 8px 0 0;
+  color: #6b7280;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.card {
+  padding: 16px 18px 14px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+}
+
+.card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.card h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.account {
+  margin: 4px 0 0;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.card-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.plan {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.status {
+  color: #15803d;
+  font-size: 12px;
+}
+
+.group {
+  margin-top: 16px;
+}
+
+.group-title {
+  margin: 0 0 10px;
+  color: #4b5563;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.window + .window {
+  margin-top: 12px;
+}
+
+.window-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.percent {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.bar {
+  height: 8px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e5e7eb;
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: inherit;
+}
+
+.tone-ok {
+  color: #15803d;
+  background: #16a34a;
+}
+
+.percent.tone-ok,
+.percent.tone-low,
+.percent.tone-critical,
+.percent.tone-unknown {
+  background: transparent;
+}
+
+.tone-low {
+  color: #b45309;
+  background: #d97706;
+}
+
+.tone-critical {
+  color: #b91c1c;
+  background: #dc2626;
+}
+
+.tone-unknown {
+  color: #6b7280;
+  background: transparent;
+}
+
+.usage-count,
+.reset,
+.updated {
+  margin: 4px 0 0;
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+.extras {
+  margin: 14px 0 0;
+}
+
+.extra-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.extra-row dt,
+.extra-row dd {
+  margin: 0;
+}
+
+.extra-row dd {
+  color: #374151;
+  font-variant-numeric: tabular-nums;
+}
+
+.updated {
+  margin-top: 14px;
+}
+
+@media (max-width: 720px) {
+  .page {
+    padding: 20px 16px 32px;
+  }
+
+  .card-grid {
+    grid-template-columns: 1fr;
+  }
+}
