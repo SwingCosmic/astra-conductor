@@ -29,7 +29,7 @@
 - 首批支持 Codex / ChatGPT、智谱 GLM（国内与国际区域）、Grok Build、Antigravity；同一服务允许添加多个账号。
 - 支持 OAuth、设备码、API Key 和官方 CLI 凭证导入；具体方式由各服务现有能力决定。
 - 每个账号可单独启用或停用。停用后不再轮询，也不发送通知。
-- 自动使用操作系统代理，并兼容 `HTTP_PROXY`、`HTTPS_PROXY` 和 `ALL_PROXY`。
+- 有 `HTTP_PROXY` 或 `HTTPS_PROXY` 时走环境变量；否则使用系统代理中的显式服务器地址；都没有时直连。切换系统代理后，下一次新建请求生效。首版不执行 PAC。
 - 展示账号、套餐、配额、重置时间、只读的额外额度、更新时间和最近错误。
 - 支持手动刷新、低额度通知和本地加密存储。
 - 提供传统 Electron 安装包，不以单文件可执行程序为目标。
@@ -119,7 +119,7 @@ OmniRoute 放在 `references/omniroute`，以 Git 子模块记录固定提交。
 | Grok Build | 设备码为主，CLI 凭证导入为辅 | 刷新时保留账号主体信息、额外额度只读展示 |
 | Antigravity | OAuth 或现有凭证导入 | 身份请求头、项目标识和上游数据库耦合的解除 |
 
-具体上游文件由同步清单维护，不再在多份文档中重复列举。新增服务前应先确认 OmniRoute 中存在可独立抽取且可验证的实现。
+具体上游文件由同步清单维护。文件选择和耦合拆分的依据见 [OmniRoute 探索报告](./omniroute-exploration.md)。新增服务前应先确认 OmniRoute 中存在可独立抽取且可验证的实现。
 
 ### 6.2 认证
 
@@ -135,17 +135,35 @@ OmniRoute 放在 `references/omniroute`，以 Git 子模块记录固定提交。
 
 ### 6.4 代理
 
-桌面外壳负责解析操作系统代理配置，核心请求层统一使用解析结果；未命中系统代理时再读取环境变量。首个版本只需支持当前服务实际使用的代理形式，PAC、SOCKS 和绕过规则的完整兼容范围需要在实施阶段验证。
+每个新的上游请求在发出前解析一次代理，已经发出的请求保持它开始时的选择。用户切换系统代理开关后，下一次新建请求即使用新结果，应用不需要重启。
 
-项目不复制 OmniRoute 的完整代理网关，也不修改系统代理设置。
+解析顺序如下：
+
+1. 目标是回环或本机地址时直连，避免登录回调进入代理。
+2. 存在 `HTTPS_PROXY` 或 `HTTP_PROXY`（大小写均可）时使用环境变量。`https` 请求先看 `HTTPS_PROXY`，没有再看 `HTTP_PROXY`；`http` 请求看 `HTTP_PROXY`。
+3. 没有上述环境变量时，读取 Windows 系统代理里的显式代理服务器地址。Clash 一类工具写入的 `127.0.0.1:端口` 属于这一层。
+4. 没有显式代理服务器地址时直连。
+
+首版不执行 PAC 脚本，也不读取自动配置脚本地址。系统设置里只有 PAC、没有代理服务器地址时，按直连处理。应用不修改系统代理。
 
 ### 6.5 用量展示与通知
 
-界面使用 Vue 3 重新实现。`docs/omniroute.png` 只用于确认信息层级，不作为视觉稿或组件来源。
+界面使用 Vue 3 重新实现。`docs/omniroute.png` 只确认卡片、套餐、配额、重置时间和刷新这些信息层级。可见文案以本节为准。
 
-每张卡片至少呈现服务名称、套餐、打码账号、配额条、重置时间、更新时间、状态开关和刷新反馈。服务商及套餐名称优先采用官方名称；缺少官方中文名称时保持清晰、克制，避免机械翻译和含义不明的缩写。
+每张卡片呈现服务名称、套餐、打码账号、配额、重置时间、更新时间、状态开关和刷新反馈。套餐名称使用上游返回的原文，只做首字母大小写这种轻量整理，不翻译成中文。
 
-低额度通知默认采用两级阈值：提醒 20%，严重 5%。无限额度或未提供百分比的数据不触发通知。同一配额在同一重置周期内去重，额度恢复后可再次触发。阈值与去重策略将在模拟数据和真实账号上共同验证。
+配额按组展示。一组有一个标题，组内是该组自己的配额条。供应商没有分组时，卡片只有一组，不显示组标题。Antigravity 的分组来自 `retrieveUserQuotaSummary` 的 `groups[]`：组标题用 `displayName`（如 `Gemini Models`、`Claude and GPT models`），组内每条用该组 bucket 的 `displayName`（如 `5 Hour Quota`、`Weekly Quota`）。同一组里的 5 小时和周配额都保留。模型目录里的单模型进度条不进入卡片。
+
+配额条的可见标题使用上游已经给出的展示名；上游只给了内部键和窗口秒数时，标题用窗口长度。Codex 的 `session` 键对应 `limit_window_seconds = 18000`，标题写 `5-hour`。`weekly` 键对应 `604800` 秒，标题写 `Weekly`。
+
+| 服务 | 套餐原文来源 | 已见到的原文 | 配额标题 |
+| --- | --- | --- | --- |
+| Codex / ChatGPT | 用量响应 `plan_type`，以及登录 JWT 的 `chatgpt_plan_type` | `free`、`go`、`plus`、`pro`、`team`、`enterprise`、`edu`，界面写成 Free、Go、Plus、Pro、Team、Enterprise、Edu | 短窗口 `5-hour`；长窗口 `Weekly`。另有窗口时用上游 `limit_name` 加同样的时长，例如 `GPT-5.3-Codex-Spark` 的 `5-hour` 与 `Weekly`。重置次数是单独的只读数字，标题 `Reset credits` |
+| GLM | `planName`，否则 `level` | Coding Plan 的 `lite`、`pro`、`max`，界面写成 Lite、Pro、Max | `5 Hours Quota`、`Weekly Quota`。存在月度工具窗口时加 `Monthly` |
+| Grok Build | `/user` 的 `subscriptionTier` | `SuperGrokPro`、`SuperGrok Heavy`，以及用量页上的 `Grokpro`。字符串原样展示 | 产品名用计费响应里的产品名，如 `GrokChat`、`Grok Build`。账户级百分比标题为 `Weekly`。额外积分和自动充值是组外的只读行，标题 `Extra Usage Credits`、`Auto Top-Up` |
+| Antigravity | `getAntigravityPlanLabel` 的结果 | `Ultra`、`Pro`、`Enterprise`、`Business`、`Plus`、`Lite`、`Free`，以及原样保留的 `Starter` | 组标题和组内标题都用汇总响应里的 `displayName` |
+
+低额度通知默认采用两级阈值：提醒 20%，严重 5%。无限额度或未提供百分比的数据不触发通知。同一配额在同一重置周期内去重，额度恢复后可再次触发。阈值与去重策略将在模拟数据和真实账号上共同验证。通知正文使用与卡片相同的套餐名和配额标题。
 
 ### 6.6 本地数据
 
@@ -162,7 +180,7 @@ OmniRoute 放在 `references/omniroute`，以 Git 子模块记录固定提交。
 | 回调端口暴露 | 仅监听 `127.0.0.1`，使用后立即关闭 |
 | 轮询过于频繁 | 最短间隔、并发限制、缓存与失败退避 |
 | 与官方 CLI 的刷新状态冲突 | 只读导入，不回写；每个账号只有一条刷新路径 |
-| 代理行为不一致 | 所有上游请求统一进入代理解析层，并记录脱敏后的命中状态 |
+| 代理行为不一致 | 每个新请求按环境变量、系统代理地址、直连的顺序解析，并记录脱敏后的命中来源 |
 
 首个版本不上传遥测。日志只记录服务标识、打码账号、耗时、状态码和脱敏错误；界面展示最后更新时间与最近错误。日志文件轮转策略在桌面壳阶段确定。
 
@@ -172,7 +190,8 @@ OmniRoute 放在 `references/omniroute`，以 Git 子模块记录固定提交。
 | --- | --- | --- |
 | 产品形态 | 独立托盘工具，不包装 OmniRoute | 避免携带完整网关和现有界面问题 |
 | 协议来源 | 固定 OmniRoute 提交并程序化抽取 | 降低重复实现和上游升级成本 |
-| 界面 | Vue 3 自行实现 | 只继承信息结构，不继承 React / Next.js 依赖 |
+| 界面 | Vue 3 自行实现 | 只继承信息结构；套餐用原文，配额按窗口或分组展示 |
+| 代理 | 环境变量优先，其次系统代理地址，否则直连 | 与常见浏览器的系统代理开关一致；首版不执行 PAC |
 | 用量获取 | 直接调用抽取后的 TypeScript 模块 | 官方 CLI 接口不统一，进程调用易受版本变化影响 |
 | 运行边界 | Core、UI、Desktop 分层 | 便于测试、打包和控制凭证暴露 |
 
@@ -183,7 +202,6 @@ OmniRoute 放在 `references/omniroute`，以 Git 子模块记录固定提交。
 以下问题不阻塞开始实施，但在相关阶段结束前需要给出结论：
 
 - SQLite 方案及其 Electron 打包兼容性；
-- Windows PAC、SOCKS 和环境变量代理的实际覆盖范围；
 - Antigravity 与 OmniRoute 数据库耦合的最小拆分方式；
 - GLM 是否能够安全地从 zcode 配置中只读发现凭证；
 - 应用名称、开机启动默认值和按配额窗口设置通知阈值的必要性；
@@ -195,7 +213,8 @@ OmniRoute 放在 `references/omniroute`，以 Git 子模块记录固定提交。
 
 - 首批四个服务能够使用本机真实账号完成用量获取，并与 OmniRoute 或官方页面在同一时间窗口内对照；
 - 停用账号后不再请求上游或发送通知；
-- 代理切换、凭证过期、网络失败和单个服务异常不会影响其他账号；
+- 代理切换、凭证过期、网络失败和单个服务异常不会影响其他账号；系统代理开关对下一次新建请求生效；
+- 套餐名称保持上游原文；配额标题使用窗口或分组展示名，Codex 短窗口显示 `5-hour`；Antigravity 以分组标题展示整组配额；
 - 日志、IPC 和系统通知中不出现明文凭证；
 - 应用构建不编译或打包 `references/omniroute`；
 - `packages/ui` 不依赖 OmniRoute 的界面代码；
@@ -205,6 +224,7 @@ OmniRoute 放在 `references/omniroute`，以 Git 子模块记录固定提交。
 ## 11. 参考资料
 
 - [OmniRoute](https://github.com/diegosouzapw/OmniRoute)，MIT；本地固定源码见 `references/omniroute`
+- [OmniRoute 探索报告](./omniroute-exploration.md)
 - [实施计划](./plan.md)
 - [OmniRoute 用量页面截图](./omniroute.png)
 - [monaco-editor 的源码抽取思路](https://github.com/microsoft/monaco-editor/blob/main/CONTRIBUTING.md)

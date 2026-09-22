@@ -8,6 +8,7 @@
 
 - [设计说明](./docs/design.md)
 - [实施计划](./docs/plan.md)
+- [OmniRoute 探索报告](./docs/omniroute-exploration.md)
 - [OmniRoute 参考界面](./docs/omniroute.png)
 
 ## 上游参考源码
