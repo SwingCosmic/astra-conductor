@@ -26,20 +26,43 @@ describe("core boundary", () => {
     expect(coreRuntime).toBe("node");
   });
 
-  it("keeps Electron and OmniRoute out of core and UI", () => {
+  it("keeps Electron and the OmniRoute reference checkout out of runtime code", () => {
     for (const packageDir of ["packages/core", "packages/ui"]) {
       const manifest = JSON.parse(
         readFileSync(path.join(repoRoot, packageDir, "package.json"), "utf8"),
       ) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
       const declared = { ...manifest.dependencies, ...manifest.devDependencies };
       expect(declared.electron, packageDir).toBeUndefined();
+      expect(
+        Object.keys(declared).filter((name) => name.startsWith("@omniroute/")),
+        packageDir,
+      ).toEqual([]);
 
       for (const file of sourceFiles(path.join(repoRoot, packageDir, "src"))) {
         const text = readFileSync(file, "utf8");
         expect(text, file).not.toMatch(/["']electron["']/);
         expect(text, file).not.toMatch(/references\/omniroute/);
-        expect(text, file).not.toMatch(/@omniroute\//);
+        if (packageDir === "packages/ui") {
+          expect(text, file).not.toMatch(/@omniroute\//);
+        }
       }
+    }
+  });
+
+  it("maps named OmniRoute aliases only to vendored source", () => {
+    const coreTsconfig = JSON.parse(
+      readFileSync(path.join(repoRoot, "packages/core/tsconfig.json"), "utf8"),
+    ) as { compilerOptions?: { paths?: Record<string, string[]> } };
+
+    expect(coreTsconfig.compilerOptions?.paths).toEqual({
+      "@omniroute/open-sse/*": ["./src/vendor/omniroute/open-sse/*"],
+      "@omniroute/src/*": ["./src/vendor/omniroute/src/*"],
+    });
+
+    const vendorRoot = path.join(repoRoot, "packages/core/src/vendor/omniroute");
+    for (const file of sourceFiles(vendorRoot)) {
+      const text = readFileSync(file, "utf8");
+      expect(text, file).not.toMatch(/from\s+["']@\//);
     }
   });
 });

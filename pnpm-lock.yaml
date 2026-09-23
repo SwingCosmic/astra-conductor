@@ -21,6 +21,9 @@ catalogs:
     electron-builder:
       specifier: 24.13.3
       version: 24.13.3
+    esbuild:
+      specifier: 0.21.5
+      version: 0.21.5
     happy-dom:
       specifier: 15.11.7
       version: 15.11.7
@@ -74,6 +77,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 18.19.64
+      esbuild:
+        specifier: 'catalog:'
+        version: 0.21.5
       typescript:
         specifier: 'catalog:'
         version: 5.6.3

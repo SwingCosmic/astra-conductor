@@ -1,4 +1,5 @@
 references
+packages/core/src/vendor/omniroute
 docs
 dist
 release

@@ -10,12 +10,13 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "node ./scripts/build.mjs && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "esbuild": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

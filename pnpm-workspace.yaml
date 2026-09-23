@@ -13,5 +13,6 @@ catalog:
   happy-dom: "15.11.7"
   vue-tsc: "2.1.10"
   "@types/node": "18.19.64"
+  esbuild: "0.21.5"
   electron: "32.2.8"
   electron-builder: "24.13.3"
