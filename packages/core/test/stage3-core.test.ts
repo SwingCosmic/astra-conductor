@@ -7,6 +7,7 @@ import {
   MemoryStorage,
   RefreshCoordinator,
   toPublicAccount,
+  toPublicUsage,
   type Account,
   type CredentialCipherPort,
   type CredentialEnvelope,
@@ -252,6 +253,44 @@ describe("stage 3 core boundaries", () => {
     expect(JSON.stringify([firstOutcome, secondOutcome, logs])).not.toMatch(
       /access-new-first|refresh-new-first|access-new-second|refresh-new-second/,
     );
+  });
+
+  it("uses duration-correct Codex window titles without duplicating labels", async () => {
+    const adapter = new CodexAdapter(async () =>
+      Response.json({
+        plan_type: "pro",
+        rate_limit: {
+          primary_window: {
+            used_percent: 10,
+            limit_window_seconds: 604_800,
+            reset_after_seconds: 100,
+          },
+          secondary_window: {
+            used_percent: 20,
+            limit_window_seconds: 18_000,
+            reset_after_seconds: 100,
+          },
+        },
+      }),
+    );
+    const result = await adapter.fetchUsage(account("labels"), envelope("labels"));
+    expect(result.groups).toHaveLength(1);
+    expect(result.groups[0]).toMatchObject({ key: "default", title: null });
+    expect(result.groups[0]?.quotas.map((quota) => quota.title)).toEqual(["Weekly", "5-hour"]);
+  });
+
+  it("upgrades stored flat quota snapshots at the public boundary", () => {
+    const legacy = {
+      accountId: "legacy",
+      plan: "plus",
+      quotas: [],
+      resetCredits: 2,
+      fetchedAt: now.toISOString(),
+    } as unknown as Parameters<typeof toPublicUsage>[0];
+    expect(toPublicUsage(legacy)).toMatchObject({
+      groups: [{ key: "default", title: null, quotas: [] }],
+      extras: [{ key: "reset-credits", label: "Reset credits", value: "2" }],
+    });
   });
 
   it("rolls back in-memory transactions", () => {

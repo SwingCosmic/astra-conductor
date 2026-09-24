@@ -7,10 +7,13 @@
   "main": "dist/main.js",
   "scripts": {
     "build:main": "tsc -p tsconfig.build.json && node ./scripts/copy-preload.mjs",
+    "dev:electron": "node ./scripts/run-electron-mode.mjs dev",
     "build": "pnpm run build:main && node ./scripts/copy-renderer.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "package": "node ./scripts/package.mjs"
+    "package": "node ./scripts/package.mjs",
+    "data:reset": "node ./scripts/run-electron-mode.mjs reset",
+    "test:codex-cli": "node ./scripts/run-electron-mode.mjs codex-cli-smoke"
   },
   "dependencies": {
     "@llm-usage/core": "workspace:*",

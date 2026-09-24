@@ -35,7 +35,8 @@ function snapshot(accountId: string, plan: string): UsageSnapshot {
   return {
     accountId,
     plan,
-    quotas: [],
+    groups: [],
+    extras: [],
     fetchedAt: "2026-09-24T01:00:00.000Z",
   };
 }

@@ -30,6 +30,99 @@ body {
   color: #6b7280;
 }
 
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+button {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 7px 11px;
+  background: #fff;
+  color: #1e293b;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.auth-actions,
+.card-actions,
+.device-panel {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.auth-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.notice,
+.empty,
+.settings {
+  margin-top: 20px;
+  padding: 14px 16px;
+  border: 1px solid #dbeafe;
+  border-radius: 10px;
+  background: #eff6ff;
+}
+.device-panel {
+  justify-content: space-between;
+}
+.disabled {
+  opacity: 0.65;
+}
+.empty {
+  text-align: center;
+  padding: 48px 20px;
+  background: #fff;
+  border-color: #e5e7eb;
+}
+.empty h2,
+.settings h2 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+.empty p,
+.settings p {
+  margin: 6px 0;
+  color: #64748b;
+  font-size: 13px;
+}
+.empty-usage {
+  color: #64748b;
+  font-size: 13px;
+}
+.card-actions {
+  margin-top: 16px;
+}
+.danger {
+  color: #b91c1c;
+  margin-left: auto;
+}
+.settings {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+  background: #fff;
+  border-color: #e5e7eb;
+}
+.settings label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+}
+.settings input[type="number"] {
+  width: 76px;
+  padding: 5px;
+}
+
 .card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
@@ -192,5 +285,12 @@ body {
 
   .card-grid {
     grid-template-columns: 1fr;
+  }
+
+  .page-header {
+    flex-direction: column;
+  }
+  .auth-actions {
+    justify-content: flex-start;
   }
 }

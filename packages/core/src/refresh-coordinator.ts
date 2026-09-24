@@ -20,20 +20,22 @@ export type RefreshOutcome =
   | { status: "failed"; accountId: string; error: PublicErrorDto };
 
 function notificationCandidates(snapshot: UsageSnapshot): NotificationCandidate[] {
-  return snapshot.quotas.flatMap((quota) => {
-    const remaining = quota.remainingPercentage;
-    if (remaining === null || remaining > 20) return [];
-    return [
-      {
-        accountId: snapshot.accountId,
-        quotaKey: quota.key,
-        title: quota.title,
-        level: remaining <= 5 ? "critical" : "warning",
-        remainingPercentage: remaining,
-        resetAt: quota.resetAt,
-      } satisfies NotificationCandidate,
-    ];
-  });
+  return snapshot.groups.flatMap((group) =>
+    group.quotas.flatMap((quota) => {
+      const remaining = quota.remainingPercentage;
+      if (remaining === null || remaining > 20) return [];
+      return [
+        {
+          accountId: snapshot.accountId,
+          quotaKey: `${group.key}:${quota.key}`,
+          title: quota.title,
+          level: remaining <= 5 ? "critical" : "warning",
+          remainingPercentage: remaining,
+          resetAt: quota.resetAt,
+        } satisfies NotificationCandidate,
+      ];
+    }),
+  );
 }
 
 export class RefreshCoordinator {

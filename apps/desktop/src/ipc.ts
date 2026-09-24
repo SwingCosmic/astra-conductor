@@ -4,9 +4,10 @@ import {
   toPublicAccount,
   toPublicError,
   toPublicUsage,
-  type RefreshCoordinator,
   type StoragePort,
 } from "@llm-usage/core/internal";
+import type { CodexAuthService } from "./auth-service.js";
+import type { PollingService } from "./polling-service.js";
 
 export const ipcChannels = {
   listAccounts: "accounts:list",
@@ -14,6 +15,13 @@ export const ipcChannels = {
   setAccountEnabled: "accounts:set-enabled",
   deleteAccount: "accounts:delete",
   refreshAccount: "usage:refresh",
+  importCodexCli: "auth:codex-cli",
+  browserCodex: "auth:codex-browser",
+  startCodexDevice: "auth:codex-device-start",
+  finishCodexDevice: "auth:codex-device-finish",
+  getSettings: "settings:get",
+  saveSettings: "settings:save",
+  getProxy: "system:proxy",
 } as const;
 
 interface IpcSuccess<T> {
@@ -42,7 +50,9 @@ function response<T>(operation: () => T | Promise<T>): Promise<IpcSuccess<T> | I
 
 export function registerIpcHandlers(
   storage: StoragePort,
-  coordinator: RefreshCoordinator,
+  polling: PollingService,
+  auth: CodexAuthService,
+  resolveProxy: () => Promise<string>,
   now: () => Date = () => new Date(),
 ): void {
   ipcMain.handle(ipcChannels.listAccounts, () =>
@@ -79,8 +89,53 @@ export function registerIpcHandlers(
     }),
   );
   ipcMain.handle(ipcChannels.refreshAccount, (_event, input: unknown) =>
-    response(() => coordinator.refresh(accountId(input))),
+    response(() => polling.refresh(accountId(input))),
   );
+  ipcMain.handle(ipcChannels.importCodexCli, () =>
+    response(async () => toPublicAccount(await auth.importCli())),
+  );
+  ipcMain.handle(ipcChannels.browserCodex, () =>
+    response(async () => toPublicAccount(await auth.browserLogin())),
+  );
+  ipcMain.handle(ipcChannels.startCodexDevice, () => response(() => auth.startDeviceLogin()));
+  ipcMain.handle(ipcChannels.finishCodexDevice, (_event, input: unknown) =>
+    response(async () => toPublicAccount(await auth.finishDeviceLogin(accountId(input)))),
+  );
+  ipcMain.handle(ipcChannels.getSettings, () =>
+    response(() => ({
+      pollingEnabled: storage.settings.get("pollingEnabled") !== false,
+      pollingIntervalMinutes: storage.settings.get("pollingIntervalMinutes") ?? 15,
+    })),
+  );
+  ipcMain.handle(ipcChannels.saveSettings, (_event, input: unknown) =>
+    response(() => {
+      if (!input || typeof input !== "object") throw new AppError("validation", "Invalid settings");
+      const value = input as { pollingEnabled?: unknown; pollingIntervalMinutes?: unknown };
+      if (typeof value.pollingEnabled !== "boolean") {
+        throw new AppError("validation", "Invalid polling setting");
+      }
+      if (
+        typeof value.pollingIntervalMinutes !== "number" ||
+        !Number.isInteger(value.pollingIntervalMinutes) ||
+        value.pollingIntervalMinutes < 5 ||
+        value.pollingIntervalMinutes > 1440
+      ) {
+        throw new AppError("validation", "Polling interval must be between 5 and 1440 minutes");
+      }
+      const pollingEnabled = value.pollingEnabled;
+      const pollingIntervalMinutes = value.pollingIntervalMinutes;
+      const timestamp = now().toISOString();
+      storage.transaction(() => {
+        storage.settings.save("pollingEnabled", pollingEnabled, timestamp);
+        storage.settings.save("pollingIntervalMinutes", pollingIntervalMinutes, timestamp);
+      });
+      return {
+        pollingEnabled,
+        pollingIntervalMinutes,
+      };
+    }),
+  );
+  ipcMain.handle(ipcChannels.getProxy, () => response(resolveProxy));
 }
 
 export function unregisterIpcHandlers(): void {

@@ -11,6 +11,8 @@ export type {
   PublicAccountDto,
   PublicMetadata,
   PublicUsageDto,
+  UsageExtra,
   UsageQuota,
+  UsageQuotaGroup,
   UsageSnapshot,
 } from "./models.js";

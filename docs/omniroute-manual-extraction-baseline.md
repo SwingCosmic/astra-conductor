@@ -148,6 +148,10 @@ git -c core.safecrlf=false diff --no-index --ignore-space-at-eol --no-ext-diff -
 
 ### 4.4 HTTP 传输与宿主依赖替换
 
+#### `src/lib/oauth/providers/codex.ts` 与 `src/lib/oauth/codexDeviceFlow.ts`
+
+阶段 5 的桌面宿主需要让授权、设备码、刷新和用量请求遵循同一代理边界，因此浏览器授权码换票以及设备码的 user code、轮询和换票函数均增加可选 `fetchImpl` 参数，默认仍使用全局 `fetch`。请求端点、表单、错误分类、轮询间隔和超时行为不变；Core 适配器在桌面运行时注入 Electron 网络传输。
+
 #### `open-sse/services/usage/codex.ts`
 
 为 `getCodexUsage` 增加 `fetchImpl: typeof fetch = fetch` 参数，并把内部请求改为调用该参数。默认行为仍使用全局 `fetch`，测试和阶段 3 适配器可以注入传输；请求 URL、工作区头、身份头和响应归一化保持不变。
@@ -192,7 +196,7 @@ git -c core.safecrlf=false diff --no-index --ignore-space-at-eol --no-ext-diff -
 | `select-decl`    | `CODEX_CONFIG`、刷新提前量、CLI 解析器、错误类 | TypeScript Compiler API  |
 | `select-member`  | `EMBEDDED_DEFAULTS`、`ROTATION_LOCK_GROUP`     | TypeScript Compiler API  |
 | `rewrite-import` | `@/*`、跨 `open-sse` / `src` 的复杂相对路径    | 按模块说明符精确改写     |
-| `inject-param`   | 用量和刷新函数的 `fetchImpl`                   | AST 参数与调用表达式改写 |
+| `inject-param`   | 授权、设备码、用量和刷新函数的 `fetchImpl`     | AST 参数与调用表达式改写 |
 | `add-types`      | 上游依赖宽松配置、当前严格编译所需的局部类型   | AST 改写或小型可审查补丁 |
 | `reject-path`    | 数据库、页面、Cookie、代理和执行器             | 生成前后的路径与导入检查 |
 
@@ -215,6 +219,6 @@ git -c core.safecrlf=false diff --no-index --ignore-space-at-eol --no-ext-diff -
 - 浏览器 OAuth、设备授权、CLI 导入、换票、刷新和用量均有无网络特征测试；
 - Core 的类型检查、测试、构建和编译后模块加载通过；
 - 编译后的 JavaScript 不残留未解析的 `@omniroute/*`；
-- 真实账号行为仍由阶段 5 验证，不能只凭静态生成一致性认定协议完整。
+- Codex CLI 凭据的真实账号闭环已经验证；浏览器 OAuth 与设备码仍需完成交互式手工验收，不能只凭静态生成一致性认定协议完整。
 
 阶段 6 的最终验收应把自动生成目录与本手工基线逐文件比较。只有阶段 5 已确认的差异才能固化为同步规则；为了让生成结果匹配而新增的例外，必须先回到手工样板说明原因并补充测试。

@@ -6,11 +6,17 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const port = 5173;
 const children = [];
+let stopping = false;
+const pnpmScript = process.env.npm_execpath;
+
+if (!pnpmScript) {
+  throw new Error("Unable to locate the pnpm entrypoint");
+}
 
 function run(args, extraEnv = {}) {
-  const child = spawn("pnpm", args, {
+  const child = spawn(process.execPath, [pnpmScript, ...args], {
     cwd: root,
-    shell: true,
+    shell: false,
     stdio: "inherit",
     windowsHide: true,
     env: { ...process.env, ...extraEnv },
@@ -19,17 +25,26 @@ function run(args, extraEnv = {}) {
   return child;
 }
 
-function stopAll() {
-  for (const child of children) {
-    if (child.exitCode !== null || !child.pid) {
-      continue;
-    }
-    if (process.platform === "win32") {
-      spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], { windowsHide: true });
-    } else {
-      child.kill("SIGTERM");
-    }
-  }
+async function stopAll() {
+  await Promise.all(
+    children.map(async (child) => {
+      if (child.exitCode !== null || !child.pid) {
+        return;
+      }
+      if (process.platform === "win32") {
+        await new Promise((resolve) => {
+          const killer = spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], {
+            windowsHide: true,
+            stdio: "ignore",
+          });
+          killer.once("exit", resolve);
+          killer.once("error", resolve);
+        });
+      } else {
+        child.kill("SIGTERM");
+      }
+    }),
+  );
 }
 
 function waitForPort(host, targetPort) {
@@ -54,6 +69,16 @@ function waitForPort(host, targetPort) {
   });
 }
 
+function assertPortAvailable(host, targetPort) {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once("error", () =>
+      reject(new Error(`dev server port ${host}:${targetPort} is already in use`)),
+    );
+    server.listen(targetPort, host, () => server.close(resolve));
+  });
+}
+
 function exitCode(child) {
   return new Promise((resolve) => {
     child.once("exit", (code) => resolve(code ?? 1));
@@ -61,11 +86,21 @@ function exitCode(child) {
 }
 
 process.on("SIGINT", () => {
-  stopAll();
-  process.exit(130);
+  stopping = true;
+  void stopAll().then(() => {
+    process.exitCode = 130;
+  });
 });
 
+const coreBuildCode = await exitCode(run(["--filter", "@llm-usage/core", "run", "build"]));
+if (coreBuildCode !== 0) {
+  await stopAll();
+  process.exitCode = coreBuildCode;
+  process.exit();
+}
+
 let rendererReady = false;
+await assertPortAvailable("127.0.0.1", port);
 const vite = run([
   "--filter",
   "@llm-usage/ui",
@@ -79,32 +114,45 @@ const vite = run([
 ]);
 
 vite.once("exit", (code) => {
-  if (!rendererReady) {
-    console.error(`vite exited early with code ${code ?? 1}`);
-    process.exit(code ?? 1);
+  if (rendererReady && !stopping) {
+    console.error(`vite exited with code ${code ?? 1}`);
+    void stopAll().then(() => {
+      process.exitCode = code ?? 1;
+    });
   }
 });
 
 try {
-  await waitForPort("127.0.0.1", port);
+  await Promise.race([
+    waitForPort("127.0.0.1", port),
+    exitCode(vite).then((code) => {
+      throw new Error(`vite exited early with code ${code}`);
+    }),
+  ]);
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);
-  stopAll();
-  process.exit(1);
+  stopping = true;
+  await stopAll();
+  process.exitCode = 1;
+  process.exit();
 }
 rendererReady = true;
 
 const compileCode = await exitCode(run(["--filter", "@llm-usage/desktop", "run", "build:main"]));
 if (compileCode !== 0) {
-  stopAll();
-  process.exit(compileCode);
+  stopping = true;
+  await stopAll();
+  process.exitCode = compileCode;
+  process.exit();
 }
 
-const electron = run(["--filter", "@llm-usage/desktop", "exec", "electron", "."], {
+const electron = run(["--filter", "@llm-usage/desktop", "run", "dev:electron"], {
   LLM_USAGE_DEV_SERVER: `http://127.0.0.1:${port}`,
 });
 
 electron.once("exit", (code) => {
-  stopAll();
-  process.exit(code ?? 0);
+  stopping = true;
+  void stopAll().then(() => {
+    process.exitCode = code ?? 0;
+  });
 });

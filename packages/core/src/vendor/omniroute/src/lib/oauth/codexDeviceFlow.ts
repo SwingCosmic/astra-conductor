@@ -131,11 +131,12 @@ function normalizeInterval(raw: unknown): number {
  */
 export async function requestUserCode(
   clientId: string = DEFAULT_CLIENT_ID,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  fetchImpl: typeof fetch = fetch
 ): Promise<CodexUserCode> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}/deviceauth/usercode`, {
+    res = await fetchImpl(`${API_BASE_URL}/deviceauth/usercode`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({ client_id: clientId }),
@@ -188,9 +189,9 @@ export async function pollForAuthorization(
   deviceAuthId: string,
   userCode: string,
   intervalSec: number,
-  opts: { signal?: AbortSignal; timeoutMs?: number } = {}
+  opts: { signal?: AbortSignal; timeoutMs?: number; fetchImpl?: typeof fetch } = {}
 ): Promise<{ authorizationCode: string; codeVerifier: string }> {
-  const { signal, timeoutMs = DEFAULT_TIMEOUT_MS } = opts;
+  const { signal, timeoutMs = DEFAULT_TIMEOUT_MS, fetchImpl = fetch } = opts;
   const deadline = startMonotonic() + timeoutMs;
 
   while (true) {
@@ -203,7 +204,7 @@ export async function pollForAuthorization(
 
     let res: Response;
     try {
-      res = await fetch(`${API_BASE_URL}/deviceauth/token`, {
+      res = await fetchImpl(`${API_BASE_URL}/deviceauth/token`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({ device_auth_id: deviceAuthId, user_code: userCode }),
@@ -244,11 +245,12 @@ export async function exchangeCodeForTokens(
   authorizationCode: string,
   codeVerifier: string,
   clientId: string = DEFAULT_CLIENT_ID,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  fetchImpl: typeof fetch = fetch
 ): Promise<CodexDeviceTokens> {
   let res: Response;
   try {
-    res = await fetch(`${BASE_URL}/oauth/token`, {
+    res = await fetchImpl(`${BASE_URL}/oauth/token`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({

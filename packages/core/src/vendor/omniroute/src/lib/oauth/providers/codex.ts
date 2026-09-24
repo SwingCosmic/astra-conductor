@@ -123,8 +123,9 @@ export const codex = {
     code: string,
     redirectUri: string,
     codeVerifier: string,
+    fetchImpl: typeof fetch = fetch,
   ): Promise<CodexOAuthTokens> => {
-    const response = await fetch(config.tokenUrl, {
+    const response = await fetchImpl(config.tokenUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",

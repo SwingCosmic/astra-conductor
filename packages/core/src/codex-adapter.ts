@@ -16,6 +16,11 @@ import { getRefreshLeadMs } from "@omniroute/open-sse/services/tokenRefresh.ts";
 import { codex, type CodexOAuthTokens } from "@omniroute/src/lib/oauth/providers/codex.ts";
 import { parseAndValidateCodexAuth } from "@omniroute/src/lib/oauth/utils/codexAuthImport.ts";
 import { generatePKCE } from "@omniroute/src/lib/oauth/utils/pkce.ts";
+import {
+  exchangeCodeForTokens,
+  pollForAuthorization,
+  requestUserCode,
+} from "@omniroute/src/lib/oauth/codexDeviceFlow.ts";
 
 interface JsonRecord {
   [key: string]: unknown;
@@ -40,6 +45,13 @@ export interface BrowserAuthorization {
 export interface CredentialRefreshResult {
   envelope: CredentialEnvelope;
   changed: boolean;
+}
+
+export interface DeviceAuthorization {
+  deviceAuthId: string;
+  userCode: string;
+  intervalSec: number;
+  verificationUri: string;
 }
 
 function maskIdentifier(value: string): string {
@@ -68,7 +80,10 @@ function quotaTitle(key: string, quota: JsonRecord): string {
       ? "5-hour"
       : key.replaceAll("_", " ");
   const displayName = stringValue(quota.displayName);
-  return displayName ? `${displayName} ${base}` : base;
+  if (!displayName) return base;
+  if (/^session$/i.test(displayName)) return "5-hour";
+  if (/weekly|monthly|5[- ]?hour|session/i.test(displayName)) return displayName;
+  return `${displayName} ${base}`;
 }
 
 function normalizeQuotas(value: unknown): UsageQuota[] {
@@ -109,6 +124,44 @@ export class CodexAdapter {
       codeVerifier,
       redirectUri,
     };
+  }
+
+  async finishBrowserAuthorization(
+    authorization: BrowserAuthorization,
+    code: string,
+  ): Promise<CodexProvisioningResult> {
+    const tokens = await codex.exchangeToken(
+      codex.config,
+      code,
+      authorization.redirectUri,
+      authorization.codeVerifier,
+      this.fetchImpl,
+    );
+    return this.fromBrowserTokens(tokens);
+  }
+
+  requestDeviceAuthorization(signal?: AbortSignal): Promise<DeviceAuthorization> {
+    return requestUserCode(undefined, signal, this.fetchImpl);
+  }
+
+  async finishDeviceAuthorization(
+    authorization: DeviceAuthorization,
+    signal?: AbortSignal,
+  ): Promise<CodexProvisioningResult> {
+    const result = await pollForAuthorization(
+      authorization.deviceAuthId,
+      authorization.userCode,
+      authorization.intervalSec,
+      { signal, fetchImpl: this.fetchImpl },
+    );
+    const tokens = await exchangeCodeForTokens(
+      result.authorizationCode,
+      result.codeVerifier,
+      undefined,
+      signal,
+      this.fetchImpl,
+    );
+    return this.fromDeviceTokens({ ...tokens });
   }
 
   fromBrowserTokens(tokens: CodexOAuthTokens): CodexProvisioningResult {
@@ -208,10 +261,17 @@ export class CodexAdapter {
     return {
       accountId: account.id,
       plan: result.plan,
-      quotas: normalizeQuotas(result.quotas),
-      ...(typeof result.bankedResetCredits === "number"
-        ? { resetCredits: result.bankedResetCredits }
-        : {}),
+      groups: [{ key: "default", title: null, quotas: normalizeQuotas(result.quotas) }],
+      extras:
+        typeof result.bankedResetCredits === "number"
+          ? [
+              {
+                key: "reset-credits",
+                label: "Reset credits",
+                value: String(result.bankedResetCredits),
+              },
+            ]
+          : [],
       fetchedAt: this.clock.now().toISOString(),
     };
   }

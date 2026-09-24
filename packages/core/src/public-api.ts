@@ -16,5 +16,20 @@ export function toPublicAccount(account: Account): PublicAccountDto {
 }
 
 export function toPublicUsage(snapshot: UsageSnapshot): PublicUsageDto {
-  return structuredClone(snapshot);
+  const value = structuredClone(snapshot) as UsageSnapshot & {
+    quotas?: UsageSnapshot["groups"][number]["quotas"];
+    resetCredits?: number;
+  };
+  if (!Array.isArray(value.groups)) {
+    value.groups = [{ key: "default", title: null, quotas: value.quotas ?? [] }];
+  }
+  if (!Array.isArray(value.extras)) {
+    value.extras =
+      typeof value.resetCredits === "number"
+        ? [{ key: "reset-credits", label: "Reset credits", value: String(value.resetCredits) }]
+        : [];
+  }
+  delete value.quotas;
+  delete value.resetCredits;
+  return value;
 }

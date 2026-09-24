@@ -57,11 +57,23 @@ export interface UsageQuota {
   unlimited: boolean;
 }
 
+export interface UsageQuotaGroup {
+  key: string;
+  title: string | null;
+  quotas: UsageQuota[];
+}
+
+export interface UsageExtra {
+  key: string;
+  label: string;
+  value: string;
+}
+
 export interface UsageSnapshot {
   accountId: string;
   plan: string;
-  quotas: UsageQuota[];
-  resetCredits?: number;
+  groups: UsageQuotaGroup[];
+  extras: UsageExtra[];
   fetchedAt: string;
 }
 

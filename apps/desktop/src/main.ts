@@ -1,8 +1,16 @@
-import { app, BrowserWindow, session } from "electron";
+import { app, BrowserWindow, Menu, Tray, nativeImage, net, session, shell } from "electron";
+import { rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { CodexAdapter, CredentialVault, RefreshCoordinator } from "@llm-usage/core/internal";
+import {
+  CodexAccountProvisioner,
+  CodexAdapter,
+  CredentialVault,
+  RefreshCoordinator,
+} from "@llm-usage/core/internal";
+import { CodexAuthService } from "./auth-service.js";
 import { registerIpcHandlers, unregisterIpcHandlers } from "./ipc.js";
+import { PollingService } from "./polling-service.js";
 import { ElectronSafeStorageCipher } from "./safe-storage-cipher.js";
 import { SqliteStorage } from "./sqlite-storage.js";
 import { runStorageSmoke } from "./storage-smoke.js";
@@ -10,13 +18,26 @@ import { runStorageSmoke } from "./storage-smoke.js";
 const devServer = process.env.LLM_USAGE_DEV_SERVER;
 const smoke = process.env.LLM_USAGE_SMOKE === "1";
 const storageSmoke = process.env.LLM_USAGE_STORAGE_SMOKE === "1";
+const resetData = process.env.LLM_USAGE_RESET_DATA === "1";
+const codexCliSmoke = process.env.LLM_USAGE_CODEX_CLI_SMOKE === "1";
 const userDataOverride = process.env.LLM_USAGE_USER_DATA;
 let storage: SqliteStorage | null = null;
+let polling: PollingService | null = null;
+let auth: CodexAuthService | null = null;
+let tray: Tray | null = null;
+let quitting = false;
 
 if (userDataOverride) app.setPath("userData", path.resolve(userDataOverride));
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
-if (!hasSingleInstanceLock) app.quit();
+if (!hasSingleInstanceLock) {
+  if (resetData) {
+    console.error("无法清除数据：llm-usage 仍在运行，请先退出应用");
+    app.exit(2);
+  } else {
+    app.quit();
+  }
+}
 
 function appDir(): string {
   return path.dirname(fileURLToPath(import.meta.url));
@@ -32,6 +53,27 @@ function installProductionCsp(): void {
         ],
       },
     });
+  });
+}
+
+async function configureNetworkProxy(): Promise<void> {
+  const raw = process.env.HTTPS_PROXY?.trim() || process.env.HTTP_PROXY?.trim();
+  if (!raw) {
+    await session.defaultSession.setProxy({ mode: "system" });
+    return;
+  }
+  const proxy = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `http://${raw}`);
+  if (!new Set(["http:", "https:", "socks:", "socks4:", "socks5:"]).has(proxy.protocol)) {
+    throw new Error("Unsupported HTTP_PROXY or HTTPS_PROXY scheme");
+  }
+  const rule = `${proxy.protocol}//${proxy.hostname}${proxy.port ? `:${proxy.port}` : ""}`;
+  const environmentBypass = process.env.NO_PROXY?.trim().replaceAll(",", ";");
+  await session.defaultSession.setProxy({
+    mode: "fixed_servers",
+    proxyRules: rule,
+    proxyBypassRules: ["<local>", "localhost", "127.0.0.1", environmentBypass]
+      .filter(Boolean)
+      .join(";"),
   });
 }
 
@@ -57,6 +99,13 @@ async function createWindow(): Promise<void> {
     win.show();
   });
 
+  win.on("close", (event) => {
+    if (!quitting && !smoke) {
+      event.preventDefault();
+      win.hide();
+    }
+  });
+
   win.webContents.on("did-fail-load", (_event, code, description) => {
     console.error(`renderer failed: ${code} ${description}`);
     if (smoke) {
@@ -67,7 +116,7 @@ async function createWindow(): Promise<void> {
   win.webContents.on("did-finish-load", () => {
     if (smoke) {
       console.log("LLM_USAGE_SMOKE_OK");
-      app.quit();
+      setTimeout(() => app.quit(), 250);
     }
   });
 
@@ -79,26 +128,91 @@ async function createWindow(): Promise<void> {
   await win.loadFile(path.join(appDir(), "../renderer/index.html"));
 }
 
+function createTray(): void {
+  const icon = nativeImage.createFromDataURL(
+    "data:image/svg+xml;base64," +
+      Buffer.from(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" rx="8" fill="#2563eb"/><path d="M8 22V10h4v8h4V6h4v12h4v4z" fill="white"/></svg>',
+      ).toString("base64"),
+  );
+  tray = new Tray(icon.resize({ width: 16, height: 16 }));
+  tray.setToolTip("llm-usage");
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: "显示 llm-usage", click: () => BrowserWindow.getAllWindows()[0]?.show() },
+      { label: "刷新全部账号", click: () => void polling?.refreshAll() },
+      { type: "separator" },
+      {
+        label: "退出",
+        click: () => {
+          quitting = true;
+          app.quit();
+        },
+      },
+    ]),
+  );
+  tray.on("double-click", () => BrowserWindow.getAllWindows()[0]?.show());
+}
+
+async function deleteStoredData(databaseFile: string): Promise<void> {
+  for (const filename of [databaseFile, `${databaseFile}-wal`, `${databaseFile}-shm`]) {
+    await rm(filename, { force: true });
+  }
+}
+
 if (hasSingleInstanceLock) {
   app
     .whenReady()
     .then(async () => {
       const databaseFile = path.join(app.getPath("userData"), "llm-usage.db");
+      if (resetData) {
+        await deleteStoredData(databaseFile);
+        console.log("LLM_USAGE_RESET_DATA_OK");
+        app.quit();
+        return;
+      }
       if (storageSmoke) {
         await runStorageSmoke(databaseFile);
         console.log("LLM_USAGE_STORAGE_SMOKE_OK");
         app.quit();
         return;
       }
+      await configureNetworkProxy();
       storage = new SqliteStorage(databaseFile);
       const vault = new CredentialVault(storage, new ElectronSafeStorageCipher());
-      const coordinator = new RefreshCoordinator(storage, vault, new CodexAdapter());
-      registerIpcHandlers(storage, coordinator);
+      const fetchImpl: typeof fetch = (input, init) =>
+        net.fetch(input instanceof URL ? input.toString() : input, init);
+      const adapter = new CodexAdapter(fetchImpl);
+      const coordinator = new RefreshCoordinator(storage, vault, adapter);
+      const provisioner = new CodexAccountProvisioner(storage, vault);
+      auth = new CodexAuthService(adapter, provisioner, (url) => shell.openExternal(url));
+      polling = new PollingService(storage, coordinator);
+      if (codexCliSmoke) {
+        const account = await auth.importCli();
+        const outcome = await polling.refresh(account.id);
+        if (outcome.status !== "updated") throw new Error("Codex CLI live refresh failed");
+        console.log(
+          `LLM_USAGE_CODEX_CLI_SMOKE_OK account=${account.maskedIdentifier} plan=${outcome.snapshot.plan} quotas=${outcome.snapshot.groups
+            .flatMap((group) => group.quotas)
+            .map((quota) => quota.title)
+            .join(",")}`,
+        );
+        app.quit();
+        return;
+      }
+      registerIpcHandlers(storage, polling, auth, () =>
+        session.defaultSession.resolveProxy("https://chatgpt.com/backend-api/wham/usage"),
+      );
+      polling.start();
       if (!devServer) installProductionCsp();
       await createWindow();
+      createTray();
     })
-    .catch(() => {
-      console.error("llm-usage startup failed");
+    .catch((error: unknown) => {
+      console.error(
+        "llm-usage startup failed",
+        error instanceof Error ? `${error.name}: ${error.message}` : "unknown error",
+      );
       app.exit(1);
     });
 
@@ -110,11 +224,16 @@ if (hasSingleInstanceLock) {
 }
 
 app.on("before-quit", () => {
+  quitting = true;
   unregisterIpcHandlers();
+  auth?.cancelAll();
+  polling?.stop();
+  tray?.destroy();
+  tray = null;
   storage?.close();
   storage = null;
 });
 
 app.on("window-all-closed", () => {
-  app.quit();
+  if (process.platform !== "win32") app.quit();
 });

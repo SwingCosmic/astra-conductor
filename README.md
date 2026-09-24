@@ -2,7 +2,7 @@
 
 `llm-usage` 是一个面向本地桌面的 LLM 订阅用量聚合工具。项目将以 Windows 托盘应用为首要形态，集中展示多个订阅账号的剩余额度，并提供低额度通知。
 
-当前完成了仓库准备、工作区骨架、Codex 协议样板，以及阶段 3 的核心边界和本地数据层。桌面窗口仍展示写死的示例卡片，真实认证、账号界面和系统通知将在后续阶段接入。
+当前已完成仓库准备、工作区骨架、Codex 协议样板、核心与本地数据层，以及桌面壳和 Codex 接入。Codex CLI 凭据、浏览器 OAuth PKCE 和设备码均已通过真实用量闭环。
 
 ## 文档
 
@@ -43,11 +43,15 @@ pnpm test
 pnpm typecheck
 pnpm build
 pnpm package
+pnpm test:codex-cli
+pnpm data:reset
 ```
 
-- `pnpm dev` 打开桌面窗口。界面数据写死，没有登录、刷新或开关。
+- `pnpm dev` 打开桌面窗口，可只读导入 Codex CLI 凭据，或启动浏览器 OAuth / 设备码授权。
 - `pnpm build` 依次构建 core、ui、desktop。desktop 会把 ui 的构建结果复制到 `apps/desktop/renderer`。
 - `pnpm package` 生成 Windows NSIS 安装包，应用内容打进 asar。产物在 `apps/desktop/release/`。
+- `pnpm test:codex-cli` 使用本机 Codex CLI 凭据执行隔离的真实用量闭环；不会改写 CLI 凭据，临时应用数据会在测试后删除。该命令不进入默认测试或 CI。
+- `pnpm data:reset` 立即删除当前应用 `userData` 目录中的 `llm-usage.db`、WAL 和共享内存文件，因此也会删除全部已保存凭据、账号、用量与设置。执行前必须退出正在运行的应用；Codex CLI 的 `auth.json` 不受影响。
 - core 和 ui 可以单独构建。单独构建 desktop 之前需要先构建 ui。
 
 ## 约定
@@ -55,6 +59,6 @@ pnpm package
 - `packages/core` 不依赖 Electron，也不引用 `references/omniroute`。
 - `packages/ui` 只负责界面。它不访问上游，不读取凭证。
 - `apps/desktop` 负责窗口和系统能力，不写服务商协议。
-- 渲染进程关闭 Node 集成，开启上下文隔离和沙箱。预加载脚本目前不暴露接口。
+- 渲染进程关闭 Node 集成，开启上下文隔离和沙箱。预加载脚本只暴露账号、用量、认证和设置所需的受控 IPC，不暴露文件系统、数据库或解密能力。
 - 桌面运行时精确锁定 Electron 42.11.6。本地数据使用 SQLite + `better-sqlite3`，已启用 Electron 原生依赖重建并通过 Windows x64 安装包验证。
-- 界面文案以设计说明第 6.5 节为准。示例卡片里的套餐名和配额标题按该节写死。
+- 界面文案以设计说明第 6.5 节为准；套餐名保持上游原文，Codex 配额标题按真实窗口归一为 `5-hour`、`Weekly` 等稳定名称。
