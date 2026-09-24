@@ -1,29 +1,29 @@
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getCodexBackendIdentityHeaders } from "./vendor/omniroute/open-sse/config/codexClient.ts";
+import { getCodexBackendIdentityHeaders } from "../src/vendor/omniroute/open-sse/config/codexClient.ts";
 import {
   __resetRefreshSerializerForTest,
   serializeRefresh,
-} from "./vendor/omniroute/open-sse/services/refreshSerializer.ts";
-import { getRefreshLeadMs } from "./vendor/omniroute/open-sse/services/tokenRefresh.ts";
-import { refreshCodexToken } from "./vendor/omniroute/open-sse/services/tokenRefresh/providers/codex.ts";
-import { getCodexUsage } from "./vendor/omniroute/open-sse/services/usage/codex.ts";
+} from "../src/vendor/omniroute/open-sse/services/refreshSerializer.ts";
+import { getRefreshLeadMs } from "../src/vendor/omniroute/open-sse/services/tokenRefresh.ts";
+import { refreshCodexToken } from "../src/vendor/omniroute/open-sse/services/tokenRefresh/providers/codex.ts";
+import { getCodexUsage } from "../src/vendor/omniroute/open-sse/services/usage/codex.ts";
 import {
   CodexDeviceFlowError,
   requestUserCode,
   runCodexDeviceFlow,
-} from "./vendor/omniroute/src/lib/oauth/codexDeviceFlow.ts";
-import { CODEX_CONFIG } from "./vendor/omniroute/src/lib/oauth/constants/oauth.ts";
-import { codex } from "./vendor/omniroute/src/lib/oauth/providers/codex.ts";
+} from "../src/vendor/omniroute/src/lib/oauth/codexDeviceFlow.ts";
+import { CODEX_CONFIG } from "../src/vendor/omniroute/src/lib/oauth/constants/oauth.ts";
+import { codex } from "../src/vendor/omniroute/src/lib/oauth/providers/codex.ts";
 import {
   flattenCodexImportPayload,
   normalizeCodexImportRecord,
-} from "./vendor/omniroute/src/lib/oauth/services/codexImport.ts";
-import { parseAndValidateCodexAuth } from "./vendor/omniroute/src/lib/oauth/utils/codexAuthImport.ts";
+} from "../src/vendor/omniroute/src/lib/oauth/services/codexImport.ts";
+import { parseAndValidateCodexAuth } from "../src/vendor/omniroute/src/lib/oauth/utils/codexAuthImport.ts";
 import {
   generateCodeChallenge,
   generatePKCE,
-} from "./vendor/omniroute/src/lib/oauth/utils/pkce.ts";
+} from "../src/vendor/omniroute/src/lib/oauth/utils/pkce.ts";
 
 const USERCODE_URL = "https://auth.openai.com/api/accounts/deviceauth/usercode";
 const POLL_URL = "https://auth.openai.com/api/accounts/deviceauth/token";

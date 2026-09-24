@@ -4,7 +4,7 @@
   "type": "module",
   "packageManager": "pnpm@10.34.4",
   "engines": {
-    "node": ">=18.18"
+    "node": ">=22.12.0"
   },
   "scripts": {
     "dev": "node scripts/dev-desktop.mjs",
@@ -20,6 +20,7 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
+      "better-sqlite3",
       "electron",
       "esbuild"
     ]

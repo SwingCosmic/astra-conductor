@@ -2,7 +2,7 @@
 
 `llm-usage` 是一个面向本地桌面的 LLM 订阅用量聚合工具。项目将以 Windows 托盘应用为首要形态，集中展示多个订阅账号的剩余额度，并提供低额度通知。
 
-当前完成了仓库准备和工作区骨架。桌面窗口展示写死的示例卡片，还没有真实账号、刷新或通知。
+当前完成了仓库准备、工作区骨架、Codex 协议样板，以及阶段 3 的核心边界和本地数据层。桌面窗口仍展示写死的示例卡片，真实认证、账号界面和系统通知将在后续阶段接入。
 
 ## 文档
 
@@ -27,7 +27,9 @@ git submodule update --init --recursive
 
 ## 开发
 
-环境：Node.js 18.18 及以上，pnpm 10。Electron 二进制默认从 GitHub 下载。若连接超时，先设置镜像再安装：
+环境：Node.js 22.12 及以上，pnpm 10。项目锁定 Electron 42.11.6。
+
+Electron 二进制默认从 GitHub 下载；若连接超时，先设置镜像再安装：
 
 ```powershell
 $env:ELECTRON_MIRROR = "https://npmmirror.com/mirrors/electron/"
@@ -54,5 +56,5 @@ pnpm package
 - `packages/ui` 只负责界面。它不访问上游，不读取凭证。
 - `apps/desktop` 负责窗口和系统能力，不写服务商协议。
 - 渲染进程关闭 Node 集成，开启上下文隔离和沙箱。预加载脚本目前不暴露接口。
-- 骨架没有原生模块，不需要 electron-rebuild。本地数据库尚未选定。
+- 桌面运行时精确锁定 Electron 42.11.6。本地数据使用 SQLite + `better-sqlite3`，已启用 Electron 原生依赖重建并通过 Windows x64 安装包验证。
 - 界面文案以设计说明第 6.5 节为准。示例卡片里的套餐名和配额标题按该节写死。

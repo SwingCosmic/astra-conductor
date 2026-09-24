@@ -13,7 +13,7 @@ async function sourceEntries(directory) {
     const absolute = path.join(directory, item.name);
     if (item.isDirectory()) {
       entries.push(...(await sourceEntries(absolute)));
-    } else if (item.name.endsWith(".ts") && !item.name.endsWith(".test.ts")) {
+    } else if (item.name.endsWith(".ts")) {
       entries.push(absolute);
     }
   }
@@ -32,7 +32,7 @@ await build({
   entryNames: "[dir]/[name]",
   format: "esm",
   platform: "node",
-  target: "node18",
+  target: "node22",
   packages: "external",
   sourcemap: true,
   logLevel: "info",

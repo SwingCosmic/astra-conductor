@@ -1,9 +1,22 @@
 import { app, BrowserWindow, session } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { CodexAdapter, CredentialVault, RefreshCoordinator } from "@llm-usage/core/internal";
+import { registerIpcHandlers, unregisterIpcHandlers } from "./ipc.js";
+import { ElectronSafeStorageCipher } from "./safe-storage-cipher.js";
+import { SqliteStorage } from "./sqlite-storage.js";
+import { runStorageSmoke } from "./storage-smoke.js";
 
 const devServer = process.env.LLM_USAGE_DEV_SERVER;
 const smoke = process.env.LLM_USAGE_SMOKE === "1";
+const storageSmoke = process.env.LLM_USAGE_STORAGE_SMOKE === "1";
+const userDataOverride = process.env.LLM_USAGE_USER_DATA;
+let storage: SqliteStorage | null = null;
+
+if (userDataOverride) app.setPath("userData", path.resolve(userDataOverride));
+
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) app.quit();
 
 function appDir(): string {
   return path.dirname(fileURLToPath(import.meta.url));
@@ -66,11 +79,40 @@ async function createWindow(): Promise<void> {
   await win.loadFile(path.join(appDir(), "../renderer/index.html"));
 }
 
-app.whenReady().then(async () => {
-  if (!devServer) {
-    installProductionCsp();
-  }
-  await createWindow();
+if (hasSingleInstanceLock) {
+  app
+    .whenReady()
+    .then(async () => {
+      const databaseFile = path.join(app.getPath("userData"), "llm-usage.db");
+      if (storageSmoke) {
+        await runStorageSmoke(databaseFile);
+        console.log("LLM_USAGE_STORAGE_SMOKE_OK");
+        app.quit();
+        return;
+      }
+      storage = new SqliteStorage(databaseFile);
+      const vault = new CredentialVault(storage, new ElectronSafeStorageCipher());
+      const coordinator = new RefreshCoordinator(storage, vault, new CodexAdapter());
+      registerIpcHandlers(storage, coordinator);
+      if (!devServer) installProductionCsp();
+      await createWindow();
+    })
+    .catch(() => {
+      console.error("llm-usage startup failed");
+      app.exit(1);
+    });
+
+  app.on("second-instance", () => {
+    const window = BrowserWindow.getAllWindows()[0];
+    if (window?.isMinimized()) window.restore();
+    window?.focus();
+  });
+}
+
+app.on("before-quit", () => {
+  unregisterIpcHandlers();
+  storage?.close();
+  storage = null;
 });
 
 app.on("window-all-closed", () => {

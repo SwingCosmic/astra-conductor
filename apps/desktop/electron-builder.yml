@@ -2,6 +2,8 @@ appId: local.llm-usage.app
 productName: llm-usage
 asar: true
 npmRebuild: false
+asarUnpack:
+  - "**/*.node"
 directories:
   output: release
 files:

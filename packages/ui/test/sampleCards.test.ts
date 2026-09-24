@@ -1,8 +1,8 @@
 import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
-import App from "./App.vue";
-import QuotaCard from "./components/QuotaCard.vue";
-import { sampleCards } from "./fixtures/sampleCards";
+import App from "../src/App.vue";
+import QuotaCard from "../src/components/QuotaCard.vue";
+import { sampleCards } from "../src/fixtures/sampleCards";
 
 function card(id: string) {
   const found = sampleCards.find((item) => item.id === id);

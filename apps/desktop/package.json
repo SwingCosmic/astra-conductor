@@ -10,9 +10,15 @@
     "build": "pnpm run build:main && node ./scripts/copy-renderer.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "package": "electron-builder --win nsis --publish never"
+    "package": "node ./scripts/package.mjs"
+  },
+  "dependencies": {
+    "@llm-usage/core": "workspace:*",
+    "better-sqlite3": "catalog:"
   },
   "devDependencies": {
+    "@electron/rebuild": "catalog:",
+    "@types/better-sqlite3": "catalog:",
     "@types/node": "catalog:",
     "electron": "catalog:",
     "electron-builder": "catalog:",

@@ -18,8 +18,8 @@
 | 固定提交   | `3ee283bb944d6d62cc219f74317d5186942e1780`                    |
 | 输出目录   | `packages/core/src/vendor/omniroute`                          |
 | 差异目录   | `packages/core/src/vendor/omniroute/.diff/<source-path>.diff` |
-| 特征测试   | `packages/core/src/omniroute-vendor.test.ts`                  |
-| Codex 测试 | `packages/core/src/omniroute-codex-auth.test.ts`              |
+| 特征测试   | `packages/core/test/omniroute-vendor.test.ts`                 |
+| Codex 测试 | `packages/core/test/omniroute-codex-auth.test.ts`             |
 
 vendor 内部使用两个明确的路径别名：
 

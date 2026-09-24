@@ -16,22 +16,22 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   CODEX_SPARK_DISPLAY_NAME,
   CODEX_SPARK_QUOTA_SESSION,
-} from "./vendor/omniroute/open-sse/config/codexQuotaScopes.ts";
-import { buildCodexUsageQuotas } from "./vendor/omniroute/open-sse/services/codexUsageQuotas.ts";
+} from "../src/vendor/omniroute/open-sse/config/codexQuotaScopes.ts";
+import { buildCodexUsageQuotas } from "../src/vendor/omniroute/open-sse/services/codexUsageQuotas.ts";
 import {
   formatQuotaUsageReason,
   formatQuotaWindowLabel,
-} from "./vendor/omniroute/open-sse/services/quotaWindowLabel.ts";
+} from "../src/vendor/omniroute/open-sse/services/quotaWindowLabel.ts";
 import {
   createQuotaFromUsage,
   parseResetTime,
-} from "./vendor/omniroute/open-sse/services/usage/quota.ts";
+} from "../src/vendor/omniroute/open-sse/services/usage/quota.ts";
 import {
   decodePublicCred,
   encodePublicCred,
   type EmbeddedDefaultKey,
   resolvePublicCred,
-} from "./vendor/omniroute/open-sse/utils/publicCreds.ts";
+} from "../src/vendor/omniroute/open-sse/utils/publicCreds.ts";
 
 describe("vendored quota primitives", () => {
   it("normalizes reset timestamps and clamps used values", () => {
