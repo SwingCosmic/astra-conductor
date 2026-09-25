@@ -19,15 +19,35 @@ export function toPublicUsage(snapshot: UsageSnapshot): PublicUsageDto {
   const value = structuredClone(snapshot) as UsageSnapshot & {
     quotas?: UsageSnapshot["groups"][number]["quotas"];
     resetCredits?: number;
+    overallRemainingPercentage?: number | null;
   };
   if (!Array.isArray(value.groups)) {
-    value.groups = [{ key: "default", title: null, quotas: value.quotas ?? [] }];
+    value.groups = [{ key: "default", displayName: null, quotas: value.quotas ?? [] }];
   }
+  value.groups = value.groups.map((group) => {
+    const legacyGroup = group as typeof group & { title?: string | null };
+    return {
+      key: group.key,
+      displayName: group.displayName ?? legacyGroup.title ?? null,
+      quotas: group.quotas.map((quota) => {
+        const legacyQuota = quota as typeof quota & { title?: string };
+        return {
+          ...quota,
+          displayName: quota.displayName ?? legacyQuota.title ?? null,
+          windowSeconds: quota.windowSeconds ?? null,
+        };
+      }),
+    };
+  });
   if (!Array.isArray(value.extras)) {
     value.extras =
       typeof value.resetCredits === "number"
-        ? [{ key: "reset-credits", label: "Reset credits", value: String(value.resetCredits) }]
+        ? [{ key: "reset-credits", value: String(value.resetCredits) }]
         : [];
+  }
+  value.extras = value.extras.map(({ key, value: extraValue }) => ({ key, value: extraValue }));
+  if (value.overallRemainingPercentage === undefined) {
+    value.overallRemainingPercentage = value.groups[0]?.quotas[0]?.remainingPercentage ?? null;
   }
   delete value.quotas;
   delete value.resetCredits;

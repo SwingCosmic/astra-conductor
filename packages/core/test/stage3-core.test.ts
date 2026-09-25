@@ -224,7 +224,7 @@ describe("stage 3 core boundaries", () => {
     const coordinator = new RefreshCoordinator(
       storage,
       vault,
-      adapter,
+      [adapter],
       { now: () => now },
       {
         info: (message, context) => logs.push({ message, context }),
@@ -275,8 +275,54 @@ describe("stage 3 core boundaries", () => {
     );
     const result = await adapter.fetchUsage(account("labels"), envelope("labels"));
     expect(result.groups).toHaveLength(1);
-    expect(result.groups[0]).toMatchObject({ key: "default", title: null });
-    expect(result.groups[0]?.quotas.map((quota) => quota.title)).toEqual(["Weekly", "5-hour"]);
+    expect(result.groups[0]).toMatchObject({ key: "default", displayName: null });
+    expect(result.groups[0]?.quotas).toMatchObject([
+      { key: "session", displayName: "Weekly", windowSeconds: 604_800 },
+      { key: "weekly", displayName: "Session", windowSeconds: 18_000 },
+    ]);
+  });
+
+  it("dispatches refresh through the registered provider adapter", async () => {
+    const storage = new MemoryStorage();
+    const cipher = new FakeCipher();
+    const vault = new CredentialVault(storage, cipher, () => now);
+    const glmAccount: Account = {
+      ...account("glm-account"),
+      provider: "glm",
+      authMethod: "api-key",
+    };
+    const glmEnvelope: CredentialEnvelope = {
+      ...envelope(glmAccount.id),
+      provider: "glm",
+      authMethod: "api-key",
+      secrets: { apiKey: "glm-key" },
+    };
+    storage.accounts.save(glmAccount);
+    await vault.save(glmAccount, glmEnvelope);
+    const calls: string[] = [];
+    const coordinator = new RefreshCoordinator(storage, vault, [
+      {
+        provider: "glm",
+        refreshCredentials: async (_account, current) => {
+          calls.push("credentials");
+          return { envelope: current, changed: false };
+        },
+        fetchUsage: async (current) => {
+          calls.push("usage");
+          return {
+            accountId: current.id,
+            plan: "pro",
+            overallRemainingPercentage: 80,
+            groups: [],
+            extras: [],
+            fetchedAt: now.toISOString(),
+          };
+        },
+      },
+    ]);
+
+    await expect(coordinator.refresh(glmAccount.id)).resolves.toMatchObject({ status: "updated" });
+    expect(calls).toEqual(["credentials", "usage"]);
   });
 
   it("upgrades stored flat quota snapshots at the public boundary", () => {
@@ -288,8 +334,9 @@ describe("stage 3 core boundaries", () => {
       fetchedAt: now.toISOString(),
     } as unknown as Parameters<typeof toPublicUsage>[0];
     expect(toPublicUsage(legacy)).toMatchObject({
-      groups: [{ key: "default", title: null, quotas: [] }],
-      extras: [{ key: "reset-credits", label: "Reset credits", value: "2" }],
+      overallRemainingPercentage: null,
+      groups: [{ key: "default", displayName: null, quotas: [] }],
+      extras: [{ key: "reset-credits", value: "2" }],
     });
   });
 

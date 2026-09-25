@@ -1,0 +1,188 @@
+<script setup lang="ts">
+import { computed, onBeforeUnmount, ref } from "vue";
+import type { AuthMethod, AuthStartResult, IpcResult, ProviderId, PublicAccount } from "../models";
+import type { ProviderPresentation } from "../presentation";
+
+const props = defineProps<{ provider: ProviderPresentation }>();
+const emit = defineEmits<{ close: []; connected: [account: PublicAccount] }>();
+const selected = ref<AuthMethod>(props.provider.authMethods[0]!.id);
+const pending = ref<Extract<AuthStartResult, { status: "pending" }> | null>(null);
+const busy = ref(false);
+const message = ref("");
+
+const selectedPresentation = computed(() =>
+  props.provider.authMethods.find((method) => method.id === selected.value),
+);
+
+function api() {
+  if (!window.llmUsage) throw new Error("桌面接口不可用，请从 Electron 应用启动");
+  return window.llmUsage;
+}
+
+function unwrap<T>(result: IpcResult<T>): T {
+  if (!result.ok) throw new Error(result.error.message);
+  return result.value;
+}
+
+async function finish(sessionId: string): Promise<void> {
+  try {
+    const account = unwrap(await api().finishAuth(sessionId));
+    pending.value = null;
+    emit("connected", account);
+  } catch (error) {
+    message.value = error instanceof Error ? error.message : "授权失败";
+    pending.value = null;
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function begin(): Promise<void> {
+  busy.value = true;
+  message.value = "";
+  try {
+    const result = unwrap(await api().startAuth(props.provider.id, selected.value));
+    if (result.status === "completed") {
+      emit("connected", result.account);
+      busy.value = false;
+      return;
+    }
+    pending.value = result;
+    if (result.interaction === "browser-callback") void finish(result.sessionId);
+    else busy.value = false;
+  } catch (error) {
+    message.value = error instanceof Error ? error.message : "无法启动授权";
+    busy.value = false;
+  }
+}
+
+function completeDevice(): void {
+  if (!pending.value || pending.value.interaction !== "device-code") return;
+  busy.value = true;
+  void finish(pending.value.sessionId);
+}
+
+function cancelPending(): void {
+  if (pending.value) void api().cancelAuth(pending.value.sessionId);
+  pending.value = null;
+}
+
+function close(): void {
+  cancelPending();
+  emit("close");
+}
+
+function select(method: AuthMethod): void {
+  if (method === selected.value) return;
+  cancelPending();
+  selected.value = method;
+  message.value = "";
+}
+
+onBeforeUnmount(cancelPending);
+</script>
+
+<template>
+  <div class="modal-backdrop" @click.self="close">
+    <section
+      class="auth-modal"
+      role="dialog"
+      aria-modal="true"
+      :aria-label="`添加 ${provider.name}`"
+    >
+      <header>
+        <div>
+          <h2>添加 {{ provider.name }}</h2>
+          <p>选择接入方式并按步骤完成验证</p>
+        </div>
+        <button class="icon-button" aria-label="关闭" @click="close">×</button>
+      </header>
+      <div class="auth-tabs" role="tablist">
+        <button
+          v-for="method in provider.authMethods"
+          :key="method.id"
+          :class="{ active: selected === method.id }"
+          :disabled="busy"
+          @click="select(method.id)"
+        >
+          {{ method.label }}
+        </button>
+      </div>
+      <p class="method-summary">{{ selectedPresentation?.summary }}</p>
+
+      <div v-if="selected === 'browser-oauth'" class="auth-steps">
+        <div class="auth-step active">
+          <span>1</span>
+          <div>
+            <strong>启动临时回调服务</strong>
+            <p>仅在本次授权期间监听本机回调。</p>
+          </div>
+        </div>
+        <div class="auth-step" :class="{ active: pending?.interaction === 'browser-callback' }">
+          <span>2</span>
+          <div>
+            <strong>在浏览器完成授权</strong>
+            <p>{{ pending ? "正在等待浏览器回调…" : "浏览器将打开服务商授权页面。" }}</p>
+          </div>
+        </div>
+        <div class="auth-step">
+          <span>3</span>
+          <div>
+            <strong>验证并保存账号</strong>
+            <p>回调通过后保存加密凭据和账号信息。</p>
+          </div>
+        </div>
+      </div>
+
+      <div v-else-if="selected === 'device-code'" class="auth-steps">
+        <div class="auth-step active">
+          <span>1</span>
+          <div>
+            <strong>获取设备码</strong>
+            <p>应用会打开服务商的设备验证页面。</p>
+          </div>
+        </div>
+        <template v-if="pending?.interaction === 'device-code'">
+          <div class="device-code">{{ pending.userCode }}</div>
+          <p class="verification-uri">{{ pending.verificationUri }}</p>
+        </template>
+        <div class="auth-step">
+          <span>2</span>
+          <div>
+            <strong>验证并保存账号</strong>
+            <p>在浏览器确认后，回到这里继续。</p>
+          </div>
+        </div>
+      </div>
+
+      <div v-else-if="selected === 'cli-import'" class="cli-import-panel">
+        <strong>检测本地 Codex CLI 凭据文件</strong>
+        <code>~/.codex/auth.json</code>
+        <p>只读取现有凭据并保存应用自己的加密副本，不修改 CLI 文件。</p>
+      </div>
+
+      <p v-if="message" class="form-message" role="alert">{{ message }}</p>
+      <footer>
+        <button @click="close">取消</button>
+        <button
+          v-if="selected === 'device-code' && pending?.interaction === 'device-code'"
+          class="primary-action"
+          :disabled="busy"
+          @click="completeDevice"
+        >
+          我已完成授权
+        </button>
+        <button v-else class="primary-action" :disabled="busy || Boolean(pending)" @click="begin">
+          {{
+            selected === "cli-import"
+              ? "检测并导入"
+              : selected === "device-code"
+                ? "获取设备码"
+                : "打开浏览器授权"
+          }}
+        </button>
+      </footer>
+      <p class="modal-note">关闭弹窗会取消本次授权，并停止临时服务。</p>
+    </section>
+  </div>
+</template>

@@ -118,6 +118,11 @@ async function createWindow(): Promise<void> {
     }
   });
 
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith("https://")) void shell.openExternal(url);
+    return { action: "deny" };
+  });
+
   win.webContents.on("did-finish-load", () => {
     if (smoke) {
       console.log("LLM_USAGE_SMOKE_OK");
@@ -188,18 +193,20 @@ if (hasSingleInstanceLock) {
       const fetchImpl: typeof fetch = (input, init) =>
         net.fetch(input instanceof URL ? input.toString() : input, init);
       const adapter = new CodexAdapter(fetchImpl);
-      const coordinator = new RefreshCoordinator(storage, vault, adapter);
+      const coordinator = new RefreshCoordinator(storage, vault, [adapter]);
       const provisioner = new CodexAccountProvisioner(storage, vault);
       auth = new CodexAuthService(adapter, provisioner, (url) => shell.openExternal(url));
       polling = new PollingService(storage, coordinator);
       if (codexCliSmoke) {
-        const account = await auth.importCli();
+        const authResult = await auth.start("codex", "cli-import");
+        if (authResult.status !== "completed") throw new Error("Codex CLI import did not complete");
+        const account = authResult.account;
         const outcome = await polling.refresh(account.id);
         if (outcome.status !== "updated") throw new Error("Codex CLI live refresh failed");
         console.log(
           `LLM_USAGE_CODEX_CLI_SMOKE_OK account=${account.maskedIdentifier} plan=${outcome.snapshot.plan} quotas=${outcome.snapshot.groups
             .flatMap((group) => group.quotas)
-            .map((quota) => quota.title)
+            .map((quota) => quota.key)
             .join(",")}`,
         );
         app.quit();

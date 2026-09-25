@@ -8,20 +8,49 @@ import {
   CodexAccountProvisioner,
   CodexAdapter,
   type Account,
+  type AuthMethod,
   type BrowserAuthorization,
   type DeviceAuthorization,
+  type ProviderId,
 } from "@llm-usage/core/internal";
 
+interface AuthCompletion {
+  account: Account | null;
+  error: unknown | null;
+}
+
+interface PendingBrowserAuthorization {
+  kind: "browser-callback";
+  provider: ProviderId;
+  method: "browser-oauth";
+  completion: Promise<AuthCompletion>;
+  controller: AbortController;
+}
+
 interface PendingDeviceAuthorization {
+  kind: "device-code";
+  provider: ProviderId;
+  method: "device-code";
   authorization: DeviceAuthorization;
   controller: AbortController;
 }
 
-export interface PublicDeviceAuthorization {
-  sessionId: string;
-  userCode: string;
-  verificationUri: string;
-}
+type PendingAuthorization = PendingBrowserAuthorization | PendingDeviceAuthorization;
+
+export type AuthStartResult =
+  | { status: "completed"; account: Account }
+  | {
+      status: "pending";
+      sessionId: string;
+      interaction: "browser-callback";
+    }
+  | {
+      status: "pending";
+      sessionId: string;
+      interaction: "device-code";
+      userCode: string;
+      verificationUri: string;
+    };
 
 function codexAuthPath(): string {
   const root = process.env.CODEX_HOME?.trim() || path.join(homedir(), ".codex");
@@ -34,13 +63,25 @@ function callbackPage(success: boolean): string {
 }
 
 export class CodexAuthService {
-  private readonly deviceSessions = new Map<string, PendingDeviceAuthorization>();
+  private readonly sessions = new Map<string, PendingAuthorization>();
 
   constructor(
     private readonly adapter: CodexAdapter,
     private readonly provisioner: CodexAccountProvisioner,
     private readonly openExternal: (url: string) => Promise<void>,
   ) {}
+
+  async start(provider: ProviderId, method: AuthMethod): Promise<AuthStartResult> {
+    if (provider !== "codex") {
+      throw new AppError("validation", `尚未实现服务商接入：${provider}`);
+    }
+    if (method === "cli-import") {
+      return { status: "completed", account: await this.importCli() };
+    }
+    if (method === "browser-oauth") return this.startBrowserLogin();
+    if (method === "device-code") return this.startDeviceLogin();
+    throw new AppError("validation", `Codex 不支持接入方式：${method}`);
+  }
 
   async importCli(): Promise<Account> {
     let raw: unknown;
@@ -54,33 +95,67 @@ export class CodexAuthService {
     return this.provisioner.save(this.adapter.fromCliAuth(raw));
   }
 
-  async browserLogin(): Promise<Account> {
+  private async startBrowserLogin(): Promise<AuthStartResult> {
     const authorization = this.adapter.createBrowserAuthorization();
-    const callback = this.waitForBrowserCallback(authorization);
-    await this.openExternal(authorization.url);
-    const code = await callback;
-    return this.provisioner.save(
-      await this.adapter.finishBrowserAuthorization(authorization, code),
-    );
+    const controller = new AbortController();
+    const sessionId = randomUUID();
+    const completion = this.waitForBrowserCallback(authorization, controller.signal)
+      .then((code) => this.adapter.finishBrowserAuthorization(authorization, code))
+      .then((result) => this.provisioner.save(result))
+      .then((account) => ({ account, error: null }))
+      .catch((error: unknown) => ({ account: null, error }));
+    this.sessions.set(sessionId, {
+      kind: "browser-callback",
+      provider: "codex",
+      method: "browser-oauth",
+      completion,
+      controller,
+    });
+    try {
+      await this.openExternal(authorization.url);
+    } catch (error) {
+      this.cancel(sessionId);
+      throw error;
+    }
+    return { status: "pending", sessionId, interaction: "browser-callback" };
   }
 
-  async startDeviceLogin(): Promise<PublicDeviceAuthorization> {
+  private async startDeviceLogin(): Promise<AuthStartResult> {
     const controller = new AbortController();
     const authorization = await this.adapter.requestDeviceAuthorization(controller.signal);
     const sessionId = randomUUID();
-    this.deviceSessions.set(sessionId, { authorization, controller });
-    await this.openExternal(authorization.verificationUri);
+    this.sessions.set(sessionId, {
+      kind: "device-code",
+      provider: "codex",
+      method: "device-code",
+      authorization,
+      controller,
+    });
+    try {
+      await this.openExternal(authorization.verificationUri);
+    } catch (error) {
+      this.cancel(sessionId);
+      throw error;
+    }
     return {
+      status: "pending",
       sessionId,
+      interaction: "device-code",
       userCode: authorization.userCode,
       verificationUri: authorization.verificationUri,
     };
   }
 
-  async finishDeviceLogin(sessionId: string): Promise<Account> {
-    const pending = this.deviceSessions.get(sessionId);
-    if (!pending) throw new AppError("validation", "设备授权会话不存在或已经结束");
+  async finish(sessionId: string): Promise<Account> {
+    const pending = this.sessions.get(sessionId);
+    if (!pending) throw new AppError("validation", "授权会话不存在或已经结束");
     try {
+      if (pending.kind === "browser-callback") {
+        const result = await pending.completion;
+        if (result.error) throw result.error;
+        if (!result.account) throw new AppError("authentication", "浏览器授权未完成");
+        return result.account;
+      }
       return await this.provisioner.save(
         await this.adapter.finishDeviceAuthorization(
           pending.authorization,
@@ -88,24 +163,46 @@ export class CodexAuthService {
         ),
       );
     } finally {
-      this.deviceSessions.delete(sessionId);
+      this.sessions.delete(sessionId);
     }
   }
 
-  cancelAll(): void {
-    for (const pending of this.deviceSessions.values()) pending.controller.abort();
-    this.deviceSessions.clear();
+  cancel(sessionId: string): void {
+    const pending = this.sessions.get(sessionId);
+    if (!pending) return;
+    pending.controller.abort();
+    this.sessions.delete(sessionId);
   }
 
-  private waitForBrowserCallback(authorization: BrowserAuthorization): Promise<string> {
+  cancelAll(): void {
+    for (const pending of this.sessions.values()) pending.controller.abort();
+    this.sessions.clear();
+  }
+
+  private waitForBrowserCallback(
+    authorization: BrowserAuthorization,
+    signal: AbortSignal,
+  ): Promise<string> {
     return new Promise((resolve, reject) => {
       let server: Server;
+      const close = (): void => {
+        clearTimeout(timeout);
+        server?.close();
+      };
       const timeout = setTimeout(
         () => {
-          server?.close();
+          close();
           reject(new AppError("authentication", "Codex 浏览器授权已超时"));
         },
         15 * 60 * 1000,
+      );
+      signal.addEventListener(
+        "abort",
+        () => {
+          close();
+          reject(new AppError("authentication", "授权已取消"));
+        },
+        { once: true },
       );
       server = createServer((request, response) => {
         const url = new URL(request.url ?? "/", authorization.redirectUri);
@@ -118,8 +215,7 @@ export class CodexAuthService {
         const success = Boolean(code && state === authorization.state);
         response.writeHead(success ? 200 : 400, { "Content-Type": "text/html; charset=utf-8" });
         response.end(callbackPage(success));
-        clearTimeout(timeout);
-        server.close();
+        close();
         if (!success) {
           reject(new AppError("authentication", "Codex 浏览器授权回调无效"));
           return;
@@ -127,7 +223,7 @@ export class CodexAuthService {
         resolve(code!);
       });
       server.once("error", (error) => {
-        clearTimeout(timeout);
+        close();
         reject(
           new AppError("network", "无法监听 Codex 授权回调端口 1455", false, { cause: error }),
         );

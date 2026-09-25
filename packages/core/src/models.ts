@@ -48,7 +48,8 @@ export interface EncryptedCredential {
 
 export interface UsageQuota {
   key: string;
-  title: string;
+  displayName: string | null;
+  windowSeconds: number | null;
   used: number;
   total: number;
   remaining: number | null;
@@ -59,19 +60,19 @@ export interface UsageQuota {
 
 export interface UsageQuotaGroup {
   key: string;
-  title: string | null;
+  displayName: string | null;
   quotas: UsageQuota[];
 }
 
 export interface UsageExtra {
   key: string;
-  label: string;
   value: string;
 }
 
 export interface UsageSnapshot {
   accountId: string;
   plan: string;
+  overallRemainingPercentage: number | null;
   groups: UsageQuotaGroup[];
   extras: UsageExtra[];
   fetchedAt: string;
@@ -107,7 +108,8 @@ export interface PublicUsageDto extends UsageSnapshot {}
 export interface NotificationCandidate {
   accountId: string;
   quotaKey: string;
-  title: string;
+  displayName: string | null;
+  windowSeconds: number | null;
   level: NotificationLevel;
   remainingPercentage: number;
   resetAt: string | null;

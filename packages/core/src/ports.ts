@@ -1,9 +1,11 @@
 import type {
   Account,
+  CredentialEnvelope,
   EncryptedCredential,
   NotificationState,
   SettingValue,
   UsageSnapshot,
+  ProviderId,
 } from "./models.js";
 
 export interface AccountRepository {
@@ -44,6 +46,21 @@ export interface StoragePort {
   readonly settings: SettingsRepository;
   transaction<T>(operation: () => T): T;
   close(): void;
+}
+
+export interface CredentialRefreshResult {
+  envelope: CredentialEnvelope;
+  changed: boolean;
+}
+
+export interface UsageProviderAdapter {
+  readonly provider: ProviderId;
+  refreshCredentials(
+    account: Account,
+    envelope: CredentialEnvelope,
+    force?: boolean,
+  ): Promise<CredentialRefreshResult>;
+  fetchUsage(account: Account, envelope: CredentialEnvelope): Promise<UsageSnapshot>;
 }
 
 export interface DecryptionResult {

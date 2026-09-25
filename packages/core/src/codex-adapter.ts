@@ -5,10 +5,17 @@ import type {
   AuthMethod,
   CredentialEnvelope,
   PublicMetadata,
+  ProviderId,
   UsageQuota,
   UsageSnapshot,
 } from "./models.js";
-import type { ClockPort, LoggerPort, StoragePort } from "./ports.js";
+import type {
+  ClockPort,
+  CredentialRefreshResult,
+  LoggerPort,
+  StoragePort,
+  UsageProviderAdapter,
+} from "./ports.js";
 import { CredentialVault } from "./credential-vault.js";
 import { getCodexUsage } from "@omniroute/open-sse/services/usage/codex.ts";
 import { refreshCodexToken } from "@omniroute/open-sse/services/tokenRefresh/providers/codex.ts";
@@ -42,11 +49,6 @@ export interface BrowserAuthorization {
   redirectUri: string;
 }
 
-export interface CredentialRefreshResult {
-  envelope: CredentialEnvelope;
-  changed: boolean;
-}
-
 export interface DeviceAuthorization {
   deviceAuthId: string;
   userCode: string;
@@ -73,19 +75,6 @@ function buildStableIdentity(
   return `${workspaceId ?? "personal"}:${userId ?? email.toLowerCase()}`;
 }
 
-function quotaTitle(key: string, quota: JsonRecord): string {
-  const base = key.includes("weekly")
-    ? "Weekly"
-    : key.includes("session")
-      ? "5-hour"
-      : key.replaceAll("_", " ");
-  const displayName = stringValue(quota.displayName);
-  if (!displayName) return base;
-  if (/^session$/i.test(displayName)) return "5-hour";
-  if (/weekly|monthly|5[- ]?hour|session/i.test(displayName)) return displayName;
-  return `${displayName} ${base}`;
-}
-
 function normalizeQuotas(value: unknown): UsageQuota[] {
   if (!value || typeof value !== "object" || Array.isArray(value)) return [];
   return Object.entries(value as Record<string, JsonRecord>).map(([key, quota]) => {
@@ -94,7 +83,11 @@ function normalizeQuotas(value: unknown): UsageQuota[] {
     const remaining = typeof quota.remaining === "number" ? quota.remaining : null;
     return {
       key,
-      title: quotaTitle(key, quota),
+      displayName: stringValue(quota.displayName),
+      windowSeconds:
+        typeof quota.windowSeconds === "number" && Number.isFinite(quota.windowSeconds)
+          ? quota.windowSeconds
+          : null,
       used,
       total,
       remaining,
@@ -108,7 +101,8 @@ function normalizeQuotas(value: unknown): UsageQuota[] {
   });
 }
 
-export class CodexAdapter {
+export class CodexAdapter implements UsageProviderAdapter {
+  readonly provider: ProviderId = "codex";
   constructor(
     private readonly fetchImpl: typeof fetch = fetch,
     private readonly clock: ClockPort = { now: () => new Date() },
@@ -258,16 +252,17 @@ export class CodexAdapter {
         !authentication,
       );
     }
+    const quotas = normalizeQuotas(result.quotas);
     return {
       accountId: account.id,
       plan: result.plan,
-      groups: [{ key: "default", title: null, quotas: normalizeQuotas(result.quotas) }],
+      overallRemainingPercentage: quotas[0]?.remainingPercentage ?? null,
+      groups: [{ key: "default", displayName: null, quotas }],
       extras:
         typeof result.bankedResetCredits === "number"
           ? [
               {
                 key: "reset-credits",
-                label: "Reset credits",
                 value: String(result.bankedResetCredits),
               },
             ]

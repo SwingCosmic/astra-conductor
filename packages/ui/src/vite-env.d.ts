@@ -1,11 +1,13 @@
 /// <reference types="vite/client" />
 
 import type {
-  DeviceAuthorization,
+  AuthMethod,
+  AuthStartResult,
   IpcResult,
   PublicAccount,
   PublicUsage,
   Settings,
+  ProviderId,
 } from "./models";
 
 declare global {
@@ -16,10 +18,9 @@ declare global {
       setAccountEnabled(accountId: string, enabled: boolean): Promise<IpcResult<PublicAccount>>;
       deleteAccount(accountId: string): Promise<IpcResult<{ accountId: string }>>;
       refreshAccount(accountId: string): Promise<IpcResult<unknown>>;
-      importCodexCli(): Promise<IpcResult<PublicAccount>>;
-      loginCodexBrowser(): Promise<IpcResult<PublicAccount>>;
-      startCodexDevice(): Promise<IpcResult<DeviceAuthorization>>;
-      finishCodexDevice(sessionId: string): Promise<IpcResult<PublicAccount>>;
+      startAuth(provider: ProviderId, method: AuthMethod): Promise<IpcResult<AuthStartResult>>;
+      finishAuth(sessionId: string): Promise<IpcResult<PublicAccount>>;
+      cancelAuth(sessionId: string): Promise<IpcResult<{ sessionId: string }>>;
       getSettings(): Promise<IpcResult<Settings>>;
       saveSettings(settings: Settings): Promise<IpcResult<Settings>>;
       getProxy(): Promise<IpcResult<string>>;

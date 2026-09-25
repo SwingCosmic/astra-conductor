@@ -23,6 +23,8 @@ describe("desktop shell", () => {
     expect(mainSource).toContain('mode: "system"');
     expect(mainSource).toContain('mode: "fixed_servers"');
     expect(mainSource).toContain("resolveProxy");
+    expect(mainSource).toContain("setWindowOpenHandler");
+    expect(mainSource).toContain('url.startsWith("https://")');
     expect(mainSource).toContain("LLM_USAGE_RESET_DATA_OK");
     expect(mainSource).toContain("`${databaseFile}-wal`");
     expect(mainSource).toContain('"lib", "better-sqlite3", "better_sqlite3.node"');
@@ -38,7 +40,8 @@ describe("desktop shell", () => {
       path.join(path.dirname(fileURLToPath(import.meta.url)), "../src/preload.cjs"),
       "utf8",
     );
-    expect(preloadSource).toContain("importCodexCli");
+    expect(preloadSource).toContain("startAuth");
+    expect(preloadSource).toContain("cancelAuth");
     expect(preloadSource).not.toMatch(/accessToken|refreshToken|idToken|safeStorage/);
   });
 });

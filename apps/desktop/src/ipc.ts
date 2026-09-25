@@ -5,6 +5,10 @@ import {
   toPublicError,
   toPublicUsage,
   type StoragePort,
+  authMethods,
+  providerIds,
+  type AuthMethod,
+  type ProviderId,
 } from "@llm-usage/core/internal";
 import type { CodexAuthService } from "./auth-service.js";
 import type { PollingService } from "./polling-service.js";
@@ -15,10 +19,9 @@ export const ipcChannels = {
   setAccountEnabled: "accounts:set-enabled",
   deleteAccount: "accounts:delete",
   refreshAccount: "usage:refresh",
-  importCodexCli: "auth:codex-cli",
-  browserCodex: "auth:codex-browser",
-  startCodexDevice: "auth:codex-device-start",
-  finishCodexDevice: "auth:codex-device-finish",
+  startAuth: "auth:start",
+  finishAuth: "auth:finish",
+  cancelAuth: "auth:cancel",
   getSettings: "settings:get",
   saveSettings: "settings:save",
   getProxy: "system:proxy",
@@ -39,6 +42,20 @@ function accountId(value: unknown): string {
     throw new AppError("validation", "Invalid account identifier");
   }
   return value;
+}
+
+function authStartInput(value: unknown): { provider: ProviderId; method: AuthMethod } {
+  if (!value || typeof value !== "object") {
+    throw new AppError("validation", "Invalid authorization request");
+  }
+  const input = value as { provider?: unknown; method?: unknown };
+  if (!providerIds.includes(input.provider as ProviderId)) {
+    throw new AppError("validation", "Invalid provider identifier");
+  }
+  if (!authMethods.includes(input.method as AuthMethod)) {
+    throw new AppError("validation", "Invalid authorization method");
+  }
+  return { provider: input.provider as ProviderId, method: input.method as AuthMethod };
 }
 
 function response<T>(operation: () => T | Promise<T>): Promise<IpcSuccess<T> | IpcFailure> {
@@ -91,15 +108,24 @@ export function registerIpcHandlers(
   ipcMain.handle(ipcChannels.refreshAccount, (_event, input: unknown) =>
     response(() => polling.refresh(accountId(input))),
   );
-  ipcMain.handle(ipcChannels.importCodexCli, () =>
-    response(async () => toPublicAccount(await auth.importCli())),
+  ipcMain.handle(ipcChannels.startAuth, (_event, input: unknown) =>
+    response(async () => {
+      const request = authStartInput(input);
+      const result = await auth.start(request.provider, request.method);
+      return result.status === "completed"
+        ? { ...result, account: toPublicAccount(result.account) }
+        : result;
+    }),
   );
-  ipcMain.handle(ipcChannels.browserCodex, () =>
-    response(async () => toPublicAccount(await auth.browserLogin())),
+  ipcMain.handle(ipcChannels.finishAuth, (_event, input: unknown) =>
+    response(async () => toPublicAccount(await auth.finish(accountId(input)))),
   );
-  ipcMain.handle(ipcChannels.startCodexDevice, () => response(() => auth.startDeviceLogin()));
-  ipcMain.handle(ipcChannels.finishCodexDevice, (_event, input: unknown) =>
-    response(async () => toPublicAccount(await auth.finishDeviceLogin(accountId(input)))),
+  ipcMain.handle(ipcChannels.cancelAuth, (_event, input: unknown) =>
+    response(() => {
+      const sessionId = accountId(input);
+      auth.cancel(sessionId);
+      return { sessionId };
+    }),
   );
   ipcMain.handle(ipcChannels.getSettings, () =>
     response(() => ({

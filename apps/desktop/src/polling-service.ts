@@ -54,7 +54,7 @@ export class PollingService {
     for (const candidate of outcome.notifications) {
       if (!shouldNotify(this.storage, candidate)) continue;
       new Notification({
-        title: `${account.displayName} · ${candidate.title}`,
+        title: account.displayName,
         body: `剩余额度 ${candidate.remainingPercentage.toFixed(0)}%`,
       }).show();
       this.storage.notifications.save({

@@ -2,8 +2,10 @@ import { mount } from "@vue/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "../src/App.vue";
 import QuotaCard from "../src/components/QuotaCard.vue";
+import type { PublicAccount } from "../src/models";
+import { planLabel, quotaLabel } from "../src/presentation";
 
-const account = {
+const account: PublicAccount = {
   id: "account-1",
   provider: "codex",
   authMethod: "cli-import",
@@ -22,7 +24,23 @@ afterEach(() => {
 });
 
 describe("desktop account UI", () => {
-  it("renders Codex quota data and account controls", () => {
+  it("maps provider display text only in the UI presentation catalog", () => {
+    expect(planLabel("codex", "prolite")).toBe("Pro 5x");
+    expect(
+      quotaLabel("codex", {
+        key: "session",
+        displayName: null,
+        windowSeconds: 18_000,
+        used: 10,
+        total: 100,
+        remaining: 90,
+        remainingPercentage: 90,
+        resetAt: null,
+        unlimited: false,
+      }),
+    ).toBe("5-hour");
+  });
+  it("renders Codex quota data and account controls", async () => {
     const wrapper = mount(QuotaCard, {
       props: {
         account,
@@ -30,14 +48,16 @@ describe("desktop account UI", () => {
         usage: {
           accountId: account.id,
           plan: "plus",
+          overallRemainingPercentage: 80,
           groups: [
             {
               key: "default",
-              title: null,
+              displayName: null,
               quotas: [
                 {
                   key: "session",
-                  title: "5-hour",
+                  displayName: null,
+                  windowSeconds: 18_000,
                   used: 20,
                   total: 100,
                   remaining: 80,
@@ -47,7 +67,8 @@ describe("desktop account UI", () => {
                 },
                 {
                   key: "weekly",
-                  title: "Weekly",
+                  displayName: null,
+                  windowSeconds: 604_800,
                   used: 90,
                   total: 100,
                   remaining: 10,
@@ -58,7 +79,7 @@ describe("desktop account UI", () => {
               ],
             },
           ],
-          extras: [{ key: "reset-credits", label: "Reset credits", value: "1" }],
+          extras: [{ key: "reset-credits", value: "1" }],
           fetchedAt: "2026-09-24T00:00:00.000Z",
         },
       },
@@ -66,7 +87,9 @@ describe("desktop account UI", () => {
     expect(wrapper.text()).toContain("5-hour");
     expect(wrapper.text()).toContain("Weekly");
     expect(wrapper.text()).toContain("Reset credits");
-    expect(wrapper.findAll("button")).toHaveLength(3);
+    expect(wrapper.find(".switch-field").exists()).toBe(true);
+    await wrapper.get(".extra-button").trigger("click");
+    expect(wrapper.text()).toContain("当前上游只返回可用总数");
   });
 
   it("renders provider-independent quota groups", () => {
@@ -77,14 +100,16 @@ describe("desktop account UI", () => {
         usage: {
           accountId: account.id,
           plan: "Starter",
+          overallRemainingPercentage: 75,
           groups: [
             {
               key: "gemini-models",
-              title: "Gemini Models",
+              displayName: "Gemini Models",
               quotas: [
                 {
                   key: "weekly",
-                  title: "Weekly Quota",
+                  displayName: "Weekly Quota",
+                  windowSeconds: 604_800,
                   used: 25,
                   total: 100,
                   remaining: 75,
@@ -103,7 +128,7 @@ describe("desktop account UI", () => {
     expect(wrapper.text()).toContain("Antigravity");
     expect(wrapper.text()).toContain("Gemini Models");
     expect(wrapper.text()).toContain("Weekly Quota");
-    expect(wrapper.text()).toContain("已用 25 / 100");
+    expect(wrapper.text()).toContain("75% 剩余");
   });
 
   it("loads accounts without exposing credentials to the renderer", async () => {
@@ -119,6 +144,11 @@ describe("desktop account UI", () => {
     const wrapper = mount(App);
     await vi.waitFor(() => expect(wrapper.text()).toContain("te***@example.test"));
     expect(wrapper.text()).not.toMatch(/accessToken|refreshToken|idToken/);
-    expect(wrapper.text()).toContain("当前代理：DIRECT");
+    const settingsButton = wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("设置"));
+    expect(settingsButton).toBeDefined();
+    await settingsButton!.trigger("click");
+    await vi.waitFor(() => expect(wrapper.text()).toContain("DIRECT"));
   });
 });

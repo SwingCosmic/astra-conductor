@@ -1,7 +1,10 @@
+export type ProviderId = "codex" | "glm" | "grok-build" | "antigravity";
+export type AuthMethod = "browser-oauth" | "device-code" | "cli-import" | "api-key";
+
 export interface PublicAccount {
   id: string;
-  provider: string;
-  authMethod: string;
+  provider: ProviderId;
+  authMethod: AuthMethod;
   displayName: string;
   maskedIdentifier: string;
   enabled: boolean;
@@ -13,7 +16,8 @@ export interface PublicAccount {
 
 export interface UsageQuota {
   key: string;
-  title: string;
+  displayName: string | null;
+  windowSeconds: number | null;
   used: number;
   total: number;
   remaining: number | null;
@@ -23,18 +27,18 @@ export interface UsageQuota {
 }
 export interface UsageQuotaGroup {
   key: string;
-  title: string | null;
+  displayName: string | null;
   quotas: UsageQuota[];
 }
 export interface UsageExtra {
   key: string;
-  label: string;
   value: string;
 }
 
 export interface PublicUsage {
   accountId: string;
   plan: string;
+  overallRemainingPercentage: number | null;
   groups: UsageQuotaGroup[];
   extras: UsageExtra[];
   fetchedAt: string;
@@ -50,8 +54,13 @@ export interface Settings {
   pollingEnabled: boolean;
   pollingIntervalMinutes: number;
 }
-export interface DeviceAuthorization {
-  sessionId: string;
-  userCode: string;
-  verificationUri: string;
-}
+export type AuthStartResult =
+  | { status: "completed"; account: PublicAccount }
+  | { status: "pending"; sessionId: string; interaction: "browser-callback" }
+  | {
+      status: "pending";
+      sessionId: string;
+      interaction: "device-code";
+      userCode: string;
+      verificationUri: string;
+    };
