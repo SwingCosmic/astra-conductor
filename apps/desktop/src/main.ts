@@ -43,6 +43,11 @@ function appDir(): string {
   return path.dirname(fileURLToPath(import.meta.url));
 }
 
+function sqliteNativeBindingPath(): string {
+  const root = app.isPackaged ? process.resourcesPath : app.getAppPath();
+  return path.join(root, "lib", "better-sqlite3", "better_sqlite3.node");
+}
+
 function installProductionCsp(): void {
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
@@ -172,13 +177,13 @@ if (hasSingleInstanceLock) {
         return;
       }
       if (storageSmoke) {
-        await runStorageSmoke(databaseFile);
+        await runStorageSmoke(databaseFile, sqliteNativeBindingPath());
         console.log("LLM_USAGE_STORAGE_SMOKE_OK");
         app.quit();
         return;
       }
       await configureNetworkProxy();
-      storage = new SqliteStorage(databaseFile);
+      storage = new SqliteStorage(databaseFile, { nativeBinding: sqliteNativeBindingPath() });
       const vault = new CredentialVault(storage, new ElectronSafeStorageCipher());
       const fetchImpl: typeof fetch = (input, init) =>
         net.fetch(input instanceof URL ? input.toString() : input, init);

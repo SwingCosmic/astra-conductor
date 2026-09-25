@@ -270,7 +270,7 @@ SQLite 中按职责保存以下逻辑记录；具体列名和索引在迁移实�
 - IPC、日志、通知候选和数据库非加密字段均不含凭证，渲染进程不能访问数据库或解密端口；
 - 多账号启停、刷新、错误隔离和旋转凭证持久化已由假服务验证。
 
-**验收结果：** 全工作区格式、类型检查、测试和构建通过；Core、UI、Desktop 共 34 项测试通过。NSIS 打包时成功为 Electron 42.11.6 重建 `better-sqlite3`，打包后的 Electron 进程完成 `safeStorage` 加密、SQLite 建库、关闭重开、解密及数据库明文扫描，退出码为 0。
+**验收结果：** 全工作区格式、类型检查、测试和构建通过；Core、UI、Desktop 当前共 38 项测试通过。NSIS 打包后的 Electron 进程完成 `safeStorage` 加密、SQLite 建库、关闭重开、解密及数据库明文扫描，退出码为 0。后续已将 Electron ABI 二进制隔离到 `apps/desktop/lib/better-sqlite3`，生产构建自动预构建，开发环境按需手动准备，不再改写或恢复 workspace 中的 Node ABI。
 
 ### 阶段 4：桌面壳与静态界面
 

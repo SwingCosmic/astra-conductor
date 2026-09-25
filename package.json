@@ -13,6 +13,7 @@
     "test": "pnpm --filter @llm-usage/core test && pnpm --filter @llm-usage/ui test && pnpm --filter @llm-usage/desktop test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "native:prepare": "pnpm --filter @llm-usage/desktop native:prepare",
     "package": "pnpm build && pnpm --filter @llm-usage/desktop package",
     "data:reset": "pnpm --filter @llm-usage/desktop build:main && pnpm --filter @llm-usage/desktop data:reset",
     "test:codex-cli": "pnpm --filter @llm-usage/core build && pnpm --filter @llm-usage/desktop build:main && pnpm --filter @llm-usage/desktop test:codex-cli"

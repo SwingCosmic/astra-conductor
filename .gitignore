@@ -4,6 +4,7 @@ out/
 release/
 coverage/
 apps/desktop/renderer/
+apps/desktop/lib/
 *.log
 .env
 .env.*

@@ -31,9 +31,9 @@ function assertNoPlaintext(filename: string): void {
   }
 }
 
-export async function runStorageSmoke(filename: string): Promise<void> {
+export async function runStorageSmoke(filename: string, nativeBinding: string): Promise<void> {
   const cipher = new ElectronSafeStorageCipher();
-  const first = new SqliteStorage(filename);
+  const first = new SqliteStorage(filename, { nativeBinding });
   const account = smokeAccount();
   first.accounts.save(account);
   const firstVault = new CredentialVault(first, cipher);
@@ -48,7 +48,7 @@ export async function runStorageSmoke(filename: string): Promise<void> {
   first.close();
   assertNoPlaintext(filename);
 
-  const reopened = new SqliteStorage(filename);
+  const reopened = new SqliteStorage(filename, { nativeBinding });
   const loaded = await new CredentialVault(reopened, cipher).load(account.id);
   if (loaded.secrets.accessToken !== testSecret) throw new Error("credential round trip failed");
   reopened.close();

@@ -38,6 +38,7 @@ $env:ELECTRON_BUILDER_BINARIES_MIRROR = "https://npmmirror.com/mirrors/electron-
 
 ```bash
 pnpm install
+pnpm native:prepare
 pnpm dev
 pnpm test
 pnpm typecheck
@@ -47,6 +48,10 @@ pnpm test:codex-cli
 pnpm data:reset
 ```
 
+- `pnpm native:prepare` 在隔离的临时目录中为当前 Electron、平台和架构构建
+  `apps/desktop/lib/better-sqlite3/better_sqlite3.node`。首次开发前或 Electron、Node、
+  `better-sqlite3`、平台、架构变化后手动执行；普通开发启动不重复检查。生产 `build` 会通过
+  Desktop 的 `prebuild` 自动重新生成。
 - `pnpm dev` 打开桌面窗口，可只读导入 Codex CLI 凭据，或启动浏览器 OAuth / 设备码授权。
 - `pnpm build` 依次构建 core、ui、desktop。desktop 会把 ui 的构建结果复制到 `apps/desktop/renderer`。
 - `pnpm package` 生成 Windows NSIS 安装包，应用内容打进 asar。产物在 `apps/desktop/release/`。
@@ -60,5 +65,7 @@ pnpm data:reset
 - `packages/ui` 只负责界面。它不访问上游，不读取凭证。
 - `apps/desktop` 负责窗口和系统能力，不写服务商协议。
 - 渲染进程关闭 Node 集成，开启上下文隔离和沙箱。预加载脚本只暴露账号、用量、认证和设置所需的受控 IPC，不暴露文件系统、数据库或解密能力。
-- 桌面运行时精确锁定 Electron 42.11.6。本地数据使用 SQLite + `better-sqlite3`，已启用 Electron 原生依赖重建并通过 Windows x64 安装包验证。
+- 桌面运行时精确锁定 Electron 42.11.6。本地数据使用 SQLite + `better-sqlite3`；Node ABI
+  保留在 workspace，Electron ABI 二进制独立生成到 `apps/desktop/lib/better-sqlite3`，运行时
+  通过 `nativeBinding` 显式加载。
 - 界面文案以设计说明第 6.5 节为准；套餐名保持上游原文，Codex 配额标题按真实窗口归一为 `5-hour`、`Weekly` 等稳定名称。

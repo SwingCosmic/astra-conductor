@@ -172,6 +172,8 @@ Codex 所需上游文件先由手工样板和逐文件 diff 确认，真实闭�
 
 数据使用 SQLite 保存，数据库位于 Electron `app.getPath("userData")` 下。Node.js 驱动选用 `better-sqlite3`，只由桌面主进程持有连接；Core 依赖存储端口，渲染进程不直接访问数据库。首版保存账号、加密凭证、最近用量、通知状态、设置和迁移记录，不保留历史用量曲线。查询使用参数化 SQL，模式演进使用仓库内显式迁移，不引入 ORM。
 
+Node 与 Electron 使用彼此隔离的原生二进制。workspace 中的 `better-sqlite3` 始终保持 Node ABI；Electron ABI 在隔离的临时目录中构建后固定输出到 `apps/desktop/lib/better-sqlite3`，不修改 pnpm 依赖目录。首次开发或相关运行时发生变化后手动执行 `pnpm native:prepare`；生产构建通过 Desktop 的 `prebuild` 自动重新生成。主进程在开发时从应用目录、打包后从 `process.resourcesPath` 解析同一相对路径，并通过 `nativeBinding` 显式加载；安装包不携带依赖目录中面向 Node 的默认二进制。
+
 授权材料按账号使用 Electron `safeStorage` 加密后以 SQLite `BLOB` 保存，不采用 SQLCipher 整库加密。密文包含版本和账号归属信息；access token、refresh token、id token、API Key 及其他认证秘密不得进入明文字段。若安全存储不可用，应用拒绝新增、导入、刷新或改写凭证，并保留已有密文。该方案提供与本机用户绑定的静态保护，不承诺抵御同一登录用户权限下的恶意进程，也不提供跨机器凭证迁移。渲染进程、通知和日志只能接收打码后的账号信息。
 
 ## 7. 安全与可观测性
@@ -198,7 +200,7 @@ Codex 所需上游文件先由手工样板和逐文件 diff 确认，真实闭�
 | 用量获取 | 直接调用抽取后的 TypeScript 模块                  | 官方 CLI 接口不统一，进程调用易受版本变化影响    |
 | 运行边界 | Core、UI、Desktop 分层                            | 便于测试、打包和控制凭证暴露                     |
 | 桌面运行时 | Electron 42.11.6；构建 Node 不低于 22.12         | 固定已完成高危修复的补丁版本，同时保留明确升级点 |
-| 本地数据 | SQLite + `better-sqlite3` 12.11.1；凭证逐账号加密 | 事务边界清晰；非敏感数据可查询；不引入整库加密   |
+| 本地数据 | SQLite + `better-sqlite3` 12.11.1；凭证逐账号加密 | 事务边界清晰；Node/Electron ABI 隔离；不引入整库加密 |
 
 其他候选方案不再逐项展开。读取 OmniRoute 本地接口可用于开发对照，CodexBar 可用于通知交互参考，但二者都不是产品运行依赖。
 
@@ -206,7 +208,7 @@ Codex 所需上游文件先由手工样板和逐文件 diff 确认，真实闭�
 
 以下问题不阻塞开始实施，但在相关阶段结束前需要给出结论：
 
-- `better-sqlite3` 12.11.1 已通过 `@electron/rebuild` 强制重建，并在 Electron 42.11.6、Windows x64、asar 和 NSIS 安装包中完成加载、建库和重开验证；打包脚本会恢复开发环境的 Node ABI，升级 Electron、Node、驱动或 electron-builder 时必须重复该门槛；
+- `better-sqlite3` 12.11.1 已在 Electron 42.11.6、Windows x64、asar 和 NSIS 安装包中完成加载、建库和重开验证；Electron 二进制现已与 workspace 的 Node ABI 隔离，升级 Electron、Node、驱动、平台、架构或 electron-builder 时必须重新执行预构建并重复安装包验证；
 - Electron 42 将于 2026-10-20 停止上游支持；首次发布前重新检查安全公告并确定后续升级基线；
 - Antigravity 与 OmniRoute 数据库耦合的最小拆分方式；
 - GLM 是否能够安全地从 zcode 配置中只读发现凭证；

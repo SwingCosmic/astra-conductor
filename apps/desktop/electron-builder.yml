@@ -2,14 +2,16 @@ appId: local.llm-usage.app
 productName: llm-usage
 asar: true
 npmRebuild: false
-asarUnpack:
-  - "**/*.node"
 directories:
   output: release
 files:
   - package.json
   - dist/**
   - renderer/**
+  - "!node_modules/better-sqlite3/build/**"
+extraResources:
+  - from: lib/better-sqlite3
+    to: lib/better-sqlite3
 win:
   target:
     - target: nsis

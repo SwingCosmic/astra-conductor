@@ -73,14 +73,21 @@ function toAccount(row: AccountRow): Account {
   };
 }
 
+export interface SqliteStorageOptions {
+  nativeBinding?: string;
+}
+
 export class SqliteStorage implements StoragePort {
   private readonly database: Database.Database;
   private closed = false;
 
-  constructor(readonly filename: string) {
+  constructor(
+    readonly filename: string,
+    options: SqliteStorageOptions = {},
+  ) {
     if (filename !== ":memory:") mkdirSync(path.dirname(filename), { recursive: true });
     try {
-      this.database = new Database(filename);
+      this.database = new Database(filename, { nativeBinding: options.nativeBinding });
       this.database.pragma("foreign_keys = ON");
       this.database.pragma("busy_timeout = 2500");
       if (filename !== ":memory:") this.database.pragma("journal_mode = WAL");

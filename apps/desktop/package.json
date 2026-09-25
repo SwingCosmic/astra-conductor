@@ -6,6 +6,8 @@
   "type": "module",
   "main": "dist/main.js",
   "scripts": {
+    "native:prepare": "node ./scripts/prepare-native.mjs",
+    "prebuild": "pnpm run native:prepare",
     "build:main": "tsc -p tsconfig.build.json && node ./scripts/copy-preload.mjs",
     "dev:electron": "node ./scripts/run-electron-mode.mjs dev",
     "build": "pnpm run build:main && node ./scripts/copy-renderer.mjs",
