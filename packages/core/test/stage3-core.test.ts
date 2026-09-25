@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   AppError,
   CodexAccountProvisioner,
@@ -9,6 +9,7 @@ import {
   toPublicAccount,
   toPublicUsage,
   type Account,
+  type AuthMethod,
   type CredentialCipherPort,
   type CredentialEnvelope,
 } from "../src/internal.js";
@@ -54,11 +55,11 @@ class FakeCipher implements CredentialCipherPort {
   }
 }
 
-function account(id: string, enabled = true): Account {
+function account(id: string, enabled = true, authMethod: AuthMethod = "cli-import"): Account {
   return {
     id,
     provider: "codex",
-    authMethod: "cli-import",
+    authMethod,
     stableIdentity: `workspace:${id}`,
     displayName: `${id}@example.test`,
     maskedIdentifier: `${id.slice(0, 2)}***@example.test`,
@@ -70,12 +71,16 @@ function account(id: string, enabled = true): Account {
   };
 }
 
-function envelope(accountId: string, suffix = "old"): CredentialEnvelope {
+function envelope(
+  accountId: string,
+  suffix = "old",
+  authMethod: AuthMethod = "cli-import",
+): CredentialEnvelope {
   return {
     version: 1,
     accountId,
     provider: "codex",
-    authMethod: "cli-import",
+    authMethod,
     expiresAt: new Date(now.getTime() - 60_000).toISOString(),
     secrets: {
       accessToken: `access-${suffix}`,
@@ -253,6 +258,117 @@ describe("stage 3 core boundaries", () => {
     expect(JSON.stringify([firstOutcome, secondOutcome, logs])).not.toMatch(
       /access-new-first|refresh-new-first|access-new-second|refresh-new-second/,
     );
+  });
+
+  it("refreshes an expired OAuth token before requesting usage", async () => {
+    const storage = new MemoryStorage();
+    const cipher = new FakeCipher();
+    const vault = new CredentialVault(storage, cipher, () => now);
+    const oauthAccount = account("oauth-expired", true, "browser-oauth");
+    storage.accounts.save(oauthAccount);
+    await vault.save(oauthAccount, envelope(oauthAccount.id, "oauth-expired", "browser-oauth"));
+
+    const calls: string[] = [];
+    const adapter = new CodexAdapter(
+      async (input, init) => {
+        const url = String(input);
+        if (url.includes("/oauth/token")) {
+          calls.push("refresh");
+          return Response.json({
+            access_token: "access-oauth-new",
+            refresh_token: "refresh-oauth-new",
+            expires_in: 3600,
+          });
+        }
+        calls.push(new Headers(init?.headers).get("Authorization") ?? "");
+        return Response.json({
+          plan_type: "plus",
+          rate_limit: {
+            primary_window: { used_percent: 10, limit_window_seconds: 18_000 },
+          },
+        });
+      },
+      { now: () => now },
+    );
+    const coordinator = new RefreshCoordinator(storage, vault, [adapter], { now: () => now });
+
+    await expect(coordinator.refresh(oauthAccount.id)).resolves.toMatchObject({
+      status: "updated",
+    });
+    expect(calls).toEqual(["refresh", "Bearer access-oauth-new"]);
+    expect((await vault.load(oauthAccount.id)).secrets.refreshToken).toBe("refresh-oauth-new");
+  });
+
+  it("recovers from an OAuth usage 401 by forcing one token refresh", async () => {
+    const storage = new MemoryStorage();
+    const cipher = new FakeCipher();
+    const vault = new CredentialVault(storage, cipher, () => now);
+    const oauthAccount = account("oauth-retry", true, "browser-oauth");
+    const current = envelope(oauthAccount.id, "oauth-retry", "browser-oauth");
+    current.expiresAt = new Date(now.getTime() + 60 * 60_000).toISOString();
+    storage.accounts.save(oauthAccount);
+    await vault.save(oauthAccount, current);
+
+    const calls: string[] = [];
+    const adapter = new CodexAdapter(
+      async (input, init) => {
+        const url = String(input);
+        if (url.includes("/oauth/token")) {
+          calls.push("refresh");
+          return Response.json({
+            access_token: "access-retry-new",
+            refresh_token: "refresh-retry-new",
+            expires_in: 3600,
+          });
+        }
+        const authorization = new Headers(init?.headers).get("Authorization") ?? "";
+        calls.push(authorization);
+        if (authorization === "Bearer access-oauth-retry") {
+          return new Response("expired", { status: 401 });
+        }
+        return Response.json({
+          plan_type: "plus",
+          rate_limit: {
+            primary_window: { used_percent: 10, limit_window_seconds: 18_000 },
+          },
+        });
+      },
+      { now: () => now },
+    );
+    const coordinator = new RefreshCoordinator(storage, vault, [adapter], { now: () => now });
+
+    await expect(coordinator.refresh(oauthAccount.id)).resolves.toMatchObject({
+      status: "updated",
+    });
+    expect(calls).toEqual(["Bearer access-oauth-retry", "refresh", "Bearer access-retry-new"]);
+  });
+
+  it("forces and persists a manual OAuth credential refresh", async () => {
+    const storage = new MemoryStorage();
+    const cipher = new FakeCipher();
+    const vault = new CredentialVault(storage, cipher, () => now);
+    const oauthAccount = account("oauth-manual", true, "browser-oauth");
+    const current = envelope(oauthAccount.id, "oauth-manual", "browser-oauth");
+    current.expiresAt = new Date(now.getTime() + 60 * 60_000).toISOString();
+    storage.accounts.save(oauthAccount);
+    await vault.save(oauthAccount, current);
+    const fetchMock = vi.fn(async () =>
+      Response.json({
+        access_token: "access-manual-new",
+        refresh_token: "refresh-manual-new",
+        expires_in: 7200,
+      }),
+    );
+    const adapter = new CodexAdapter(fetchMock, { now: () => now });
+    const coordinator = new RefreshCoordinator(storage, vault, [adapter], { now: () => now });
+
+    await expect(coordinator.refreshCredentials(oauthAccount.id)).resolves.toEqual({
+      status: "updated",
+      accountId: oauthAccount.id,
+      tokenExpiresAt: new Date(now.getTime() + 120 * 60_000).toISOString(),
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect((await vault.load(oauthAccount.id)).secrets.refreshToken).toBe("refresh-manual-new");
   });
 
   it("uses duration-correct Codex window titles without duplicating labels", async () => {

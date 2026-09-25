@@ -138,7 +138,7 @@ vendor 只能包含上游协议实现及为脱离 OmniRoute 宿主而必需的�
 - 不依赖已有浏览器登录状态、Cookie、localStorage、浏览器配置目录、DOM 自动化或开发者工具抓取；
 - 能归一化为同一账号凭证模型，由本项目安全存储和刷新。
 
-界面可以为厂商指定首选方式，阶段验收也可以先跑一条完整闭环，但不能因此从 vendor 中删除其他稳定方式。当前范围是：Codex 保留浏览器 OAuth PKCE、自定义设备授权和官方 CLI `auth.json` 只读导入；GLM 保留 API Key；Grok Build 保留设备码、浏览器 OAuth PKCE 和完整 CLI `auth.json` 只读导入；Antigravity 保留 Google OAuth 授权码流程。
+界面可以为厂商指定首选方式，阶段验收也可以先跑一条完整闭环，但不能因此从 vendor 中删除其他稳定方式。当前范围是：Codex 保留浏览器 OAuth PKCE、自定义设备授权和官方 CLI `auth.json` 只读导入；GLM 保留 API Key，并按 ZCode 公开实现只读导入 v2 Individual Coding Plan API Key；Grok Build 保留设备码、浏览器 OAuth PKCE 和完整 CLI `auth.json` 只读导入；Antigravity 保留 Google OAuth 授权码流程。
 
 #### 2.6 拒绝范围
 
@@ -333,7 +333,7 @@ SQLite 中按职责保存以下逻辑记录；具体列名和索引在迁移实�
 
 按以下顺序逐家推进，每家独立评审和验收：
 
-1. **GLM：** 先验证 API Key、区域差异和配额归一化，作为最轻量的第二个适配器；
+1. **GLM：** 验证 Coding Plan API Key、ZCode v2 凭据只读导入、国内与国际区域、配额归一化和只读重置卡；核心共用适配器，UI 分为 BigModel Coding Plan 与 Z.ai Coding Plan；标准 API 不进入当前闭环；
 2. **Grok Build：** 同时保留并验证设备码、浏览器 OAuth PKCE、完整 CLI `auth.json` 导入，以及带主体信息的令牌刷新；设备码可以作为默认入口，但浏览器 OAuth 不能从抽取范围中省略；
 3. **Antigravity：** 保留 Google OAuth 授权码流程，最后处理身份请求头、项目标识和上游数据库耦合。
 
@@ -400,7 +400,7 @@ flowchart LR
 | 桌面体验     | 托盘、通知、回环认证、系统代理和静态卡片流程               |
 | Codex        | 首条真实端到端闭环，并确认手工样板最终形态                 |
 | 同步工具固化 | 从固定上游可复现生成已验证样板、来源清单与拒绝规则         |
-| GLM          | 区域化 API Key 服务接入                                    |
+| GLM          | 区域化 API Key 服务接入与 ZCode v2 凭据只读导入             |
 | Grok Build   | 设备码与特殊刷新流程接入                                   |
 | Antigravity  | 高耦合服务拆分与接入                                       |
 | 稳定性       | 调度、退避、通知去重、代理与诊断加固                       |

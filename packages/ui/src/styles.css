@@ -236,6 +236,11 @@ button:disabled {
   font-weight: 750;
   box-shadow: inset 0 0 0 1px #e2e8f0;
 }
+.provider-mark img {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+}
 .provider-identity {
   min-width: 0;
   flex: 1;
@@ -444,6 +449,10 @@ button:disabled {
   color: #64748b;
   font-size: 12px;
 }
+.provider-title .provider-description {
+  max-width: 420px;
+  line-height: 1.45;
+}
 .status-dot {
   display: inline-block;
   width: 8px;
@@ -475,7 +484,9 @@ button:disabled {
 }
 .provider-account-row {
   display: grid;
-  grid-template-columns: auto minmax(160px, 1fr) minmax(110px, auto) minmax(100px, auto) auto auto;
+  grid-template-columns:
+    auto minmax(190px, 1fr) minmax(110px, auto) minmax(100px, auto) auto auto
+    auto;
   gap: 12px;
   align-items: center;
   padding: 10px 13px;
@@ -491,6 +502,17 @@ button:disabled {
   place-items: center;
   border-radius: 50%;
   background: #f1f5f9;
+}
+.account-identity {
+  display: grid;
+  gap: 4px;
+}
+.token-expiry {
+  color: #64748b;
+  font-size: 11px;
+}
+.token-expiry.expired {
+  color: #dc2626;
 }
 .account-state {
   display: flex;
@@ -565,11 +587,6 @@ button:disabled {
   background: #eaf3ff;
   box-shadow: inset 0 0 0 1px #60a5fa;
 }
-.method-summary {
-  margin: 12px 0;
-  color: #64748b;
-  font-size: 12px;
-}
 .auth-steps {
   display: grid;
   gap: 12px;
@@ -637,17 +654,41 @@ button:disabled {
   margin: 0;
   color: #64748b;
 }
+.api-key-panel {
+  display: grid;
+  gap: 9px;
+  padding: 14px;
+  border-radius: 8px;
+  background: #f8fafc;
+  font-size: 12px;
+}
+.api-key-panel label {
+  font-weight: 650;
+}
+.api-key-panel input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 11px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  color: #172033;
+  background: white;
+  font: inherit;
+}
+.api-key-panel p {
+  margin: 0;
+  color: #64748b;
+}
+.api-key-panel a {
+  width: fit-content;
+  color: #0969e8;
+  text-decoration: none;
+}
 .auth-modal footer {
   display: flex;
   justify-content: flex-end;
   gap: 9px;
   margin-top: 18px;
-}
-.modal-note {
-  margin: 10px 0 0;
-  color: #8794aa;
-  font-size: 10px;
-  text-align: right;
 }
 .form-message {
   padding: 9px 11px;
@@ -678,6 +719,26 @@ button:disabled {
   margin: 5px 0 0;
   color: #718096;
   font-size: 12px;
+}
+.credit-items {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.credit-items li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  font-size: 12px;
+}
+.credit-items strong {
+  color: #52627b;
+  font-weight: 500;
 }
 .credit-summary {
   display: flex;

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import AppSidebar, { type PageId } from "./components/AppSidebar.vue";
 import type { IpcResult, PublicAccount, PublicUsage } from "./models";
 import ProvidersView from "./views/ProvidersView.vue";
@@ -11,6 +11,17 @@ const accounts = ref<PublicAccount[]>([]);
 const usage = ref<Record<string, PublicUsage | null>>({});
 const busy = ref<string | null>(null);
 const message = ref("");
+const GLOBAL_MESSAGE_DURATION_MS = 5_000;
+let messageTimer: ReturnType<typeof setTimeout> | null = null;
+
+watch(message, (value) => {
+  if (messageTimer) clearTimeout(messageTimer);
+  messageTimer = value
+    ? setTimeout(() => {
+        message.value = "";
+      }, GLOBAL_MESSAGE_DURATION_MS)
+    : null;
+});
 
 function api() {
   if (!window.llmUsage) throw new Error("桌面接口不可用，请从 Electron 应用启动");
@@ -43,10 +54,17 @@ async function run(label: string, operation: () => Promise<void>): Promise<void>
   }
 }
 
-function connected(): void {
+function connected(account: PublicAccount): void {
   void run("connected", async () => {
+    const outcome = unwrap(await api().refreshAccount(account.id)) as {
+      status?: string;
+      error?: { message: string };
+    };
     await load();
-    message.value = "账号已接入";
+    message.value =
+      outcome.status === "failed"
+        ? `账号已接入，但首次刷新失败：${outcome.error?.message ?? "未知错误"}`
+        : "账号已接入并刷新用量";
   });
 }
 
@@ -73,6 +91,20 @@ function refreshAll(): void {
   });
 }
 
+function refreshCredentials(account: PublicAccount): void {
+  void run(`credentials:${account.id}`, async () => {
+    const outcome = unwrap(await api().refreshCredentials(account.id)) as {
+      status?: string;
+      error?: { message: string };
+    };
+    if (outcome.status === "failed") {
+      throw new Error(outcome.error?.message ?? "令牌刷新失败");
+    }
+    await load();
+    message.value = outcome.status === "unchanged" ? "令牌仍然有效" : "令牌已刷新";
+  });
+}
+
 function toggle(account: PublicAccount): void {
   void run(`toggle:${account.id}`, async () => {
     unwrap(await api().setAccountEnabled(account.id, !account.enabled));
@@ -89,6 +121,9 @@ function remove(account: PublicAccount): void {
 }
 
 onMounted(() => void run("load", load));
+onBeforeUnmount(() => {
+  if (messageTimer) clearTimeout(messageTimer);
+});
 </script>
 
 <template>
@@ -110,6 +145,7 @@ onMounted(() => void run("load", load));
         :accounts="accounts"
         :busy="busy !== null"
         @connected="connected"
+        @refresh-credentials="refreshCredentials"
         @toggle="toggle"
         @remove="remove"
       />

@@ -82,10 +82,18 @@ describe("SqliteStorage", () => {
         "2026-09-24T00:00:00.000Z",
         "2026-09-24T00:00:00.000Z",
       );
+    legacy
+      .prepare(
+        `INSERT INTO notification_states (
+          account_id, quota_key, reset_at, level, last_notified_at
+        ) VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run("legacy", "default:session", null, "critical", "2026-09-24T00:00:00.000Z");
     legacy.close();
 
     const first = new SqliteStorage(filename);
     expect(first.accounts.get("legacy")?.credentialState).toBe("available");
+    expect(first.notifications.list("legacy")[0]?.deliveryConfirmed).toBe(false);
     first.close();
     const second = new SqliteStorage(filename);
     expect(second.accounts.list()).toHaveLength(1);
@@ -117,7 +125,9 @@ describe("SqliteStorage", () => {
       resetAt: null,
       level: "warning",
       lastNotifiedAt: saved.updatedAt,
+      deliveryConfirmed: true,
     });
+    expect(storage.notifications.list(saved.id)[0]?.deliveryConfirmed).toBe(true);
     expect(storage.snapshots.get(saved.id)?.plan).toBe("pro");
 
     expect(() =>

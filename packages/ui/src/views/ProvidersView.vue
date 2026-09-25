@@ -2,19 +2,25 @@
 import { computed, ref } from "vue";
 import AuthModal from "../components/AuthModal.vue";
 import type { PublicAccount } from "../models";
-import { authMethodLabel, providers, type ProviderPresentation } from "../presentation";
+import {
+  accountPresentationId,
+  authMethodLabel,
+  providers,
+  type ProviderPresentation,
+} from "../presentation";
 
 const props = defineProps<{ accounts: PublicAccount[]; busy: boolean }>();
 const emit = defineEmits<{
   connected: [account: PublicAccount];
+  refreshCredentials: [account: PublicAccount];
   toggle: [account: PublicAccount];
   remove: [account: PublicAccount];
 }>();
 const modalProvider = ref<ProviderPresentation | null>(null);
-const expanded = ref(new Set(["codex"]));
+const expanded = ref(new Set<string>(["codex"]));
 
 function providerAccounts(provider: ProviderPresentation): PublicAccount[] {
-  return props.accounts.filter((account) => account.provider === provider.id);
+  return props.accounts.filter((account) => accountPresentationId(account) === provider.id);
 }
 
 function toggleExpanded(provider: ProviderPresentation): void {
@@ -24,9 +30,30 @@ function toggleExpanded(provider: ProviderPresentation): void {
   expanded.value = next;
 }
 
-const connectedCount = computed(
-  () => new Set(props.accounts.map((account) => account.provider)).size,
-);
+function hasRefreshableToken(account: PublicAccount): boolean {
+  return (
+    account.provider === "codex" &&
+    (account.authMethod === "browser-oauth" || account.authMethod === "device-code")
+  );
+}
+
+function tokenExpiryLabel(value: string | null): string {
+  if (!value) return "未提供";
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return "未知";
+  return new Intl.DateTimeFormat("zh-CN", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(timestamp);
+}
+
+function isTokenExpired(value: string | null): boolean {
+  if (!value) return false;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && timestamp <= Date.now();
+}
+
+const connectedCount = computed(() => new Set(props.accounts.map(accountPresentationId)).size);
 </script>
 
 <template>
@@ -40,7 +67,10 @@ const connectedCount = computed(
     <div class="provider-list">
       <article v-for="provider in providers" :key="provider.id" class="provider-row">
         <div class="provider-summary">
-          <span class="provider-mark">{{ provider.mark }}</span>
+          <span class="provider-mark">
+            <img v-if="provider.icon" :src="provider.icon" alt="" />
+            <template v-else>{{ provider.mark }}</template>
+          </span>
           <div class="provider-title">
             <h2>{{ provider.name }}</h2>
             <p>
@@ -55,6 +85,7 @@ const connectedCount = computed(
                     : "即将支持"
               }}
             </p>
+            <p class="provider-description">{{ provider.description }}</p>
           </div>
           <div class="method-chips">
             <span v-for="method in provider.authMethods" :key="method.id">{{ method.label }}</span>
@@ -84,12 +115,31 @@ const connectedCount = computed(
             :key="account.id"
             class="provider-account-row"
           >
-            <span class="account-avatar">♙</span><strong>{{ account.maskedIdentifier }}</strong
-            ><span class="method-chip">{{ authMethodLabel(account.authMethod) }}</span
+            <span class="account-avatar">♙</span>
+            <div class="account-identity">
+              <strong>{{ account.maskedIdentifier }}</strong>
+              <span
+                v-if="hasRefreshableToken(account)"
+                class="token-expiry"
+                :class="{ expired: isTokenExpired(account.tokenExpiresAt) }"
+              >
+                令牌到期：{{ tokenExpiryLabel(account.tokenExpiresAt)
+                }}{{ isTokenExpired(account.tokenExpiresAt) ? "（已过期）" : "" }}
+              </span>
+            </div>
+            <span class="method-chip">{{
+              authMethodLabel(account.authMethod, account.provider)
+            }}</span
             ><span class="account-state"
               ><i :class="{ off: !account.enabled }" />{{
                 account.enabled ? "已启用" : "已停用"
               }}</span
+            ><button
+              v-if="hasRefreshableToken(account)"
+              :disabled="busy"
+              @click="emit('refreshCredentials', account)"
+            >
+              刷新令牌</button
             ><button :disabled="busy" @click="emit('toggle', account)">
               {{ account.enabled ? "停用" : "启用" }}</button
             ><button class="danger-text" :disabled="busy" @click="emit('remove', account)">

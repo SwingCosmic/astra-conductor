@@ -1,6 +1,7 @@
 import { ipcMain } from "electron";
 import {
   AppError,
+  CredentialVault,
   toPublicAccount,
   toPublicError,
   toPublicUsage,
@@ -8,9 +9,11 @@ import {
   authMethods,
   providerIds,
   type AuthMethod,
+  type Account,
+  type GlmRegion,
   type ProviderId,
 } from "@llm-usage/core/internal";
-import type { CodexAuthService } from "./auth-service.js";
+import type { AuthService, AuthStartOptions } from "./auth-service.js";
 import type { PollingService } from "./polling-service.js";
 
 export const ipcChannels = {
@@ -19,6 +22,7 @@ export const ipcChannels = {
   setAccountEnabled: "accounts:set-enabled",
   deleteAccount: "accounts:delete",
   refreshAccount: "usage:refresh",
+  refreshCredentials: "credentials:refresh",
   startAuth: "auth:start",
   finishAuth: "auth:finish",
   cancelAuth: "auth:cancel",
@@ -44,18 +48,44 @@ function accountId(value: unknown): string {
   return value;
 }
 
-function authStartInput(value: unknown): { provider: ProviderId; method: AuthMethod } {
+function authStartInput(value: unknown): {
+  provider: ProviderId;
+  method: AuthMethod;
+  options: AuthStartOptions;
+} {
   if (!value || typeof value !== "object") {
     throw new AppError("validation", "Invalid authorization request");
   }
-  const input = value as { provider?: unknown; method?: unknown };
+  const input = value as {
+    provider?: unknown;
+    method?: unknown;
+    region?: unknown;
+    apiKey?: unknown;
+  };
   if (!providerIds.includes(input.provider as ProviderId)) {
     throw new AppError("validation", "Invalid provider identifier");
   }
   if (!authMethods.includes(input.method as AuthMethod)) {
     throw new AppError("validation", "Invalid authorization method");
   }
-  return { provider: input.provider as ProviderId, method: input.method as AuthMethod };
+  const options: AuthStartOptions = {};
+  if (input.provider === "glm") {
+    if (input.region !== "china" && input.region !== "international") {
+      throw new AppError("validation", "Invalid GLM region");
+    }
+    options.region = input.region as GlmRegion;
+    if (input.method === "api-key") {
+      if (typeof input.apiKey !== "string" || !input.apiKey.trim() || input.apiKey.length > 4096) {
+        throw new AppError("validation", "Invalid GLM API Key");
+      }
+      options.apiKey = input.apiKey;
+    }
+  }
+  return {
+    provider: input.provider as ProviderId,
+    method: input.method as AuthMethod,
+    options,
+  };
 }
 
 function response<T>(operation: () => T | Promise<T>): Promise<IpcSuccess<T> | IpcFailure> {
@@ -65,15 +95,27 @@ function response<T>(operation: () => T | Promise<T>): Promise<IpcSuccess<T> | I
     .catch((error: unknown) => ({ ok: false as const, error: toPublicError(error) }));
 }
 
+async function publicAccount(account: Account, vault: CredentialVault) {
+  try {
+    const credentials = await vault.load(account.id);
+    return toPublicAccount(account, credentials.expiresAt);
+  } catch {
+    return toPublicAccount(account);
+  }
+}
+
 export function registerIpcHandlers(
   storage: StoragePort,
+  vault: CredentialVault,
   polling: PollingService,
-  auth: CodexAuthService,
+  auth: AuthService,
   resolveProxy: () => Promise<string>,
   now: () => Date = () => new Date(),
 ): void {
   ipcMain.handle(ipcChannels.listAccounts, () =>
-    response(() => storage.accounts.list().map(toPublicAccount)),
+    response(() =>
+      Promise.all(storage.accounts.list().map((account) => publicAccount(account, vault))),
+    ),
   );
   ipcMain.handle(ipcChannels.getUsage, (_event, input: unknown) =>
     response(() => {
@@ -84,7 +126,7 @@ export function registerIpcHandlers(
     }),
   );
   ipcMain.handle(ipcChannels.setAccountEnabled, (_event, input: unknown) =>
-    response(() => {
+    response(async () => {
       if (!input || typeof input !== "object") {
         throw new AppError("validation", "Invalid account update");
       }
@@ -94,7 +136,7 @@ export function registerIpcHandlers(
         throw new AppError("validation", "Invalid enabled state");
       }
       storage.accounts.setEnabled(id, value.enabled, now().toISOString());
-      return toPublicAccount(storage.accounts.get(id)!);
+      return publicAccount(storage.accounts.get(id)!, vault);
     }),
   );
   ipcMain.handle(ipcChannels.deleteAccount, (_event, input: unknown) =>
@@ -108,17 +150,20 @@ export function registerIpcHandlers(
   ipcMain.handle(ipcChannels.refreshAccount, (_event, input: unknown) =>
     response(() => polling.refresh(accountId(input))),
   );
+  ipcMain.handle(ipcChannels.refreshCredentials, (_event, input: unknown) =>
+    response(() => polling.refreshCredentials(accountId(input))),
+  );
   ipcMain.handle(ipcChannels.startAuth, (_event, input: unknown) =>
     response(async () => {
       const request = authStartInput(input);
-      const result = await auth.start(request.provider, request.method);
+      const result = await auth.start(request.provider, request.method, request.options);
       return result.status === "completed"
-        ? { ...result, account: toPublicAccount(result.account) }
+        ? { ...result, account: await publicAccount(result.account, vault) }
         : result;
     }),
   );
   ipcMain.handle(ipcChannels.finishAuth, (_event, input: unknown) =>
-    response(async () => toPublicAccount(await auth.finish(accountId(input)))),
+    response(async () => publicAccount(await auth.finish(accountId(input)), vault)),
   );
   ipcMain.handle(ipcChannels.cancelAuth, (_event, input: unknown) =>
     response(() => {

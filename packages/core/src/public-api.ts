@@ -1,6 +1,9 @@
 import type { Account, PublicAccountDto, PublicUsageDto, UsageSnapshot } from "./models.js";
 
-export function toPublicAccount(account: Account): PublicAccountDto {
+export function toPublicAccount(
+  account: Account,
+  tokenExpiresAt: string | null = null,
+): PublicAccountDto {
   return {
     id: account.id,
     provider: account.provider,
@@ -9,6 +12,7 @@ export function toPublicAccount(account: Account): PublicAccountDto {
     maskedIdentifier: account.maskedIdentifier,
     enabled: account.enabled,
     credentialState: account.credentialState,
+    tokenExpiresAt,
     publicMetadata: { ...account.publicMetadata },
     createdAt: account.createdAt,
     updatedAt: account.updatedAt,
@@ -45,7 +49,19 @@ export function toPublicUsage(snapshot: UsageSnapshot): PublicUsageDto {
         ? [{ key: "reset-credits", value: String(value.resetCredits) }]
         : [];
   }
-  value.extras = value.extras.map(({ key, value: extraValue }) => ({ key, value: extraValue }));
+  value.extras = value.extras.map(({ key, value: extraValue, items }) => ({
+    key,
+    value: extraValue,
+    ...(Array.isArray(items)
+      ? {
+          items: items.map((item) => ({
+            key: item.key,
+            kind: item.kind,
+            expiresAt: item.expiresAt ?? null,
+          })),
+        }
+      : {}),
+  }));
   if (value.overallRemainingPercentage === undefined) {
     value.overallRemainingPercentage = value.groups[0]?.quotas[0]?.remainingPercentage ?? null;
   }

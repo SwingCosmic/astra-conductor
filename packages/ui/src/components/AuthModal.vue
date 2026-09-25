@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from "vue";
-import type { AuthMethod, AuthStartResult, IpcResult, ProviderId, PublicAccount } from "../models";
+import { onBeforeUnmount, ref } from "vue";
+import type { AuthMethod, AuthStartResult, IpcResult, PublicAccount } from "../models";
 import type { ProviderPresentation } from "../presentation";
 
 const props = defineProps<{ provider: ProviderPresentation }>();
@@ -9,10 +9,7 @@ const selected = ref<AuthMethod>(props.provider.authMethods[0]!.id);
 const pending = ref<Extract<AuthStartResult, { status: "pending" }> | null>(null);
 const busy = ref(false);
 const message = ref("");
-
-const selectedPresentation = computed(() =>
-  props.provider.authMethods.find((method) => method.id === selected.value),
-);
+const apiKey = ref("");
 
 function api() {
   if (!window.llmUsage) throw new Error("桌面接口不可用，请从 Electron 应用启动");
@@ -41,7 +38,12 @@ async function begin(): Promise<void> {
   busy.value = true;
   message.value = "";
   try {
-    const result = unwrap(await api().startAuth(props.provider.id, selected.value));
+    const result = unwrap(
+      await api().startAuth(props.provider.provider, selected.value, {
+        ...(props.provider.region ? { region: props.provider.region } : {}),
+        ...(selected.value === "api-key" ? { apiKey: apiKey.value } : {}),
+      }),
+    );
     if (result.status === "completed") {
       emit("connected", result.account);
       busy.value = false;
@@ -108,8 +110,6 @@ onBeforeUnmount(cancelPending);
           {{ method.label }}
         </button>
       </div>
-      <p class="method-summary">{{ selectedPresentation?.summary }}</p>
-
       <div v-if="selected === 'browser-oauth'" class="auth-steps">
         <div class="auth-step active">
           <span>1</span>
@@ -156,9 +156,28 @@ onBeforeUnmount(cancelPending);
       </div>
 
       <div v-else-if="selected === 'cli-import'" class="cli-import-panel">
-        <strong>检测本地 Codex CLI 凭据文件</strong>
-        <code>~/.codex/auth.json</code>
+        <strong>检测本地 {{ provider.provider === "glm" ? "ZCode" : "Codex CLI" }} 凭据文件</strong>
+        <code>{{
+          provider.provider === "glm" ? "~/.zcode/v2/credentials.json" : "~/.codex/auth.json"
+        }}</code>
         <p>只读取现有凭据并保存应用自己的加密副本，不修改 CLI 文件。</p>
+      </div>
+
+      <div v-else-if="selected === 'api-key'" class="api-key-panel">
+        <label for="provider-api-key">Coding Plan API Key</label>
+        <input
+          id="provider-api-key"
+          v-model="apiKey"
+          type="password"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="输入服务商签发的 API Key"
+          :disabled="busy"
+        />
+        <p>应用会先验证配额接口，再通过系统安全存储保存加密副本。</p>
+        <a v-if="provider.websiteUrl" :href="provider.websiteUrl" target="_blank" rel="noreferrer"
+          >前往服务商管理页面</a
+        >
       </div>
 
       <p v-if="message" class="form-message" role="alert">{{ message }}</p>
@@ -172,17 +191,23 @@ onBeforeUnmount(cancelPending);
         >
           我已完成授权
         </button>
-        <button v-else class="primary-action" :disabled="busy || Boolean(pending)" @click="begin">
+        <button
+          v-else
+          class="primary-action"
+          :disabled="busy || Boolean(pending) || (selected === 'api-key' && !apiKey.trim())"
+          @click="begin"
+        >
           {{
-            selected === "cli-import"
-              ? "检测并导入"
-              : selected === "device-code"
-                ? "获取设备码"
-                : "打开浏览器授权"
+            selected === "api-key"
+              ? "验证并添加"
+              : selected === "cli-import"
+                ? "检测并导入"
+                : selected === "device-code"
+                  ? "获取设备码"
+                  : "打开浏览器授权"
           }}
         </button>
       </footer>
-      <p class="modal-note">关闭弹窗会取消本次授权，并停止临时服务。</p>
     </section>
   </div>
 </template>

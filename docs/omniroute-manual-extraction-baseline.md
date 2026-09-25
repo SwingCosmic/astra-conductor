@@ -20,6 +20,7 @@
 | 差异目录   | `packages/core/src/vendor/omniroute/.diff/<source-path>.diff` |
 | 特征测试   | `packages/core/test/omniroute-vendor.test.ts`                 |
 | Codex 测试 | `packages/core/test/omniroute-codex-auth.test.ts`             |
+| GLM 测试   | `packages/core/test/glm-adapter.test.ts`                       |
 
 vendor 内部使用两个明确的路径别名：
 
@@ -79,6 +80,16 @@ git -c core.safecrlf=false diff --no-index --ignore-space-at-eol --no-ext-diff -
 | `open-sse/services/tokenRefresh/providers/codex.ts` | 宿主依赖替换 | Codex 刷新请求、旋转 refresh token 和不可恢复错误分类 |
 
 这一范围只包含稳定授权与用量协议，不包含页面、数据库、桌面宿主或同步工具自身。
+
+### 3.3 GLM Coding Plan
+
+| 上游相对路径                                        | 处理方式           | 当前保留内容                                               |
+| --------------------------------------------------- | ------------------ | ---------------------------------------------------------- |
+| `open-sse/config/glmProvider.ts`                    | 声明裁剪           | 国内/国际配额与重置卡端点、区域选择、团队计划请求头        |
+| `open-sse/services/usage/glm.ts`                    | 声明裁剪、传输注入 | Coding Plan 配额请求及 `CREDIT_LIMIT`、Token、时间窗口解析 |
+| `open-sse/services/usage/glmResetCards.ts`          | 声明裁剪、传输注入 | 重置卡列表、信封校验、过期过滤和排序                       |
+
+GLM 的三份产物只保留 Coding Plan 的只读用量链路。国内与国际共用实现，通过 `apiRegion` 选择 `open.bigmodel.cn` 或 `api.z.ai`；标准按量 API 不进入该链路。重置卡文件不保留 `/use`、request ID、兑换请求体或其它消耗额度的声明。
 
 ## 4. 手工改动明细
 
@@ -156,6 +167,10 @@ git -c core.safecrlf=false diff --no-index --ignore-space-at-eol --no-ext-diff -
 
 为 `getCodexUsage` 增加 `fetchImpl: typeof fetch = fetch` 参数，并把内部请求改为调用该参数。默认行为仍使用全局 `fetch`，测试和阶段 3 适配器可以注入传输；请求 URL、工作区头、身份头和响应归一化保持不变。
 
+#### GLM 用量与重置卡
+
+`getGlmUsage` 与 `fetchGlmResetCardList` 增加可选 `fetchImpl`，由桌面宿主统一注入 Electron 网络传输。配额解析保留上游区域、窗口和额度语义；重置卡请求失败按不可用处理，不伪造空卡。上游卡片记录 ID 只在协议叶子内参与解析，不进入公开 DTO。
+
 #### `open-sse/services/tokenRefresh/providers/codex.ts`
 
 主要变化如下：
@@ -213,7 +228,7 @@ git -c core.safecrlf=false diff --no-index --ignore-space-at-eol --no-ext-diff -
 
 当前手工输出满足以下条件，自动化结果至少需要保持同等约束：
 
-- vendor 共有 21 个抽取产物，另有 21 个一一对应的 `.diff`；
+- vendor 共有 24 个抽取产物，另有 24 个一一对应的 `.diff`；
 - 不存在手工 manifest；机器清单只在阶段 6 随同步工具一起建立；
 - 不存在 `references/omniroute` 运行时导入、单个 `@/*` 或外部 `@omniroute/*` 依赖；
 - 浏览器 OAuth、设备授权、CLI 导入、换票、刷新和用量均有无网络特征测试；

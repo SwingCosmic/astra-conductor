@@ -7,6 +7,7 @@ import type {
   PublicAccount,
   PublicUsage,
   Settings,
+  GlmRegion,
   ProviderId,
 } from "./models";
 
@@ -18,7 +19,12 @@ declare global {
       setAccountEnabled(accountId: string, enabled: boolean): Promise<IpcResult<PublicAccount>>;
       deleteAccount(accountId: string): Promise<IpcResult<{ accountId: string }>>;
       refreshAccount(accountId: string): Promise<IpcResult<unknown>>;
-      startAuth(provider: ProviderId, method: AuthMethod): Promise<IpcResult<AuthStartResult>>;
+      refreshCredentials(accountId: string): Promise<IpcResult<unknown>>;
+      startAuth(
+        provider: ProviderId,
+        method: AuthMethod,
+        options?: { region?: GlmRegion; apiKey?: string },
+      ): Promise<IpcResult<AuthStartResult>>;
       finishAuth(sessionId: string): Promise<IpcResult<PublicAccount>>;
       cancelAuth(sessionId: string): Promise<IpcResult<{ sessionId: string }>>;
       getSettings(): Promise<IpcResult<Settings>>;

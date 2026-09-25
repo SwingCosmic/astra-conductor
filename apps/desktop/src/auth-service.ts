@@ -3,14 +3,18 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { readZCodeCodingPlanApiKey } from "./zcode-credentials.js";
 import {
   AppError,
   CodexAccountProvisioner,
   CodexAdapter,
+  GlmAccountProvisioner,
+  GlmAdapter,
   type Account,
   type AuthMethod,
   type BrowserAuthorization,
   type DeviceAuthorization,
+  type GlmRegion,
   type ProviderId,
 } from "@llm-usage/core/internal";
 
@@ -52,6 +56,11 @@ export type AuthStartResult =
       verificationUri: string;
     };
 
+export interface AuthStartOptions {
+  apiKey?: string;
+  region?: GlmRegion;
+}
+
 function codexAuthPath(): string {
   const root = process.env.CODEX_HOME?.trim() || path.join(homedir(), ".codex");
   return path.join(root, "auth.json");
@@ -62,16 +71,39 @@ function callbackPage(success: boolean): string {
   return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>${title}</title><body><h1>${title}</h1><p>可以关闭此窗口并返回 llm-usage。</p></body></html>`;
 }
 
-export class CodexAuthService {
+export class AuthService {
   private readonly sessions = new Map<string, PendingAuthorization>();
 
   constructor(
     private readonly adapter: CodexAdapter,
     private readonly provisioner: CodexAccountProvisioner,
     private readonly openExternal: (url: string) => Promise<void>,
+    private readonly glmAdapter?: GlmAdapter,
+    private readonly glmProvisioner?: GlmAccountProvisioner,
   ) {}
 
-  async start(provider: ProviderId, method: AuthMethod): Promise<AuthStartResult> {
+  async start(
+    provider: ProviderId,
+    method: AuthMethod,
+    options: AuthStartOptions = {},
+  ): Promise<AuthStartResult> {
+    if (provider === "glm") {
+      if (method !== "api-key" && method !== "cli-import") {
+        throw new AppError("validation", "GLM Coding Plan 仅支持 ZCode 导入或 API Key 接入");
+      }
+      if (!this.glmAdapter || !this.glmProvisioner) {
+        throw new AppError("validation", "GLM Coding Plan 接入尚未初始化");
+      }
+      if (options.region !== "china" && options.region !== "international") {
+        throw new AppError("validation", "请选择有效的 GLM 服务区域");
+      }
+      const apiKey =
+        method === "cli-import"
+          ? await readZCodeCodingPlanApiKey(options.region)
+          : (options.apiKey ?? "");
+      const provisioning = await this.glmAdapter.createProvisioning(apiKey, options.region, method);
+      return { status: "completed", account: await this.glmProvisioner.save(provisioning) };
+    }
     if (provider !== "codex") {
       throw new AppError("validation", `尚未实现服务商接入：${provider}`);
     }
@@ -232,3 +264,5 @@ export class CodexAuthService {
     });
   }
 }
+
+export { AuthService as CodexAuthService };

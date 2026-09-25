@@ -1,51 +1,71 @@
-import type { AuthMethod, ProviderId, UsageExtra, UsageQuota, UsageQuotaGroup } from "./models";
+import bigmodelIcon from "./assets/icon/bigmodel.svg";
+import gptIcon from "./assets/icon/gpt.png";
+import zaiIcon from "./assets/icon/zai.svg";
+import type {
+  AuthMethod,
+  GlmRegion,
+  ProviderId,
+  PublicAccount,
+  UsageExtra,
+  UsageQuota,
+  UsageQuotaGroup,
+} from "./models";
 
 export interface AuthMethodPresentation {
   id: AuthMethod;
   label: string;
-  summary: string;
 }
 
 export interface ProviderPresentation {
-  id: ProviderId;
+  id: string;
+  provider: ProviderId;
+  region?: GlmRegion;
   name: string;
+  description: string;
   mark: string;
+  icon?: string;
+  websiteUrl?: string;
   available: boolean;
   authMethods: AuthMethodPresentation[];
   planLabels: Record<string, string>;
   quotaLabels: Record<string, string>;
   groupLabels: Record<string, string>;
   extraLabels: Record<string, string>;
+  extraItemLabels: Record<string, string>;
 }
 
 const authMethods: Record<AuthMethod, AuthMethodPresentation> = {
   "browser-oauth": {
     id: "browser-oauth",
     label: "浏览器 OAuth",
-    summary: "在浏览器完成授权，应用通过临时本地回调接收结果。",
   },
   "device-code": {
     id: "device-code",
     label: "设备码",
-    summary: "复制设备码并在验证页面完成授权。",
   },
   "cli-import": {
     id: "cli-import",
     label: "Codex CLI",
-    summary: "只读导入本机 Codex CLI 凭据，不修改原文件。",
   },
   "api-key": {
     id: "api-key",
     label: "API Key",
-    summary: "填写服务商签发的 API Key 并验证有效性。",
   },
+};
+
+const zcodeImport: AuthMethodPresentation = {
+  id: "cli-import",
+  label: "ZCode",
 };
 
 export const providers: ProviderPresentation[] = [
   {
     id: "codex",
+    provider: "codex",
     name: "OpenAI Codex",
+    description: "查看 ChatGPT 订阅中的 Codex 用量。",
     mark: "◎",
+    icon: gptIcon,
     available: true,
     authMethods: [
       authMethods["browser-oauth"],
@@ -70,21 +90,61 @@ export const providers: ProviderPresentation[] = [
     },
     groupLabels: {},
     extraLabels: { "reset-credits": "Reset credits" },
+    extraItemLabels: {},
   },
   {
-    id: "glm",
-    name: "GLM",
-    mark: "Z",
-    available: false,
-    authMethods: [authMethods["api-key"]],
-    planLabels: { lite: "Lite", pro: "Pro", max: "Max" },
-    quotaLabels: {},
+    id: "bigmodel-coding-plan",
+    provider: "glm",
+    region: "china",
+    name: "BigModel Coding Plan",
+    description: "智谱国内 Coding Plan，查看 5 小时、周配额和重置卡。",
+    mark: "",
+    icon: bigmodelIcon,
+    websiteUrl: "https://bigmodel.cn/coding-plan/personal/overview",
+    available: true,
+    authMethods: [zcodeImport, authMethods["api-key"]],
+    planLabels: {
+      lite: "Lite",
+      pro: "Pro",
+      max: "Max",
+      "glm coding lite": "Lite",
+      "glm coding pro": "Pro",
+      "glm coding max": "Max",
+    },
+    quotaLabels: { session: "5 Hours Quota", weekly: "Weekly Quota", mcp_monthly: "Monthly" },
     groupLabels: {},
-    extraLabels: {},
+    extraLabels: { "reset-credits": "重置卡" },
+    extraItemLabels: { "five-hour": "5 小时使用周期", weekly: "每周使用周期" },
+  },
+  {
+    id: "zai-coding-plan",
+    provider: "glm",
+    region: "international",
+    name: "Z.ai Coding Plan",
+    description: "智谱国际版 Coding Plan，查看 5 小时、周配额和重置卡。",
+    mark: "",
+    icon: zaiIcon,
+    websiteUrl: "https://z.ai/manage-apikey/apikey-list",
+    available: true,
+    authMethods: [zcodeImport, authMethods["api-key"]],
+    planLabels: {
+      lite: "Lite",
+      pro: "Pro",
+      max: "Max",
+      "glm coding lite": "Lite",
+      "glm coding pro": "Pro",
+      "glm coding max": "Max",
+    },
+    quotaLabels: { session: "5 Hours Quota", weekly: "Weekly Quota", mcp_monthly: "Monthly" },
+    groupLabels: {},
+    extraLabels: { "reset-credits": "重置卡" },
+    extraItemLabels: { "five-hour": "5 小时使用周期", weekly: "每周使用周期" },
   },
   {
     id: "grok-build",
+    provider: "grok-build",
     name: "Grok Build",
+    description: "查看 Grok Build 订阅用量。",
     mark: "X",
     available: false,
     authMethods: [authMethods["api-key"]],
@@ -92,10 +152,13 @@ export const providers: ProviderPresentation[] = [
     quotaLabels: {},
     groupLabels: {},
     extraLabels: {},
+    extraItemLabels: {},
   },
   {
     id: "antigravity",
+    provider: "antigravity",
     name: "Antigravity",
+    description: "查看 Antigravity 订阅用量。",
     mark: "A",
     available: false,
     authMethods: [authMethods["browser-oauth"], authMethods["api-key"]],
@@ -103,11 +166,30 @@ export const providers: ProviderPresentation[] = [
     quotaLabels: {},
     groupLabels: {},
     extraLabels: {},
+    extraItemLabels: {},
   },
 ];
 
-export function providerPresentation(provider: ProviderId): ProviderPresentation {
-  return providers.find((item) => item.id === provider) ?? providers[0]!;
+export function accountPresentationId(account: PublicAccount): string {
+  if (account.provider !== "glm") return account.provider;
+  if (typeof account.publicMetadata.presentationId === "string") {
+    return account.publicMetadata.presentationId;
+  }
+  return account.publicMetadata.region === "china" ? "bigmodel-coding-plan" : "zai-coding-plan";
+}
+
+export function providerPresentation(
+  providerOrAccount: ProviderId | PublicAccount,
+): ProviderPresentation {
+  const id =
+    typeof providerOrAccount === "string"
+      ? providerOrAccount
+      : accountPresentationId(providerOrAccount);
+  return (
+    providers.find((item) => item.id === id) ??
+    providers.find((item) => item.provider === id) ??
+    providers[0]!
+  );
 }
 
 function windowLabel(seconds: number | null): string | null {
@@ -120,32 +202,43 @@ function windowLabel(seconds: number | null): string | null {
   return null;
 }
 
-export function planLabel(provider: ProviderId, plan: string): string {
+export function planLabel(provider: ProviderId | PublicAccount, plan: string): string {
   const value = plan.trim();
   if (!value) return "未提供";
   return providerPresentation(provider).planLabels[value.toLowerCase()] ?? value;
 }
 
-export function quotaLabel(provider: ProviderId, quota: UsageQuota): string {
+export function quotaLabel(provider: ProviderId | PublicAccount, quota: UsageQuota): string {
   const presentation = providerPresentation(provider);
-  const mapped = presentation.quotaLabels[quota.key];
-  if (mapped) return mapped;
   const duration = windowLabel(quota.windowSeconds);
   const nativeName = quota.displayName?.trim();
+  if (nativeName && duration && /^(session|weekly|monthly)$/i.test(nativeName)) {
+    return duration;
+  }
+  const mapped = presentation.quotaLabels[quota.key];
+  if (mapped) return mapped;
   if (nativeName && duration && !nativeName.toLowerCase().includes(duration.toLowerCase())) {
     return `${nativeName} · ${duration}`;
   }
   return nativeName || duration || quota.key.replaceAll("_", " ");
 }
 
-export function groupLabel(provider: ProviderId, group: UsageQuotaGroup): string | null {
+export function groupLabel(
+  provider: ProviderId | PublicAccount,
+  group: UsageQuotaGroup,
+): string | null {
   return group.displayName ?? providerPresentation(provider).groupLabels[group.key] ?? null;
 }
 
-export function extraLabel(provider: ProviderId, extra: UsageExtra): string {
+export function extraLabel(provider: ProviderId | PublicAccount, extra: UsageExtra): string {
   return providerPresentation(provider).extraLabels[extra.key] ?? extra.key.replaceAll("-", " ");
 }
 
-export function authMethodLabel(method: AuthMethod): string {
+export function extraItemLabel(provider: ProviderId | PublicAccount, kind: string): string {
+  return providerPresentation(provider).extraItemLabels[kind] ?? kind.replaceAll("-", " ");
+}
+
+export function authMethodLabel(method: AuthMethod, provider?: ProviderId): string {
+  if (method === "cli-import" && provider === "glm") return zcodeImport.label;
   return authMethods[method].label;
 }

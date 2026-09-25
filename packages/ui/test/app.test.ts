@@ -1,9 +1,15 @@
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "../src/App.vue";
 import QuotaCard from "../src/components/QuotaCard.vue";
 import type { PublicAccount } from "../src/models";
-import { planLabel, quotaLabel } from "../src/presentation";
+import ProvidersView from "../src/views/ProvidersView.vue";
+import {
+  accountPresentationId,
+  planLabel,
+  providerPresentation,
+  quotaLabel,
+} from "../src/presentation";
 
 const account: PublicAccount = {
   id: "account-1",
@@ -13,6 +19,7 @@ const account: PublicAccount = {
   maskedIdentifier: "te***@example.test",
   enabled: true,
   credentialState: "available",
+  tokenExpiresAt: null,
   publicMetadata: {},
   createdAt: "2026-09-24T00:00:00.000Z",
   updatedAt: "2026-09-24T00:00:00.000Z",
@@ -20,16 +27,44 @@ const account: PublicAccount = {
 
 afterEach(() => {
   delete window.llmUsage;
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
 describe("desktop account UI", () => {
   it("maps provider display text only in the UI presentation catalog", () => {
+    expect(providerPresentation("codex").icon).toMatch(/gpt\.png$/);
     expect(planLabel("codex", "prolite")).toBe("Pro 5x");
     expect(
       quotaLabel("codex", {
         key: "session",
         displayName: null,
+        windowSeconds: 18_000,
+        used: 10,
+        total: 100,
+        remaining: 90,
+        remainingPercentage: 90,
+        resetAt: null,
+        unlimited: false,
+      }),
+    ).toBe("5-hour");
+    expect(
+      quotaLabel("codex", {
+        key: "session",
+        displayName: "Weekly",
+        windowSeconds: 604_800,
+        used: 10,
+        total: 100,
+        remaining: 90,
+        remainingPercentage: 90,
+        resetAt: null,
+        unlimited: false,
+      }),
+    ).toBe("Weekly");
+    expect(
+      quotaLabel("codex", {
+        key: "weekly",
+        displayName: "Session",
         windowSeconds: 18_000,
         used: 10,
         total: 100,
@@ -89,7 +124,108 @@ describe("desktop account UI", () => {
     expect(wrapper.text()).toContain("Reset credits");
     expect(wrapper.find(".switch-field").exists()).toBe(true);
     await wrapper.get(".extra-button").trigger("click");
-    expect(wrapper.text()).toContain("当前上游只返回可用总数");
+    expect(wrapper.text()).toContain("上游未提供可展示的逐项明细");
+    expect(wrapper.text()).toContain("只读展示重置卡");
+  });
+
+  it("keeps refresh available before the first usage snapshot", async () => {
+    const wrapper = mount(QuotaCard, {
+      props: { account, busy: false, usage: null },
+    });
+    expect(wrapper.text()).toContain("尚无用量数据");
+    const refresh = wrapper.findAll("button").find((button) => button.text().includes("刷新"));
+    expect(refresh).toBeDefined();
+    await refresh!.trigger("click");
+    expect(wrapper.emitted("refresh")).toHaveLength(1);
+  });
+
+  it("keeps BigModel and Z.ai as separate UI services", () => {
+    const bigmodel = {
+      ...account,
+      provider: "glm" as const,
+      publicMetadata: { region: "china", presentationId: "bigmodel-coding-plan" },
+    };
+    const zai = {
+      ...account,
+      id: "account-2",
+      provider: "glm" as const,
+      publicMetadata: { region: "international", presentationId: "zai-coding-plan" },
+    };
+    expect(accountPresentationId(bigmodel)).toBe("bigmodel-coding-plan");
+    expect(accountPresentationId(zai)).toBe("zai-coding-plan");
+    expect(providerPresentation(bigmodel).name).toBe("BigModel Coding Plan");
+    expect(providerPresentation(zai).name).toBe("Z.ai Coding Plan");
+    expect(providerPresentation(bigmodel).icon).toMatch(/bigmodel\.svg$/);
+    expect(providerPresentation(zai).icon).toMatch(/zai\.svg$/);
+    expect(providerPresentation(bigmodel).icon).not.toBe(providerPresentation(zai).icon);
+  });
+
+  it("keeps only the method-specific explanation in the account modal", async () => {
+    const wrapper = mount(ProvidersView, {
+      props: { accounts: [], busy: false },
+    });
+    const zaiRow = wrapper
+      .findAll(".provider-row")
+      .find((row) => row.text().includes("Z.ai Coding Plan"));
+    const addButton = zaiRow?.findAll("button").find((button) => button.text() === "添加");
+
+    await addButton!.trigger("click");
+    expect(wrapper.text()).toContain("只读取现有凭据并保存应用自己的加密副本");
+    expect(wrapper.find(".method-summary").exists()).toBe(false);
+    expect(wrapper.find(".modal-note").exists()).toBe(false);
+  });
+
+  it("shows OAuth token expiry and emits a manual refresh action", async () => {
+    const oauthAccount: PublicAccount = {
+      ...account,
+      authMethod: "browser-oauth",
+      tokenExpiresAt: "2099-09-25T13:00:00.000Z",
+    };
+    const wrapper = mount(ProvidersView, {
+      props: { accounts: [oauthAccount], busy: false },
+    });
+
+    expect(wrapper.text()).toContain("令牌到期：");
+    const refreshButton = wrapper.findAll("button").find((button) => button.text() === "刷新令牌");
+    expect(refreshButton).toBeDefined();
+    await refreshButton!.trigger("click");
+    expect(wrapper.emitted("refreshCredentials")?.[0]).toEqual([oauthAccount]);
+  });
+
+  it("renders GLM reset-card type and expiry details", async () => {
+    const glmAccount: PublicAccount = {
+      ...account,
+      provider: "glm",
+      publicMetadata: { region: "china", presentationId: "bigmodel-coding-plan" },
+    };
+    const wrapper = mount(QuotaCard, {
+      props: {
+        account: glmAccount,
+        busy: false,
+        usage: {
+          accountId: glmAccount.id,
+          plan: "Pro",
+          overallRemainingPercentage: 75,
+          groups: [],
+          extras: [
+            {
+              key: "reset-credits",
+              value: "2",
+              items: [
+                { key: "1", kind: "five-hour", expiresAt: "2099-09-25T13:00:00.000Z" },
+                { key: "2", kind: "weekly", expiresAt: "2099-09-26T13:00:00.000Z" },
+              ],
+            },
+          ],
+          fetchedAt: "2026-09-25T12:00:00.000Z",
+        },
+      },
+    });
+    expect(wrapper.text()).toContain("BigModel Coding Plan");
+    await wrapper.get(".extra-button").trigger("click");
+    expect(wrapper.text()).toContain("5 小时使用周期");
+    expect(wrapper.text()).toContain("每周使用周期");
+    expect(wrapper.findAll(".credit-items li")).toHaveLength(2);
   });
 
   it("renders provider-independent quota groups", () => {
@@ -150,5 +286,88 @@ describe("desktop account UI", () => {
     expect(settingsButton).toBeDefined();
     await settingsButton!.trigger("click");
     await vi.waitFor(() => expect(wrapper.text()).toContain("DIRECT"));
+  });
+
+  it("refreshes a newly connected account before loading its first snapshot", async () => {
+    const listAccounts = vi.fn().mockResolvedValue({ ok: true, value: [account] });
+    const getUsage = vi.fn().mockResolvedValue({ ok: true, value: null });
+    const refreshAccount = vi.fn().mockResolvedValue({
+      ok: true,
+      value: { status: "updated", accountId: account.id },
+    });
+    window.llmUsage = {
+      listAccounts,
+      getUsage,
+      refreshAccount,
+    } as unknown as NonNullable<Window["llmUsage"]>;
+    const wrapper = mount(App);
+    await vi.waitFor(() => expect(listAccounts).toHaveBeenCalledOnce());
+    await flushPromises();
+    const providersButton = wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("服务商"));
+    expect(providersButton).toBeDefined();
+    await providersButton!.trigger("click");
+
+    wrapper.findComponent(ProvidersView).vm.$emit("connected", account);
+
+    await vi.waitFor(() => expect(refreshAccount).toHaveBeenCalledWith(account.id));
+    await vi.waitFor(() => expect(listAccounts).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(wrapper.text()).toContain("账号已接入并刷新用量"));
+  });
+
+  it("refreshes OAuth credentials from the provider account row", async () => {
+    const oauthAccount: PublicAccount = {
+      ...account,
+      authMethod: "browser-oauth",
+      tokenExpiresAt: "2099-09-25T13:00:00.000Z",
+    };
+    const listAccounts = vi.fn().mockResolvedValue({ ok: true, value: [oauthAccount] });
+    const refreshCredentials = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        status: "updated",
+        accountId: oauthAccount.id,
+        tokenExpiresAt: "2099-09-25T15:00:00.000Z",
+      },
+    });
+    window.llmUsage = {
+      listAccounts,
+      getUsage: vi.fn().mockResolvedValue({ ok: true, value: null }),
+      refreshCredentials,
+    } as unknown as NonNullable<Window["llmUsage"]>;
+    const wrapper = mount(App);
+    await vi.waitFor(() => expect(listAccounts).toHaveBeenCalledOnce());
+    const providersButton = wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("服务商"));
+    await providersButton!.trigger("click");
+    const refreshButton = wrapper.findAll("button").find((button) => button.text() === "刷新令牌");
+    await vi.waitFor(() => expect(refreshButton?.attributes("disabled")).toBeUndefined());
+    await refreshButton!.trigger("click");
+
+    await vi.waitFor(() => expect(refreshCredentials).toHaveBeenCalledWith(oauthAccount.id));
+    await vi.waitFor(() => expect(wrapper.text()).toContain("令牌已刷新"));
+  });
+
+  it("dismisses the global message automatically", async () => {
+    vi.useFakeTimers();
+    window.llmUsage = {
+      listAccounts: vi.fn().mockResolvedValue({ ok: true, value: [account] }),
+      getUsage: vi.fn().mockResolvedValue({ ok: true, value: null }),
+      refreshAccount: vi.fn().mockResolvedValue({
+        ok: true,
+        value: { status: "updated", accountId: account.id },
+      }),
+    } as unknown as NonNullable<Window["llmUsage"]>;
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.get(".quota-card-foot button").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.get(".global-message").text()).toBe("用量已刷新");
+    await vi.advanceTimersByTimeAsync(5_000);
+    await flushPromises();
+    expect(wrapper.find(".global-message").exists()).toBe(false);
   });
 });

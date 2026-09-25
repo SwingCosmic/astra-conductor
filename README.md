@@ -2,7 +2,7 @@
 
 `llm-usage` 是一个面向本地桌面的 LLM 订阅用量聚合工具。项目将以 Windows 托盘应用为首要形态，集中展示多个订阅账号的剩余额度，并提供低额度通知。
 
-当前已完成仓库准备、工作区骨架、Codex 协议样板、核心与本地数据层，以及桌面壳和 Codex 接入。Codex CLI 凭据、浏览器 OAuth PKCE 和设备码均已通过真实用量闭环。
+当前已完成仓库准备、工作区骨架、Codex 协议样板、核心与本地数据层，以及桌面壳、Codex 和 GLM Coding Plan 接入。Codex CLI 凭据、浏览器 OAuth PKCE 和设备码均已通过真实用量闭环；GLM 支持国内与国际 API Key，并可只读导入 ZCode v2 凭据。
 
 ## 文档
 
@@ -52,7 +52,7 @@ pnpm data:reset
   `apps/desktop/lib/better-sqlite3/better_sqlite3.node`。首次开发前或 Electron、Node、
   `better-sqlite3`、平台、架构变化后手动执行；普通开发启动不重复检查。生产 `build` 会通过
   Desktop 的 `prebuild` 自动重新生成。
-- `pnpm dev` 打开桌面窗口，可只读导入 Codex CLI 凭据，或启动浏览器 OAuth / 设备码授权。
+- `pnpm dev` 打开桌面窗口，可只读导入 Codex CLI 或 ZCode v2 凭据，也可启动浏览器 OAuth / 设备码授权或填写 GLM Coding Plan API Key。
 - `pnpm build` 依次构建 core、ui、desktop。desktop 会把 ui 的构建结果复制到 `apps/desktop/renderer`。
 - `pnpm package` 生成 Windows NSIS 安装包，应用内容打进 asar。产物在 `apps/desktop/release/`。
 - `pnpm test:codex-cli` 使用本机 Codex CLI 凭据执行隔离的真实用量闭环；不会改写 CLI 凭据，临时应用数据会在测试后删除。该命令不进入默认测试或 CI。

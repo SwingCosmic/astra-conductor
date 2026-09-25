@@ -20,6 +20,14 @@ export type RefreshOutcome =
   | { status: "skipped"; accountId: string }
   | { status: "failed"; accountId: string; error: PublicErrorDto };
 
+export type CredentialRefreshOutcome =
+  | {
+      status: "updated" | "unchanged";
+      accountId: string;
+      tokenExpiresAt: string | null;
+    }
+  | { status: "failed"; accountId: string; error: PublicErrorDto };
+
 function notificationCandidates(snapshot: UsageSnapshot): NotificationCandidate[] {
   return snapshot.groups.flatMap((group) =>
     group.quotas.flatMap((quota) => {
@@ -42,6 +50,7 @@ function notificationCandidates(snapshot: UsageSnapshot): NotificationCandidate[
 
 export class RefreshCoordinator {
   private readonly inFlight = new Map<string, Promise<RefreshOutcome>>();
+  private readonly operationTails = new Map<string, Promise<void>>();
   private readonly adapters: ReadonlyMap<Account["provider"], UsageProviderAdapter>;
 
   constructor(
@@ -57,13 +66,67 @@ export class RefreshCoordinator {
   refresh(accountId: string): Promise<RefreshOutcome> {
     const running = this.inFlight.get(accountId);
     if (running) return running;
-    const operation = this.run(accountId).finally(() => this.inFlight.delete(accountId));
+    const operation = this.serialize(accountId, () => this.run(accountId)).finally(() =>
+      this.inFlight.delete(accountId),
+    );
     this.inFlight.set(accountId, operation);
     return operation;
   }
 
+  refreshCredentials(accountId: string): Promise<CredentialRefreshOutcome> {
+    return this.serialize(accountId, () => this.runCredentialRefresh(accountId));
+  }
+
   async refreshAll(): Promise<RefreshOutcome[]> {
     return Promise.all(this.storage.accounts.list().map((account) => this.refresh(account.id)));
+  }
+
+  private serialize<T>(accountId: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.operationTails.get(accountId) ?? Promise.resolve();
+    const result = previous.then(operation, operation);
+    const tail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.operationTails.set(accountId, tail);
+    void tail.finally(() => {
+      if (this.operationTails.get(accountId) === tail) this.operationTails.delete(accountId);
+    });
+    return result;
+  }
+
+  private async runCredentialRefresh(accountId: string): Promise<CredentialRefreshOutcome> {
+    const account = this.storage.accounts.get(accountId);
+    if (!account) {
+      return {
+        status: "failed",
+        accountId,
+        error: toPublicError(new AppError("validation", "Account does not exist")),
+      };
+    }
+    try {
+      const adapter = this.adapters.get(account.provider);
+      if (!adapter) {
+        throw new AppError("validation", `Provider adapter is unavailable: ${account.provider}`);
+      }
+      const current = await this.vault.load(account.id);
+      const refreshed = await adapter.refreshCredentials(account, current, true);
+      if (refreshed.changed) await this.persistCredentials(account, refreshed.envelope);
+      return {
+        status: refreshed.changed ? "updated" : "unchanged",
+        accountId,
+        tokenExpiresAt: refreshed.envelope.expiresAt,
+      };
+    } catch (error) {
+      if (error instanceof AppError && error.code === "secure-storage") {
+        this.storage.accounts.setCredentialState(
+          account.id,
+          "locked",
+          this.clock.now().toISOString(),
+        );
+      }
+      return { status: "failed", accountId, error: toPublicError(error) };
+    }
   }
 
   private async run(accountId: string): Promise<RefreshOutcome> {

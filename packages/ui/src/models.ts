@@ -1,4 +1,5 @@
 export type ProviderId = "codex" | "glm" | "grok-build" | "antigravity";
+export type GlmRegion = "china" | "international";
 export type AuthMethod = "browser-oauth" | "device-code" | "cli-import" | "api-key";
 
 export interface PublicAccount {
@@ -9,6 +10,7 @@ export interface PublicAccount {
   maskedIdentifier: string;
   enabled: boolean;
   credentialState: string;
+  tokenExpiresAt: string | null;
   publicMetadata: Record<string, string | number | boolean | null>;
   createdAt: string;
   updatedAt: string;
@@ -33,6 +35,12 @@ export interface UsageQuotaGroup {
 export interface UsageExtra {
   key: string;
   value: string;
+  items?: UsageExtraItem[];
+}
+export interface UsageExtraItem {
+  key: string;
+  kind: string;
+  expiresAt: string | null;
 }
 
 export interface PublicUsage {

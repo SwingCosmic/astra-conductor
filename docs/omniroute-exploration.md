@@ -271,7 +271,9 @@ HTTP 401 或响应体 `code === 401` 视为密钥无效。`success === false` �
 
 ### 5.4 zcode
 
-`open-sse/config/providers/registry/zcode/index.ts` 写明：ZCode 的认证留在本地配置 `builtin:zai-coding-plan`，OmniRoute 不接收、不保存这把密钥。上游没有可抽取的只读发现实现。设计里的「能否从 zcode 配置安全发现 GLM 凭证」仍然是未决项，不能靠这次同步解决。首版 GLM 使用用户粘贴的 API Key。
+固定的 OmniRoute 快照里，`open-sse/config/providers/registry/zcode/index.ts` 仍只说明 ZCode 的认证留在本地配置 `builtin:zai-coding-plan`，OmniRoute 不接收、不保存这把密钥，因此本次 OmniRoute vendor 抽取没有可复用的发现实现。
+
+随后公开的 [ZCode 源码](https://github.com/zai-org/ZCode) 明确了 `~/.zcode/v2/credentials.json`、版本化 AES-256-GCM 密文和 Individual Coding Plan 的账号键规则。本项目在桌面宿主中按该公开格式只读导入长期 API Key，仍经 GLM 配额接口验证后保存自己的加密副本；不把 ZCode OAuth 令牌纳入账号模型，也不回写 ZCode 文件。这是独立的官方 CLI 导入边界，不改变本节记录的 OmniRoute 抽取结论。
 
 GLM 叶子只依赖 `scalars.ts`、`quota.ts` 和 `glmProvider.ts`，没有数据库。适合作为第二个适配器。
 

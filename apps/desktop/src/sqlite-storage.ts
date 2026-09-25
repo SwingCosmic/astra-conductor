@@ -47,6 +47,7 @@ interface NotificationRow {
   reset_at: string | null;
   level: NotificationState["level"];
   last_notified_at: string;
+  delivery_confirmed: number;
 }
 
 function parseJson<T>(value: string, label: string): T {
@@ -232,19 +233,28 @@ export class SqliteStorage implements StoragePort {
         resetAt: row.reset_at,
         level: row.level,
         lastNotifiedAt: row.last_notified_at,
+        deliveryConfirmed: row.delivery_confirmed === 1,
       })),
     save: (state: NotificationState): void => {
       this.database
         .prepare(
           `INSERT INTO notification_states (
-             account_id, quota_key, reset_at, level, last_notified_at
-           ) VALUES (?, ?, ?, ?, ?)
+             account_id, quota_key, reset_at, level, last_notified_at, delivery_confirmed
+           ) VALUES (?, ?, ?, ?, ?, ?)
            ON CONFLICT(account_id, quota_key) DO UPDATE SET
              reset_at = excluded.reset_at,
              level = excluded.level,
-             last_notified_at = excluded.last_notified_at`,
+             last_notified_at = excluded.last_notified_at,
+             delivery_confirmed = excluded.delivery_confirmed`,
         )
-        .run(state.accountId, state.quotaKey, state.resetAt, state.level, state.lastNotifiedAt);
+        .run(
+          state.accountId,
+          state.quotaKey,
+          state.resetAt,
+          state.level,
+          state.lastNotifiedAt,
+          state.deliveryConfirmed ? 1 : 0,
+        );
     },
   };
 

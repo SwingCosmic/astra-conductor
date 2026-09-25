@@ -116,7 +116,7 @@ OmniRoute 放在 `references/omniroute`，以 Git 子模块记录固定提交。
 | 服务            | 认证方向                                                          | 主要验证重点                                                 |
 | --------------- | ----------------------------------------------------------------- | ------------------------------------------------------------ |
 | Codex / ChatGPT | 浏览器 OAuth PKCE、自定义设备授权、Codex CLI `auth.json` 只读导入 | 固定回调端口、设备授权开关、旋转刷新、会话与周配额、重置额度 |
-| GLM             | API Key，区分国内与国际区域                                       | 区域选择、短周期与周配额                                     |
+| GLM             | Coding Plan API Key、ZCode v2 凭据只读导入；核心按区域复用适配器，UI 分为 BigModel 与 Z.ai | 国内/国际端点、短周期与周配额、只读重置卡、导入源不回写      |
 | Grok Build      | 设备码、浏览器 OAuth PKCE、完整 CLI `auth.json` 只读导入          | 刷新时保留账号主体信息、额外额度只读展示                     |
 | Antigravity     | Google OAuth 授权码                                               | 身份请求头、项目标识和上游数据库耦合的解除                   |
 
@@ -157,6 +157,8 @@ Codex 所需上游文件先由手工样板和逐文件 diff 确认，真实闭�
 
 服务适配器只返回原始套餐值、原始展示名、窗口秒数、额度数值和重置时间等事实字段，不生成 `5-hour`、`Weekly`、`Pro 5x`、`Reset credits` 等产品文案。服务商名称、认证方式名称、套餐映射、配额标题、分组标题和附加项标题统一维护在 UI 侧服务商字典中；新增服务商时扩展字典和适配器注册，不修改公共卡片与刷新流程。
 
+GLM 的国内与国际 Coding Plan 在核心中共用 `glm` 适配器，由账号的 `region` 选择端点；界面必须分别呈现 `BigModel Coding Plan` 和 `Z.ai Coding Plan`，并分别维护名称、描述、图标和官网地址。ZCode v2 导入只读取对应 Individual Coding Plan 账号的长期 API Key，解密后仍先通过配额接口验证，再保存本应用的加密副本；不导入或接管 ZCode OAuth 令牌，也不回写原文件。ZCode 中的 `BigModel API` 与 `Z.ai API` 属于标准按量 API，不复用 Coding Plan 配额接口，本阶段不接入。
+
 配额按组展示。一组有一个标题，组内是该组自己的配额条。供应商没有分组时，卡片只有一组，不显示组标题。Antigravity 的分组来自 `retrieveUserQuotaSummary` 的 `groups[]`：组标题用 `displayName`（如 `Gemini Models`、`Claude and GPT models`），组内每条用该组 bucket 的 `displayName`（如 `5 Hour Quota`、`Weekly Quota`）。同一组里的 5 小时和周配额都保留。模型目录里的单模型进度条不进入卡片。
 
 配额条的可见标题使用上游已经给出的展示名；上游只给了内部键和窗口秒数时，标题用窗口长度。Codex 的 `session` 键对应 `limit_window_seconds = 18000`，标题写 `5-hour`。`weekly` 键对应 `604800` 秒，标题写 `Weekly`。
@@ -164,13 +166,13 @@ Codex 所需上游文件先由手工样板和逐文件 diff 确认，真实闭�
 | 服务            | 套餐原文来源                                              | 已见到的原文                                                                                                  | 配额标题                                                                                                                                                                         |
 | --------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Codex / ChatGPT | 用量响应 `plan_type`，以及登录 JWT 的 `chatgpt_plan_type` | `free`、`go`、`plus`、`pro`、`team`、`enterprise`、`edu`，界面写成 Free、Go、Plus、Pro、Team、Enterprise、Edu | 短窗口 `5-hour`；长窗口 `Weekly`。另有窗口时用上游 `limit_name` 加同样的时长，例如 `GPT-5.3-Codex-Spark` 的 `5-hour` 与 `Weekly`。重置次数是单独的只读数字，标题 `Reset credits` |
-| GLM             | `planName`，否则 `level`                                  | Coding Plan 的 `lite`、`pro`、`max`，界面写成 Lite、Pro、Max                                                  | `5 Hours Quota`、`Weekly Quota`。存在月度工具窗口时加 `Monthly`                                                                                                                  |
+| GLM             | `planName`，否则 `level`                                  | Coding Plan 的 `lite`、`pro`、`max`，界面写成 Lite、Pro、Max                                                  | `5 Hours Quota`、`Weekly Quota`。存在月度工具窗口时加 `Monthly`；重置卡按适用窗口和过期时间逐项只读展示                                                                           |
 | Grok Build      | `/user` 的 `subscriptionTier`                             | `SuperGrokPro`、`SuperGrok Heavy`，以及用量页上的 `Grokpro`。字符串原样展示                                   | 产品名用计费响应里的产品名，如 `GrokChat`、`Grok Build`。账户级百分比标题为 `Weekly`。不展示余额、自动充值或其他充值相关内容                                                       |
 | Antigravity     | `getAntigravityPlanLabel` 的结果                          | `Ultra`、`Pro`、`Enterprise`、`Business`、`Plus`、`Lite`、`Free`，以及原样保留的 `Starter`                    | 组标题和组内标题都用汇总响应里的 `displayName`                                                                                                                                   |
 
 进度条采用三档颜色：剩余量高于 50% 为绿色，20% 到 50% 为橙色，不高于 20% 为红色；不高于 5% 时仍使用红色，但进入更危险的状态。卡片整体颜色按账号总用量使用同一档位，不以单个配额条的颜色替代账号总状态。
 
-低额度通知采用两级阈值：剩余量不高于 20% 时触发系统提示，不高于 5% 时触发更危险的系统提示。无限额度或未提供百分比的数据不触发通知。同一配额在同一重置周期内去重，额度恢复后可再次触发。阈值与去重策略将在模拟数据和真实账号上共同验证。通知正文使用与卡片相同的套餐名和配额标题。
+低额度通知采用两级阈值：剩余量不高于 20% 时触发系统提示，不高于 5% 时触发更危险的系统提示。无限额度或未提供百分比的数据不触发通知。同一配额在同一重置周期内去重，额度恢复后可再次触发。桌面端只在系统确认通知已经展示后写入去重状态；投递失败或超时不消耗本周期的通知机会。阈值与去重策略将在模拟数据和真实账号上共同验证。通知正文使用与卡片相同的套餐名和配额标题。
 
 ### 6.6 本地数据
 
@@ -215,7 +217,7 @@ Node 与 Electron 使用彼此隔离的原生二进制。workspace 中的 `bette
 - `better-sqlite3` 12.11.1 已在 Electron 42.11.6、Windows x64、asar 和 NSIS 安装包中完成加载、建库和重开验证；Electron 二进制现已与 workspace 的 Node ABI 隔离，升级 Electron、Node、驱动、平台、架构或 electron-builder 时必须重新执行预构建并重复安装包验证；
 - Electron 42 将于 2026-10-20 停止上游支持；首次发布前重新检查安全公告并确定后续升级基线；
 - Antigravity 与 OmniRoute 数据库耦合的最小拆分方式；
-- GLM 是否能够安全地从 zcode 配置中只读发现凭证；
+- ZCode 已公开 v2 凭据路径、AES-256-GCM 格式及 Coding Plan 账号键规则；本项目按公开实现只读导入 Individual Coding Plan API Key，并以固定加密样本覆盖国内、国际区域和错误分类。上游格式变化时应更新该边界，不扫描浏览器状态或其他未声明文件；
 - 应用名称、开机启动默认值和按配额窗口设置通知阈值的必要性；
 - macOS 与 Linux 的最低支持范围。
 

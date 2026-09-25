@@ -6,9 +6,11 @@ import {
   CodexAccountProvisioner,
   CodexAdapter,
   CredentialVault,
+  GlmAccountProvisioner,
+  GlmAdapter,
   RefreshCoordinator,
 } from "@llm-usage/core/internal";
-import { CodexAuthService } from "./auth-service.js";
+import { AuthService } from "./auth-service.js";
 import { registerIpcHandlers, unregisterIpcHandlers } from "./ipc.js";
 import { PollingService } from "./polling-service.js";
 import { ElectronSafeStorageCipher } from "./safe-storage-cipher.js";
@@ -23,11 +25,12 @@ const codexCliSmoke = process.env.LLM_USAGE_CODEX_CLI_SMOKE === "1";
 const userDataOverride = process.env.LLM_USAGE_USER_DATA;
 let storage: SqliteStorage | null = null;
 let polling: PollingService | null = null;
-let auth: CodexAuthService | null = null;
+let auth: AuthService | null = null;
 let tray: Tray | null = null;
 let quitting = false;
 
 if (userDataOverride) app.setPath("userData", path.resolve(userDataOverride));
+if (process.platform === "win32") app.setAppUserModelId("local.llm-usage.app");
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
@@ -193,9 +196,17 @@ if (hasSingleInstanceLock) {
       const fetchImpl: typeof fetch = (input, init) =>
         net.fetch(input instanceof URL ? input.toString() : input, init);
       const adapter = new CodexAdapter(fetchImpl);
-      const coordinator = new RefreshCoordinator(storage, vault, [adapter]);
+      const glmAdapter = new GlmAdapter(fetchImpl);
+      const coordinator = new RefreshCoordinator(storage, vault, [adapter, glmAdapter]);
       const provisioner = new CodexAccountProvisioner(storage, vault);
-      auth = new CodexAuthService(adapter, provisioner, (url) => shell.openExternal(url));
+      const glmProvisioner = new GlmAccountProvisioner(storage, vault);
+      auth = new AuthService(
+        adapter,
+        provisioner,
+        (url) => shell.openExternal(url),
+        glmAdapter,
+        glmProvisioner,
+      );
       polling = new PollingService(storage, coordinator);
       if (codexCliSmoke) {
         const authResult = await auth.start("codex", "cli-import");
@@ -212,7 +223,7 @@ if (hasSingleInstanceLock) {
         app.quit();
         return;
       }
-      registerIpcHandlers(storage, polling, auth, () =>
+      registerIpcHandlers(storage, vault, polling, auth, () =>
         session.defaultSession.resolveProxy("https://chatgpt.com/backend-api/wham/usage"),
       );
       polling.start();

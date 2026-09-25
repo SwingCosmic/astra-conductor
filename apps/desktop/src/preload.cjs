@@ -9,7 +9,9 @@ contextBridge.exposeInMainWorld("llmUsage", {
     ipcRenderer.invoke("accounts:set-enabled", { accountId, enabled }),
   deleteAccount: (accountId) => ipcRenderer.invoke("accounts:delete", accountId),
   refreshAccount: (accountId) => ipcRenderer.invoke("usage:refresh", accountId),
-  startAuth: (provider, method) => ipcRenderer.invoke("auth:start", { provider, method }),
+  refreshCredentials: (accountId) => ipcRenderer.invoke("credentials:refresh", accountId),
+  startAuth: (provider, method, options = {}) =>
+    ipcRenderer.invoke("auth:start", { provider, method, ...options }),
   finishAuth: (sessionId) => ipcRenderer.invoke("auth:finish", sessionId),
   cancelAuth: (sessionId) => ipcRenderer.invoke("auth:cancel", sessionId),
   getSettings: () => ipcRenderer.invoke("settings:get"),

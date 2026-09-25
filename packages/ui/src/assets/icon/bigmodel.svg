@@ -1,0 +1,29 @@
+<!-- Source: zai-org/ZCode 29628c9acdb81b703bbd4080c207a0e7ce5e276e, packages/ui/src/assets/provider-icons/logo-bigmodel.svg -->
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <g clip-path="url(#clip0_bigmodel)">
+    <path d="M8.00351 0.142578L14.9084 8.01458L8.00351 15.883L1.10217 8.01458L8.00351 0.142578Z" fill="white" />
+    <path d="M14.9084 4.07858V8.01102H13.8417C13.8417 8.01102 11.7013 8.12124 9.87372 6.25813C7.96083 4.30613 8.0035 1.78169 8.0035 1.78169V0.142578L14.9084 4.07858Z" fill="url(#paint0_bigmodel)" />
+    <path d="M1.10217 4.07858V8.01102H2.16884C2.16884 8.01102 4.30928 8.12124 6.13684 6.25813C8.04973 4.30613 8.00706 1.78169 8.00706 1.78169V0.142578L1.10217 4.07858Z" fill="url(#paint1_bigmodel)" />
+    <path d="M1.10217 11.9474V8.01491H2.16884C2.16884 8.01491 4.30928 7.90468 6.13684 9.76779C8.04973 11.7198 8.00706 14.2442 8.00706 14.2442V15.8833L1.10217 11.9474Z" fill="url(#paint2_bigmodel)" />
+    <path d="M14.9084 11.9474V8.01491H13.8417C13.8417 8.01491 11.7013 7.90468 9.87372 9.76779C7.96083 11.7198 8.0035 14.2442 8.0035 14.2442V15.8833L14.9084 11.9474Z" fill="url(#paint3_bigmodel)" />
+  </g>
+  <defs>
+    <linearGradient id="paint0_bigmodel" x1="8.00484" y1="4.07834" x2="14.9077" y2="4.07834" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8C8AF4" />
+      <stop offset="1" stop-color="#2556D3" />
+    </linearGradient>
+    <linearGradient id="paint1_bigmodel" x1="1.10217" y1="4.07834" x2="8.00501" y2="4.07834" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8C8AF4" />
+      <stop offset="1" stop-color="#2556D3" />
+    </linearGradient>
+    <linearGradient id="paint2_bigmodel" x1="1.10217" y1="11.9478" x2="8.00501" y2="11.9478" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3091D6" />
+      <stop offset="1" stop-color="#89A2F4" />
+    </linearGradient>
+    <linearGradient id="paint3_bigmodel" x1="8.00484" y1="11.9478" x2="14.9077" y2="11.9478" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2362D2" />
+      <stop offset="1" stop-color="#8898F3" />
+    </linearGradient>
+    <clipPath id="clip0_bigmodel"><rect width="16" height="16" fill="white" /></clipPath>
+  </defs>
+</svg>

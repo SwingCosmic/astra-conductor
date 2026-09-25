@@ -1,6 +1,9 @@
 export const providerIds = ["codex", "glm", "grok-build", "antigravity"] as const;
 export type ProviderId = (typeof providerIds)[number];
 
+export const glmRegions = ["china", "international"] as const;
+export type GlmRegion = (typeof glmRegions)[number];
+
 export const authMethods = ["browser-oauth", "device-code", "cli-import", "api-key"] as const;
 export type AuthMethod = (typeof authMethods)[number];
 
@@ -67,6 +70,13 @@ export interface UsageQuotaGroup {
 export interface UsageExtra {
   key: string;
   value: string;
+  items?: UsageExtraItem[];
+}
+
+export interface UsageExtraItem {
+  key: string;
+  kind: string;
+  expiresAt: string | null;
 }
 
 export interface UsageSnapshot {
@@ -86,6 +96,7 @@ export interface NotificationState {
   resetAt: string | null;
   level: NotificationLevel;
   lastNotifiedAt: string;
+  deliveryConfirmed: boolean;
 }
 
 export type SettingValue = JsonPrimitive | JsonPrimitive[] | PublicMetadata;
@@ -98,6 +109,7 @@ export interface PublicAccountDto {
   maskedIdentifier: string;
   enabled: boolean;
   credentialState: CredentialState;
+  tokenExpiresAt: string | null;
   publicMetadata: PublicMetadata;
   createdAt: string;
   updatedAt: string;

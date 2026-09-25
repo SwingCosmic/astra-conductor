@@ -29,6 +29,7 @@ describe("desktop shell", () => {
     expect(mainSource).toContain("`${databaseFile}-wal`");
     expect(mainSource).toContain('"lib", "better-sqlite3", "better_sqlite3.node"');
     expect(mainSource).toContain("nativeBinding: sqliteNativeBindingPath()");
+    expect(mainSource).toContain('app.setAppUserModelId("local.llm-usage.app")');
 
     const pollingSource = readFileSync(
       path.join(path.dirname(fileURLToPath(import.meta.url)), "../src/polling-service.ts"),

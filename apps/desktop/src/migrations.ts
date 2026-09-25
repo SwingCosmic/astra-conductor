@@ -69,6 +69,14 @@ export const migrations: readonly Migration[] = [
       CREATE INDEX accounts_enabled_provider_idx ON accounts(enabled, provider);
     `,
   ),
+  migration(
+    3,
+    `
+      ALTER TABLE notification_states
+        ADD COLUMN delivery_confirmed INTEGER NOT NULL DEFAULT 0
+          CHECK (delivery_confirmed IN (0, 1));
+    `,
+  ),
 ];
 
 export const currentSchemaVersion = migrations.at(-1)?.version ?? 0;

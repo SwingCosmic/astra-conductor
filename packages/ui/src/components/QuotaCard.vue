@@ -3,6 +3,7 @@ import { computed, reactive, ref } from "vue";
 import type { PublicAccount, PublicUsage, UsageExtra, UsageQuota } from "../models";
 import {
   extraLabel,
+  extraItemLabel,
   groupLabel,
   planLabel,
   providerPresentation,
@@ -15,7 +16,7 @@ defineEmits<{ refresh: []; toggle: [] }>();
 type Tone = "unknown" | "ok" | "warning" | "danger" | "critical";
 const collapsed = reactive(new Set<string>());
 const selectedExtra = ref<UsageExtra | null>(null);
-const presentation = computed(() => providerPresentation(props.account.provider));
+const presentation = computed(() => providerPresentation(props.account));
 const cardTone = computed(() => tone(props.usage?.overallRemainingPercentage ?? null));
 
 function tone(percent: number | null): Tone {
@@ -64,11 +65,14 @@ function toggleGroup(key: string): void {
     :class="[`card-tone-${cardTone}`, { 'is-disabled': !account.enabled }]"
   >
     <header class="quota-card-head">
-      <span class="provider-mark" aria-hidden="true">{{ presentation.mark }}</span>
+      <span class="provider-mark" aria-hidden="true">
+        <img v-if="presentation.icon" :src="presentation.icon" alt="" />
+        <template v-else>{{ presentation.mark }}</template>
+      </span>
       <div class="provider-identity">
         <h2>{{ presentation.name }}</h2>
         <p>
-          <span>{{ usage ? planLabel(account.provider, usage.plan) : "未刷新" }}</span>
+          <span>{{ usage ? planLabel(account, usage.plan) : "未刷新" }}</span>
           <span aria-hidden="true">·</span>
           <span>{{ account.maskedIdentifier }}</span>
         </p>
@@ -88,14 +92,14 @@ function toggleGroup(key: string): void {
     <template v-if="usage">
       <section v-for="group in usage.groups" :key="group.key" class="quota-group">
         <button
-          v-if="groupLabel(account.provider, group)"
+          v-if="groupLabel(account, group)"
           class="group-toggle"
           type="button"
           :aria-expanded="!collapsed.has(group.key)"
           @click="toggleGroup(group.key)"
         >
           <span aria-hidden="true">{{ collapsed.has(group.key) ? "›" : "⌄" }}</span>
-          <span>{{ groupLabel(account.provider, group) }}</span>
+          <span>{{ groupLabel(account, group) }}</span>
           <span v-if="collapsed.has(group.key)" class="group-summary">
             {{
               Math.min(...group.quotas.map((quota) => quota.remainingPercentage ?? 100)).toFixed(0)
@@ -104,12 +108,12 @@ function toggleGroup(key: string): void {
         </button>
         <div v-show="!collapsed.has(group.key)" class="quota-list">
           <div v-for="quota in group.quotas" :key="quota.key" class="quota-window">
-            <h3>{{ quotaLabel(account.provider, quota) }}</h3>
+            <h3>{{ quotaLabel(account, quota) }}</h3>
             <div class="progress-row">
               <div
                 class="progress-track"
                 role="meter"
-                :aria-label="quotaLabel(account.provider, quota)"
+                :aria-label="quotaLabel(account, quota)"
                 aria-valuemin="0"
                 aria-valuemax="100"
                 :aria-valuenow="quota.remainingPercentage ?? undefined"
@@ -139,7 +143,7 @@ function toggleGroup(key: string): void {
           type="button"
           @click="selectedExtra = extra"
         >
-          <span>↻&nbsp; {{ extraLabel(account.provider, extra) }} {{ extra.value }}</span>
+          <span>↻&nbsp; {{ extraLabel(account, extra) }} {{ extra.value }}</span>
           <span class="extra-detail">查看详情&nbsp; ›</span>
         </button>
       </div>
@@ -150,12 +154,19 @@ function toggleGroup(key: string): void {
         <button :disabled="busy || !account.enabled" @click="$emit('refresh')">↻&nbsp; 刷新</button>
       </footer>
     </template>
-    <p v-else class="empty-usage">尚无用量数据</p>
+    <template v-else>
+      <p class="empty-usage">尚无用量数据</p>
+      <p v-if="!account.enabled" class="disabled-note">ⓘ 停用后不再自动刷新和通知</p>
+      <footer class="quota-card-foot">
+        <span>刷新后展示套餐与额度</span>
+        <button :disabled="busy || !account.enabled" @click="$emit('refresh')">↻&nbsp; 刷新</button>
+      </footer>
+    </template>
     <div v-if="selectedExtra" class="modal-backdrop" @click.self="selectedExtra = null">
       <section class="detail-modal" role="dialog" aria-modal="true" aria-label="重置额度详情">
         <header>
           <div>
-            <h2>{{ extraLabel(account.provider, selectedExtra) }}</h2>
+            <h2>{{ extraLabel(account, selectedExtra) }}</h2>
             <p>{{ presentation.name }}</p>
           </div>
           <button class="icon-button" aria-label="关闭" @click="selectedExtra = null">×</button>
@@ -163,12 +174,25 @@ function toggleGroup(key: string): void {
         <div class="credit-summary">
           <span>当前可用次数</span><strong>{{ selectedExtra.value }}</strong>
         </div>
-        <p class="detail-note">
-          当前上游只返回可用总数，未提供每次额度的重置类型与过期时间，因此这里不会生成或合并占位记录。
-        </p>
+        <ul v-if="selectedExtra.items?.length" class="credit-items">
+          <li v-for="item in selectedExtra.items" :key="item.key">
+            <span>{{ extraItemLabel(account, item.kind) }}</span>
+            <strong>{{
+              item.expiresAt ? `有效期至 ${resetLabel(item.expiresAt)}` : "未提供有效期"
+            }}</strong>
+          </li>
+        </ul>
+        <p v-else class="detail-note">上游未提供可展示的逐项明细。</p>
+        <p class="detail-note">这里只读展示重置卡，不会兑换或消耗额度。</p>
         <footer>
           <button @click="selectedExtra = null">关闭</button>
-          <a href="https://chatgpt.com/" target="_blank" rel="noreferrer">前往官网</a>
+          <a
+            v-if="presentation.websiteUrl"
+            :href="presentation.websiteUrl"
+            target="_blank"
+            rel="noreferrer"
+            >前往官网</a
+          >
         </footer>
       </section>
     </div>
