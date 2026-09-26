@@ -1,10 +1,11 @@
-# llm-usage
+# AstraConductor
 
-本仓库同时承载 PolyQuota、后续启动的 GraphAgent，以及两者共用的协议与账号核心能力。
+AstraConductor 用于统一利用大模型与智能体，并管理相关控制流和数据流。本仓库同时承载 PolyQuota、后续启动的 GraphAgent，以及两者共用的协议、认证与账号核心能力。
 
 - **PolyQuota** 是面向本地桌面的 LLM 订阅用量聚合工具，以 Windows 托盘应用为首要形态。
 - **GraphAgent** 目前只预留文档和应用位置，后续采用独立结构，不复用 PolyQuota UI。
 - `packages/core` 由两个产品共享；`packages/polyquota-ui` 仅属于 PolyQuota。
+- 工作区包统一使用 `@astra-conductor/*` 命名空间；产品运行身份仍相互独立。
 
 PolyQuota 当前已完成 Codex 和 GLM Coding Plan 接入。Codex CLI 凭据、浏览器 OAuth PKCE 和设备码均已通过真实用量闭环；GLM 支持国内与国际 API Key，并可只读导入 ZCode v2 凭据。
 
@@ -61,7 +62,7 @@ pnpm data:reset
 - `pnpm build` 依次构建共享 Core、PolyQuota UI 和 PolyQuota Desktop；Desktop 会把 UI 构建结果复制到 `apps/polyquota/renderer`。
 - `pnpm package` 生成 Windows NSIS 安装包，产物位于 `apps/polyquota/release/`。
 - `pnpm test:codex-cli` 使用本机 Codex CLI 凭据执行隔离的真实用量闭环，不改写 CLI 凭据，临时应用数据会在测试后删除。
-- `pnpm data:reset` 删除当前应用 `userData` 中的 `llm-usage.db`、WAL 和共享内存文件，因此也会删除全部已保存凭据、账号、用量与设置；执行前必须退出应用。
+- `pnpm data:reset` 删除 PolyQuota `userData` 中的 `polyquota.db`、WAL 和共享内存文件，因此也会删除全部已保存凭据、账号、用量与设置；执行前必须退出应用。
 
 ## 边界约定
 

@@ -1,5 +1,5 @@
-appId: local.llm-usage.app
-productName: llm-usage
+appId: io.astraconductor.polyquota
+productName: PolyQuota
 asar: true
 npmRebuild: false
 directories:

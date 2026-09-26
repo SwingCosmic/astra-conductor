@@ -6,7 +6,7 @@ defineEmits<{ navigate: [page: PageId] }>();
 
 <template>
   <aside class="sidebar">
-    <div class="brand"><span class="brand-mark">L</span><strong>LLM Usage</strong></div>
+    <div class="brand"><span class="brand-mark">P</span><strong>PolyQuota</strong></div>
     <nav aria-label="主导航">
       <button :class="{ active: page === 'usage' }" @click="$emit('navigate', 'usage')">
         <span aria-hidden="true">▥</span>用量

@@ -9,7 +9,7 @@ import {
   GlmAccountProvisioner,
   GlmAdapter,
   RefreshCoordinator,
-} from "@llm-usage/core/internal";
+} from "@astra-conductor/core/internal";
 import { AuthService } from "./auth-service.js";
 import { registerIpcHandlers, unregisterIpcHandlers } from "./ipc.js";
 import { PollingService } from "./polling-service.js";
@@ -17,25 +17,28 @@ import { ElectronSafeStorageCipher } from "./safe-storage-cipher.js";
 import { SqliteStorage } from "./sqlite-storage.js";
 import { runStorageSmoke } from "./storage-smoke.js";
 
-const devServer = process.env.LLM_USAGE_DEV_SERVER;
-const smoke = process.env.LLM_USAGE_SMOKE === "1";
-const storageSmoke = process.env.LLM_USAGE_STORAGE_SMOKE === "1";
-const resetData = process.env.LLM_USAGE_RESET_DATA === "1";
-const codexCliSmoke = process.env.LLM_USAGE_CODEX_CLI_SMOKE === "1";
-const userDataOverride = process.env.LLM_USAGE_USER_DATA;
+const devServer = process.env.POLYQUOTA_DEV_SERVER;
+const smoke = process.env.POLYQUOTA_SMOKE === "1";
+const storageSmoke = process.env.POLYQUOTA_STORAGE_SMOKE === "1";
+const resetData = process.env.POLYQUOTA_RESET_DATA === "1";
+const codexCliSmoke = process.env.POLYQUOTA_CODEX_CLI_SMOKE === "1";
+const userDataOverride = process.env.POLYQUOTA_USER_DATA;
+const productUserData = path.join(app.getPath("appData"), "AstraConductor", "PolyQuota");
+const databaseName = "polyquota.db";
 let storage: SqliteStorage | null = null;
 let polling: PollingService | null = null;
 let auth: AuthService | null = null;
 let tray: Tray | null = null;
 let quitting = false;
 
-if (userDataOverride) app.setPath("userData", path.resolve(userDataOverride));
-if (process.platform === "win32") app.setAppUserModelId("local.llm-usage.app");
+app.setName("PolyQuota");
+app.setPath("userData", userDataOverride ? path.resolve(userDataOverride) : productUserData);
+if (process.platform === "win32") app.setAppUserModelId("io.astraconductor.polyquota");
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
   if (resetData) {
-    console.error("无法清除数据：llm-usage 仍在运行，请先退出应用");
+    console.error("无法清除数据：PolyQuota 仍在运行，请先退出应用");
     app.exit(2);
   } else {
     app.quit();
@@ -93,7 +96,7 @@ async function createWindow(): Promise<void> {
     minHeight: 560,
     show: false,
     backgroundColor: "#f3f4f6",
-    title: "llm-usage",
+    title: "PolyQuota",
     webPreferences: {
       preload: path.join(appDir(), "preload.cjs"),
       contextIsolation: true,
@@ -128,7 +131,7 @@ async function createWindow(): Promise<void> {
 
   win.webContents.on("did-finish-load", () => {
     if (smoke) {
-      console.log("LLM_USAGE_SMOKE_OK");
+      console.log("POLYQUOTA_SMOKE_OK");
       setTimeout(() => app.quit(), 250);
     }
   });
@@ -149,10 +152,10 @@ function createTray(): void {
       ).toString("base64"),
   );
   tray = new Tray(icon.resize({ width: 16, height: 16 }));
-  tray.setToolTip("llm-usage");
+  tray.setToolTip("PolyQuota");
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: "显示 llm-usage", click: () => BrowserWindow.getAllWindows()[0]?.show() },
+      { label: "显示 PolyQuota", click: () => BrowserWindow.getAllWindows()[0]?.show() },
       { label: "刷新全部账号", click: () => void polling?.refreshAll() },
       { type: "separator" },
       {
@@ -177,16 +180,16 @@ if (hasSingleInstanceLock) {
   app
     .whenReady()
     .then(async () => {
-      const databaseFile = path.join(app.getPath("userData"), "llm-usage.db");
+      const databaseFile = path.join(app.getPath("userData"), databaseName);
       if (resetData) {
         await deleteStoredData(databaseFile);
-        console.log("LLM_USAGE_RESET_DATA_OK");
+        console.log("POLYQUOTA_RESET_DATA_OK");
         app.quit();
         return;
       }
       if (storageSmoke) {
         await runStorageSmoke(databaseFile, sqliteNativeBindingPath());
-        console.log("LLM_USAGE_STORAGE_SMOKE_OK");
+        console.log("POLYQUOTA_STORAGE_SMOKE_OK");
         app.quit();
         return;
       }
@@ -215,7 +218,7 @@ if (hasSingleInstanceLock) {
         const outcome = await polling.refresh(account.id);
         if (outcome.status !== "updated") throw new Error("Codex CLI live refresh failed");
         console.log(
-          `LLM_USAGE_CODEX_CLI_SMOKE_OK account=${account.maskedIdentifier} plan=${outcome.snapshot.plan} quotas=${outcome.snapshot.groups
+          `POLYQUOTA_CODEX_CLI_SMOKE_OK account=${account.maskedIdentifier} plan=${outcome.snapshot.plan} quotas=${outcome.snapshot.groups
             .flatMap((group) => group.quotas)
             .map((quota) => quota.key)
             .join(",")}`,
@@ -233,7 +236,7 @@ if (hasSingleInstanceLock) {
     })
     .catch((error: unknown) => {
       console.error(
-        "llm-usage startup failed",
+        "PolyQuota startup failed",
         error instanceof Error ? `${error.name}: ${error.message}` : "unknown error",
       );
       app.exit(1);

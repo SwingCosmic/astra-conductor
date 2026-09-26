@@ -12,7 +12,7 @@ import {
   type Account,
   type GlmRegion,
   type ProviderId,
-} from "@llm-usage/core/internal";
+} from "@astra-conductor/core/internal";
 import type { AuthService, AuthStartOptions } from "./auth-service.js";
 import type { PollingService } from "./polling-service.js";
 

@@ -4,7 +4,7 @@ import {
   type Account,
   type RefreshCoordinator,
   type RefreshOutcome,
-} from "@llm-usage/core/internal";
+} from "@astra-conductor/core/internal";
 import { PollingService, type SystemNotificationPort } from "../src/polling-service.js";
 
 const account: Account = {

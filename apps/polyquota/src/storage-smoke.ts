@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
-import type { Account } from "@llm-usage/core/internal";
-import { CredentialVault } from "@llm-usage/core/internal";
+import type { Account } from "@astra-conductor/core/internal";
+import { CredentialVault } from "@astra-conductor/core/internal";
 import { ElectronSafeStorageCipher } from "./safe-storage-cipher.js";
 import { SqliteStorage } from "./sqlite-storage.js";
 

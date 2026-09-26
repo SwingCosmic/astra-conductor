@@ -1,5 +1,5 @@
 {
-  "name": "llm-usage",
+  "name": "astra-conductor",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.34.4",
@@ -7,16 +7,16 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "dev": "node scripts/dev-desktop.mjs",
-    "build": "pnpm --filter @llm-usage/core build && pnpm --filter @llm-usage/ui build && pnpm --filter @llm-usage/desktop build",
-    "typecheck": "pnpm --filter @llm-usage/core typecheck && pnpm --filter @llm-usage/ui typecheck && pnpm --filter @llm-usage/desktop typecheck",
-    "test": "pnpm --filter @llm-usage/core test && pnpm --filter @llm-usage/ui test && pnpm --filter @llm-usage/desktop test",
+    "dev": "node scripts/dev-polyquota.mjs",
+    "build": "pnpm --filter @astra-conductor/core build && pnpm --filter @astra-conductor/polyquota-ui build && pnpm --filter @astra-conductor/polyquota build",
+    "typecheck": "pnpm --filter @astra-conductor/core typecheck && pnpm --filter @astra-conductor/polyquota-ui typecheck && pnpm --filter @astra-conductor/polyquota typecheck",
+    "test": "pnpm --filter @astra-conductor/core test && pnpm --filter @astra-conductor/polyquota-ui test && pnpm --filter @astra-conductor/polyquota test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "native:prepare": "pnpm --filter @llm-usage/desktop native:prepare",
-    "package": "pnpm build && pnpm --filter @llm-usage/desktop package",
-    "data:reset": "pnpm --filter @llm-usage/desktop build:main && pnpm --filter @llm-usage/desktop data:reset",
-    "test:codex-cli": "pnpm --filter @llm-usage/core build && pnpm --filter @llm-usage/desktop build:main && pnpm --filter @llm-usage/desktop test:codex-cli"
+    "native:prepare": "pnpm --filter @astra-conductor/polyquota native:prepare",
+    "package": "pnpm build && pnpm --filter @astra-conductor/polyquota package",
+    "data:reset": "pnpm --filter @astra-conductor/polyquota build:main && pnpm --filter @astra-conductor/polyquota data:reset",
+    "test:codex-cli": "pnpm --filter @astra-conductor/core build && pnpm --filter @astra-conductor/polyquota build:main && pnpm --filter @astra-conductor/polyquota test:codex-cli"
   },
   "devDependencies": {
     "prettier": "catalog:"

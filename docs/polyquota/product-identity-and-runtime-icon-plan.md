@@ -1,7 +1,7 @@
 # PolyQuota 产品信息与图标方案
 
 评审日期：2026-09-25。对应[运行流程与通信机制现状报告](./runtime-and-communication-review.md)第 7.3 节。
-共用的 PolyQuota / GraphAgent V5 图标资产位于 [`../common/icon-design/v5`](../common/icon-design/README.md)。这些内容仍是评审资产与建议，未修改应用代码、产品配置或正式图标。
+共用的 PolyQuota / GraphAgent 图标最终稿位于 [`../common/icon-design`](../common/icon-design/README.md)。这些内容尚未接入应用代码、产品配置或运行时图标。
 
 ## 1. 产品信息
 
@@ -12,13 +12,13 @@
 - 窗口标题、HTML 标题、安装程序、快捷方式、托盘菜单、授权完成页面统一使用新名称；EXE 为 `PolyQuota.exe`，安装包建议为 `PolyQuota-${version}-setup.exe`。
 - 版本从实际构建版本生成。目前侧栏硬编码为 v0.1.0，而 Desktop package 为 0.0.1，需要在实施时统一。
 
-本轮建议保留技术包名、环境变量前缀、数据库文件名和现有 appId，先完成用户可见的品牌调整。尤其需要固定已有 userData 路径：改变 productName/app.name 可能改变默认数据目录，不能让已有账号和凭证看起来丢失。安装升级标识和 AppUserModelID 也应保持一致；若后续调整这些内部标识，单独设计迁移。
+工作区包名使用 `@astra-conductor/*`，PolyQuota 开发与测试环境变量使用 `POLYQUOTA_*`。Electron app name 和 `productName` 为 `PolyQuota`，appId 与 AppUserModelID 为 `io.astraconductor.polyquota`，`userData` 固定在系统 `appData/AstraConductor/PolyQuota`，数据库名为 `polyquota.db`。早期测试数据已在新身份下完成凭据解密与重加密，不再保留旧占位身份兼容代码。跨产品复用仍按[跨产品凭据共享与迁移](../common/core/credential-sharing.md)单独实施。
 
 ## 2. 图标构成
 
-当前采用 V5 产品族方向。PolyQuota 使用高饱和蓝色、紧凑卡片核心和方形可见构图；GraphAgent 使用同族的高饱和紫色。评审总览见 [`product-family-review.svg`](../common/icon-design/v5/product-family-review.svg) 和对应 PNG。
+当前产品族图标已经定稿。PolyQuota 使用高饱和蓝色、紧凑卡片核心、120° 三等分节点和独立额度条；GraphAgent 使用同族的高饱和紫色和正四面体投影结构。设计总览见 [`product-family-review.svg`](../common/icon-design/product-family-review.svg)。
 
-PolyQuota 基础资产为 `polyquota.svg` 与 `polyquota-white.svg`，状态资产为 `polyquota-green.svg`、`polyquota-orange.svg`、`polyquota-red.svg` 和 `polyquota-unknown.svg`。SVG 均为独立矢量资产，不依赖外部图片或字体。旧方案中提到但未进入 V5 目录的文件不再作为当前资产引用。
+PolyQuota 基础资产为 `polyquota.svg` 与 `polyquota-white.svg`，状态资产为 `polyquota-green.svg`、`polyquota-orange.svg`、`polyquota-red.svg` 和 `polyquota-unknown.svg`。SVG 均位于 `docs/common/icon-design`，是独立矢量资产，不依赖外部图片或字体。
 
 ### 正式资产范围
 

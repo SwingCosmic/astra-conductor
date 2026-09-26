@@ -3,7 +3,7 @@ import {
   AppError,
   type CredentialCipherPort,
   type DecryptionResult,
-} from "@llm-usage/core/internal";
+} from "@astra-conductor/core/internal";
 
 export class ElectronSafeStorageCipher implements CredentialCipherPort {
   async isAvailable(): Promise<boolean> {

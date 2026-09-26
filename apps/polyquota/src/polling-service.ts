@@ -5,7 +5,7 @@ import type {
   RefreshCoordinator,
   RefreshOutcome,
   StoragePort,
-} from "@llm-usage/core/internal";
+} from "@astra-conductor/core/internal";
 
 const DEFAULT_INTERVAL_MINUTES = 15;
 const NOTIFICATION_DELIVERY_TIMEOUT_MS = 3_000;

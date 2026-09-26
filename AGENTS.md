@@ -4,9 +4,9 @@
 
 This pnpm workspace currently has three runnable modules and one reserved application location:
 
-- `packages/core`: models, protocol adapters, and the curated OmniRoute subset shared by PolyQuota and GraphAgent.
-- `packages/polyquota-ui`: PolyQuota-only Vue 3 components, styles, fixtures, and browser tests.
-- `apps/polyquota`: PolyQuota Electron main/preload code and NSIS packaging.
+- `packages/core` (`@astra-conductor/core`): models, protocol adapters, and the curated OmniRoute subset shared by PolyQuota and GraphAgent.
+- `packages/polyquota-ui` (`@astra-conductor/polyquota-ui`): PolyQuota-only Vue 3 components, styles, fixtures, and browser tests.
+- `apps/polyquota` (`@astra-conductor/polyquota`): PolyQuota Electron main/preload code and NSIS packaging.
 - `apps/graph-agent`: a documentation-only placeholder; do not infer its future runtime or UI structure from PolyQuota.
 
 Tests live in each runnable module's `test/` directory as `*.test.ts`; keep test helpers and fixtures there as well. Shared TypeScript settings are in `tsconfig.base.json`. Product and shared documentation is indexed by `docs/README.md`. All repositories under `references/` are reference inputs, not runtime dependencies. Initialize them with `git submodule update --init --recursive`.
@@ -41,4 +41,4 @@ Keep commit subjects short; any language is acceptable. Prefer `feat:`, `fix:`, 
 
 ## Security & Vendor Boundaries
 
-Never log or expose tokens through UI or IPC. Store authorization secrets only through the documented `safeStorage` and SQLite boundary. Do not import runtime code from any repository under `references/`; changes to the curated vendor subset must retain source traceability and update its baseline tests or documentation.
+Never log or expose tokens through UI or renderer IPC. PolyQuota currently owns its encrypted credentials in its private SQLite database; follow `docs/common/core/credential-sharing.md` when extracting them into the future shared credential service, and never make either product open the other's database. Do not import runtime code from any repository under `references/`; changes to the curated vendor subset must retain source traceability and update its baseline tests or documentation.

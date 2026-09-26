@@ -1,5 +1,5 @@
 {
-  "name": "@llm-usage/core",
+  "name": "@astra-conductor/core",
   "version": "0.0.1",
   "private": true,
   "type": "module",

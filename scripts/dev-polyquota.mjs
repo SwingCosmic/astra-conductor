@@ -92,7 +92,7 @@ process.on("SIGINT", () => {
   });
 });
 
-const coreBuildCode = await exitCode(run(["--filter", "@llm-usage/core", "run", "build"]));
+const coreBuildCode = await exitCode(run(["--filter", "@astra-conductor/core", "run", "build"]));
 if (coreBuildCode !== 0) {
   await stopAll();
   process.exitCode = coreBuildCode;
@@ -103,7 +103,7 @@ let rendererReady = false;
 await assertPortAvailable("127.0.0.1", port);
 const vite = run([
   "--filter",
-  "@llm-usage/ui",
+  "@astra-conductor/polyquota-ui",
   "exec",
   "vite",
   "--host",
@@ -138,7 +138,9 @@ try {
 }
 rendererReady = true;
 
-const compileCode = await exitCode(run(["--filter", "@llm-usage/desktop", "run", "build:main"]));
+const compileCode = await exitCode(
+  run(["--filter", "@astra-conductor/polyquota", "run", "build:main"]),
+);
 if (compileCode !== 0) {
   stopping = true;
   await stopAll();
@@ -146,8 +148,8 @@ if (compileCode !== 0) {
   process.exit();
 }
 
-const electron = run(["--filter", "@llm-usage/desktop", "run", "dev:electron"], {
-  LLM_USAGE_DEV_SERVER: `http://127.0.0.1:${port}`,
+const electron = run(["--filter", "@astra-conductor/polyquota", "run", "dev:electron"], {
+  POLYQUOTA_DEV_SERVER: `http://127.0.0.1:${port}`,
 });
 
 electron.once("exit", (code) => {

@@ -10,7 +10,7 @@ try {
   await access(source);
 } catch {
   console.error(
-    "packages/polyquota-ui/dist is missing. Run pnpm --filter @llm-usage/ui build first.",
+    "packages/polyquota-ui/dist is missing. Run pnpm --filter @astra-conductor/polyquota-ui build first.",
   );
   process.exit(1);
 }

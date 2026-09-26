@@ -30,7 +30,7 @@
 
 ```text
 终端
-└─ 根 Node 编排器 scripts/dev-desktop.mjs
+└─ 根 Node 编排器 scripts/dev-polyquota.mjs
    ├─ pnpm / Core 一次性构建（完成后退出）
    ├─ pnpm / Vite 开发服务器（持续运行，127.0.0.1:5173）
    ├─ pnpm / Desktop 一次性构建（完成后退出）
@@ -96,7 +96,7 @@ Electron 主进程
    - `tsc` 把 `apps/polyquota/src/**/*.ts` 编译到 `apps/polyquota/dist`；
    - 把 `src/preload.cjs` 原样复制到 `dist/preload.cjs`。
 4. **启动 Electron。**
-   - 注入 `LLM_USAGE_DEV_SERVER=http://127.0.0.1:5173`；
+   - 注入 `POLYQUOTA_DEV_SERVER=http://127.0.0.1:5173`；
    - 主窗口通过 `loadURL` 加载 Vite，而不是加载 `apps/polyquota/renderer`；
    - 主进程从固定目录显式加载预先生成的 Electron ABI `better_sqlite3.node`。
 
@@ -188,7 +188,7 @@ Desktop build:main
 
 正式应用从 `apps/polyquota/dist/main.js` 对应的 asar 内容启动。初始化顺序与开发模式基本相同，差异是：
 
-- 不存在 `LLM_USAGE_DEV_SERVER`，窗口通过 `loadFile` 读取打包的 `renderer/index.html`；
+- 不存在 `POLYQUOTA_DEV_SERVER`，窗口通过 `loadFile` 读取打包的 `renderer/index.html`；
 - 主进程为页面安装生产 CSP；
 - 不运行任何 TypeScript、esbuild、Vite 或复制任务；
 - 不执行原生模块重建；
@@ -409,7 +409,7 @@ sequenceDiagram
 ## 9. 主要实现依据
 
 - 根命令与串行构建：[`../../package.json`](../../package.json)
-- 开发进程编排：[`../../scripts/dev-desktop.mjs`](../../scripts/dev-desktop.mjs)
+- 开发进程编排：[`../../scripts/dev-polyquota.mjs`](../../scripts/dev-polyquota.mjs)
 - Electron 启动和原生模块处理：[`../../apps/polyquota/scripts/run-electron-mode.mjs`](../../apps/polyquota/scripts/run-electron-mode.mjs)
 - Electron 原生二进制预构建：[`../../apps/polyquota/scripts/prepare-native.mjs`](../../apps/polyquota/scripts/prepare-native.mjs)
 - 打包流程：[`../../apps/polyquota/scripts/package.mjs`](../../apps/polyquota/scripts/package.mjs)

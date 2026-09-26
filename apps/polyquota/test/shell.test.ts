@@ -8,7 +8,7 @@ const mainSource = readFileSync(
   "utf8",
 );
 
-describe("desktop shell", () => {
+describe("PolyQuota desktop shell", () => {
   it("isolates the renderer and keeps provider protocols outside the shell", () => {
     expect(mainSource).toContain("contextIsolation: true");
     expect(mainSource).toContain("nodeIntegration: false");
@@ -25,11 +25,14 @@ describe("desktop shell", () => {
     expect(mainSource).toContain("resolveProxy");
     expect(mainSource).toContain("setWindowOpenHandler");
     expect(mainSource).toContain('url.startsWith("https://")');
-    expect(mainSource).toContain("LLM_USAGE_RESET_DATA_OK");
+    expect(mainSource).toContain("POLYQUOTA_RESET_DATA_OK");
     expect(mainSource).toContain("`${databaseFile}-wal`");
     expect(mainSource).toContain('"lib", "better-sqlite3", "better_sqlite3.node"');
     expect(mainSource).toContain("nativeBinding: sqliteNativeBindingPath()");
-    expect(mainSource).toContain('app.setAppUserModelId("local.llm-usage.app")');
+    expect(mainSource).toContain('app.setAppUserModelId("io.astraconductor.polyquota")');
+    expect(mainSource).toContain('app.setName("PolyQuota")');
+    expect(mainSource).toContain('"AstraConductor", "PolyQuota"');
+    expect(mainSource).toContain('const databaseName = "polyquota.db"');
 
     const pollingSource = readFileSync(
       path.join(path.dirname(fileURLToPath(import.meta.url)), "../src/polling-service.ts"),

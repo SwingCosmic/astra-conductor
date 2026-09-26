@@ -199,7 +199,7 @@ describe("vendored Codex quota normalization", () => {
 });
 
 describe("vendored public credential helpers", () => {
-  const envName = "LLM_USAGE_TEST_PUBLIC_CRED";
+  const envName = "OMNIROUTE_TEST_PUBLIC_CRED";
   const original = process.env[envName];
 
   afterEach(() => {

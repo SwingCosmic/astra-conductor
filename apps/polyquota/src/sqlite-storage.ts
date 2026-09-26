@@ -9,7 +9,7 @@ import {
   type SettingValue,
   type StoragePort,
   type UsageSnapshot,
-} from "@llm-usage/core/internal";
+} from "@astra-conductor/core/internal";
 import { migrations } from "./migrations.js";
 
 interface AccountRow {

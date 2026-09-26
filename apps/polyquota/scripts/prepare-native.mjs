@@ -7,15 +7,15 @@ import { fileURLToPath } from "node:url";
 import { rebuild } from "@electron/rebuild";
 
 const require = createRequire(import.meta.url);
-const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const polyquotaRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const packageFile = require.resolve("better-sqlite3/package.json");
 const packageRoot = path.dirname(packageFile);
 const electronVersion = require("electron/package.json").version;
 const betterSqliteVersion = require(packageFile).version;
-const outputRoot = path.join(desktopRoot, "lib", "better-sqlite3");
+const outputRoot = path.join(polyquotaRoot, "lib", "better-sqlite3");
 const outputBinary = path.join(outputRoot, "better_sqlite3.node");
 const outputManifest = path.join(outputRoot, "manifest.json");
-const temporaryRoot = await mkdtemp(path.join(tmpdir(), "llm-usage-native-"));
+const temporaryRoot = await mkdtemp(path.join(tmpdir(), "polyquota-native-"));
 
 function includesGeneratedContent(source) {
   const relative = path.relative(packageRoot, source);
@@ -33,7 +33,7 @@ async function replaceFile(staged, target) {
     movedExisting = true;
   } catch (error) {
     if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) {
-      throw new Error(`Unable to replace ${target}. Exit llm-usage and try again.`, {
+      throw new Error(`Unable to replace ${target}. Exit PolyQuota and try again.`, {
         cause: error,
       });
     }
@@ -58,7 +58,7 @@ try {
     path.join(temporaryRoot, "package.json"),
     `${JSON.stringify(
       {
-        name: "llm-usage-electron-native-build",
+        name: "polyquota-electron-native-build",
         private: true,
         dependencies: { "better-sqlite3": betterSqliteVersion },
       },

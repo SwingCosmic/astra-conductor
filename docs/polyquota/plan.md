@@ -178,7 +178,7 @@ vendor 只能包含上游协议实现及为脱离 OmniRoute 宿主而必需的�
 | 数据库             | 使用 SQLite，Node.js 驱动锁定 `better-sqlite3` 12.11.1                                                            | Electron 42 内置的 `node:sqlite` 仍处于 Release Candidate；12.x 提供 Node 24 预构建并已通过 Electron 重建验证 |
 | 依赖归属           | `better-sqlite3` 是桌面应用的运行时依赖，由 Electron 主进程持有                                                   | Core 只定义存储端口，UI 和渲染进程不连接数据库；避免把原生模块和 Electron 生命周期带入业务层                  |
 | 查询与迁移         | 使用参数化 SQL 和仓库内显式迁移，不引入 ORM                                                                       | 当前模型较小，先保持 SQL、索引和事务边界可审查；迁移按版本顺序执行，并记录版本、校验值和执行时间               |
-| 数据库位置         | 使用 `app.getPath("userData")` 下的 `llm-usage.db`，单实例持有一条写连接                                         | 不硬编码 `%APPDATA%` 的完整路径；由 Electron 处理安装形态和用户目录差异，不允许渲染进程或第二进程自行打开文件  |
+| 数据库位置         | 使用 PolyQuota `userData` 下的 `polyquota.db`，单实例持有一条写连接                                                | `userData` 固定在系统 `appData/AstraConductor/PolyQuota`；不允许渲染进程或第二进程自行打开文件                |
 | 凭证保护           | 由桌面主进程使用 Electron `safeStorage` 加密授权材料，密文以 SQLite `BLOB` 保存                                    | 加密范围包括 access token、refresh token、id token、API Key 及认证流程产生的其他秘密；Core 只依赖加密端口      |
 | 加密粒度           | 按账号保存带版本的加密凭证信封，不使用 SQLCipher 对整个数据库加密                                                 | 账号状态、配额快照和设置需要正常查询；逐记录加密能缩小解密范围，也避免引入第二套 SQLite 原生构建               |
 | 明文数据           | 账号展示信息和经过白名单确认的 provider 元数据可明文保存；未知 provider 字段默认进入加密信封                      | `providerSpecificData` 不得成为绕过凭证加密的通道；字段是否公开由适配器显式声明                               |

@@ -1,5 +1,5 @@
 {
-  "name": "@llm-usage/ui",
+  "name": "@astra-conductor/polyquota-ui",
   "version": "0.0.1",
   "private": true,
   "type": "module",

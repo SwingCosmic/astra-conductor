@@ -65,7 +65,7 @@ importers:
 
   apps/polyquota:
     dependencies:
-      '@llm-usage/core':
+      '@astra-conductor/core':
         specifier: workspace:*
         version: link:../../packages/core
       better-sqlite3:

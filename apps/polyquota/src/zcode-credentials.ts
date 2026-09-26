@@ -2,7 +2,7 @@ import { createDecipheriv, createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { homedir, platform, userInfo } from "node:os";
 import path from "node:path";
-import { AppError, type GlmRegion } from "@llm-usage/core/internal";
+import { AppError, type GlmRegion } from "@astra-conductor/core/internal";
 
 const encryptedValuePrefix = "enc:v1:";
 const credentialSecretEnvKey = "ZCODE_CREDENTIAL_SECRET";

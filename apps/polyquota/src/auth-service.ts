@@ -16,7 +16,7 @@ import {
   type DeviceAuthorization,
   type GlmRegion,
   type ProviderId,
-} from "@llm-usage/core/internal";
+} from "@astra-conductor/core/internal";
 
 interface AuthCompletion {
   account: Account | null;
@@ -68,7 +68,7 @@ function codexAuthPath(): string {
 
 function callbackPage(success: boolean): string {
   const title = success ? "授权已完成" : "授权失败";
-  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>${title}</title><body><h1>${title}</h1><p>可以关闭此窗口并返回 llm-usage。</p></body></html>`;
+  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>${title}</title><body><h1>${title}</h1><p>可以关闭此窗口并返回 PolyQuota。</p></body></html>`;
 }
 
 export class AuthService {

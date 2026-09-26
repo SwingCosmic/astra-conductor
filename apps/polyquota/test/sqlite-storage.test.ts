@@ -3,16 +3,16 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
-import type { Account, UsageSnapshot } from "@llm-usage/core/internal";
+import type { Account, UsageSnapshot } from "@astra-conductor/core/internal";
 import { currentSchemaVersion, migrations } from "../src/migrations.js";
 import { SqliteStorage } from "../src/sqlite-storage.js";
 
 const tempDirectories: string[] = [];
 
 function tempDatabase(): string {
-  const directory = mkdtempSync(path.join(tmpdir(), "llm-usage-sqlite-"));
+  const directory = mkdtempSync(path.join(tmpdir(), "polyquota-sqlite-"));
   tempDirectories.push(directory);
-  return path.join(directory, "llm-usage.db");
+  return path.join(directory, "polyquota.db");
 }
 
 function account(id = "account-1"): Account {

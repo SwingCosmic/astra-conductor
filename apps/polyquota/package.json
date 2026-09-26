@@ -1,8 +1,8 @@
 {
-  "name": "@llm-usage/desktop",
+  "name": "@astra-conductor/polyquota",
   "version": "0.0.1",
   "private": true,
-  "description": "Local desktop view of LLM subscription usage",
+  "description": "PolyQuota desktop application",
   "type": "module",
   "main": "dist/main.js",
   "scripts": {
@@ -18,7 +18,7 @@
     "test:codex-cli": "node ./scripts/run-electron-mode.mjs codex-cli-smoke"
   },
   "dependencies": {
-    "@llm-usage/core": "workspace:*",
+    "@astra-conductor/core": "workspace:*",
     "better-sqlite3": "catalog:"
   },
   "devDependencies": {

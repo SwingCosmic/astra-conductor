@@ -24,7 +24,7 @@ function encryptCredential(value: string, secret: string): string {
 
 describe("ZCode credential import", () => {
   it("reads the encrypted individual Coding Plan API key without changing the source", async () => {
-    const directory = await mkdtemp(path.join(tmpdir(), "llm-usage-zcode-"));
+    const directory = await mkdtemp(path.join(tmpdir(), "polyquota-zcode-"));
     const credentialsPath = path.join(directory, "credentials.json");
     const secret = "test-zcode-credential-secret";
     const identity = "account@example.test";
@@ -46,7 +46,7 @@ describe("ZCode credential import", () => {
   });
 
   it("keeps domestic and international accounts separate", async () => {
-    const directory = await mkdtemp(path.join(tmpdir(), "llm-usage-zcode-"));
+    const directory = await mkdtemp(path.join(tmpdir(), "polyquota-zcode-"));
     const credentialsPath = path.join(directory, "credentials.json");
     await writeFile(credentialsPath, "{}", "utf8");
 
@@ -59,7 +59,7 @@ describe("ZCode credential import", () => {
   });
 
   it("imports a single pre-index credential left by an older ZCode version", async () => {
-    const directory = await mkdtemp(path.join(tmpdir(), "llm-usage-zcode-"));
+    const directory = await mkdtemp(path.join(tmpdir(), "polyquota-zcode-"));
     const credentialsPath = path.join(directory, "credentials.json");
     const providerId = "account:zai-individual-coding-plan";
     await writeFile(
@@ -77,7 +77,7 @@ describe("ZCode credential import", () => {
   });
 
   it("does not guess when a pre-index store contains multiple accounts", async () => {
-    const directory = await mkdtemp(path.join(tmpdir(), "llm-usage-zcode-"));
+    const directory = await mkdtemp(path.join(tmpdir(), "polyquota-zcode-"));
     const credentialsPath = path.join(directory, "credentials.json");
     const prefix = "account-provider:coding-plan:account:bigmodel-individual-coding-plan:account:";
     await writeFile(
