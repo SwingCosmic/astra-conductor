@@ -12,12 +12,17 @@ files:
 extraResources:
   - from: lib/better-sqlite3
     to: lib/better-sqlite3
+  - from: assets/icons
+    to: icons
 win:
+  icon: assets/icons/polyquota.ico
   target:
     - target: nsis
       arch:
         - x64
 nsis:
+  installerIcon: assets/icons/polyquota.ico
+  uninstallerIcon: assets/icons/polyquota.ico
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true

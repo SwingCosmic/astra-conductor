@@ -1,4 +1,14 @@
-import { app, BrowserWindow, Menu, Tray, nativeImage, net, session, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  Menu,
+  Tray,
+  nativeImage,
+  net,
+  session,
+  shell,
+  type NativeImage,
+} from "electron";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -54,6 +64,28 @@ function sqliteNativeBindingPath(): string {
   return path.join(root, "lib", "better-sqlite3", "better_sqlite3.node");
 }
 
+function iconResourcePath(filename: string): string {
+  const root = app.isPackaged
+    ? path.join(process.resourcesPath, "icons")
+    : path.join(app.getAppPath(), "assets", "icons");
+  return path.join(root, filename);
+}
+
+function loadProductIcon(filename: string, fallback = "polyquota.png"): NativeImage {
+  for (const candidate of new Set([filename, fallback])) {
+    const icon = nativeImage.createFromPath(iconResourcePath(candidate));
+    if (!icon.isEmpty()) return icon;
+  }
+  throw new Error(`Unable to load PolyQuota icon: ${filename}`);
+}
+
+function loadTrayIcon(): NativeImage {
+  const icon = loadProductIcon("tray-16.png");
+  const highDpi = loadProductIcon("tray-32.png");
+  icon.addRepresentation({ scaleFactor: 2, dataURL: highDpi.toDataURL() });
+  return icon;
+}
+
 function installProductionCsp(): void {
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
@@ -97,6 +129,7 @@ async function createWindow(): Promise<void> {
     show: false,
     backgroundColor: "#f3f4f6",
     title: "PolyQuota",
+    icon: loadProductIcon("polyquota.png"),
     webPreferences: {
       preload: path.join(appDir(), "preload.cjs"),
       contextIsolation: true,
@@ -145,13 +178,7 @@ async function createWindow(): Promise<void> {
 }
 
 function createTray(): void {
-  const icon = nativeImage.createFromDataURL(
-    "data:image/svg+xml;base64," +
-      Buffer.from(
-        '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" rx="8" fill="#2563eb"/><path d="M8 22V10h4v8h4V6h4v12h4v4z" fill="white"/></svg>',
-      ).toString("base64"),
-  );
-  tray = new Tray(icon.resize({ width: 16, height: 16 }));
+  tray = new Tray(loadTrayIcon());
   tray.setToolTip("PolyQuota");
   tray.setContextMenu(
     Menu.buildFromTemplate([

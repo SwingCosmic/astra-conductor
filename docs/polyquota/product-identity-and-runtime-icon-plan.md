@@ -1,7 +1,7 @@
 # PolyQuota 产品信息与图标方案
 
 评审日期：2026-09-25。对应[运行流程与通信机制现状报告](./runtime-and-communication-review.md)第 7.3 节。
-共用的 PolyQuota / GraphAgent 图标最终稿位于 [`../common/icon-design`](../common/icon-design/README.md)。这些内容尚未接入应用代码、产品配置或运行时图标。
+共用的 PolyQuota / GraphAgent 图标最终稿位于 [`../common/icon-design`](../common/icon-design/README.md)。PolyQuota 已将对应的派生资源接入应用窗口、托盘和 Windows 打包配置；动态额度状态切换仍按本文后续边界单独实施。
 
 ## 1. 产品信息
 
@@ -20,6 +20,8 @@
 
 PolyQuota 基础资产为 `polyquota.svg` 与 `polyquota-white.svg`，状态资产为 `polyquota-green.svg`、`polyquota-orange.svg`、`polyquota-red.svg` 和 `polyquota-unknown.svg`。SVG 均位于 `docs/common/icon-design`，是独立矢量资产，不依赖外部图片或字体。
 
+应用派生资源位于 `apps/polyquota/assets/icons`。`polyquota.ico` 包含 16、20、24、32、40、48、64、256 像素八种尺寸，用于 EXE、安装器、卸载器和 Windows 窗口；基础版及绿、橙、红、灰状态均提供 256 像素 PNG 和直接由 SVG 栅格化的 16/32 像素托盘 PNG。`manifest.json` 保存母版与派生文件的 SHA-256，测试会拒绝母版更新后未重新生成的资源。
+
 ### 正式资产范围
 
 | 场景 | 建议资产与行为 |
@@ -34,9 +36,9 @@ PolyQuota 基础资产为 `polyquota.svg` 与 `polyquota-white.svg`，状态资�
 
 ## 3. 透明托盘的处理方向
 
-当前 `apps/polyquota/src/main.ts` 把内联 SVG data URL 传给 `nativeImage.createFromDataURL`，然后缩放到 16 像素。Electron 官方支持格式列出 PNG/JPEG，以及 Windows 文件路径形式的 ICO；SVG 不属于该入口的受支持格式。这与当前透明托盘现象吻合，是首要原因判断，尚未在本轮启动应用复现。
+`apps/polyquota/src/main.ts` 已移除内联 SVG data URL，开发环境从 `assets/icons` 加载资源，安装后从 `resources/icons` 加载。窗口在 Windows 使用多尺寸 ICO，托盘使用直接栅格化的 16/32 像素 PNG 表示，并在资源解码为空时回退到 256 像素基础 PNG。
 
-实施时使用预先导出的 ICO 文件，并验证文件路径、解码结果和非透明像素；加载失败时使用可见的备用 PNG。不能把 SVG 字符串直接交给 nativeImage。开发和安装后的资源路径都要验证。
+生成脚本通过 Electron 的透明离屏窗口直接渲染最终 SVG，并验证输出尺寸同时包含透明和可见像素。electron-builder 将整个图标目录复制到 `resources/icons`，并显式使用基础 ICO 作为应用、NSIS 安装器和卸载器图标。开发启动和 unpacked 应用烟测均已验证实际资源路径；打包后资源与源目录的文件清单及 SHA-256 完全一致，EXE 与安装器也能够提取出 PolyQuota 图标。
 
 参考：[Electron nativeImage](https://www.electronjs.org/docs/latest/api/native-image#supported-formats)、[Electron Tray](https://www.electronjs.org/docs/latest/api/tray)。
 
@@ -81,10 +83,10 @@ EXE 内嵌图标和已固定的快捷方式保持静态。运行窗口图标允�
 
 ## 6. 实施顺序与验收
 
-1. 评审 Q 图形、底部短条比例、状态色和产品文案，确定母版。
-2. 导出 PNG/ICO，统一用户可见产品信息，先让 EXE、安装程序、窗口和托盘具有清晰的静态图标；确认已有安装的数据与升级连续性。
+1. 已完成 Q 图形、底部短条比例、状态色和产品文案评审，并确定母版。
+2. 已导出 PNG/ICO，并让 EXE、安装程序、窗口和托盘引用静态品牌图标；仍需以安装产物核对 Windows 图标缓存和升级显示。
 3. 在主进程建立全局状态计算与更新，接入动态窗口/托盘图标和 Windows 原生进度。
 4. 验证开发启动和安装产物：浅色/深色任务栏、100%/125%/150%/200% 缩放、最小化、隐藏到托盘、恢复、固定后重启，以及资源加载失败的备用图标。
 5. 验证 100%、50%、20%、5%、0%、无账号、禁用账号、null、刷新失败、部分过期和全部过期；确认后台轮询与手动刷新得到一致状态，原生进度开关关闭后仍有托盘反馈。
 
-进入代码实施后再运行仓库要求的 format、typecheck、test、build 和 package，并执行真实 Electron 与安装产物验证。本轮只校验评审 SVG 的结构和资源范围，不宣称已验证系统托盘或任务栏运行效果。
+静态图标接入已通过仓库要求的 format、typecheck、test、build、package、真实 Electron 开发启动和 unpacked 应用烟测。动态额度状态、任务栏进度、状态图标切换，以及不同缩放比例和 Windows 图标缓存的人工视觉验收仍属于后续实施范围。

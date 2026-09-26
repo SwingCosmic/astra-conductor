@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 64 64" role="img" aria-label="PolyQuota monochrome white">
+  <title>PolyQuota monochrome white with fixed 60-percent bar</title>
+  <g fill="none" stroke="#FFFFFF" stroke-width="1.4" stroke-linecap="round">
+    <circle cx="32" cy="28.5" r="22.8"/>
+    <path d="M32 5.7V18.5M12.255 39.9 22 34.274M51.745 39.9 42 34.274"/>
+  </g>
+  <g fill="#FFFFFF">
+    <circle cx="32" cy="5.7" r="5.4"/>
+    <circle cx="12.255" cy="39.9" r="5.4"/>
+    <circle cx="51.745" cy="39.9" r="5.4"/>
+    <path fill-rule="evenodd" d="M26 18.5H38Q42 18.5 42 22.5V34.5Q42 38.5 38 38.5H26Q22 38.5 22 34.5V22.5Q22 18.5 26 18.5ZM26.7 22.7H37.3Q38 22.7 38 23.4V24.4Q38 25.1 37.3 25.1H26.7Q26 25.1 26 24.4V23.4Q26 22.7 26.7 22.7ZM26.7 27.3H37.3Q38 27.3 38 28V29Q38 29.7 37.3 29.7H26.7Q26 29.7 26 29V28Q26 27.3 26.7 27.3ZM26.7 31.9H37.3Q38 31.9 38 32.6V33.6Q38 34.3 37.3 34.3H26.7Q26 34.3 26 33.6V32.6Q26 31.9 26.7 31.9Z"/>
+    <rect x="14" y="57.2" width="21.6" height="2.8" rx="1.4"/>
+  </g>
+  <rect x="14" y="57.2" width="36" height="2.8" rx="1.4" fill="none" stroke="#FFFFFF" stroke-width="1"/>
+</svg>

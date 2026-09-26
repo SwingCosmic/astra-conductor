@@ -6,6 +6,7 @@
   "type": "module",
   "main": "dist/main.js",
   "scripts": {
+    "icons:generate": "node ./scripts/run-icon-generator.mjs",
     "native:prepare": "node ./scripts/prepare-native.mjs",
     "prebuild": "pnpm run native:prepare",
     "build:main": "tsc -p tsconfig.build.json && node ./scripts/copy-preload.mjs",

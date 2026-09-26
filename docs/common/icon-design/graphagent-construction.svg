@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 64 64" role="img" aria-label="GraphAgent regular tetrahedron projection construction with six edges and four center guides">
+  <title>GraphAgent tetrahedron projection construction</title>
+  <g fill="none" stroke="#6423D9" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M34.97 8.6 53.34 29.5 43.64 52.48 10.65 37.42Z"/>
+    <path d="M34.97 8.6 43.64 52.48"/>
+    <path d="M10.65 37.42 53.34 29.5" stroke-dasharray="2 1.8" opacity=".45"/>
+  </g>
+  <g fill="none" stroke="#B79AEE" stroke-width=".8" stroke-linecap="round" stroke-dasharray="1.2 1.5">
+    <path d="M35.65 32 34.97 8.6M35.65 32 53.34 29.5M35.65 32 43.64 52.48M35.65 32 10.65 37.42"/>
+  </g>
+  <g fill="#6423D9">
+    <circle cx="34.97" cy="8.6" r="5.2"/>
+    <circle cx="53.34" cy="29.5" r="5.2"/>
+    <circle cx="43.64" cy="52.48" r="5.2"/>
+    <circle cx="10.65" cy="37.42" r="5.2"/>
+    <path d="M35.65 24.5C36.3 28.8 38.85 31.35 43.15 32C38.85 32.65 36.3 35.2 35.65 39.5C35 35.2 32.45 32.65 28.15 32C32.45 31.35 35 28.8 35.65 24.5Z"/>
+  </g>
+</svg>

@@ -1,0 +1,158 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1180" viewBox="0 0 1080 1180" role="img" aria-label="PolyQuota and GraphAgent final icon family design">
+  <title>PolyQuota × GraphAgent · Final</title>
+  <defs>
+    <pattern id="checker" width="16" height="16" patternUnits="userSpaceOnUse">
+      <rect width="16" height="16" fill="#FFFFFF"/>
+      <path d="M0 0H8V8H0ZM8 8H16V16H8Z" fill="#F0F3F8"/>
+    </pattern>
+    <symbol id="polyquotaCore" viewBox="0 0 64 64">
+      <g fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+        <circle cx="32" cy="28.5" r="22.8"/>
+        <path d="M32 5.7V18.5M12.255 39.9 22 34.274M51.745 39.9 42 34.274"/>
+      </g>
+      <g fill="currentColor">
+        <circle cx="32" cy="5.7" r="5.4"/>
+        <circle cx="12.255" cy="39.9" r="5.4"/>
+        <circle cx="51.745" cy="39.9" r="5.4"/>
+        <path fill-rule="evenodd" d="M26 18.5H38Q42 18.5 42 22.5V34.5Q42 38.5 38 38.5H26Q22 38.5 22 34.5V22.5Q22 18.5 26 18.5ZM26.7 22.7H37.3Q38 22.7 38 23.4V24.4Q38 25.1 37.3 25.1H26.7Q26 25.1 26 24.4V23.4Q26 22.7 26.7 22.7ZM26.7 27.3H37.3Q38 27.3 38 28V29Q38 29.7 37.3 29.7H26.7Q26 29.7 26 29V28Q26 27.3 26.7 27.3ZM26.7 31.9H37.3Q38 31.9 38 32.6V33.6Q38 34.3 37.3 34.3H26.7Q26 34.3 26 33.6V32.6Q26 31.9 26.7 31.9Z"/>
+      </g>
+    </symbol>
+    <symbol id="polyquota" viewBox="0 0 64 64">
+      <use href="#polyquotaCore"/>
+      <rect x="14" y="57.2" width="21.6" height="2.8" rx="1.4" fill="currentColor"/>
+      <rect x="14" y="57.2" width="36" height="2.8" rx="1.4" fill="none" stroke="currentColor" stroke-width="1"/>
+    </symbol>
+    <symbol id="polyquotaGreen" viewBox="0 0 64 64">
+      <use href="#polyquotaCore" color="#164BDD"/>
+      <rect x="14" y="57.2" width="21.6" height="2.8" rx="1.4" fill="#168C4B"/>
+      <rect x="14" y="57.2" width="36" height="2.8" rx="1.4" fill="none" stroke="#168C4B" stroke-width="1"/>
+    </symbol>
+    <symbol id="polyquotaOrange" viewBox="0 0 64 64">
+      <use href="#polyquotaCore" color="#164BDD"/>
+      <rect x="14" y="57.2" width="14.4" height="2.8" rx="1.4" fill="#D97908"/>
+      <rect x="14" y="57.2" width="36" height="2.8" rx="1.4" fill="none" stroke="#D97908" stroke-width="1"/>
+    </symbol>
+    <symbol id="polyquotaRed" viewBox="0 0 64 64">
+      <use href="#polyquotaCore" color="#164BDD"/>
+      <rect x="14" y="57.2" width="7.2" height="2.8" rx="1.4" fill="#DA304B"/>
+      <rect x="14" y="57.2" width="36" height="2.8" rx="1.4" fill="none" stroke="#DA304B" stroke-width="1"/>
+    </symbol>
+    <symbol id="graphagent" viewBox="0 0 64 64">
+      <g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+        <path d="M43.64 52.48 10.65 37.42 34.97 8.6 53.34 29.5 48.49 40.99"/>
+      </g>
+      <g fill="currentColor">
+        <circle cx="34.97" cy="8.6" r="5.2"/>
+        <circle cx="53.34" cy="29.5" r="5.2"/>
+        <circle cx="43.64" cy="52.48" r="5.2"/>
+        <circle cx="10.65" cy="37.42" r="5.2"/>
+        <path d="M35.65 24.5C36.3 28.8 38.85 31.35 43.15 32C38.85 32.65 36.3 35.2 35.65 39.5C35 35.2 32.45 32.65 28.15 32C32.45 31.35 35 28.8 35.65 24.5Z"/>
+      </g>
+    </symbol>
+    <symbol id="graphConstruction" viewBox="0 0 64 64">
+      <g fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M34.97 8.6 53.34 29.5 43.64 52.48 10.65 37.42Z"/>
+        <path d="M34.97 8.6 43.64 52.48"/>
+        <path d="M10.65 37.42 53.34 29.5" stroke-dasharray="2 1.8" opacity=".45"/>
+      </g>
+      <g fill="none" stroke="#B79AEE" stroke-width=".8" stroke-linecap="round" stroke-dasharray="1.2 1.5">
+        <path d="M35.65 32 34.97 8.6M35.65 32 53.34 29.5M35.65 32 43.64 52.48M35.65 32 10.65 37.42"/>
+      </g>
+      <g fill="currentColor">
+        <circle cx="34.97" cy="8.6" r="5.2"/>
+        <circle cx="53.34" cy="29.5" r="5.2"/>
+        <circle cx="43.64" cy="52.48" r="5.2"/>
+        <circle cx="10.65" cy="37.42" r="5.2"/>
+        <path d="M35.65 24.5C36.3 28.8 38.85 31.35 43.15 32C38.85 32.65 36.3 35.2 35.65 39.5C35 35.2 32.45 32.65 28.15 32C32.45 31.35 35 28.8 35.65 24.5Z"/>
+      </g>
+    </symbol>
+  </defs>
+
+  <rect width="1080" height="1180" fill="#EDF0F5"/>
+  <g font-family="Segoe UI, Microsoft YaHei, sans-serif">
+    <text x="32" y="47" font-size="29" fill="#172A43" font-weight="650">PolyQuota × GraphAgent</text>
+    <text x="32" y="77" font-size="15" fill="#647087">最终稿 · PolyQuota 状态对照 / GraphAgent 正四面体投影与构造说明</text>
+
+    <rect x="24" y="102" width="506" height="370" rx="18" fill="#FFFFFF"/>
+    <rect x="550" y="102" width="506" height="370" rx="18" fill="#FFFFFF"/>
+    <text x="48" y="142" font-size="24" fill="#164BDD" font-weight="650">PolyQuota</text>
+    <text x="574" y="142" font-size="24" fill="#6423D9" font-weight="650">GraphAgent</text>
+    <rect x="48" y="162" width="190" height="190" rx="10" fill="url(#checker)"/>
+    <rect x="574" y="162" width="190" height="190" rx="10" fill="url(#checker)"/>
+    <use href="#polyquota" x="59" y="173" width="168" height="168" color="#164BDD"/>
+    <use href="#graphagent" x="585" y="173" width="168" height="168" color="#6423D9"/>
+
+    <text x="258" y="190" font-size="17" fill="#164BDD" font-weight="600">120° 三等分汇聚</text>
+    <text x="258" y="219" font-size="14" fill="#647087">−90° / 30° / 150°</text>
+    <text x="258" y="245" font-size="14" fill="#647087">圆环与额度条净距约 4.7</text>
+    <text x="258" y="277" font-size="15" fill="#172A43" font-weight="600">三种额度状态</text>
+    <use href="#polyquotaGreen" x="254" y="290" width="66" height="66"/>
+    <use href="#polyquotaOrange" x="343" y="290" width="66" height="66"/>
+    <use href="#polyquotaRed" x="432" y="290" width="66" height="66"/>
+    <text x="287" y="374" text-anchor="middle" font-size="13" fill="#168C4B" font-weight="600">绿色</text>
+    <text x="376" y="374" text-anchor="middle" font-size="13" fill="#D97908" font-weight="600">橙色</text>
+    <text x="465" y="374" text-anchor="middle" font-size="13" fill="#DA304B" font-weight="600">红色</text>
+    <text x="287" y="395" text-anchor="middle" font-size="12" fill="#647087">R &gt; 50%</text>
+    <text x="376" y="395" text-anchor="middle" font-size="12" fill="#647087">20% &lt; R ≤ 50%</text>
+    <text x="465" y="395" text-anchor="middle" font-size="12" fill="#647087">R ≤ 20%</text>
+    <text x="287" y="420" text-anchor="middle" font-size="12" fill="#647087">条长 60%</text>
+    <text x="376" y="420" text-anchor="middle" font-size="12" fill="#647087">条长 40%</text>
+    <text x="465" y="420" text-anchor="middle" font-size="12" fill="#647087">条长 20%</text>
+    <text x="48" y="449" font-size="12" fill="#647087">透明底 · 主色结构不变 · 状态只作用于固定长度额度条</text>
+
+    <text x="784" y="190" font-size="17" fill="#6423D9" font-weight="600">正四面体空间投影</text>
+    <text x="784" y="219" font-size="14" fill="#647087">标准四顶点保持等距</text>
+    <text x="784" y="247" font-size="14" fill="#647087">X / Y / Z：12° / 8° / 35°</text>
+    <text x="784" y="275" font-size="14" fill="#647087">整体右移 3.65，视觉边界居中</text>
+    <text x="784" y="303" font-size="14" fill="#647087">投影质心与星心：(35.65, 32)</text>
+    <text x="784" y="331" font-size="14" fill="#647087">正式图删除正面、背面两条棱</text>
+    <text x="784" y="359" font-size="14" fill="#647087">右下棱保留前半，形成开放端点</text>
+    <text x="574" y="449" font-size="12" fill="#647087">透明底 · 可见边界水平居中 · 未完成边表达仍可继续派发</text>
+
+    <rect x="24" y="492" width="1032" height="250" rx="18" fill="#FFFFFF"/>
+    <text x="48" y="532" font-size="20" fill="#172A43" font-weight="650">GraphAgent 构造与擦线</text>
+    <rect x="48" y="552" width="150" height="150" rx="10" fill="url(#checker)"/>
+    <rect x="222" y="552" width="150" height="150" rx="10" fill="url(#checker)"/>
+    <use href="#graphConstruction" x="58" y="562" width="130" height="130" color="#6423D9"/>
+    <use href="#graphagent" x="232" y="562" width="130" height="130" color="#6423D9"/>
+    <text x="123" y="722" text-anchor="middle" font-size="13" fill="#6423D9" font-weight="600">完整构造</text>
+    <text x="297" y="722" text-anchor="middle" font-size="13" fill="#6423D9" font-weight="600">擦线后正式图</text>
+    <text x="408" y="570" font-size="16" fill="#6423D9" font-weight="600">完整构造保留可追溯几何</text>
+    <text x="408" y="600" font-size="14" fill="#647087">六条棱连接全部四个顶点；背向棱使用淡色虚线。</text>
+    <text x="408" y="628" font-size="14" fill="#647087">四角星从中心发出四条辅助线，分别指向四个投影顶点。</text>
+    <text x="408" y="666" font-size="16" fill="#6423D9" font-weight="600">正式图保留开放的四周轮廓</text>
+    <text x="408" y="696" font-size="14" fill="#647087">删除正面、背面两条对角棱及四条中心辅助线。</text>
+    <text x="408" y="724" font-size="14" fill="#647087">右下棱从中点断开，只留上半段表示任务仍可继续派发。</text>
+
+    <rect x="24" y="762" width="1032" height="150" rx="18" fill="#101B2E"/>
+    <text x="48" y="798" font-size="19" fill="#FFFFFF" font-weight="600">纯白单色版</text>
+    <use href="#polyquota" x="52" y="811" width="86" height="86" color="#FFFFFF"/>
+    <use href="#graphagent" x="252" y="811" width="86" height="86" color="#FFFFFF"/>
+    <text x="150" y="855" font-size="15" fill="#FFFFFF" font-weight="600">PolyQuota</text>
+    <text x="350" y="855" font-size="15" fill="#FFFFFF" font-weight="600">GraphAgent</text>
+    <text x="528" y="829" font-size="16" fill="#D9E3F4">共同语言</text>
+    <text x="528" y="860" font-size="15" fill="#FFFFFF">饱和蓝紫 / 实心圆节点 / 细连线 / 透明底</text>
+    <text x="528" y="887" font-size="14" fill="#B9C7DB">PolyQuota 表达聚合；GraphAgent 表达空间化控制流与数据流。</text>
+
+    <rect x="24" y="932" width="506" height="176" rx="18" fill="#FFFFFF"/>
+    <rect x="550" y="932" width="506" height="176" rx="18" fill="#101B2E"/>
+    <text x="48" y="966" font-size="15" fill="#164BDD" font-weight="600">默认版 · 原尺寸</text>
+    <text x="574" y="966" font-size="15" fill="#FFFFFF" font-weight="600">白色版 · 原尺寸</text>
+    <g fill="#647087" font-size="12">
+      <use href="#polyquota" x="48" y="990" width="16" height="16" color="#164BDD"/><use href="#graphagent" x="70" y="990" width="16" height="16" color="#6423D9"/><text x="48" y="1081">16px</text>
+      <use href="#polyquota" x="140" y="988" width="20" height="20" color="#164BDD"/><use href="#graphagent" x="166" y="988" width="20" height="20" color="#6423D9"/><text x="140" y="1081">20px</text>
+      <use href="#polyquota" x="232" y="986" width="24" height="24" color="#164BDD"/><use href="#graphagent" x="262" y="986" width="24" height="24" color="#6423D9"/><text x="232" y="1081">24px</text>
+      <use href="#polyquota" x="324" y="982" width="32" height="32" color="#164BDD"/><use href="#graphagent" x="362" y="982" width="32" height="32" color="#6423D9"/><text x="324" y="1081">32px</text>
+      <use href="#polyquota" x="416" y="974" width="48" height="48" color="#164BDD"/><use href="#graphagent" x="470" y="974" width="48" height="48" color="#6423D9"/><text x="416" y="1081">48px</text>
+    </g>
+    <g fill="#B9C7DB" font-size="12">
+      <use href="#polyquota" x="574" y="990" width="16" height="16" color="#FFFFFF"/><use href="#graphagent" x="596" y="990" width="16" height="16" color="#FFFFFF"/><text x="574" y="1081">16px</text>
+      <use href="#polyquota" x="666" y="988" width="20" height="20" color="#FFFFFF"/><use href="#graphagent" x="692" y="988" width="20" height="20" color="#FFFFFF"/><text x="666" y="1081">20px</text>
+      <use href="#polyquota" x="758" y="986" width="24" height="24" color="#FFFFFF"/><use href="#graphagent" x="788" y="986" width="24" height="24" color="#FFFFFF"/><text x="758" y="1081">24px</text>
+      <use href="#polyquota" x="850" y="982" width="32" height="32" color="#FFFFFF"/><use href="#graphagent" x="888" y="982" width="32" height="32" color="#FFFFFF"/><text x="850" y="1081">32px</text>
+      <use href="#polyquota" x="942" y="974" width="48" height="48" color="#FFFFFF"/><use href="#graphagent" x="996" y="974" width="48" height="48" color="#FFFFFF"/><text x="942" y="1081">48px</text>
+    </g>
+    <text x="32" y="1141" font-size="14" fill="#647087">PolyQuota 视觉方向已定稿；GraphAgent 保留构造稿用于继续核对空间投影与小尺寸辨识度。</text>
+    <text x="32" y="1165" font-size="12" fill="#647087">SVG 设计最终稿，尚未应用到程序、Windows 托盘或 ICO。</text>
+  </g>
+</svg>
