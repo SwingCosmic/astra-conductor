@@ -3,8 +3,8 @@ dist/
 out/
 release/
 coverage/
-apps/desktop/renderer/
-apps/desktop/lib/
+apps/polyquota/renderer/
+apps/polyquota/lib/
 *.log
 .env
 .env.*

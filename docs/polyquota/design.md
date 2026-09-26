@@ -65,8 +65,8 @@ GitHub Copilot、Claude、OpenCode Go 及其他已有稳定用量实现的服务
 | 位置                   | 职责                                                          | 边界                               |
 | ---------------------- | ------------------------------------------------------------- | ---------------------------------- |
 | `packages/core`        | 账号、适配器、凭证刷新、用量归一化、轮询、存储和通知判定      | 不依赖 Electron，不包含界面        |
-| `packages/ui`          | Vue 3 卡片、设置和登录交互                                    | 不访问上游，不持有明文凭证         |
-| `apps/desktop`         | Electron 窗口、托盘、系统通知、安全存储、系统代理和浏览器授权 | 不包含服务商协议                   |
+| `packages/polyquota-ui` | Vue 3 卡片、设置和登录交互                                    | PolyQuota 专用；不访问上游，不持有明文凭证 |
+| `apps/polyquota`        | Electron 窗口、托盘、系统通知、安全存储、系统代理和浏览器授权 | PolyQuota 专用；不包含服务商协议           |
 | `tools/omniroute-sync` | 按清单抽取、转换并记录 OmniRoute 来源                         | 只在开发和升级时运行               |
 | `references/omniroute` | 固定提交的上游源码                                            | 仅作参考和同步输入，不参与应用构建 |
 
@@ -120,7 +120,7 @@ OmniRoute 放在 `references/omniroute`，以 Git 子模块记录固定提交。
 | Grok Build      | 设备码、浏览器 OAuth PKCE、完整 CLI `auth.json` 只读导入          | 刷新时保留账号主体信息、额外额度只读展示                     |
 | Antigravity     | Google OAuth 授权码                                               | 身份请求头、项目标识和上游数据库耦合的解除                   |
 
-Codex 所需上游文件先由手工样板和逐文件 diff 确认，真实闭环通过后再纳入同步清单。文件选择和耦合拆分的依据见 [OmniRoute 探索报告](./omniroute-exploration.md)。新增服务前应先确认 OmniRoute 中存在可独立抽取且可验证的实现。
+Codex 所需上游文件先由手工样板和逐文件 diff 确认，真实闭环通过后再纳入同步清单。文件选择和耦合拆分的依据见 [OmniRoute 探索报告](../common/core/omniroute-exploration.md)。新增服务前应先确认 OmniRoute 中存在可独立抽取且可验证的实现。
 
 ### 6.2 认证
 
@@ -151,7 +151,7 @@ Codex 所需上游文件先由手工样板和逐文件 diff 确认，真实闭�
 
 ### 6.5 用量展示与通知
 
-界面使用 Vue 3 重新实现。`docs/omniroute.png` 只确认卡片、套餐、配额、重置时间和刷新这些信息层级。可见文案以本节为准。
+界面使用 Vue 3 重新实现。`docs/common/core/omniroute.png` 只确认卡片、套餐、配额、重置时间和刷新这些信息层级。可见文案以本节为准。
 
 每张卡片呈现服务名称、套餐、打码账号、配额、重置时间、更新时间、状态开关和刷新反馈。套餐名称使用面向用户的服务商名称，不直接暴露协议内部值；除已经确认的名称映射外，只做首字母大小写等轻量整理，不翻译成中文。配额剩余量位于进度条右侧，重置时间位于进度条下方。停用账号仍保留最近一次用量卡片，使用弱化状态和关闭的右上角开关表示，不参与自动刷新和通知。
 
@@ -178,7 +178,7 @@ GLM 的国内与国际 Coding Plan 在核心中共用 `glm` 适配器，由账�
 
 数据使用 SQLite 保存，数据库位于 Electron `app.getPath("userData")` 下。Node.js 驱动选用 `better-sqlite3`，只由桌面主进程持有连接；Core 依赖存储端口，渲染进程不直接访问数据库。首版保存账号、加密凭证、最近用量、通知状态、设置和迁移记录，不保留历史用量曲线。查询使用参数化 SQL，模式演进使用仓库内显式迁移，不引入 ORM。
 
-Node 与 Electron 使用彼此隔离的原生二进制。workspace 中的 `better-sqlite3` 始终保持 Node ABI；Electron ABI 在隔离的临时目录中构建后固定输出到 `apps/desktop/lib/better-sqlite3`，不修改 pnpm 依赖目录。首次开发或相关运行时发生变化后手动执行 `pnpm native:prepare`；生产构建通过 Desktop 的 `prebuild` 自动重新生成。主进程在开发时从应用目录、打包后从 `process.resourcesPath` 解析同一相对路径，并通过 `nativeBinding` 显式加载；安装包不携带依赖目录中面向 Node 的默认二进制。
+Node 与 Electron 使用彼此隔离的原生二进制。workspace 中的 `better-sqlite3` 始终保持 Node ABI；Electron ABI 在隔离的临时目录中构建后固定输出到 `apps/polyquota/lib/better-sqlite3`，不修改 pnpm 依赖目录。首次开发或相关运行时发生变化后手动执行 `pnpm native:prepare`；生产构建通过 Desktop 的 `prebuild` 自动重新生成。主进程在开发时从应用目录、打包后从 `process.resourcesPath` 解析同一相对路径，并通过 `nativeBinding` 显式加载；安装包不携带依赖目录中面向 Node 的默认二进制。
 
 授权材料按账号使用 Electron `safeStorage` 加密后以 SQLite `BLOB` 保存，不采用 SQLCipher 整库加密。密文包含版本和账号归属信息；access token、refresh token、id token、API Key 及其他认证秘密不得进入明文字段。若安全存储不可用，应用拒绝新增、导入、刷新或改写凭证，并保留已有密文。该方案提供与本机用户绑定的静态保护，不承诺抵御同一登录用户权限下的恶意进程，也不提供跨机器凭证迁移。渲染进程、通知和日志只能接收打码后的账号信息。
 
@@ -231,15 +231,15 @@ Node 与 Electron 使用彼此隔离的原生二进制。workspace 中的 `bette
 - 套餐名称保持上游原文；配额标题使用窗口或分组展示名，Codex 短窗口显示 `5-hour`；Antigravity 以分组标题展示整组配额；
 - 日志、IPC 和系统通知中不出现明文凭证；
 - 应用构建不编译或打包 `references/omniroute`；
-- `packages/ui` 不依赖 OmniRoute 的界面代码；
+- `packages/polyquota-ui` 不依赖 OmniRoute 的界面代码；
 - 回环认证只短暂监听本机地址；
 - 开关、刷新和登录操作均有明确的进行中、成功或失败反馈。
 
 ## 11. 参考资料
 
 - [OmniRoute](https://github.com/diegosouzapw/OmniRoute)，MIT；本地固定源码见 `references/omniroute`
-- [OmniRoute 探索报告](./omniroute-exploration.md)
+- [OmniRoute 探索报告](../common/core/omniroute-exploration.md)
 - [实施计划](./plan.md)
-- [OmniRoute 用量页面截图](./omniroute.png)
+- [OmniRoute 用量页面截图](../common/core/omniroute.png)
 - [monaco-editor 的源码抽取思路](https://github.com/microsoft/monaco-editor/blob/main/CONTRIBUTING.md)
 - [CodexBar](https://github.com/steipete/CodexBar)，仅作为通知体验参考

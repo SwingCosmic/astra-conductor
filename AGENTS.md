@@ -2,13 +2,14 @@
 
 ## Project Structure & Module Organization
 
-This pnpm workspace has three application modules:
+This pnpm workspace currently has three runnable modules and one reserved application location:
 
-- `packages/core`: shared models, protocol adapters, and the curated OmniRoute subset in `src/vendor/omniroute`.
-- `packages/ui`: Vue 3 components, styles, fixtures, and browser tests.
-- `apps/desktop`: Electron main/preload code and NSIS packaging.
+- `packages/core`: models, protocol adapters, and the curated OmniRoute subset shared by PolyQuota and GraphAgent.
+- `packages/polyquota-ui`: PolyQuota-only Vue 3 components, styles, fixtures, and browser tests.
+- `apps/polyquota`: PolyQuota Electron main/preload code and NSIS packaging.
+- `apps/graph-agent`: a documentation-only placeholder; do not infer its future runtime or UI structure from PolyQuota.
 
-Tests live in each module's `test/` directory as `*.test.ts`; keep test helpers and fixtures there as well. Shared TypeScript settings are in `tsconfig.base.json`. `docs/design.md` records decisions; `docs/plan.md` defines implementation stages. `references/omniroute` is a reference submodule, not a runtime dependency. Initialize it with `git submodule update --init --recursive`.
+Tests live in each runnable module's `test/` directory as `*.test.ts`; keep test helpers and fixtures there as well. Shared TypeScript settings are in `tsconfig.base.json`. Product and shared documentation is indexed by `docs/README.md`. All repositories under `references/` are reference inputs, not runtime dependencies. Initialize them with `git submodule update --init --recursive`.
 
 ## Build, Test, and Development Commands
 
@@ -23,7 +24,7 @@ $env:Path = "$env:NODE24_HOME;$env:Path"
 - `pnpm typecheck`: check TypeScript and Vue across all modules.
 - `pnpm test`: run all Vitest suites once.
 - `pnpm build`: build core, UI, and desktop in order.
-- `pnpm package`: create the NSIS installer in `apps/desktop/release/`.
+- `pnpm package`: create the NSIS installer in `apps/polyquota/release/`.
 - `pnpm format:check`: verify formatting without edits.
 
 ## Coding Style & Naming Conventions
@@ -40,4 +41,4 @@ Keep commit subjects short; any language is acceptable. Prefer `feat:`, `fix:`, 
 
 ## Security & Vendor Boundaries
 
-Never log or expose tokens through UI or IPC. Store authorization secrets only through the documented `safeStorage` and SQLite boundary. Do not import from `references/omniroute`; changes to the curated vendor subset must retain source traceability and update its baseline tests or documentation.
+Never log or expose tokens through UI or IPC. Store authorization secrets only through the documented `safeStorage` and SQLite boundary. Do not import runtime code from any repository under `references/`; changes to the curated vendor subset must retain source traceability and update its baseline tests or documentation.

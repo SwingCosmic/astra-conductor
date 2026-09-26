@@ -43,7 +43,7 @@
 
 **方向：**
 
-- 建立 `packages/core`、`packages/ui` 和 `apps/desktop`；
+- 建立 `packages/core`、`packages/polyquota-ui` 和 `apps/polyquota`；
 - 统一 TypeScript、构建、格式化和测试入口；
 - 让 Vue 产物可由 Electron 加载；
 - 用最小原生依赖验证 Windows 开发与打包流程。
@@ -52,7 +52,7 @@
 
 **完成标志：** 三部分可独立构建，桌面应用可启动并加载空界面，安装包骨架可生成。
 
-**状态：** 已完成。`packages/core`、`packages/ui`、`apps/desktop` 可独立构建。桌面窗口加载 Vue 示例卡片，数据写死，没有登录、刷新或开关。安装包为 NSIS + asar，骨架不含原生模块；桌面运行时已精确锁定到 Electron 42.11.6，构建环境最低为 Node 22.12。
+**状态：** 已完成。`packages/core`、`packages/polyquota-ui`、`apps/polyquota` 可独立构建。桌面窗口加载 Vue 示例卡片，数据写死，没有登录、刷新或开关。安装包为 NSIS + asar，骨架不含原生模块；桌面运行时已精确锁定到 Electron 42.11.6，构建环境最低为 Node 22.12。
 
 ### 阶段 2：OmniRoute 源码手工抽取
 
@@ -161,7 +161,7 @@ vendor 只能包含上游协议实现及为脱离 OmniRoute 宿主而必需的�
 - vendor 不含数据库、回环宿主、CLI 回写、Electron、Vue、推理执行和兑换逻辑；
 - 阶段 3 可以只通过稳定函数调用和宿主端口完成拼接，不再从源仓库复制代码。
 
-**状态：** 步骤 1、步骤 2 的手工抽取和无网络验证均已完成。步骤 2 当前包含 14 个来源文件和可随时重新生成的逐文件 `.diff`；Codex CLI、浏览器 OAuth 和设备授权均已在阶段 5 完成真实用量闭环验证。验证发现的遗漏继续回补阶段 2。详细协议依据见 [OmniRoute 探索报告](./omniroute-exploration.md)。
+**状态：** 步骤 1、步骤 2 的手工抽取和无网络验证均已完成。步骤 2 当前包含 14 个来源文件和可随时重新生成的逐文件 `.diff`；Codex CLI、浏览器 OAuth 和设备授权均已在阶段 5 完成真实用量闭环验证。验证发现的遗漏继续回补阶段 2。详细协议依据见 [OmniRoute 探索报告](../common/core/omniroute-exploration.md)。
 
 ### 阶段 3：核心边界、项目胶水与本地数据
 
@@ -270,7 +270,7 @@ SQLite 中按职责保存以下逻辑记录；具体列名和索引在迁移实�
 - IPC、日志、通知候选和数据库非加密字段均不含凭证，渲染进程不能访问数据库或解密端口；
 - 多账号启停、刷新、错误隔离和旋转凭证持久化已由假服务验证。
 
-**验收结果：** 全工作区格式、类型检查、测试和构建通过；Core、UI、Desktop 当前共 38 项测试通过。NSIS 打包后的 Electron 进程完成 `safeStorage` 加密、SQLite 建库、关闭重开、解密及数据库明文扫描，退出码为 0。后续已将 Electron ABI 二进制隔离到 `apps/desktop/lib/better-sqlite3`，生产构建自动预构建，开发环境按需手动准备，不再改写或恢复 workspace 中的 Node ABI。
+**验收结果：** 全工作区格式、类型检查、测试和构建通过；Core、UI、Desktop 当前共 38 项测试通过。NSIS 打包后的 Electron 进程完成 `safeStorage` 加密、SQLite 建库、关闭重开、解密及数据库明文扫描，退出码为 0。后续已将 Electron ABI 二进制隔离到 `apps/polyquota/lib/better-sqlite3`，生产构建自动预构建，开发环境按需手动准备，不再改写或恢复 workspace 中的 Node ABI。
 
 ### 阶段 4：桌面壳与静态界面
 

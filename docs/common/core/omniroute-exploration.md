@@ -6,7 +6,7 @@
 | 更新日期 | 2026-09-22                                                                                                                        |
 | 上游基线 | `references/omniroute` @ `3ee283bb944d6d62cc219f74317d5186942e1780`（`release/v3.8.51` 线，提交说明为 `v3.8.50-4412-g3ee283bb9`） |
 | 许可证   | MIT，Copyright (c) 2026 diegosouzapw。抽取物必须保留版权与许可声明                                                                |
-| 设计依据 | [设计说明](./design.md)、[实施计划](./plan.md)                                                                                    |
+| 设计依据 | [PolyQuota 设计说明](../../polyquota/design.md)、[实施计划](../../polyquota/plan.md)                                               |
 | 界面对照 | [用量页截图](./omniroute.png) 只核对信息层级                                                                                      |
 
 本报告回答实施计划里「哪些模块可以原样抽取，哪些必须用适配层解开数据库、Next.js 或网关依赖」。`tools/omniroute-sync` 落地后，允许清单以工具配置为准；本报告说明每一项为什么要抽、抽到哪一层为止。

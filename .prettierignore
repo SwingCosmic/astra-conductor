@@ -5,4 +5,4 @@ dist
 release
 coverage
 pnpm-lock.yaml
-apps/desktop/renderer
+apps/polyquota/renderer

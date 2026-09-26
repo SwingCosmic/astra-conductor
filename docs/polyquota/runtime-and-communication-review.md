@@ -18,7 +18,7 @@
 2. **IPC 契约存在三处手工同步。** channel 字符串、preload 方法和 UI 类型分别维护，扩展服务商后容易出现运行时与类型声明漂移。
 3. **认证会话尚未形成统一生命周期。** 浏览器 OAuth 使用一个最长挂起 15 分钟的 IPC 调用；打开浏览器失败、并发登录和应用退出时的回环服务清理没有统一会话管理。
 4. **后台状态没有主动同步到界面。** 轮询会更新 SQLite 并发出系统通知，但渲染进程只在页面加载或用户操作后重新读取数据。
-5. **原生模块 ABI 已完成隔离。** workspace 始终保留 Node ABI；Electron 二进制由独立命令生成到 `apps/desktop/lib/better-sqlite3`，开发按需手动准备，生产构建自动生成。
+5. **原生模块 ABI 已完成隔离。** workspace 始终保留 Node ABI；Electron 二进制由独立命令生成到 `apps/polyquota/lib/better-sqlite3`，开发按需手动准备，生产构建自动生成。
 
 这些问题目前没有阻断 Codex 使用，但都属于“每增加一个服务商都会放大一次”的结构性成本。后续调整按第 7 节的三个主题分别评审和推进。
 
@@ -93,14 +93,14 @@ Electron 主进程
    - 启动 Vite 且使用 `strictPort`，不会静默换端口；
    - 最多等待 30 秒，端口可连接后才进入下一步。
 3. **一次性构建 Desktop 主进程。**
-   - `tsc` 把 `apps/desktop/src/**/*.ts` 编译到 `apps/desktop/dist`；
+   - `tsc` 把 `apps/polyquota/src/**/*.ts` 编译到 `apps/polyquota/dist`；
    - 把 `src/preload.cjs` 原样复制到 `dist/preload.cjs`。
 4. **启动 Electron。**
    - 注入 `LLM_USAGE_DEV_SERVER=http://127.0.0.1:5173`；
-   - 主窗口通过 `loadURL` 加载 Vite，而不是加载 `apps/desktop/renderer`；
+   - 主窗口通过 `loadURL` 加载 Vite，而不是加载 `apps/polyquota/renderer`；
    - 主进程从固定目录显式加载预先生成的 Electron ABI `better_sqlite3.node`。
 
-首次开发前需手动执行 `pnpm native:prepare`。该命令在隔离临时目录中构建，并输出到 `apps/desktop/lib/better-sqlite3`；`pnpm dev` 不重复检查或生成。Electron、Node、`better-sqlite3`、平台或架构变化后需重新手动执行。
+首次开发前需手动执行 `pnpm native:prepare`。该命令在隔离临时目录中构建，并输出到 `apps/polyquota/lib/better-sqlite3`；`pnpm dev` 不重复检查或生成。Electron、Node、`better-sqlite3`、平台或架构变化后需重新手动执行。
 
 主进程完成以下运行时初始化后才创建窗口：
 
@@ -121,11 +121,11 @@ Electron 主进程
 | 变更范围                             | 当前行为                                   | 是否自动生效 |
 | ------------------------------------ | ------------------------------------------ | ------------ |
 | Vue SFC、前端 TypeScript、CSS        | 由 Vite HMR 更新；必要时由 Vite 整页刷新   | 是           |
-| `packages/ui/index.html`             | Vite 触发页面刷新                          | 是           |
+| `packages/polyquota-ui/index.html`   | Vite 触发页面刷新                          | 是           |
 | Vite 配置或前端依赖图的特殊变化      | 由 Vite 自身决定重载或内部重启             | 部分         |
 | `packages/core/src`                  | 启动前只构建一次，运行中不监听             | 否           |
-| `apps/desktop/src/**/*.ts`           | 启动前只编译一次，主进程不自动重启         | 否           |
-| `apps/desktop/src/preload.cjs`       | 启动前只复制一次，窗口不自动重建           | 否           |
+| `apps/polyquota/src/**/*.ts`         | 启动前只编译一次，主进程不自动重启         | 否           |
+| `apps/polyquota/src/preload.cjs`     | 启动前只复制一次，窗口不自动重建           | 否           |
 | SQLite migration                     | 只在主进程启动并打开数据库时执行           | 否           |
 | 环境变量代理                         | 只在主进程启动时配置默认 session           | 否           |
 | 轮询开关和间隔                       | 保存到 SQLite；当前明确到下次启动才应用    | 否           |
@@ -164,10 +164,10 @@ Desktop build:main
 各阶段职责如下：
 
 - **Core：** esbuild 生成运行时代码，TypeScript 生成声明文件；构建不读取 `references/omniroute`。
-- **UI：** Vite 生成静态 `packages/ui/dist`，`base` 为 `./`，使资源可由 `file://` 相对加载。
-- **Desktop prebuild：** 在临时目录中为实际 Electron、平台和架构重建 `better-sqlite3`，固定输出到 `apps/desktop/lib/better-sqlite3`，workspace 的 Node ABI 不变。
+- **UI：** Vite 生成静态 `packages/polyquota-ui/dist`，`base` 为 `./`，使资源可由 `file://` 相对加载。
+- **Desktop prebuild：** 在临时目录中为实际 Electron、平台和架构重建 `better-sqlite3`，固定输出到 `apps/polyquota/lib/better-sqlite3`，workspace 的 Node ABI 不变。
 - **Desktop main/preload：** TypeScript 输出主进程代码，preload 原样复制到 `dist`。
-- **Desktop renderer：** 删除旧的 `apps/desktop/renderer`，再完整复制 UI 构建结果。
+- **Desktop renderer：** 删除旧的 `apps/polyquota/renderer`，再完整复制 UI 构建结果。
 
 这是一次性生产构建，没有 watch、增量常驻进程或 HMR。命令成功后自然退出。
 
@@ -178,15 +178,15 @@ Desktop build:main
 1. Desktop `prebuild` 在隔离目录中生成 Electron ABI 二进制；
 2. 使用 electron-builder 生成 Windows NSIS 包，禁止发布；
 3. 应用代码进入 asar；依赖目录中的 Node ABI 二进制被排除；
-4. `apps/desktop/lib/better-sqlite3` 作为额外资源复制到安装包的 `resources/lib/better-sqlite3`。
+4. `apps/polyquota/lib/better-sqlite3` 作为额外资源复制到安装包的 `resources/lib/better-sqlite3`。
 
-产物位于 `apps/desktop/release/`。安装方式为非 one-click、当前用户安装，并允许选择目录。
+产物位于 `apps/polyquota/release/`。安装方式为非 one-click、当前用户安装，并允许选择目录。
 
 打包过程中没有启动 Vue、Vite 或正式应用，也不存在热重载。原生模块在临时目录中构建并在成功后替换固定产物；失败不会改变 workspace 的 Node ABI。
 
 ### 4.3 打包后启动
 
-正式应用从 `apps/desktop/dist/main.js` 对应的 asar 内容启动。初始化顺序与开发模式基本相同，差异是：
+正式应用从 `apps/polyquota/dist/main.js` 对应的 asar 内容启动。初始化顺序与开发模式基本相同，差异是：
 
 - 不存在 `LLM_USAGE_DEV_SERVER`，窗口通过 `loadFile` 读取打包的 `renderer/index.html`；
 - 主进程为页面安装生产 CSP；
@@ -408,18 +408,18 @@ sequenceDiagram
 
 ## 9. 主要实现依据
 
-- 根命令与串行构建：[`../package.json`](../package.json)
-- 开发进程编排：[`../scripts/dev-desktop.mjs`](../scripts/dev-desktop.mjs)
-- Electron 启动和原生模块处理：[`../apps/desktop/scripts/run-electron-mode.mjs`](../apps/desktop/scripts/run-electron-mode.mjs)
-- Electron 原生二进制预构建：[`../apps/desktop/scripts/prepare-native.mjs`](../apps/desktop/scripts/prepare-native.mjs)
-- 打包流程：[`../apps/desktop/scripts/package.mjs`](../apps/desktop/scripts/package.mjs)
-- Electron 生命周期与组合根：[`../apps/desktop/src/main.ts`](../apps/desktop/src/main.ts)
-- preload 白名单：[`../apps/desktop/src/preload.cjs`](../apps/desktop/src/preload.cjs)
-- IPC handlers：[`../apps/desktop/src/ipc.ts`](../apps/desktop/src/ipc.ts)
-- OAuth 与 CLI 认证：[`../apps/desktop/src/auth-service.ts`](../apps/desktop/src/auth-service.ts)
-- 轮询与通知：[`../apps/desktop/src/polling-service.ts`](../apps/desktop/src/polling-service.ts)
-- Core Codex 适配器：[`../packages/core/src/codex-adapter.ts`](../packages/core/src/codex-adapter.ts)
-- 刷新协调器：[`../packages/core/src/refresh-coordinator.ts`](../packages/core/src/refresh-coordinator.ts)
-- Vue 调用侧：[`../packages/ui/src/App.vue`](../packages/ui/src/App.vue)
-- Vite 配置：[`../packages/ui/vite.config.ts`](../packages/ui/vite.config.ts)
-- Electron Builder 配置：[`../apps/desktop/electron-builder.yml`](../apps/desktop/electron-builder.yml)
+- 根命令与串行构建：[`../../package.json`](../../package.json)
+- 开发进程编排：[`../../scripts/dev-desktop.mjs`](../../scripts/dev-desktop.mjs)
+- Electron 启动和原生模块处理：[`../../apps/polyquota/scripts/run-electron-mode.mjs`](../../apps/polyquota/scripts/run-electron-mode.mjs)
+- Electron 原生二进制预构建：[`../../apps/polyquota/scripts/prepare-native.mjs`](../../apps/polyquota/scripts/prepare-native.mjs)
+- 打包流程：[`../../apps/polyquota/scripts/package.mjs`](../../apps/polyquota/scripts/package.mjs)
+- Electron 生命周期与组合根：[`../../apps/polyquota/src/main.ts`](../../apps/polyquota/src/main.ts)
+- preload 白名单：[`../../apps/polyquota/src/preload.cjs`](../../apps/polyquota/src/preload.cjs)
+- IPC handlers：[`../../apps/polyquota/src/ipc.ts`](../../apps/polyquota/src/ipc.ts)
+- OAuth 与 CLI 认证：[`../../apps/polyquota/src/auth-service.ts`](../../apps/polyquota/src/auth-service.ts)
+- 轮询与通知：[`../../apps/polyquota/src/polling-service.ts`](../../apps/polyquota/src/polling-service.ts)
+- Core Codex 适配器：[`../../packages/core/src/codex-adapter.ts`](../../packages/core/src/codex-adapter.ts)
+- 刷新协调器：[`../../packages/core/src/refresh-coordinator.ts`](../../packages/core/src/refresh-coordinator.ts)
+- Vue 调用侧：[`../../packages/polyquota-ui/src/App.vue`](../../packages/polyquota-ui/src/App.vue)
+- Vite 配置：[`../../packages/polyquota-ui/vite.config.ts`](../../packages/polyquota-ui/vite.config.ts)
+- Electron Builder 配置：[`../../apps/polyquota/electron-builder.yml`](../../apps/polyquota/electron-builder.yml)
