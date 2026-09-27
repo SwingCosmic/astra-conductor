@@ -77,6 +77,7 @@ export interface UsageExtraItem {
   key: string;
   kind: string;
   expiresAt: string | null;
+  actionToken?: string;
 }
 
 export interface UsageSnapshot {

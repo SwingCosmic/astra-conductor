@@ -1,5 +1,7 @@
+import antigravityIcon from "./assets/icon/antigravity.png";
 import bigmodelIcon from "./assets/icon/bigmodel.svg";
 import gptIcon from "./assets/icon/gpt.png";
+import grokIcon from "./assets/icon/grok.svg";
 import zaiIcon from "./assets/icon/zai.svg";
 import type {
   AuthMethod,
@@ -56,6 +58,11 @@ const authMethods: Record<AuthMethod, AuthMethodPresentation> = {
 const zcodeImport: AuthMethodPresentation = {
   id: "cli-import",
   label: "ZCode",
+};
+
+const grokCliImport: AuthMethodPresentation = {
+  id: "cli-import",
+  label: "Grok CLI",
 };
 
 export const providers: ProviderPresentation[] = [
@@ -145,13 +152,18 @@ export const providers: ProviderPresentation[] = [
     provider: "grok-build",
     name: "Grok Build",
     description: "查看 Grok Build 订阅用量。",
-    mark: "X",
-    available: false,
-    authMethods: [authMethods["api-key"]],
+    mark: "",
+    icon: grokIcon,
+    available: true,
+    authMethods: [authMethods["device-code"], authMethods["browser-oauth"], grokCliImport],
     planLabels: {},
-    quotaLabels: {},
+    quotaLabels: { weekly: "Weekly" },
     groupLabels: {},
-    extraLabels: {},
+    extraLabels: {
+      "reset-credits": "Reset credits",
+      "extra-credits": "额外使用积分",
+      "auto-top-up": "自动充值",
+    },
     extraItemLabels: {},
   },
   {
@@ -159,9 +171,10 @@ export const providers: ProviderPresentation[] = [
     provider: "antigravity",
     name: "Antigravity",
     description: "查看 Antigravity 订阅用量。",
-    mark: "A",
-    available: false,
-    authMethods: [authMethods["browser-oauth"], authMethods["api-key"]],
+    mark: "",
+    icon: antigravityIcon,
+    available: true,
+    authMethods: [authMethods["browser-oauth"]],
     planLabels: {},
     quotaLabels: {},
     groupLabels: {},
@@ -240,5 +253,6 @@ export function extraItemLabel(provider: ProviderId | PublicAccount, kind: strin
 
 export function authMethodLabel(method: AuthMethod, provider?: ProviderId): string {
   if (method === "cli-import" && provider === "glm") return zcodeImport.label;
+  if (method === "cli-import" && provider === "grok-build") return grokCliImport.label;
   return authMethods[method].label;
 }

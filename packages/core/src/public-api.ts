@@ -58,6 +58,7 @@ export function toPublicUsage(snapshot: UsageSnapshot): PublicUsageDto {
             key: item.key,
             kind: item.kind,
             expiresAt: item.expiresAt ?? null,
+            ...(item.actionToken ? { actionToken: item.actionToken } : {}),
           })),
         }
       : {}),

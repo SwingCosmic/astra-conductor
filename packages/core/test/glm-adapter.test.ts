@@ -68,13 +68,21 @@ function resetResponse(): Response {
 
 describe("GLM Coding Plan adapter", () => {
   it("uses the China endpoints and exposes ordered reset-card details", async () => {
-    const requests: Array<{ url: string; authorization: string | null }> = [];
+    const requests: Array<{
+      url: string;
+      authorization: string | null;
+      method: string;
+      body: string | null;
+    }> = [];
     const fetchImpl: typeof fetch = async (input, init) => {
       const url = String(input);
       requests.push({
         url,
         authorization: new Headers(init?.headers).get("Authorization"),
+        method: init?.method ?? "GET",
+        body: typeof init?.body === "string" ? init.body : null,
       });
+      if (url.endsWith("/use")) return Response.json({ success: true, code: 200, data: {} });
       return url.includes("customer-package-reset") ? resetResponse() : quotaResponse();
     };
     const adapter = new GlmAdapter(fetchImpl, { now: () => now });
@@ -92,10 +100,11 @@ describe("GLM Coding Plan adapter", () => {
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
     };
-    const snapshot = await adapter.fetchUsage(account, {
+    const envelope = {
       ...provisioning.credentials,
       accountId: account.id,
-    });
+    };
+    const snapshot = await adapter.fetchUsage(account, envelope);
 
     expect(requests.map((request) => request.url)).toContain(
       "https://open.bigmodel.cn/api/monitor/usage/quota/limit",
@@ -116,12 +125,44 @@ describe("GLM Coding Plan adapter", () => {
         key: "reset-credits",
         value: "3",
         items: [
-          { key: "five_hour:0", kind: "five-hour", expiresAt: "2099-09-25 13:00:00" },
-          { key: "five_hour:1", kind: "five-hour", expiresAt: "2099-09-25 15:00:00" },
-          { key: "week:2", kind: "weekly", expiresAt: "2099-09-26 13:00:00" },
+          {
+            key: "five_hour:0",
+            kind: "five-hour",
+            expiresAt: "2099-09-25 13:00:00",
+            actionToken: "1",
+          },
+          {
+            key: "five_hour:1",
+            kind: "five-hour",
+            expiresAt: "2099-09-25 15:00:00",
+            actionToken: "2",
+          },
+          {
+            key: "week:2",
+            kind: "weekly",
+            expiresAt: "2099-09-26 13:00:00",
+            actionToken: "3",
+          },
         ],
       },
     ]);
+
+    await adapter.redeemResetCard(account, envelope, "1");
+    const redemption = requests.find((request) => request.url.endsWith("/use"));
+    expect(redemption).toMatchObject({
+      url: "https://open.bigmodel.cn/api/biz/customer-package-reset/use",
+      authorization: "Bearer china-secret-key",
+      method: "POST",
+    });
+    expect(JSON.parse(redemption?.body ?? "{}")).toMatchObject({
+      targetType: "PERSONAL",
+      resetType: "FIVE_HOUR",
+      recordId: 1,
+      requestId: expect.any(String),
+    });
+    await expect(adapter.redeemResetCard(account, envelope, "missing")).rejects.toMatchObject({
+      code: "validation",
+    });
   });
 
   it("keeps international accounts separate and rejects invalid keys", async () => {

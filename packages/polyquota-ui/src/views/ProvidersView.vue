@@ -32,7 +32,7 @@ function toggleExpanded(provider: ProviderPresentation): void {
 
 function hasRefreshableToken(account: PublicAccount): boolean {
   return (
-    account.provider === "codex" &&
+    account.provider !== "glm" &&
     (account.authMethod === "browser-oauth" || account.authMethod === "device-code")
   );
 }

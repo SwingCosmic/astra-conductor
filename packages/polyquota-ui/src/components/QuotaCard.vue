@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from "vue";
-import type { PublicAccount, PublicUsage, UsageExtra, UsageQuota } from "../models";
+import type {
+  PublicAccount,
+  PublicUsage,
+  UsageExtra,
+  UsageExtraItem,
+  UsageQuota,
+  UsageQuotaGroup,
+} from "../models";
 import {
   extraLabel,
   extraItemLabel,
@@ -11,7 +18,7 @@ import {
 } from "../presentation";
 
 const props = defineProps<{ account: PublicAccount; usage: PublicUsage | null; busy: boolean }>();
-defineEmits<{ refresh: []; toggle: [] }>();
+const emit = defineEmits<{ refresh: []; toggle: []; redeem: [selectionToken: string] }>();
 
 type Tone = "unknown" | "ok" | "warning" | "danger" | "critical";
 const collapsed = reactive(new Set<string>());
@@ -53,9 +60,29 @@ function remainingLabel(quota: UsageQuota): string {
   return `${quota.remainingPercentage.toFixed(0)}% 剩余`;
 }
 
+function groupRemainingPercentage(group: UsageQuotaGroup): number | null {
+  const percentages = group.quotas.flatMap((quota) =>
+    quota.remainingPercentage === null ? [] : [quota.remainingPercentage],
+  );
+  return percentages.length ? Math.min(...percentages) : null;
+}
+
+function groupRemainingLabel(group: UsageQuotaGroup): string {
+  const percentage = groupRemainingPercentage(group);
+  return percentage === null ? "未提供" : `${percentage.toFixed(0)}%`;
+}
+
 function toggleGroup(key: string): void {
   if (collapsed.has(key)) collapsed.delete(key);
   else collapsed.add(key);
+}
+
+function useResetCredit(item: UsageExtraItem): void {
+  if (!item.actionToken) return;
+  const label = extraItemLabel(props.account, item.kind);
+  if (!window.confirm(`确定使用这张${label}吗？该操作会立即消耗一次重置机会。`)) return;
+  selectedExtra.value = null;
+  emit("redeem", item.actionToken);
 }
 </script>
 
@@ -100,10 +127,12 @@ function toggleGroup(key: string): void {
         >
           <span aria-hidden="true">{{ collapsed.has(group.key) ? "›" : "⌄" }}</span>
           <span>{{ groupLabel(account, group) }}</span>
-          <span v-if="collapsed.has(group.key)" class="group-summary">
-            {{
-              Math.min(...group.quotas.map((quota) => quota.remainingPercentage ?? 100)).toFixed(0)
-            }}%
+          <span
+            v-if="collapsed.has(group.key)"
+            class="group-summary"
+            :class="`text-${tone(groupRemainingPercentage(group))}`"
+          >
+            {{ groupRemainingLabel(group) }}
           </span>
         </button>
         <div v-show="!collapsed.has(group.key)" class="quota-list">
@@ -176,14 +205,27 @@ function toggleGroup(key: string): void {
         </div>
         <ul v-if="selectedExtra.items?.length" class="credit-items">
           <li v-for="item in selectedExtra.items" :key="item.key">
-            <span>{{ extraItemLabel(account, item.kind) }}</span>
-            <strong>{{
-              item.expiresAt ? `有效期至 ${resetLabel(item.expiresAt)}` : "未提供有效期"
-            }}</strong>
+            <div class="credit-item-details">
+              <span>{{ extraItemLabel(account, item.kind) }}</span>
+              <strong>{{
+                item.expiresAt ? `有效期至 ${resetLabel(item.expiresAt)}` : "未提供有效期"
+              }}</strong>
+            </div>
+            <button
+              v-if="item.actionToken"
+              class="credit-redeem-action"
+              type="button"
+              :disabled="busy || !account.enabled"
+              @click="useResetCredit(item)"
+            >
+              使用
+            </button>
           </li>
         </ul>
         <p v-else class="detail-note">上游未提供可展示的逐项明细。</p>
-        <p class="detail-note">这里只读展示重置卡，不会兑换或消耗额度。</p>
+        <p v-if="selectedExtra.items?.some((item) => item.actionToken)" class="detail-note">
+          使用后会立即更新本地剩余次数，并重新读取服务商用量。
+        </p>
         <footer>
           <button @click="selectedExtra = null">关闭</button>
           <a

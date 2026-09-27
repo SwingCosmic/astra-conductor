@@ -30,7 +30,7 @@
 - 支持 OAuth、设备码、API Key 和官方 CLI 凭证导入；对已经列入范围的厂商，保留固定上游中全部稳定方式，不因界面只设置一个默认入口而删减协议能力。
 - 每个账号可单独启用或停用。停用后不再轮询，也不发送通知。
 - 有 `HTTP_PROXY` 或 `HTTPS_PROXY` 时走环境变量；否则使用系统代理中的显式服务器地址；都没有时直连。切换系统代理后，下一次新建请求生效。首版不执行 PAC。
-- 展示账号、套餐、配额、重置时间、只读的额外额度、更新时间和最近错误。
+- 展示账号、套餐、配额、重置时间、可用的额外额度、更新时间和最近错误。
 - 支持手动刷新、低额度通知和本地加密存储。
 - 提供传统 Electron 安装包，不以单文件可执行程序为目标。
 
@@ -41,7 +41,7 @@ GitHub Copilot、Claude、OpenCode Go 及其他已有稳定用量实现的服务
 ### 2.3 明确不做
 
 - 不代理、转发或路由模型请求；
-- 不兑换、购买或自动补充额度；
+- 不购买或自动补充额度；重置额度只允许用户逐项确认后使用，不形成自动使用策略。当前 GLM 已接入，其他供应商按各自协议逐步开放；
 - 不管理模型成本、路由阈值和服务商网关；
 - 不运行 OmniRoute 的 Next.js 应用、React 组件、Electron 外壳或健康扫描任务；
 - 不回写官方 CLI 的凭证文件；
@@ -116,8 +116,8 @@ OmniRoute 放在 `references/omniroute`，以 Git 子模块记录固定提交。
 | 服务            | 认证方向                                                          | 主要验证重点                                                 |
 | --------------- | ----------------------------------------------------------------- | ------------------------------------------------------------ |
 | Codex / ChatGPT | 浏览器 OAuth PKCE、自定义设备授权、Codex CLI `auth.json` 只读导入 | 固定回调端口、设备授权开关、旋转刷新、会话与周配额、重置额度 |
-| GLM             | Coding Plan API Key、ZCode v2 凭据只读导入；核心按区域复用适配器，UI 分为 BigModel 与 Z.ai | 国内/国际端点、短周期与周配额、只读重置卡、导入源不回写      |
-| Grok Build      | 设备码、浏览器 OAuth PKCE、完整 CLI `auth.json` 只读导入          | 刷新时保留账号主体信息、额外额度只读展示                     |
+| GLM             | Coding Plan API Key、ZCode v2 凭据只读导入；核心按区域复用适配器，UI 分为 BigModel 与 Z.ai | 国内/国际端点、短周期与周配额、重置卡查询与逐张使用、导入源不回写 |
+| Grok Build      | 设备码、浏览器 OAuth PKCE、完整 CLI `auth.json` 只读导入          | 刷新时保留账号主体信息、额外额度查询与后续使用协议接入       |
 | Antigravity     | Google OAuth 授权码                                               | 身份请求头、项目标识和上游数据库耦合的解除                   |
 
 Codex 所需上游文件先由手工样板和逐文件 diff 确认，真实闭环通过后再纳入同步清单。文件选择和耦合拆分的依据见 [OmniRoute 探索报告](../common/core/omniroute-exploration.md)。新增服务前应先确认 OmniRoute 中存在可独立抽取且可验证的实现。
@@ -166,7 +166,7 @@ GLM 的国内与国际 Coding Plan 在核心中共用 `glm` 适配器，由账�
 | 服务            | 套餐原文来源                                              | 已见到的原文                                                                                                  | 配额标题                                                                                                                                                                         |
 | --------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Codex / ChatGPT | 用量响应 `plan_type`，以及登录 JWT 的 `chatgpt_plan_type` | `free`、`go`、`plus`、`pro`、`team`、`enterprise`、`edu`，界面写成 Free、Go、Plus、Pro、Team、Enterprise、Edu | 短窗口 `5-hour`；长窗口 `Weekly`。另有窗口时用上游 `limit_name` 加同样的时长，例如 `GPT-5.3-Codex-Spark` 的 `5-hour` 与 `Weekly`。重置次数是单独的只读数字，标题 `Reset credits` |
-| GLM             | `planName`，否则 `level`                                  | Coding Plan 的 `lite`、`pro`、`max`，界面写成 Lite、Pro、Max                                                  | `5 Hours Quota`、`Weekly Quota`。存在月度工具窗口时加 `Monthly`；重置卡按适用窗口和过期时间逐项只读展示                                                                           |
+| GLM             | `planName`，否则 `level`                                  | Coding Plan 的 `lite`、`pro`、`max`，界面写成 Lite、Pro、Max                                                  | `5 Hours Quota`、`Weekly Quota`。存在月度工具窗口时加 `Monthly`；重置卡按适用窗口和过期时间逐项展示，并支持确认使用                                                               |
 | Grok Build      | `/user` 的 `subscriptionTier`                             | `SuperGrokPro`、`SuperGrok Heavy`，以及用量页上的 `Grokpro`。字符串原样展示                                   | 产品名用计费响应里的产品名，如 `GrokChat`、`Grok Build`。账户级百分比标题为 `Weekly`。不展示余额、自动充值或其他充值相关内容                                                       |
 | Antigravity     | `getAntigravityPlanLabel` 的结果                          | `Ultra`、`Pro`、`Enterprise`、`Business`、`Plus`、`Lite`、`Free`，以及原样保留的 `Starter`                    | 组标题和组内标题都用汇总响应里的 `displayName`                                                                                                                                   |
 

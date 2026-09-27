@@ -48,7 +48,7 @@ OmniRoute 并不存在一个包办所有职责的 `ProviderAdapter`。它的完�
 - 通用配额标量、配额构造、窗口标题和 Codex 配额归一化；
 - Codex 浏览器 OAuth、设备授权、CLI 凭据解析、JWT/工作区映射；
 - Codex token refresh、旋转刷新串行和提前刷新时间；
-- Codex 用量请求与 GLM Coding Plan 配额、重置卡只读查询；
+- Codex 用量请求与 GLM Coding Plan 配额、重置卡查询；
 - 为本项目注入 `fetchImpl`、收窄声明和替换路径别名所需的可审查改动。
 
 当前明确没有搬运：
@@ -654,7 +654,7 @@ interface PolyQuotaSnapshot {
 当前 `UsageSnapshot` 的 `groups + extras` 继续作为跨服务商共同结构：
 
 - `groups[].quotas[]` 表达配额组、窗口、绝对值、剩余百分比和重置时间；
-- `extras[]` 表达无法归入配额窗口但需要展示的只读信息；
+- `extras[]` 表达无法归入配额窗口但需要展示的信息；支持用户动作的条目携带不透明动作标识，由主进程执行供应商协议；
 - 上游原生 `displayName` 与 `windowSeconds` 都保留；
 - UI 优先使用原生事实，再用 presentation registry 补充文案；
 - 缺失值保持 `null` 或省略，不能编造 0、无限或默认窗口。

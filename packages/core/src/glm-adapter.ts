@@ -16,6 +16,7 @@ import type {
   UsageProviderAdapter,
 } from "./ports.js";
 import { CredentialVault } from "./credential-vault.js";
+import { redeemGlmResetCard } from "./glm-reset-card-redemption.js";
 import { getGlmUsage } from "@omniroute/open-sse/services/usage/glm.ts";
 
 interface VendorQuota {
@@ -149,12 +150,35 @@ export class GlmAdapter implements UsageProviderAdapter {
                 key: `${card.resetType.toLowerCase()}:${index}`,
                 kind: card.resetType === "FIVE_HOUR" ? "five-hour" : "weekly",
                 expiresAt: card.expiresAt,
+                actionToken: card.id,
               })),
             },
           ]
         : [],
       fetchedAt: this.clock.now().toISOString(),
     };
+  }
+
+  async redeemResetCard(
+    account: Account,
+    envelope: CredentialEnvelope,
+    selectionToken: string,
+  ): Promise<void> {
+    if (account.provider !== "glm" || envelope.provider !== "glm") {
+      throw new AppError("validation", "只有 GLM Coding Plan 账号支持使用重置卡");
+    }
+    const apiKey = envelope.secrets.apiKey;
+    if (!apiKey) throw new AppError("authentication", "GLM Coding Plan API Key 不可用");
+    const token = selectionToken.trim();
+    if (!token || token.length > 256) {
+      throw new AppError("validation", "GLM 重置卡选择标识无效");
+    }
+    await redeemGlmResetCard(
+      apiKey,
+      { ...account.publicMetadata, apiRegion: metadataRegion(account) },
+      token,
+      this.fetchImpl,
+    );
   }
 
   private async requestUsage(apiKey: string, region: GlmRegion) {

@@ -5,16 +5,23 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { readZCodeCodingPlanApiKey } from "./zcode-credentials.js";
 import {
+  AntigravityAccountProvisioner,
+  AntigravityAdapter,
   AppError,
   CodexAccountProvisioner,
   CodexAdapter,
   GlmAccountProvisioner,
   GlmAdapter,
+  GrokBuildAccountProvisioner,
+  GrokBuildAdapter,
   type Account,
+  type AntigravityBrowserAuthorization,
   type AuthMethod,
   type BrowserAuthorization,
   type DeviceAuthorization,
   type GlmRegion,
+  type GrokBrowserAuthorization,
+  type GrokDeviceAuthorization,
   type ProviderId,
 } from "@astra-conductor/core/internal";
 
@@ -25,7 +32,7 @@ interface AuthCompletion {
 
 interface PendingBrowserAuthorization {
   kind: "browser-callback";
-  provider: ProviderId;
+  provider: "codex" | "grok-build" | "antigravity";
   method: "browser-oauth";
   completion: Promise<AuthCompletion>;
   controller: AbortController;
@@ -33,21 +40,21 @@ interface PendingBrowserAuthorization {
 
 interface PendingDeviceAuthorization {
   kind: "device-code";
-  provider: ProviderId;
+  provider: "codex" | "grok-build";
   method: "device-code";
-  authorization: DeviceAuthorization;
+  authorization: DeviceAuthorization | GrokDeviceAuthorization;
   controller: AbortController;
 }
 
 type PendingAuthorization = PendingBrowserAuthorization | PendingDeviceAuthorization;
+type BrowserAuthorizationLike =
+  | BrowserAuthorization
+  | GrokBrowserAuthorization
+  | AntigravityBrowserAuthorization;
 
 export type AuthStartResult =
   | { status: "completed"; account: Account }
-  | {
-      status: "pending";
-      sessionId: string;
-      interaction: "browser-callback";
-    }
+  | { status: "pending"; sessionId: string; interaction: "browser-callback" }
   | {
       status: "pending";
       sessionId: string;
@@ -59,6 +66,15 @@ export type AuthStartResult =
 export interface AuthStartOptions {
   apiKey?: string;
   region?: GlmRegion;
+}
+
+interface CallbackServer {
+  port: number;
+  completion: Promise<string>;
+}
+
+function credentialPath(directory: string, filename: string): string {
+  return path.join(homedir(), directory, filename);
 }
 
 function codexAuthPath(): string {
@@ -75,11 +91,15 @@ export class AuthService {
   private readonly sessions = new Map<string, PendingAuthorization>();
 
   constructor(
-    private readonly adapter: CodexAdapter,
-    private readonly provisioner: CodexAccountProvisioner,
+    private readonly codexAdapter: CodexAdapter,
+    private readonly codexProvisioner: CodexAccountProvisioner,
     private readonly openExternal: (url: string) => Promise<void>,
     private readonly glmAdapter?: GlmAdapter,
     private readonly glmProvisioner?: GlmAccountProvisioner,
+    private readonly grokAdapter?: GrokBuildAdapter,
+    private readonly grokProvisioner?: GrokBuildAccountProvisioner,
+    private readonly antigravityAdapter?: AntigravityAdapter,
+    private readonly antigravityProvisioner?: AntigravityAccountProvisioner,
   ) {}
 
   async start(
@@ -87,95 +107,30 @@ export class AuthService {
     method: AuthMethod,
     options: AuthStartOptions = {},
   ): Promise<AuthStartResult> {
-    if (provider === "glm") {
-      if (method !== "api-key" && method !== "cli-import") {
-        throw new AppError("validation", "GLM Coding Plan 仅支持 ZCode 导入或 API Key 接入");
+    if (provider === "glm") return this.startGlm(method, options);
+    if (provider === "codex") {
+      if (method === "cli-import") {
+        return { status: "completed", account: await this.importCodex() };
       }
-      if (!this.glmAdapter || !this.glmProvisioner) {
-        throw new AppError("validation", "GLM Coding Plan 接入尚未初始化");
+      if (method === "browser-oauth") return this.startBrowserLogin(provider);
+      if (method === "device-code") return this.startDeviceLogin(provider);
+      throw new AppError("validation", `Codex 不支持接入方式：${method}`);
+    }
+    if (provider === "grok-build") {
+      this.requireGrok();
+      if (method === "cli-import") {
+        return { status: "completed", account: await this.importGrok() };
       }
-      if (options.region !== "china" && options.region !== "international") {
-        throw new AppError("validation", "请选择有效的 GLM 服务区域");
-      }
-      const apiKey =
-        method === "cli-import"
-          ? await readZCodeCodingPlanApiKey(options.region)
-          : (options.apiKey ?? "");
-      const provisioning = await this.glmAdapter.createProvisioning(apiKey, options.region, method);
-      return { status: "completed", account: await this.glmProvisioner.save(provisioning) };
+      if (method === "browser-oauth") return this.startBrowserLogin(provider);
+      if (method === "device-code") return this.startDeviceLogin(provider);
+      throw new AppError("validation", `Grok Build 不支持接入方式：${method}`);
     }
-    if (provider !== "codex") {
-      throw new AppError("validation", `尚未实现服务商接入：${provider}`);
+    if (provider === "antigravity") {
+      this.requireAntigravity();
+      if (method === "browser-oauth") return this.startBrowserLogin(provider);
+      throw new AppError("validation", "Antigravity 仅支持 Google 浏览器授权");
     }
-    if (method === "cli-import") {
-      return { status: "completed", account: await this.importCli() };
-    }
-    if (method === "browser-oauth") return this.startBrowserLogin();
-    if (method === "device-code") return this.startDeviceLogin();
-    throw new AppError("validation", `Codex 不支持接入方式：${method}`);
-  }
-
-  async importCli(): Promise<Account> {
-    let raw: unknown;
-    try {
-      raw = JSON.parse(await readFile(codexAuthPath(), "utf8"));
-    } catch (error) {
-      throw new AppError("validation", "无法读取 Codex CLI 凭据，请先运行 codex login", false, {
-        cause: error,
-      });
-    }
-    return this.provisioner.save(this.adapter.fromCliAuth(raw));
-  }
-
-  private async startBrowserLogin(): Promise<AuthStartResult> {
-    const authorization = this.adapter.createBrowserAuthorization();
-    const controller = new AbortController();
-    const sessionId = randomUUID();
-    const completion = this.waitForBrowserCallback(authorization, controller.signal)
-      .then((code) => this.adapter.finishBrowserAuthorization(authorization, code))
-      .then((result) => this.provisioner.save(result))
-      .then((account) => ({ account, error: null }))
-      .catch((error: unknown) => ({ account: null, error }));
-    this.sessions.set(sessionId, {
-      kind: "browser-callback",
-      provider: "codex",
-      method: "browser-oauth",
-      completion,
-      controller,
-    });
-    try {
-      await this.openExternal(authorization.url);
-    } catch (error) {
-      this.cancel(sessionId);
-      throw error;
-    }
-    return { status: "pending", sessionId, interaction: "browser-callback" };
-  }
-
-  private async startDeviceLogin(): Promise<AuthStartResult> {
-    const controller = new AbortController();
-    const authorization = await this.adapter.requestDeviceAuthorization(controller.signal);
-    const sessionId = randomUUID();
-    this.sessions.set(sessionId, {
-      kind: "device-code",
-      provider: "codex",
-      method: "device-code",
-      authorization,
-      controller,
-    });
-    try {
-      await this.openExternal(authorization.verificationUri);
-    } catch (error) {
-      this.cancel(sessionId);
-      throw error;
-    }
-    return {
-      status: "pending",
-      sessionId,
-      interaction: "device-code",
-      userCode: authorization.userCode,
-      verificationUri: authorization.verificationUri,
-    };
+    throw new AppError("validation", `尚未实现服务商接入：${provider}`);
   }
 
   async finish(sessionId: string): Promise<Account> {
@@ -188,9 +143,18 @@ export class AuthService {
         if (!result.account) throw new AppError("authentication", "浏览器授权未完成");
         return result.account;
       }
-      return await this.provisioner.save(
-        await this.adapter.finishDeviceAuthorization(
-          pending.authorization,
+      if (pending.provider === "codex") {
+        return this.codexProvisioner.save(
+          await this.codexAdapter.finishDeviceAuthorization(
+            pending.authorization as DeviceAuthorization,
+            pending.controller.signal,
+          ),
+        );
+      }
+      this.requireGrok();
+      return this.grokProvisioner!.save(
+        await this.grokAdapter!.finishDeviceAuthorization(
+          pending.authorization as GrokDeviceAuthorization,
           pending.controller.signal,
         ),
       );
@@ -211,57 +175,253 @@ export class AuthService {
     this.sessions.clear();
   }
 
-  private waitForBrowserCallback(
-    authorization: BrowserAuthorization,
+  private async startGlm(method: AuthMethod, options: AuthStartOptions): Promise<AuthStartResult> {
+    if (method !== "api-key" && method !== "cli-import") {
+      throw new AppError("validation", "GLM Coding Plan 仅支持 ZCode 导入或 API Key 接入");
+    }
+    if (!this.glmAdapter || !this.glmProvisioner) {
+      throw new AppError("validation", "GLM Coding Plan 接入尚未初始化");
+    }
+    if (options.region !== "china" && options.region !== "international") {
+      throw new AppError("validation", "请选择有效的 GLM 服务区域");
+    }
+    const apiKey =
+      method === "cli-import"
+        ? await readZCodeCodingPlanApiKey(options.region)
+        : (options.apiKey ?? "");
+    const provisioning = await this.glmAdapter.createProvisioning(apiKey, options.region, method);
+    return { status: "completed", account: await this.glmProvisioner.save(provisioning) };
+  }
+
+  private async importCodex(): Promise<Account> {
+    try {
+      const raw = JSON.parse(await readFile(codexAuthPath(), "utf8")) as unknown;
+      return this.codexProvisioner.save(this.codexAdapter.fromCliAuth(raw));
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw new AppError("validation", "无法读取 Codex CLI 凭据，请先运行 codex login", false, {
+        cause: error,
+      });
+    }
+  }
+
+  private async importGrok(): Promise<Account> {
+    this.requireGrok();
+    try {
+      const raw = JSON.parse(
+        await readFile(credentialPath(".grok", "auth.json"), "utf8"),
+      ) as unknown;
+      return this.grokProvisioner!.save(this.grokAdapter!.fromCliAuth(raw));
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw new AppError("validation", "无法读取 Grok CLI 凭据，请先运行 grok login", false, {
+        cause: error,
+      });
+    }
+  }
+
+  private async startDeviceLogin(provider: "codex" | "grok-build"): Promise<AuthStartResult> {
+    const controller = new AbortController();
+    const authorization =
+      provider === "codex"
+        ? await this.codexAdapter.requestDeviceAuthorization(controller.signal)
+        : await this.grokAdapter!.requestDeviceAuthorization();
+    const sessionId = randomUUID();
+    this.sessions.set(sessionId, {
+      kind: "device-code",
+      provider,
+      method: "device-code",
+      authorization,
+      controller,
+    });
+    const verificationUri =
+      provider === "grok-build"
+        ? (authorization as GrokDeviceAuthorization).verificationUriComplete
+        : authorization.verificationUri;
+    try {
+      await this.openExternal(verificationUri);
+    } catch (error) {
+      this.cancel(sessionId);
+      throw error;
+    }
+    return {
+      status: "pending",
+      sessionId,
+      interaction: "device-code",
+      userCode: authorization.userCode,
+      verificationUri,
+    };
+  }
+
+  private async startBrowserLogin(
+    provider: "codex" | "grok-build" | "antigravity",
+  ): Promise<AuthStartResult> {
+    const controller = new AbortController();
+    let expectedState = "";
+    const config =
+      provider === "codex"
+        ? { host: "127.0.0.1", redirectHost: "localhost", port: 1455, path: "/auth/callback" }
+        : provider === "grok-build"
+          ? { host: "127.0.0.1", redirectHost: "127.0.0.1", port: 56122, path: "/callback" }
+          : { host: "127.0.0.1", redirectHost: "localhost", port: 0, path: "/callback" };
+    const callback = await this.createCallbackServer(
+      config.host,
+      config.port,
+      config.path,
+      () => expectedState,
+      controller.signal,
+      provider,
+    );
+    const redirectUri = `http://${config.redirectHost}:${callback.port}${config.path}`;
+    const authorization = this.createBrowserAuthorization(provider, redirectUri);
+    expectedState = authorization.state;
+    const sessionId = randomUUID();
+    const completion = callback.completion
+      .then((code) => this.finishBrowserAuthorization(provider, authorization, code))
+      .then((account) => ({ account, error: null }))
+      .catch((error: unknown) => ({ account: null, error }));
+    this.sessions.set(sessionId, {
+      kind: "browser-callback",
+      provider,
+      method: "browser-oauth",
+      completion,
+      controller,
+    });
+    try {
+      await this.openExternal(authorization.url);
+    } catch (error) {
+      this.cancel(sessionId);
+      throw error;
+    }
+    return { status: "pending", sessionId, interaction: "browser-callback" };
+  }
+
+  private createBrowserAuthorization(
+    provider: PendingBrowserAuthorization["provider"],
+    redirectUri: string,
+  ): BrowserAuthorizationLike {
+    if (provider === "codex") return this.codexAdapter.createBrowserAuthorization(redirectUri);
+    if (provider === "grok-build") return this.grokAdapter!.createBrowserAuthorization(redirectUri);
+    return this.antigravityAdapter!.createBrowserAuthorization(redirectUri);
+  }
+
+  private async finishBrowserAuthorization(
+    provider: PendingBrowserAuthorization["provider"],
+    authorization: BrowserAuthorizationLike,
+    code: string,
+  ): Promise<Account> {
+    if (provider === "codex") {
+      const result = await this.codexAdapter.finishBrowserAuthorization(
+        authorization as BrowserAuthorization,
+        code,
+      );
+      return this.codexProvisioner.save(result);
+    }
+    if (provider === "grok-build") {
+      const result = await this.grokAdapter!.finishBrowserAuthorization(
+        authorization as GrokBrowserAuthorization,
+        code,
+      );
+      return this.grokProvisioner!.save(result);
+    }
+    const result = await this.antigravityAdapter!.finishBrowserAuthorization(
+      authorization as AntigravityBrowserAuthorization,
+      code,
+    );
+    return this.antigravityProvisioner!.save(result);
+  }
+
+  private createCallbackServer(
+    host: string,
+    port: number,
+    callbackPath: string,
+    expectedState: () => string,
     signal: AbortSignal,
-  ): Promise<string> {
+    provider: string,
+  ): Promise<CallbackServer> {
     return new Promise((resolve, reject) => {
+      let settled = false;
+      let resolveCode: (code: string) => void = () => undefined;
+      let rejectCode: (error: unknown) => void = () => undefined;
+      const completion = new Promise<string>((resolveCompletion, rejectCompletion) => {
+        resolveCode = resolveCompletion;
+        rejectCode = rejectCompletion;
+      });
+      void completion.catch(() => undefined);
       let server: Server;
       const close = (): void => {
         clearTimeout(timeout);
         server?.close();
       };
+      const fail = (error: unknown): void => {
+        if (settled) return;
+        settled = true;
+        close();
+        rejectCode(error);
+      };
       const timeout = setTimeout(
-        () => {
-          close();
-          reject(new AppError("authentication", "Codex 浏览器授权已超时"));
-        },
+        () => fail(new AppError("authentication", `${provider} 浏览器授权已超时`)),
         15 * 60 * 1000,
       );
-      signal.addEventListener(
-        "abort",
-        () => {
-          close();
-          reject(new AppError("authentication", "授权已取消"));
-        },
-        { once: true },
-      );
+      signal.addEventListener("abort", () => fail(new AppError("authentication", "授权已取消")), {
+        once: true,
+      });
       server = createServer((request, response) => {
-        const url = new URL(request.url ?? "/", authorization.redirectUri);
-        if (url.pathname !== "/auth/callback") {
+        const url = new URL(request.url ?? "/", `http://${host}`);
+        if (url.pathname !== callbackPath) {
           response.writeHead(404).end();
           return;
         }
         const code = url.searchParams.get("code");
         const state = url.searchParams.get("state");
-        const success = Boolean(code && state === authorization.state);
+        const success = Boolean(code && expectedState() && state === expectedState());
         response.writeHead(success ? 200 : 400, { "Content-Type": "text/html; charset=utf-8" });
         response.end(callbackPage(success));
-        close();
         if (!success) {
-          reject(new AppError("authentication", "Codex 浏览器授权回调无效"));
+          fail(new AppError("authentication", `${provider} 浏览器授权回调无效`));
           return;
         }
-        resolve(code!);
+        if (settled) return;
+        settled = true;
+        close();
+        resolveCode(code!);
       });
       server.once("error", (error) => {
-        close();
-        reject(
-          new AppError("network", "无法监听 Codex 授权回调端口 1455", false, { cause: error }),
-        );
+        const wrapped = new AppError("network", `无法监听 ${provider} 授权回调端口`, false, {
+          cause: error,
+        });
+        if (!server.listening) {
+          if (settled) return;
+          settled = true;
+          close();
+          reject(wrapped);
+          return;
+        }
+        fail(wrapped);
       });
-      server.listen(1455, "127.0.0.1");
+      server.listen(port, host, () => {
+        const address = server.address();
+        if (!address || typeof address === "string") {
+          const error = new AppError("network", `无法确定 ${provider} 授权回调端口`);
+          fail(error);
+          reject(error);
+          return;
+        }
+        resolve({ port: address.port, completion });
+      });
     });
+  }
+
+  private requireGrok(): void {
+    if (!this.grokAdapter || !this.grokProvisioner) {
+      throw new AppError("validation", "Grok Build 接入尚未初始化");
+    }
+  }
+
+  private requireAntigravity(): void {
+    if (!this.antigravityAdapter || !this.antigravityProvisioner) {
+      throw new AppError("validation", "Antigravity 接入尚未初始化");
+    }
   }
 }
 

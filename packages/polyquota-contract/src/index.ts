@@ -46,6 +46,7 @@ export interface UsageExtraItem {
   key: string;
   kind: string;
   expiresAt: string | null;
+  actionToken?: string;
 }
 
 export interface UsageExtra {
@@ -80,7 +81,9 @@ export interface Settings {
 export type StartAuthRequest =
   | { provider: "codex"; method: "browser-oauth" | "device-code" | "cli-import" }
   | { provider: "glm"; method: "cli-import"; region: GlmRegion }
-  | { provider: "glm"; method: "api-key"; region: GlmRegion; apiKey: string };
+  | { provider: "glm"; method: "api-key"; region: GlmRegion; apiKey: string }
+  | { provider: "grok-build"; method: "browser-oauth" | "device-code" | "cli-import" }
+  | { provider: "antigravity"; method: "browser-oauth" };
 
 export type AuthStartResult =
   | { status: "completed"; account: PublicAccount }
@@ -107,10 +110,23 @@ export type CredentialRefreshOutcomeDto =
   | { status: "updated" | "unchanged"; accountId: string; tokenExpiresAt: string | null }
   | { status: "failed"; accountId: string; error: PublicError };
 
+export interface RedeemResetCreditRequest {
+  accountId: string;
+  selectionToken: string;
+}
+
+export interface RedeemResetCreditOutcomeDto {
+  status: "redeemed";
+  accountId: string;
+  refreshStatus: RefreshOutcomeDto["status"];
+  remainingResetCredits: number | null;
+}
+
 export type PublicOperationKind =
   | "refresh-account"
   | "refresh-all"
   | "refresh-credentials"
+  | "use-reset-credit"
   | "auth";
 
 export interface PublicOperationState {
@@ -178,6 +194,10 @@ export interface IPolyQuotaService {
   refreshAccount(accountId: string): Promise<ServiceResult<RefreshOutcomeDto>>;
   refreshAll(): Promise<ServiceResult<RefreshBatchOutcomeDto>>;
   refreshCredentials(accountId: string): Promise<ServiceResult<CredentialRefreshOutcomeDto>>;
+  redeemResetCredit(
+    accountId: string,
+    selectionToken: string,
+  ): Promise<ServiceResult<RedeemResetCreditOutcomeDto>>;
   startAuth(request: StartAuthRequest): Promise<ServiceResult<AuthStartResult>>;
   finishAuth(sessionId: string): Promise<ServiceResult<PublicAccount>>;
   cancelAuth(sessionId: string): Promise<ServiceResult<void>>;
@@ -192,6 +212,7 @@ export const polyQuotaIpcChannels = {
   refreshAccount: "polyquota:refresh:account",
   refreshAll: "polyquota:refresh:all",
   refreshCredentials: "polyquota:credentials:refresh",
+  redeemResetCredit: "polyquota:reset-credit:redeem",
   startAuth: "polyquota:auth:start",
   finishAuth: "polyquota:auth:finish",
   cancelAuth: "polyquota:auth:cancel",
@@ -317,13 +338,18 @@ export function parseSettings(value: unknown): Settings {
 
 export function parseStartAuthRequest(value: unknown): StartAuthRequest {
   const record = object(value, "authRequest");
-  const provider = oneOf(record.provider, ["codex", "glm"] as const, "authRequest.provider");
+  const provider = oneOf(record.provider, providerIds, "authRequest.provider");
   const method = oneOf(record.method, authMethods, "authRequest.method");
-  if (provider === "codex") {
+  if (provider === "codex" || provider === "grok-build") {
     exact(record, ["provider", "method"], "authRequest");
     if (method !== "browser-oauth" && method !== "device-code" && method !== "cli-import") {
       return fail("authRequest.method");
     }
+    return { provider, method };
+  }
+  if (provider === "antigravity") {
+    exact(record, ["provider", "method"], "authRequest");
+    if (method !== "browser-oauth") return fail("authRequest.method");
     return { provider, method };
   }
   const region = oneOf(record.region, glmRegions, "authRequest.region");
@@ -347,6 +373,19 @@ export function parseSetAccountEnabledRequest(value: unknown): {
   return {
     accountId: parseAccountId(record.accountId),
     enabled: boolean(record.enabled, "setAccountEnabled.enabled"),
+  };
+}
+
+export function parseRedeemResetCreditRequest(value: unknown): RedeemResetCreditRequest {
+  const record = object(value, "redeemResetCredit");
+  exact(record, ["accountId", "selectionToken"], "redeemResetCredit");
+  const selectionToken = string(record.selectionToken, "redeemResetCredit.selectionToken").trim();
+  if (!selectionToken || selectionToken.length > 256) {
+    return fail("redeemResetCredit.selectionToken");
+  }
+  return {
+    accountId: parseAccountId(record.accountId),
+    selectionToken,
   };
 }
 
@@ -428,6 +467,9 @@ function parseUsageExtraItem(value: unknown): UsageExtraItem {
     key: string(record.key, "extraItem.key"),
     kind: string(record.kind, "extraItem.kind"),
     expiresAt: nullableString(record.expiresAt, "extraItem.expiresAt"),
+    ...(record.actionToken === undefined
+      ? {}
+      : { actionToken: string(record.actionToken, "extraItem.actionToken") }),
   };
 }
 
@@ -505,6 +547,24 @@ export function parseCredentialRefreshOutcome(value: unknown): CredentialRefresh
       };
 }
 
+export function parseRedeemResetCreditOutcome(value: unknown): RedeemResetCreditOutcomeDto {
+  const record = object(value, "redeemResetCreditOutcome");
+  return {
+    status: oneOf(record.status, ["redeemed"] as const, "redeemResetCreditOutcome.status"),
+    accountId: parseAccountId(record.accountId),
+    refreshStatus: oneOf(
+      record.refreshStatus,
+      ["updated", "skipped", "failed"] as const,
+      "redeemResetCreditOutcome.refreshStatus",
+    ),
+    remainingResetCredits: nullable(
+      record.remainingResetCredits,
+      "redeemResetCreditOutcome.remainingResetCredits",
+      (item) => nonnegativeInteger(item, "redeemResetCreditOutcome.remainingResetCredits"),
+    ),
+  };
+}
+
 export function parseAuthStartResult(value: unknown): AuthStartResult {
   const record = object(value, "authStart");
   const status = oneOf(record.status, ["completed", "pending"] as const, "authStart.status");
@@ -532,7 +592,13 @@ function parseOperation(value: unknown): PublicOperationState {
     id: string(record.id, "operation.id"),
     kind: oneOf(
       record.kind,
-      ["refresh-account", "refresh-all", "refresh-credentials", "auth"] as const,
+      [
+        "refresh-account",
+        "refresh-all",
+        "refresh-credentials",
+        "use-reset-credit",
+        "auth",
+      ] as const,
       "operation.kind",
     ),
     status: oneOf(record.status, ["running", "waiting-for-user"] as const, "operation.status"),

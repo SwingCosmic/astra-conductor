@@ -23,5 +23,8 @@
     "esbuild": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
+  },
+  "dependencies": {
+    "zod": "4.5.4"
   }
 }

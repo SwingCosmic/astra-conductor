@@ -2,6 +2,7 @@ import { ipcMain } from "electron";
 import {
   ContractValidationError,
   parseAccountId,
+  parseRedeemResetCreditRequest,
   parseSessionId,
   parseSetAccountEnabledRequest,
   parseSettings,
@@ -54,6 +55,12 @@ export function registerIpcHandlers(service: PolyQuotaApplicationService): void 
   );
   ipcMain.handle(polyQuotaIpcChannels.refreshCredentials, (_event, input: unknown) =>
     response(() => service.refreshCredentials(parseAccountId(input))),
+  );
+  ipcMain.handle(polyQuotaIpcChannels.redeemResetCredit, (_event, input: unknown) =>
+    response(() => {
+      const request = parseRedeemResetCreditRequest(input);
+      return service.redeemResetCredit(request.accountId, request.selectionToken);
+    }),
   );
   ipcMain.handle(polyQuotaIpcChannels.startAuth, (_event, input: unknown) =>
     response(() => service.startAuth(parseStartAuthRequest(input))),

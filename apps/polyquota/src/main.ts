@@ -15,11 +15,16 @@ import { rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  AntigravityAccountProvisioner,
+  AntigravityAdapter,
+  AppError,
   CodexAccountProvisioner,
   CodexAdapter,
   CredentialVault,
   GlmAccountProvisioner,
   GlmAdapter,
+  GrokBuildAccountProvisioner,
+  GrokBuildAdapter,
   RefreshCoordinator,
 } from "@astra-conductor/core/internal";
 import { AuthService } from "./auth-service.js";
@@ -337,15 +342,28 @@ if (hasSingleInstanceLock) {
         net.fetch(input instanceof URL ? input.toString() : input, init);
       const adapter = new CodexAdapter(fetchImpl);
       const glmAdapter = new GlmAdapter(fetchImpl);
-      const coordinator = new RefreshCoordinator(storage, vault, [adapter, glmAdapter]);
+      const grokAdapter = new GrokBuildAdapter(fetchImpl);
+      const antigravityAdapter = new AntigravityAdapter(fetchImpl);
+      const coordinator = new RefreshCoordinator(storage, vault, [
+        adapter,
+        glmAdapter,
+        grokAdapter,
+        antigravityAdapter,
+      ]);
       const provisioner = new CodexAccountProvisioner(storage, vault);
       const glmProvisioner = new GlmAccountProvisioner(storage, vault);
+      const grokProvisioner = new GrokBuildAccountProvisioner(storage, vault);
+      const antigravityProvisioner = new AntigravityAccountProvisioner(storage, vault);
       auth = new AuthService(
         adapter,
         provisioner,
         (url) => shell.openExternal(url),
         glmAdapter,
         glmProvisioner,
+        grokAdapter,
+        grokProvisioner,
+        antigravityAdapter,
+        antigravityProvisioner,
       );
       polling = new PollingService(storage, coordinator);
       if (codexCliSmoke) {
@@ -364,6 +382,12 @@ if (hasSingleInstanceLock) {
         return;
       }
       polyQuotaService = new PolyQuotaApplicationService(storage, vault, polling, auth, {
+        redeemResetCredit: (account, envelope, selectionToken) => {
+          if (account.provider === "glm") {
+            return glmAdapter.redeemResetCard(account, envelope, selectionToken);
+          }
+          throw new AppError("validation", "该服务商的重置额度使用协议尚未接入");
+        },
         resolveProxy: () =>
           session.defaultSession.resolveProxy("https://chatgpt.com/backend-api/wham/usage"),
         publishChanged: (event) => {

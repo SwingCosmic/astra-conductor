@@ -1,9 +1,11 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "../src/App.vue";
+import AuthModal from "../src/components/AuthModal.vue";
 import QuotaCard from "../src/components/QuotaCard.vue";
 import type { PolyQuotaSnapshot, PublicAccount, PublicUsage } from "../src/models";
 import ProvidersView from "../src/views/ProvidersView.vue";
+import UsageView from "../src/views/UsageView.vue";
 import { EmptyPolyQuotaService, type IPolyQuotaService } from "../src/services/polyquota-service";
 import { polyQuotaServiceKey } from "../src/services/polyquota-service-vue";
 import {
@@ -128,6 +130,39 @@ describe("desktop account UI", () => {
       }),
     ).toBe("5-hour");
   });
+
+  it("exposes the Grok Build and Antigravity authentication methods", async () => {
+    const grok = providerPresentation("grok-build");
+    const antigravity = providerPresentation("antigravity");
+    expect(grok.available).toBe(true);
+    expect(grok.icon).toMatch(/grok\.svg$/);
+    expect(grok.authMethods.map((method) => method.id)).toEqual([
+      "device-code",
+      "browser-oauth",
+      "cli-import",
+    ]);
+    expect(antigravity.available).toBe(true);
+    expect(antigravity.icon).toMatch(/antigravity\.png$/);
+    expect(antigravity.authMethods.map((method) => method.id)).toEqual(["browser-oauth"]);
+
+    const startAuth = vi.fn().mockResolvedValue({
+      ok: true,
+      value: { status: "completed", account: { ...account, provider: "grok-build" } },
+    });
+    const service = Object.assign(new EmptyPolyQuotaService(), { startAuth });
+    const wrapper = mount(AuthModal, {
+      props: { provider: grok },
+      global: { provide: { [polyQuotaServiceKey as symbol]: service } },
+    });
+
+    expect(wrapper.text()).toContain("设备码");
+    expect(wrapper.text()).toContain("浏览器 OAuth");
+    expect(wrapper.text()).toContain("Grok CLI");
+    await wrapper.get("footer .primary-action").trigger("click");
+    await flushPromises();
+    expect(startAuth).toHaveBeenCalledWith({ provider: "grok-build", method: "device-code" });
+  });
+
   it("renders Codex quota data and account controls", async () => {
     const wrapper = mount(QuotaCard, {
       props: {
@@ -178,7 +213,8 @@ describe("desktop account UI", () => {
     expect(wrapper.find(".switch-field").exists()).toBe(true);
     await wrapper.get(".extra-button").trigger("click");
     expect(wrapper.text()).toContain("上游未提供可展示的逐项明细");
-    expect(wrapper.text()).toContain("只读展示重置卡");
+    expect(wrapper.text()).not.toContain("只读");
+    expect(wrapper.find(".credit-redeem-action").exists()).toBe(false);
   });
 
   it("keeps refresh available before the first usage snapshot", async () => {
@@ -266,8 +302,18 @@ describe("desktop account UI", () => {
               key: "reset-credits",
               value: "2",
               items: [
-                { key: "1", kind: "five-hour", expiresAt: "2099-09-25T13:00:00.000Z" },
-                { key: "2", kind: "weekly", expiresAt: "2099-09-26T13:00:00.000Z" },
+                {
+                  key: "1",
+                  kind: "five-hour",
+                  expiresAt: "2099-09-25T13:00:00.000Z",
+                  actionToken: "record-1",
+                },
+                {
+                  key: "2",
+                  kind: "weekly",
+                  expiresAt: "2099-09-26T13:00:00.000Z",
+                  actionToken: "record-2",
+                },
               ],
             },
           ],
@@ -280,9 +326,72 @@ describe("desktop account UI", () => {
     expect(wrapper.text()).toContain("5 小时使用周期");
     expect(wrapper.text()).toContain("每周使用周期");
     expect(wrapper.findAll(".credit-items li")).toHaveLength(2);
+    expect(wrapper.findAll(".credit-redeem-action")).toHaveLength(2);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    await wrapper.get(".credit-redeem-action").trigger("click");
+    expect(wrapper.emitted("redeem")).toBeUndefined();
+    confirm.mockReturnValue(true);
+    await wrapper.get(".credit-redeem-action").trigger("click");
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(wrapper.emitted("redeem")?.[0]).toEqual(["record-1"]);
   });
 
-  it("renders provider-independent quota groups", () => {
+  it("shows a persistent success notice after using a reset credit", async () => {
+    const glmAccount: PublicAccount = {
+      ...account,
+      provider: "glm",
+      authMethod: "api-key",
+      publicMetadata: { region: "china", presentationId: "bigmodel-coding-plan" },
+    };
+    const usage: PublicUsage = {
+      accountId: glmAccount.id,
+      plan: "Pro",
+      overallRemainingPercentage: 75,
+      groups: [],
+      extras: [
+        {
+          key: "reset-credits",
+          value: "1",
+          items: [
+            {
+              key: "five-hour:0",
+              kind: "five-hour",
+              expiresAt: null,
+              actionToken: "record-1",
+            },
+          ],
+        },
+      ],
+      fetchedAt: "2026-09-27T00:00:00.000Z",
+    };
+    const redeemResetCredit = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        status: "redeemed",
+        accountId: glmAccount.id,
+        refreshStatus: "updated",
+        remainingResetCredits: 0,
+      },
+    });
+    const service = serviceWithSnapshot(snapshot([glmAccount], { [glmAccount.id]: usage }), {
+      redeemResetCredit,
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const wrapper = mountApp(service);
+    await flushPromises();
+
+    await wrapper.get(".extra-button").trigger("click");
+    await wrapper.get(".credit-redeem-action").trigger("click");
+    await vi.waitFor(() =>
+      expect(redeemResetCredit).toHaveBeenCalledWith(glmAccount.id, "record-1"),
+    );
+    await vi.waitFor(() =>
+      expect(wrapper.get(".global-message").text()).toBe("重置额度使用成功，剩余 0 次"),
+    );
+    expect(wrapper.get(".global-message").classes()).toContain("message-success");
+  });
+
+  it("renders provider-independent quota groups", async () => {
     const wrapper = mount(QuotaCard, {
       props: {
         account: { ...account, provider: "antigravity" },
@@ -319,6 +428,37 @@ describe("desktop account UI", () => {
     expect(wrapper.text()).toContain("Gemini Models");
     expect(wrapper.text()).toContain("Weekly Quota");
     expect(wrapper.text()).toContain("75% 剩余");
+    await wrapper.get(".group-toggle").trigger("click");
+    expect(wrapper.get(".group-summary").text()).toBe("75%");
+    expect(wrapper.get(".group-summary").classes()).toContain("text-ok");
+  });
+
+  it("uses independent desktop columns without changing the visual account order", () => {
+    const accounts: PublicAccount[] = [
+      account,
+      {
+        ...account,
+        id: "account-2",
+        provider: "glm",
+        publicMetadata: { region: "china" },
+      },
+      { ...account, id: "account-3", provider: "grok-build" },
+      { ...account, id: "account-4", provider: "antigravity" },
+    ];
+    const wrapper = mount(UsageView, {
+      props: { accounts, usage: {}, busy: false },
+    });
+    const columns = wrapper.findAll(".quota-column");
+
+    expect(columns).toHaveLength(2);
+    expect(columns[0]?.findAll(".provider-identity h2").map((heading) => heading.text())).toEqual([
+      "OpenAI Codex",
+      "Grok Build",
+    ]);
+    expect(columns[1]?.findAll(".provider-identity h2").map((heading) => heading.text())).toEqual([
+      "BigModel Coding Plan",
+      "Antigravity",
+    ]);
   });
 
   it("loads accounts without exposing credentials to the renderer", async () => {
@@ -468,7 +608,7 @@ describe("desktop account UI", () => {
     await flushPromises();
 
     expect(wrapper.get(".global-message").text()).toBe("用量已刷新");
-    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(8_000);
     await flushPromises();
     expect(wrapper.find(".global-message").exists()).toBe(false);
   });

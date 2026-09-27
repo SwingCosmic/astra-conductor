@@ -61,6 +61,17 @@ async function begin(): Promise<void> {
               apiKey: apiKey.value,
             }
           : { provider: "glm", method: "cli-import", region: props.provider.region };
+    } else if (props.provider.provider === "grok-build") {
+      if (
+        selected.value !== "browser-oauth" &&
+        selected.value !== "device-code" &&
+        selected.value !== "cli-import"
+      ) {
+        throw new Error("Grok Build 不支持当前接入方式");
+      }
+      request = { provider: "grok-build", method: selected.value };
+    } else if (props.provider.provider === "antigravity" && selected.value === "browser-oauth") {
+      request = { provider: "antigravity", method: "browser-oauth" };
     } else {
       throw new Error("当前服务商尚未开放接入");
     }
@@ -177,9 +188,23 @@ onBeforeUnmount(cancelPending);
       </div>
 
       <div v-else-if="selected === 'cli-import'" class="cli-import-panel">
-        <strong>检测本地 {{ provider.provider === "glm" ? "ZCode" : "Codex CLI" }} 凭据文件</strong>
+        <strong
+          >检测本地
+          {{
+            provider.provider === "glm"
+              ? "ZCode"
+              : provider.provider === "grok-build"
+                ? "Grok CLI"
+                : "Codex CLI"
+          }}
+          凭据文件</strong
+        >
         <code>{{
-          provider.provider === "glm" ? "~/.zcode/v2/credentials.json" : "~/.codex/auth.json"
+          provider.provider === "glm"
+            ? "~/.zcode/v2/credentials.json"
+            : provider.provider === "grok-build"
+              ? "~/.grok/auth.json"
+              : "~/.codex/auth.json"
         }}</code>
         <p>只读取现有凭据并保存应用自己的加密副本，不修改 CLI 文件。</p>
       </div>

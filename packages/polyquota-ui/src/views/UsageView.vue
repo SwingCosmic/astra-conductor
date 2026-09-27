@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import QuotaCard from "../components/QuotaCard.vue";
 import type { PublicAccount, PublicUsage } from "../models";
 
-defineProps<{
+const props = defineProps<{
   accounts: PublicAccount[];
   usage: Record<string, PublicUsage | null>;
   busy: boolean;
@@ -10,8 +11,33 @@ defineProps<{
 defineEmits<{
   refresh: [account: PublicAccount];
   toggle: [account: PublicAccount];
+  redeem: [account: PublicAccount, selectionToken: string];
   refreshAll: [];
 }>();
+
+const singleColumn = ref(false);
+let mediaQuery: MediaQueryList | null = null;
+
+const accountColumns = computed(() => {
+  if (singleColumn.value) return [props.accounts];
+  return [
+    props.accounts.filter((_, index) => index % 2 === 0),
+    props.accounts.filter((_, index) => index % 2 === 1),
+  ].filter((column) => column.length > 0);
+});
+
+function updateColumnMode(event?: MediaQueryListEvent): void {
+  singleColumn.value = event?.matches ?? mediaQuery?.matches ?? false;
+}
+
+onMounted(() => {
+  if (typeof window.matchMedia !== "function") return;
+  mediaQuery = window.matchMedia("(max-width: 980px)");
+  updateColumnMode();
+  mediaQuery.addEventListener("change", updateColumnMode);
+});
+
+onBeforeUnmount(() => mediaQuery?.removeEventListener("change", updateColumnMode));
 </script>
 
 <template>
@@ -30,15 +56,18 @@ defineEmits<{
       </button>
     </header>
     <div v-if="accounts.length" class="quota-grid" aria-label="账号用量">
-      <QuotaCard
-        v-for="account in accounts"
-        :key="account.id"
-        :account="account"
-        :usage="usage[account.id] ?? null"
-        :busy="busy"
-        @refresh="$emit('refresh', account)"
-        @toggle="$emit('toggle', account)"
-      />
+      <div v-for="(column, index) in accountColumns" :key="index" class="quota-column">
+        <QuotaCard
+          v-for="account in column"
+          :key="account.id"
+          :account="account"
+          :usage="usage[account.id] ?? null"
+          :busy="busy"
+          @refresh="$emit('refresh', account)"
+          @toggle="$emit('toggle', account)"
+          @redeem="$emit('redeem', account, $event)"
+        />
+      </div>
     </div>
     <div v-else class="empty-state">
       <h2>还没有接入账号</h2>

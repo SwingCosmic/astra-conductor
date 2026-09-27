@@ -13,7 +13,8 @@ const accounts = computed(() => snapshot.value?.accounts ?? []);
 const usage = computed(() => snapshot.value?.usageByAccountId ?? {});
 const busy = ref<string | null>(null);
 const message = ref("");
-const GLOBAL_MESSAGE_DURATION_MS = 5_000;
+const messageTone = ref<"info" | "success" | "error">("info");
+const GLOBAL_MESSAGE_DURATION_MS = 8_000;
 let messageTimer: ReturnType<typeof setTimeout> | null = null;
 const service = usePolyQuotaService();
 let unsubscribe: (() => void) | null = null;
@@ -56,9 +57,11 @@ function reloadSnapshot(targetRevision = snapshot.value?.revision ?? 0): Promise
 async function run(label: string, operation: () => Promise<void>): Promise<void> {
   busy.value = label;
   message.value = "";
+  messageTone.value = "info";
   try {
     await operation();
   } catch (error) {
+    messageTone.value = "error";
     message.value = error instanceof Error ? error.message : "操作失败";
   } finally {
     busy.value = null;
@@ -114,6 +117,20 @@ function refreshCredentials(account: PublicAccount): void {
   });
 }
 
+function useResetCredit(account: PublicAccount, selectionToken: string): void {
+  void run(`redeem:${account.id}`, async () => {
+    const outcome = unwrap(await service.redeemResetCredit(account.id, selectionToken));
+    await reloadSnapshot();
+    messageTone.value = "success";
+    const remaining =
+      outcome.remainingResetCredits === null ? "" : `，剩余 ${outcome.remainingResetCredits} 次`;
+    message.value =
+      outcome.refreshStatus === "updated"
+        ? `重置额度使用成功${remaining}`
+        : `重置额度使用成功${remaining}；服务商最新用量暂未刷新`;
+  });
+}
+
 function toggle(account: PublicAccount): void {
   void run(`toggle:${account.id}`, async () => {
     unwrap(await service.setAccountEnabled(account.id, !account.enabled));
@@ -148,7 +165,15 @@ onBeforeUnmount(() => {
   <div class="app-shell">
     <AppSidebar :page="page" @navigate="page = $event" />
     <main class="main-panel">
-      <p v-if="message" class="global-message" role="status">{{ message }}</p>
+      <p
+        v-if="message"
+        class="global-message"
+        :class="`message-${messageTone}`"
+        :role="messageTone === 'error' ? 'alert' : 'status'"
+        aria-live="assertive"
+      >
+        {{ message }}
+      </p>
       <UsageView
         v-if="page === 'usage'"
         :accounts="accounts"
@@ -156,6 +181,7 @@ onBeforeUnmount(() => {
         :busy="busy !== null"
         @refresh="refresh"
         @refresh-all="refreshAll"
+        @redeem="useResetCredit"
         @toggle="toggle"
       />
       <ProvidersView

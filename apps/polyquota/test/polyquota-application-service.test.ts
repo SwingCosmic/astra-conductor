@@ -40,16 +40,33 @@ const refreshOutcome: Extract<RefreshOutcome, { status: "updated" }> = {
   notifications: [],
 };
 
-function createService() {
+function createService(savedAccount: Account = account) {
   const storage = new MemoryStorage();
-  storage.accounts.save(account);
+  storage.accounts.save(savedAccount);
   storage.snapshots.save(refreshOutcome.snapshot);
   const cipher: CredentialCipherPort = {
     isAvailable: vi.fn().mockResolvedValue(true),
     encrypt: vi.fn(),
-    decrypt: vi.fn(),
+    decrypt: vi.fn().mockResolvedValue({
+      plaintext: JSON.stringify({
+        version: 1,
+        accountId: savedAccount.id,
+        provider: savedAccount.provider,
+        authMethod: savedAccount.authMethod,
+        expiresAt: null,
+        secrets: { apiKey: "private-key" },
+      }),
+      shouldReEncrypt: false,
+    }),
   };
+  storage.credentials.save({
+    accountId: savedAccount.id,
+    encryptionVersion: 1,
+    ciphertext: Buffer.from("encrypted"),
+    updatedAt: savedAccount.updatedAt,
+  });
   const events: PolyQuotaChangedEvent[] = [];
+  const redeemResetCredit = vi.fn().mockResolvedValue(undefined);
   const polling = {
     refresh: vi.fn().mockResolvedValue(refreshOutcome),
     refreshAll: vi.fn().mockResolvedValue([refreshOutcome]),
@@ -63,6 +80,7 @@ function createService() {
     auth,
     {
       publishChanged: (event) => events.push(event),
+      redeemResetCredit,
       resolveProxy: vi.fn().mockResolvedValue("DIRECT"),
       now: () => new Date("2026-09-27T00:02:00.000Z"),
     },
@@ -75,7 +93,7 @@ function createService() {
   );
   service.attachScheduler(scheduler);
   scheduler.start(service.getSettings());
-  return { service, storage, polling, scheduler, events };
+  return { service, storage, polling, scheduler, events, redeemResetCredit };
 }
 
 describe("PolyQuotaApplicationService", () => {
@@ -115,5 +133,81 @@ describe("PolyQuotaApplicationService", () => {
     expect(new Set(events.flatMap((event) => event.reasons))).toEqual(
       new Set(["accounts", "usage", "operations", "scheduler"]),
     );
+  });
+
+  it("uses a selected reset credit and reconciles a stale provider refresh", async () => {
+    const glmAccount: Account = {
+      ...account,
+      provider: "glm",
+      authMethod: "api-key",
+      stableIdentity: "coding-plan:china:test",
+      publicMetadata: { region: "china" },
+    };
+    const { service, storage, polling, redeemResetCredit } = createService(glmAccount);
+    const staleSnapshot: Extract<RefreshOutcome, { status: "updated" }> = {
+      ...refreshOutcome,
+      accountId: glmAccount.id,
+      snapshot: {
+        ...refreshOutcome.snapshot,
+        accountId: glmAccount.id,
+        extras: [
+          {
+            key: "reset-credits",
+            value: "2",
+            items: [
+              {
+                key: "five-hour:0",
+                kind: "five-hour",
+                expiresAt: null,
+                actionToken: "record-1",
+              },
+              {
+                key: "weekly:1",
+                kind: "weekly",
+                expiresAt: null,
+                actionToken: "record-2",
+              },
+            ],
+          },
+        ],
+      },
+    };
+    vi.mocked(polling.refresh).mockResolvedValueOnce(staleSnapshot);
+
+    await expect(service.redeemResetCredit(glmAccount.id, "record-1")).resolves.toEqual({
+      status: "redeemed",
+      accountId: glmAccount.id,
+      refreshStatus: "updated",
+      remainingResetCredits: 1,
+    });
+    expect(redeemResetCredit).toHaveBeenCalledWith(
+      glmAccount,
+      expect.objectContaining({ secrets: { apiKey: "private-key" } }),
+      "record-1",
+    );
+    expect(polling.refresh).toHaveBeenCalledWith(glmAccount.id);
+    expect(storage.snapshots.get(glmAccount.id)?.extras).toEqual([
+      {
+        key: "reset-credits",
+        value: "1",
+        items: [
+          {
+            key: "weekly:1",
+            kind: "weekly",
+            expiresAt: null,
+            actionToken: "record-2",
+          },
+        ],
+      },
+    ]);
+
+    vi.mocked(polling.refresh).mockResolvedValueOnce(staleSnapshot);
+    const laterRefresh = await service.refreshAccount(glmAccount.id);
+    expect(laterRefresh.status).toBe("updated");
+    if (laterRefresh.status !== "updated") throw new Error("Expected updated refresh");
+    expect(laterRefresh.snapshot.extras[0]?.value).toBe("1");
+    expect(laterRefresh.snapshot.extras[0]?.items?.map((item) => item.actionToken)).toEqual([
+      "record-2",
+    ]);
   });
 });

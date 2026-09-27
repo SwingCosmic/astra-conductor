@@ -10,6 +10,7 @@ import {
   type PublicOperationKind,
   type PublicOperationState,
   type PublicSystemStatus,
+  type RedeemResetCreditOutcomeDto,
   type RefreshBatchOutcomeDto,
   type RefreshOutcomeDto,
   type Settings,
@@ -21,9 +22,11 @@ import {
   toPublicAccount,
   toPublicUsage,
   type Account,
+  type CredentialEnvelope,
   type CredentialRefreshOutcome,
   type RefreshOutcome,
   type StoragePort,
+  type UsageSnapshot,
 } from "@astra-conductor/core/internal";
 import type { AuthService } from "./auth-service.js";
 import type { PollingService } from "./polling-service.js";
@@ -32,12 +35,41 @@ import type { RefreshScheduler, RefreshSource } from "./refresh-scheduler.js";
 export interface PolyQuotaApplicationServiceOptions {
   publishChanged: (event: PolyQuotaChangedEvent) => void;
   resolveProxy: () => Promise<string>;
+  redeemResetCredit: (
+    account: Account,
+    envelope: CredentialEnvelope,
+    selectionToken: string,
+  ) => Promise<void>;
   now?: () => Date;
+}
+
+function reconcileRedeemedResetCredit(
+  snapshot: UsageSnapshot,
+  selectionToken: string,
+): { snapshot: UsageSnapshot; remainingResetCredits: number | null } {
+  let changed = false;
+  let remainingResetCredits: number | null = null;
+  const extras = snapshot.extras.map((extra) => {
+    if (extra.key !== "reset-credits" || !extra.items) return extra;
+    const items = extra.items.filter((item) => item.actionToken !== selectionToken);
+    changed ||= items.length !== extra.items.length;
+    remainingResetCredits = items.length;
+    return {
+      ...extra,
+      value: String(items.length),
+      items,
+    };
+  });
+  return {
+    snapshot: changed ? { ...snapshot, extras } : snapshot,
+    remainingResetCredits,
+  };
 }
 
 export class PolyQuotaApplicationService {
   private revision = 0;
   private readonly operations = new Map<string, PublicOperationState>();
+  private readonly pendingResetCreditUses = new Map<string, Set<string>>();
   private readonly pendingReasons = new Set<PolyQuotaChangeReason>();
   private publishQueued = false;
   private scheduler: RefreshScheduler | null = null;
@@ -117,6 +149,7 @@ export class PolyQuotaApplicationService {
       throw new AppError("validation", "Account does not exist");
     }
     this.storage.transaction(() => this.storage.accounts.delete(accountId));
+    this.pendingResetCreditUses.delete(accountId);
     for (const [id, operation] of this.operations) {
       if (operation.accountId === accountId) this.operations.delete(id);
     }
@@ -128,7 +161,11 @@ export class PolyQuotaApplicationService {
       "refresh-account",
       accountId,
       "manual",
-      () => this.polling.refresh(accountId).then(toRefreshOutcome),
+      () =>
+        this.polling
+          .refresh(accountId)
+          .then((outcome) => this.reconcilePendingResetCreditUses(outcome))
+          .then(toRefreshOutcome),
       ["accounts", "usage"],
     );
   }
@@ -142,7 +179,12 @@ export class PolyQuotaApplicationService {
       "refresh-all",
       null,
       source,
-      async () => ({ source, outcomes: (await this.polling.refreshAll()).map(toRefreshOutcome) }),
+      async () => ({
+        source,
+        outcomes: (await this.polling.refreshAll())
+          .map((outcome) => this.reconcilePendingResetCreditUses(outcome))
+          .map(toRefreshOutcome),
+      }),
       ["accounts", "usage"],
     );
   }
@@ -154,6 +196,45 @@ export class PolyQuotaApplicationService {
       "manual",
       () => this.polling.refreshCredentials(accountId).then(toCredentialRefreshOutcome),
       ["accounts"],
+    );
+  }
+
+  redeemResetCredit(
+    accountId: string,
+    selectionToken: string,
+  ): Promise<RedeemResetCreditOutcomeDto> {
+    return this.runOperation(
+      "use-reset-credit",
+      accountId,
+      "manual",
+      async () => {
+        const account = this.storage.accounts.get(accountId);
+        if (!account) throw new AppError("validation", "Account does not exist");
+        if (!account.enabled) throw new AppError("permission", "请先启用该账号再使用重置额度");
+        const envelope = await this.vault.load(accountId);
+        await this.options.redeemResetCredit(account, envelope, selectionToken);
+        const pending = this.pendingResetCreditUses.get(accountId) ?? new Set<string>();
+        pending.add(selectionToken);
+        this.pendingResetCreditUses.set(accountId, pending);
+        const refreshed = this.reconcilePendingResetCreditUses(
+          await this.polling.refresh(accountId),
+        );
+        const currentSnapshot =
+          refreshed.status === "updated"
+            ? refreshed.snapshot
+            : this.storage.snapshots.get(accountId);
+        const reconciled = currentSnapshot
+          ? reconcileRedeemedResetCredit(currentSnapshot, selectionToken)
+          : null;
+        if (reconciled) this.storage.snapshots.save(reconciled.snapshot);
+        return {
+          status: "redeemed",
+          accountId,
+          refreshStatus: refreshed.status,
+          remainingResetCredits: reconciled?.remainingResetCredits ?? null,
+        };
+      },
+      ["accounts", "usage"],
     );
   }
 
@@ -323,6 +404,28 @@ export class PolyQuotaApplicationService {
   private requireScheduler(): RefreshScheduler {
     if (!this.scheduler) throw new Error("Refresh scheduler is not attached");
     return this.scheduler;
+  }
+
+  private reconcilePendingResetCreditUses(outcome: RefreshOutcome): RefreshOutcome {
+    if (outcome.status !== "updated") return outcome;
+    const pending = this.pendingResetCreditUses.get(outcome.accountId);
+    if (!pending?.size) return outcome;
+
+    let snapshot = outcome.snapshot;
+    for (const selectionToken of [...pending]) {
+      const stillReported = snapshot.extras.some((extra) =>
+        extra.items?.some((item) => item.actionToken === selectionToken),
+      );
+      if (!stillReported) {
+        pending.delete(selectionToken);
+        continue;
+      }
+      snapshot = reconcileRedeemedResetCredit(snapshot, selectionToken).snapshot;
+    }
+    if (!pending.size) this.pendingResetCreditUses.delete(outcome.accountId);
+    if (snapshot === outcome.snapshot) return outcome;
+    this.storage.snapshots.save(snapshot);
+    return { ...outcome, snapshot };
   }
 }
 

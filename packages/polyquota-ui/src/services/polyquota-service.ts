@@ -69,6 +69,10 @@ export class EmptyPolyQuotaService implements IPolyQuotaService {
     return unavailable();
   }
 
+  redeemResetCredit(): ReturnType<IPolyQuotaService["redeemResetCredit"]> {
+    return unavailable();
+  }
+
   startAuth(): ReturnType<IPolyQuotaService["startAuth"]> {
     return unavailable();
   }
@@ -98,6 +102,7 @@ const methodNames = [
   "refreshAccount",
   "refreshAll",
   "refreshCredentials",
+  "redeemResetCredit",
   "startAuth",
   "finishAuth",
   "cancelAuth",

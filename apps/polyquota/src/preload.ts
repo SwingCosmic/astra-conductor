@@ -7,6 +7,7 @@ import {
   parsePublicAccount,
   parseRefreshBatchOutcome,
   parseRefreshOutcome,
+  parseRedeemResetCreditOutcome,
   parseServiceResult,
   parseSnapshot,
   parseSystemStatus,
@@ -69,6 +70,11 @@ const service: IPolyQuotaService = {
   refreshAll: () => invoke(polyQuotaIpcChannels.refreshAll, parseRefreshBatchOutcome),
   refreshCredentials: (accountId) =>
     invoke(polyQuotaIpcChannels.refreshCredentials, parseCredentialRefreshOutcome, accountId),
+  redeemResetCredit: (accountId, selectionToken) =>
+    invoke(polyQuotaIpcChannels.redeemResetCredit, parseRedeemResetCreditOutcome, {
+      accountId,
+      selectionToken,
+    }),
   startAuth: (request) => invoke(polyQuotaIpcChannels.startAuth, parseAuthStartResult, request),
   finishAuth: (sessionId) => invoke(polyQuotaIpcChannels.finishAuth, parsePublicAccount, sessionId),
   cancelAuth: (sessionId) => invoke(polyQuotaIpcChannels.cancelAuth, parseVoid, sessionId),

@@ -52,6 +52,7 @@ describe("PolyQuota desktop shell", () => {
 
     expect(preloadSource).toContain("startAuth");
     expect(preloadSource).toContain("cancelAuth");
+    expect(preloadSource).toContain("redeemResetCredit");
     expect(preloadSource).toContain("polyQuotaIpcEvents.stateChanged");
     expect(preloadSource).toContain("ipcRenderer.removeListener");
     expect(preloadSource).not.toMatch(/accessToken|refreshToken|idToken|safeStorage/);
