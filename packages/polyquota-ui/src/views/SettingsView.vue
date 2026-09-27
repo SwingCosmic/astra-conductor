@@ -1,29 +1,27 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import type { IpcResult, Settings } from "../models";
+import { usePolyQuotaService } from "../services/polyquota-service-vue";
 
 const settings = ref<Settings>({ pollingEnabled: true, pollingIntervalMinutes: 15 });
 const proxy = ref("正在读取…");
 const busy = ref(false);
 const message = ref("");
+const service = usePolyQuotaService();
 
-function api() {
-  if (!window.llmUsage) throw new Error("桌面接口不可用，请从 Electron 应用启动");
-  return window.llmUsage;
-}
 function unwrap<T>(result: IpcResult<T>): T {
   if (!result.ok) throw new Error(result.error.message);
   return result.value;
 }
 async function load(): Promise<void> {
-  settings.value = unwrap(await api().getSettings());
-  proxy.value = unwrap(await api().getProxy());
+  settings.value = unwrap(await service.getSettings());
+  proxy.value = unwrap(await service.getProxy());
 }
 async function save(): Promise<void> {
   busy.value = true;
   message.value = "";
   try {
-    settings.value = unwrap(await api().saveSettings(settings.value));
+    settings.value = unwrap(await service.saveSettings(settings.value));
     message.value = "设置已保存";
   } catch (error) {
     message.value = error instanceof Error ? error.message : "保存失败";

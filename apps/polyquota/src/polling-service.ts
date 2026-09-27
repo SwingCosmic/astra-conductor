@@ -74,6 +74,7 @@ function shouldNotify(storage: StoragePort, candidate: NotificationCandidate): b
 export class PollingService {
   private timer: NodeJS.Timeout | null = null;
   private readonly pendingNotifications = new Set<string>();
+  private readonly activeOperations = new Set<Promise<unknown>>();
 
   constructor(
     private readonly storage: StoragePort,
@@ -94,20 +95,44 @@ export class PollingService {
     this.timer = null;
   }
 
-  async refresh(accountId: string): Promise<RefreshOutcome> {
+  async stopAndDrain(): Promise<void> {
+    this.stop();
+    while (this.activeOperations.size) {
+      await Promise.allSettled([...this.activeOperations]);
+    }
+  }
+
+  refresh(accountId: string): Promise<RefreshOutcome> {
+    return this.track(this.performRefresh(accountId));
+  }
+
+  private async performRefresh(accountId: string): Promise<RefreshOutcome> {
     const outcome = await this.coordinator.refresh(accountId);
     await this.notify(outcome);
     return outcome;
   }
 
   refreshCredentials(accountId: string): Promise<CredentialRefreshOutcome> {
-    return this.coordinator.refreshCredentials(accountId);
+    return this.track(this.coordinator.refreshCredentials(accountId));
   }
 
-  async refreshAll(): Promise<RefreshOutcome[]> {
+  refreshAll(): Promise<RefreshOutcome[]> {
+    return this.track(this.performRefreshAll());
+  }
+
+  private async performRefreshAll(): Promise<RefreshOutcome[]> {
     const outcomes = await this.coordinator.refreshAll();
     await Promise.all(outcomes.map((outcome) => this.notify(outcome)));
     return outcomes;
+  }
+
+  private track<T>(operation: Promise<T>): Promise<T> {
+    this.activeOperations.add(operation);
+    void operation.then(
+      () => this.activeOperations.delete(operation),
+      () => this.activeOperations.delete(operation),
+    );
+    return operation;
   }
 
   private async notify(outcome: RefreshOutcome): Promise<void> {

@@ -2,7 +2,7 @@
 
 const { contextBridge, ipcRenderer } = require("electron");
 
-contextBridge.exposeInMainWorld("llmUsage", {
+contextBridge.exposeInMainWorld("polyQuotaElectronService", {
   listAccounts: () => ipcRenderer.invoke("accounts:list"),
   getUsage: (accountId) => ipcRenderer.invoke("usage:get", accountId),
   setAccountEnabled: (accountId, enabled) =>

@@ -89,11 +89,16 @@ function authStartInput(value: unknown): {
 }
 
 function response<T>(operation: () => T | Promise<T>): Promise<IpcSuccess<T> | IpcFailure> {
-  return Promise.resolve()
+  const pending = Promise.resolve()
     .then(operation)
     .then((value) => ({ ok: true as const, value }))
     .catch((error: unknown) => ({ ok: false as const, error: toPublicError(error) }));
+  pendingResponses.add(pending);
+  void pending.finally(() => pendingResponses.delete(pending));
+  return pending;
 }
+
+const pendingResponses = new Set<Promise<unknown>>();
 
 async function publicAccount(account: Account, vault: CredentialVault) {
   try {
@@ -211,4 +216,10 @@ export function registerIpcHandlers(
 
 export function unregisterIpcHandlers(): void {
   for (const channel of Object.values(ipcChannels)) ipcMain.removeHandler(channel);
+}
+
+export async function waitForIpcHandlersToDrain(): Promise<void> {
+  while (pendingResponses.size) {
+    await Promise.allSettled([...pendingResponses]);
+  }
 }

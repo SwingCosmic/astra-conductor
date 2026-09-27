@@ -62,6 +62,9 @@ importers:
       prettier:
         specifier: 'catalog:'
         version: 3.4.2
+      typescript:
+        specifier: 'catalog:'
+        version: 5.6.3
 
   apps/polyquota:
     dependencies:

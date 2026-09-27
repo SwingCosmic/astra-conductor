@@ -49,14 +49,10 @@ button:disabled {
   font-size: 16px;
 }
 .brand-mark {
-  display: grid;
+  display: block;
+  flex: 0 0 auto;
   width: 32px;
   height: 32px;
-  place-items: center;
-  border-radius: 9px;
-  color: white;
-  background: #1475f7;
-  font-weight: 700;
 }
 .sidebar nav {
   display: grid;

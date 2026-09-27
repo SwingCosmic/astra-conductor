@@ -2,6 +2,7 @@
 import { onBeforeUnmount, ref } from "vue";
 import type { AuthMethod, AuthStartResult, IpcResult, PublicAccount } from "../models";
 import type { ProviderPresentation } from "../presentation";
+import { usePolyQuotaService } from "../services/polyquota-service-vue";
 
 const props = defineProps<{ provider: ProviderPresentation }>();
 const emit = defineEmits<{ close: []; connected: [account: PublicAccount] }>();
@@ -10,11 +11,7 @@ const pending = ref<Extract<AuthStartResult, { status: "pending" }> | null>(null
 const busy = ref(false);
 const message = ref("");
 const apiKey = ref("");
-
-function api() {
-  if (!window.llmUsage) throw new Error("桌面接口不可用，请从 Electron 应用启动");
-  return window.llmUsage;
-}
+const service = usePolyQuotaService();
 
 function unwrap<T>(result: IpcResult<T>): T {
   if (!result.ok) throw new Error(result.error.message);
@@ -23,7 +20,7 @@ function unwrap<T>(result: IpcResult<T>): T {
 
 async function finish(sessionId: string): Promise<void> {
   try {
-    const account = unwrap(await api().finishAuth(sessionId));
+    const account = unwrap(await service.finishAuth(sessionId));
     pending.value = null;
     emit("connected", account);
   } catch (error) {
@@ -39,7 +36,7 @@ async function begin(): Promise<void> {
   message.value = "";
   try {
     const result = unwrap(
-      await api().startAuth(props.provider.provider, selected.value, {
+      await service.startAuth(props.provider.provider, selected.value, {
         ...(props.provider.region ? { region: props.provider.region } : {}),
         ...(selected.value === "api-key" ? { apiKey: apiKey.value } : {}),
       }),
@@ -65,7 +62,7 @@ function completeDevice(): void {
 }
 
 function cancelPending(): void {
-  if (pending.value) void api().cancelAuth(pending.value.sessionId);
+  if (pending.value) void service.cancelAuth(pending.value.sessionId);
   pending.value = null;
 }
 

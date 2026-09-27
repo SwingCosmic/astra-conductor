@@ -21,7 +21,7 @@ import {
   RefreshCoordinator,
 } from "@astra-conductor/core/internal";
 import { AuthService } from "./auth-service.js";
-import { registerIpcHandlers, unregisterIpcHandlers } from "./ipc.js";
+import { registerIpcHandlers, unregisterIpcHandlers, waitForIpcHandlersToDrain } from "./ipc.js";
 import { PollingService } from "./polling-service.js";
 import { ElectronSafeStorageCipher } from "./safe-storage-cipher.js";
 import { SqliteStorage } from "./sqlite-storage.js";
@@ -40,6 +40,8 @@ let polling: PollingService | null = null;
 let auth: AuthService | null = null;
 let tray: Tray | null = null;
 let quitting = false;
+let shutdownComplete = false;
+let shutdownPromise: Promise<void> | null = null;
 
 app.setName("PolyQuota");
 app.setPath("userData", userDataOverride ? path.resolve(userDataOverride) : productUserData);
@@ -92,7 +94,7 @@ function installProductionCsp(): void {
       responseHeaders: {
         ...details.responseHeaders,
         "Content-Security-Policy": [
-          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'",
+          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; font-src 'self' data: https:; connect-src 'self'",
         ],
       },
     });
@@ -187,15 +189,41 @@ function createTray(): void {
       { type: "separator" },
       {
         label: "退出",
-        click: () => {
-          quitting = true;
-          app.quit();
-        },
+        click: requestGracefulQuit,
       },
     ]),
   );
   tray.on("double-click", () => BrowserWindow.getAllWindows()[0]?.show());
 }
+
+function requestGracefulQuit(): void {
+  quitting = true;
+  app.quit();
+}
+
+async function shutdownServices(): Promise<void> {
+  unregisterIpcHandlers();
+  auth?.cancelAll();
+  polling?.stop();
+  tray?.destroy();
+  tray = null;
+  await Promise.all([waitForIpcHandlersToDrain(), polling?.stopAndDrain()]);
+  polling = null;
+  storage?.close();
+  storage = null;
+  auth = null;
+}
+
+process.on("message", (message: unknown) => {
+  if (
+    !app.isPackaged &&
+    message &&
+    typeof message === "object" &&
+    (message as { type?: unknown }).type === "polyquota:dev-restart"
+  ) {
+    requestGracefulQuit();
+  }
+});
 
 async function deleteStoredData(databaseFile: string): Promise<void> {
   for (const filename of [databaseFile, `${databaseFile}-wal`, `${databaseFile}-shm`]) {
@@ -276,15 +304,23 @@ if (hasSingleInstanceLock) {
   });
 }
 
-app.on("before-quit", () => {
+app.on("before-quit", (event) => {
   quitting = true;
-  unregisterIpcHandlers();
-  auth?.cancelAll();
-  polling?.stop();
-  tray?.destroy();
-  tray = null;
-  storage?.close();
-  storage = null;
+  if (shutdownComplete) return;
+  event.preventDefault();
+  if (!shutdownPromise) {
+    shutdownPromise = shutdownServices()
+      .catch((error: unknown) => {
+        console.error(
+          "PolyQuota shutdown failed",
+          error instanceof Error ? `${error.name}: ${error.message}` : "unknown error",
+        );
+      })
+      .finally(() => {
+        shutdownComplete = true;
+        app.quit();
+      });
+  }
 });
 
 app.on("window-all-closed", () => {

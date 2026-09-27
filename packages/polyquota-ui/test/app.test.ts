@@ -4,6 +4,8 @@ import App from "../src/App.vue";
 import QuotaCard from "../src/components/QuotaCard.vue";
 import type { PublicAccount } from "../src/models";
 import ProvidersView from "../src/views/ProvidersView.vue";
+import { EmptyPolyQuotaService, type IPolyQuotaService } from "../src/services/polyquota-service";
+import { polyQuotaServiceKey } from "../src/services/polyquota-service-vue";
 import {
   accountPresentationId,
   planLabel,
@@ -26,12 +28,28 @@ const account: PublicAccount = {
 };
 
 afterEach(() => {
-  delete window.llmUsage;
+  delete window.polyQuotaElectronService;
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
+function mountApp(service: IPolyQuotaService) {
+  return mount(App, {
+    global: { provide: { [polyQuotaServiceKey as symbol]: service } },
+  });
+}
+
+const emptyService = new EmptyPolyQuotaService();
+
 describe("desktop account UI", () => {
+  it("keeps the ordinary browser preview runnable with the empty service", async () => {
+    const wrapper = mountApp(emptyService);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("还没有接入账号");
+    expect(wrapper.text()).not.toContain("桌面接口不可用");
+  });
+
   it("maps provider display text only in the UI presentation catalog", () => {
     expect(providerPresentation("codex").icon).toMatch(/gpt\.png$/);
     expect(planLabel("codex", "prolite")).toBe("Pro 5x");
@@ -163,6 +181,7 @@ describe("desktop account UI", () => {
   it("keeps only the method-specific explanation in the account modal", async () => {
     const wrapper = mount(ProvidersView, {
       props: { accounts: [], busy: false },
+      global: { provide: { [polyQuotaServiceKey as symbol]: emptyService } },
     });
     const zaiRow = wrapper
       .findAll(".provider-row")
@@ -268,7 +287,7 @@ describe("desktop account UI", () => {
   });
 
   it("loads accounts without exposing credentials to the renderer", async () => {
-    window.llmUsage = {
+    const service = {
       listAccounts: vi.fn().mockResolvedValue({ ok: true, value: [account] }),
       getUsage: vi.fn().mockResolvedValue({ ok: true, value: null }),
       getSettings: vi.fn().mockResolvedValue({
@@ -276,8 +295,8 @@ describe("desktop account UI", () => {
         value: { pollingEnabled: true, pollingIntervalMinutes: 15 },
       }),
       getProxy: vi.fn().mockResolvedValue({ ok: true, value: "DIRECT" }),
-    } as unknown as NonNullable<Window["llmUsage"]>;
-    const wrapper = mount(App);
+    } as unknown as IPolyQuotaService;
+    const wrapper = mountApp(service);
     await vi.waitFor(() => expect(wrapper.text()).toContain("te***@example.test"));
     expect(wrapper.text()).not.toMatch(/accessToken|refreshToken|idToken/);
     const settingsButton = wrapper
@@ -295,12 +314,12 @@ describe("desktop account UI", () => {
       ok: true,
       value: { status: "updated", accountId: account.id },
     });
-    window.llmUsage = {
+    const service = {
       listAccounts,
       getUsage,
       refreshAccount,
-    } as unknown as NonNullable<Window["llmUsage"]>;
-    const wrapper = mount(App);
+    } as unknown as IPolyQuotaService;
+    const wrapper = mountApp(service);
     await vi.waitFor(() => expect(listAccounts).toHaveBeenCalledOnce());
     await flushPromises();
     const providersButton = wrapper
@@ -331,12 +350,12 @@ describe("desktop account UI", () => {
         tokenExpiresAt: "2099-09-25T15:00:00.000Z",
       },
     });
-    window.llmUsage = {
+    const service = {
       listAccounts,
       getUsage: vi.fn().mockResolvedValue({ ok: true, value: null }),
       refreshCredentials,
-    } as unknown as NonNullable<Window["llmUsage"]>;
-    const wrapper = mount(App);
+    } as unknown as IPolyQuotaService;
+    const wrapper = mountApp(service);
     await vi.waitFor(() => expect(listAccounts).toHaveBeenCalledOnce());
     const providersButton = wrapper
       .findAll("button")
@@ -352,15 +371,15 @@ describe("desktop account UI", () => {
 
   it("dismisses the global message automatically", async () => {
     vi.useFakeTimers();
-    window.llmUsage = {
+    const service = {
       listAccounts: vi.fn().mockResolvedValue({ ok: true, value: [account] }),
       getUsage: vi.fn().mockResolvedValue({ ok: true, value: null }),
       refreshAccount: vi.fn().mockResolvedValue({
         ok: true,
         value: { status: "updated", accountId: account.id },
       }),
-    } as unknown as NonNullable<Window["llmUsage"]>;
-    const wrapper = mount(App);
+    } as unknown as IPolyQuotaService;
+    const wrapper = mountApp(service);
     await flushPromises();
     await wrapper.get(".quota-card-foot button").trigger("click");
     await flushPromises();

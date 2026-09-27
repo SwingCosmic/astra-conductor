@@ -53,6 +53,34 @@ function coordinator(): RefreshCoordinator {
 }
 
 describe("PollingService notifications", () => {
+  it("waits for active refreshes before lifecycle shutdown can close storage", async () => {
+    const storage = new MemoryStorage();
+    storage.accounts.save(account);
+    let finishRefresh!: (value: RefreshOutcome) => void;
+    const refresh = vi.fn(
+      () =>
+        new Promise<RefreshOutcome>((resolve) => {
+          finishRefresh = resolve;
+        }),
+    );
+    const polling = new PollingService(storage, { refresh } as unknown as RefreshCoordinator, {
+      deliver: vi.fn().mockResolvedValue(true),
+    });
+
+    const activeRefresh = polling.refresh(account.id);
+    let drained = false;
+    const drain = polling.stopAndDrain().then(() => {
+      drained = true;
+    });
+    await Promise.resolve();
+    expect(drained).toBe(false);
+
+    finishRefresh({ ...outcome, notifications: [] });
+    await activeRefresh;
+    await drain;
+    expect(drained).toBe(true);
+  });
+
   it("saves dedupe state only after the system confirms delivery", async () => {
     const storage = new MemoryStorage();
     storage.accounts.save(account);

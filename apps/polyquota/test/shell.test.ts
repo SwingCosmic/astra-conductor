@@ -7,6 +7,14 @@ const mainSource = readFileSync(
   path.join(path.dirname(fileURLToPath(import.meta.url)), "../src/main.ts"),
   "utf8",
 );
+const preloadSource = readFileSync(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), "../src/preload.cjs"),
+  "utf8",
+);
+const developmentRunnerSource = readFileSync(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), "../scripts/run-electron-mode.mjs"),
+  "utf8",
+);
 
 describe("PolyQuota desktop shell", () => {
   it("isolates the renderer and keeps provider protocols outside the shell", () => {
@@ -14,6 +22,8 @@ describe("PolyQuota desktop shell", () => {
     expect(mainSource).toContain("nodeIntegration: false");
     expect(mainSource).toContain("sandbox: true");
     expect(mainSource).not.toMatch(/omniroute/i);
+    expect(preloadSource).toContain('exposeInMainWorld("polyQuotaElectronService"');
+    expect(preloadSource).not.toContain('exposeInMainWorld("llmUsage"');
   });
 
   it("provides tray, proxy-aware networking, notifications, and recoverable data reset", () => {
@@ -40,12 +50,28 @@ describe("PolyQuota desktop shell", () => {
     );
     expect(pollingSource).toContain("new Notification");
 
-    const preloadSource = readFileSync(
-      path.join(path.dirname(fileURLToPath(import.meta.url)), "../src/preload.cjs"),
-      "utf8",
-    );
     expect(preloadSource).toContain("startAuth");
     expect(preloadSource).toContain("cancelAuth");
     expect(preloadSource).not.toMatch(/accessToken|refreshToken|idToken|safeStorage/);
+  });
+
+  it("keeps executable code local while allowing external HTTPS presentation resources", () => {
+    expect(mainSource).toContain("script-src 'self'");
+    expect(mainSource).not.toContain("script-src 'self' https:");
+    expect(mainSource).toContain("style-src 'self' 'unsafe-inline' https:");
+    expect(mainSource).toContain("img-src 'self' data: https:");
+    expect(mainSource).toContain("font-src 'self' data: https:");
+    expect(mainSource).toContain("webSecurity: true");
+  });
+
+  it("rebuilds and gracefully restarts Electron without watching Core", () => {
+    expect(developmentRunnerSource).toContain("watch(sourceRoot, { recursive: true }");
+    expect(developmentRunnerSource).toContain('relativePath.endsWith(".ts")');
+    expect(developmentRunnerSource).toContain('relativePath !== "preload.cjs"');
+    expect(developmentRunnerSource).toContain('"build:main"');
+    expect(developmentRunnerSource).toContain('type: "polyquota:dev-restart"');
+    expect(developmentRunnerSource).not.toContain("packages/core");
+    expect(mainSource).toContain("waitForIpcHandlersToDrain");
+    expect(mainSource).toContain("stopAndDrain");
   });
 });
