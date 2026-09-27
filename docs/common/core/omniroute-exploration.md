@@ -13,6 +13,8 @@
 
 阅读范围限于首批四个服务的认证、刷新、用量归一化和只读额外额度。对已经指定的厂商，认证范围取固定上游中全部稳定机制的并集；默认入口只影响产品交互，不缩小源码抽取范围。推理执行、路由、兑换、MITM、Next.js 页面、完整代理栈，以及依赖 Cookie 或 Web 登录状态的方式只用于划定拒绝边界。
 
+这里的范围和拒绝边界只约束当时面向 PolyQuota 的首批手工抽取，不代表共享 Core 永久排除模型协议与推理能力。OmniRoute 的 provider/model registry、translator、format、Executor 和 `chatCore` 原始结构，以及 GraphAgent 所需的后续选择性抽取位置，统一见[跨服务商服务协议设计](./cross-provider-service-protocol-design.md)。
+
 ## 1. 结论
 
 四条链路都能从固定提交里抽出可验证的协议叶子。真正要在本项目重写的是宿主：账号存储、系统代理、回环监听地址、轮询和通知。协议叶子保持上游的请求、请求头和字段结构。
@@ -514,7 +516,7 @@ User-Agent 里的系统标记固定写成 `darwin/arm64`，即使跑在 Windows 
 | ------------------------ | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | 界面与 Next 路由         | `src/app/**`、`src/shared/components/**`、OAuthModal、provider-limits 页面                     | 本项目用 Vue。截图只提供字段清单                                         |
 | 用量编排大文件           | `src/lib/usage/providerLimits.ts`、`src/lib/usage/fetcher.ts`                                  | 绑着连接代理、云同步、Claude 引导、熔断和缓存表。只借鉴第 1 节的五步顺序 |
-| 推理执行器               | `open-sse/executors/**`，Grok 文件除外的刷新函数                                               | 本项目不转发模型请求                                                     |
+| 推理执行器               | `open-sse/executors/**`，Grok 文件除外的刷新函数                                               | 本轮 PolyQuota 抽取不转发模型请求；GraphAgent 所需部分另立范围选择性抽取 |
 | 兑换                     | GLM `/use`、Grok `RedeemReset`、Codex 重置额度兑换、`src/lib/usage/glmResetCards.ts` 的 redeem | 设计明确不做                                                             |
 | Antigravity 付费积分     | `antigravityCredits.ts`、执行器里的 credit probe、`ANTIGRAVITY_CREDITS=always`                 | 会主动消耗付费额度，上游文档将其标为封号风险                             |
 | 完整代理与 MITM          | `open-sse/utils/proxyFetch.ts`、`src/mitm/**`                                                  | 桌面壳只解析系统代理和环境变量                                           |

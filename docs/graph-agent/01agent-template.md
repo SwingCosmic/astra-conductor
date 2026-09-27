@@ -229,10 +229,12 @@ interface SkillContract {
 
 ```typescript
 interface ModelPolicy {
-  requiredCapabilities: string[];
-  allowedProviders?: string[];
-  deniedProviders?: string[];
-  allowedModels?: string[];
+  requiredCapabilities: ModelCapabilityRequirement[];
+  allowedProviders?: ProviderId[];
+  deniedProviders?: ProviderId[];
+  allowedModels?: ModelRef[];
+  allowedApiProtocols?: ApiProtocolKind[];
+  requiredOperations?: ProviderOperation[];
 
   minimumContextTokens?: number;
   minimumQualityTier?: string;
@@ -247,6 +249,10 @@ interface ModelPolicy {
 ```
 
 同模板实例的“能力相同”定义为满足相同 `SkillContract` 和 `ModelPolicy`。具体模型可以不同，但调度器不得绑定不满足最低契约的模型。
+
+这里的 `ProviderId`、`ModelRef`、`ApiProtocolKind`、`ProviderOperation` 和 `ModelCapabilityRequirement` 来自共享 [Provider Platform 契约](../common/core/cross-provider-service-protocol-design.md)，不是 GraphAgent 自己维护的字符串目录。服务商、模型和 API 协议是三个独立维度：例如同一服务商可以同时提供 OpenAI Chat Completions 与 Responses route，Anthropic 或 Gemini 协议也不能仅凭模型名称推断。
+
+`ModelPolicy` 只约束候选集合，不直接保存 endpoint、API Key 或具体 Executor。调度器先用共享模型目录过滤能力，再结合账号可用性、预算、隐私和运行区域产生 `ProviderRouteSelection`；协议 codec 和推理 facet 对该 selection 做最终可执行校验。
 
 ### 4.6 工具、委托和权限
 
@@ -371,6 +377,29 @@ interface AgentInstance {
   releaseReason?: string;
 }
 ```
+
+`ModelLease` 的完整续租和故障转移协议暂缓，但它必须从一开始绑定共享平台的稳定选择：
+
+```typescript
+interface ModelLease {
+  leaseId: string;
+  selection: ProviderRouteSelection;
+  modelCatalogRevision: string;
+  implementationGeneration: string;
+  budgetRef?: string;
+  acquiredAt: string;
+  expiresAt?: string;
+}
+
+interface ProviderRouteSelection {
+  providerId: ProviderId;
+  accountId: AccountId;
+  modelId: ModelId;
+  protocolRouteId: ProtocolRouteId;
+}
+```
+
+租约建立后，一次模型调用必须固定到同一 provider、账号、模型、协议 route 和实现代次。目录刷新或注册表更新可以影响下一次选择，但不得把正在进行的流静默迁移。租约只保存凭据引用和选择结果，不保存 token、API Key 或请求头。
 
 ### 5.2 实例身份种子
 
@@ -1024,8 +1053,11 @@ Actor 可以担任需要语义判断的审查员，但确定性安全规则仍�
 4. 一个任务由多个员工共同执行时如何形成 DAG 和 Artifact；
 5. 用户插入、修改或叫停任务时，Assignment 状态如何变化。
 
+在启动 GraphAgent 的模型执行代码前，还必须先完成共享 Provider Platform 迁移计划的“推理骨架”阶段：固定 protocol route、模型目录、codec registry、规范流事件和 `ModelLease` contract suite。它不阻塞 Assignment 领域设计，但不能推迟到具体供应商接入之后再补。
+
 ## 参考资料
 
+- [AstraConductor 跨服务商服务协议设计](../common/core/cross-provider-service-protocol-design.md)
 - [A2A Protocol 1.0 Specification](https://a2a-protocol.org/latest/specification/)
 - [AutoGen Agent Identity and Lifecycle](https://microsoft.github.io/autogen/stable/user-guide/core-user-guide/core-concepts/agent-identity-and-lifecycle.html)
 - [CrewAI Agents](https://docs.crewai.com/en/concepts/agents)
