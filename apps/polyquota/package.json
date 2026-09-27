@@ -9,23 +9,26 @@
     "icons:generate": "node ./scripts/run-icon-generator.mjs",
     "native:prepare": "node ./scripts/prepare-native.mjs",
     "prebuild": "pnpm run native:prepare",
-    "build:main": "tsc -p tsconfig.build.json && node ./scripts/copy-preload.mjs",
+    "build:main": "tsc -p tsconfig.build.json && node ./scripts/build-preload.mjs",
     "dev:electron": "node ./scripts/run-electron-mode.mjs dev",
     "build": "pnpm run build:main && node ./scripts/copy-renderer.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "test:ipc": "node ./scripts/run-electron-mode.mjs ipc-smoke",
     "package": "node ./scripts/package.mjs",
     "data:reset": "node ./scripts/run-electron-mode.mjs reset",
     "test:codex-cli": "node ./scripts/run-electron-mode.mjs codex-cli-smoke"
   },
   "dependencies": {
     "@astra-conductor/core": "workspace:*",
+    "@astra-conductor/polyquota-contract": "workspace:*",
     "better-sqlite3": "catalog:"
   },
   "devDependencies": {
     "@electron/rebuild": "catalog:",
     "@types/better-sqlite3": "catalog:",
     "@types/node": "catalog:",
+    "esbuild": "catalog:",
     "electron": "catalog:",
     "electron-builder": "catalog:",
     "typescript": "catalog:",

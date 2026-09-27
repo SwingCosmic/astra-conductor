@@ -7,5 +7,5 @@
     "sourceMap": true
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["test/**/*.ts"]
+  "exclude": ["src/preload.ts", "test/**/*.ts"]
 }

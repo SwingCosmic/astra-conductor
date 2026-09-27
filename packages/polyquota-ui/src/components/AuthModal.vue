@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref } from "vue";
-import type { AuthMethod, AuthStartResult, IpcResult, PublicAccount } from "../models";
+import type {
+  AuthMethod,
+  AuthStartResult,
+  IpcResult,
+  PublicAccount,
+  StartAuthRequest,
+} from "../models";
 import type { ProviderPresentation } from "../presentation";
 import { usePolyQuotaService } from "../services/polyquota-service-vue";
 
@@ -35,12 +41,30 @@ async function begin(): Promise<void> {
   busy.value = true;
   message.value = "";
   try {
-    const result = unwrap(
-      await service.startAuth(props.provider.provider, selected.value, {
-        ...(props.provider.region ? { region: props.provider.region } : {}),
-        ...(selected.value === "api-key" ? { apiKey: apiKey.value } : {}),
-      }),
-    );
+    let request: StartAuthRequest;
+    if (props.provider.provider === "codex") {
+      if (
+        selected.value !== "browser-oauth" &&
+        selected.value !== "device-code" &&
+        selected.value !== "cli-import"
+      ) {
+        throw new Error("Codex 不支持当前接入方式");
+      }
+      request = { provider: "codex", method: selected.value };
+    } else if (props.provider.provider === "glm" && props.provider.region) {
+      request =
+        selected.value === "api-key"
+          ? {
+              provider: "glm",
+              method: "api-key",
+              region: props.provider.region,
+              apiKey: apiKey.value,
+            }
+          : { provider: "glm", method: "cli-import", region: props.provider.region };
+    } else {
+      throw new Error("当前服务商尚未开放接入");
+    }
+    const result = unwrap(await service.startAuth(request));
     if (result.status === "completed") {
       emit("connected", result.account);
       busy.value = false;

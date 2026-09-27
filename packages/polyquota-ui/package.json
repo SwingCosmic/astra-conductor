@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@astra-conductor/polyquota-contract": "workspace:*",
     "vue": "catalog:"
   },
   "devDependencies": {

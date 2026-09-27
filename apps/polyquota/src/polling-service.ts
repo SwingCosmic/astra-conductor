@@ -7,7 +7,6 @@ import type {
   StoragePort,
 } from "@astra-conductor/core/internal";
 
-const DEFAULT_INTERVAL_MINUTES = 15;
 const NOTIFICATION_DELIVERY_TIMEOUT_MS = 3_000;
 
 export interface SystemNotificationOptions {
@@ -72,7 +71,6 @@ function shouldNotify(storage: StoragePort, candidate: NotificationCandidate): b
 }
 
 export class PollingService {
-  private timer: NodeJS.Timeout | null = null;
   private readonly pendingNotifications = new Set<string>();
   private readonly activeOperations = new Set<Promise<unknown>>();
 
@@ -83,20 +81,7 @@ export class PollingService {
     private readonly now: () => Date = () => new Date(),
   ) {}
 
-  start(): void {
-    if (this.storage.settings.get("pollingEnabled") === false) return;
-    const configured = this.storage.settings.get("pollingIntervalMinutes");
-    const minutes = typeof configured === "number" ? configured : DEFAULT_INTERVAL_MINUTES;
-    this.timer = setInterval(() => void this.refreshAll(), Math.max(5, minutes) * 60_000);
-  }
-
-  stop(): void {
-    if (this.timer) clearInterval(this.timer);
-    this.timer = null;
-  }
-
   async stopAndDrain(): Promise<void> {
-    this.stop();
     while (this.activeOperations.size) {
       await Promise.allSettled([...this.activeOperations]);
     }

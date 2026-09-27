@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
-import type { IpcResult, Settings } from "../models";
+import { onMounted, ref, watch } from "vue";
+import type { IpcResult, PublicRefreshSchedulerState, Settings } from "../models";
 import { usePolyQuotaService } from "../services/polyquota-service-vue";
 
-const settings = ref<Settings>({ pollingEnabled: true, pollingIntervalMinutes: 15 });
+const props = defineProps<{ settings: Settings; scheduler: PublicRefreshSchedulerState }>();
+const draft = ref<Settings>({ ...props.settings });
 const proxy = ref("正在读取…");
 const busy = ref(false);
 const message = ref("");
@@ -14,14 +15,13 @@ function unwrap<T>(result: IpcResult<T>): T {
   return result.value;
 }
 async function load(): Promise<void> {
-  settings.value = unwrap(await service.getSettings());
-  proxy.value = unwrap(await service.getProxy());
+  proxy.value = unwrap(await service.getSystemStatus()).proxy;
 }
 async function save(): Promise<void> {
   busy.value = true;
   message.value = "";
   try {
-    settings.value = unwrap(await service.saveSettings(settings.value));
+    unwrap(await service.saveSettings(draft.value));
     message.value = "设置已保存";
   } catch (error) {
     message.value = error instanceof Error ? error.message : "保存失败";
@@ -29,6 +29,12 @@ async function save(): Promise<void> {
     busy.value = false;
   }
 }
+watch(
+  () => props.settings,
+  (value) => {
+    draft.value = { ...value };
+  },
+);
 onMounted(() => void load());
 </script>
 
@@ -44,16 +50,22 @@ onMounted(() => void load());
       <h2>自动刷新</h2>
       <label class="setting-row"
         ><span><strong>自动刷新用量数据</strong><small>仅刷新已启用账号</small></span
-        ><input v-model="settings.pollingEnabled" type="checkbox" /></label
+        ><input v-model="draft.pollingEnabled" type="checkbox" /></label
       ><label class="setting-row"
         ><span><strong>刷新间隔</strong><small>允许 5 到 1440 分钟</small></span
         ><input
-          v-model.number="settings.pollingIntervalMinutes"
+          v-model.number="draft.pollingIntervalMinutes"
           type="number"
           min="5"
           max="1440" /></label
       ><button class="primary-action" :disabled="busy" @click="save">保存设置</button
       ><span v-if="message" class="save-message">{{ message }}</span>
+      <p class="setting-hint">
+        当前状态：{{ scheduler.status
+        }}{{
+          scheduler.nextRunAt ? ` · 下次 ${new Date(scheduler.nextRunAt).toLocaleString()}` : ""
+        }}
+      </p>
     </section>
     <section class="settings-card">
       <h2>网络与代理</h2>

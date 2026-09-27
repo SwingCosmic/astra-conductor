@@ -1,32 +1,12 @@
-import type {
-  AuthMethod,
-  AuthStartResult,
-  GlmRegion,
-  IpcResult,
-  ProviderId,
-  PublicAccount,
-  PublicUsage,
-  Settings,
-} from "../models";
+import {
+  POLYQUOTA_SCHEMA_VERSION,
+  type IPolyQuotaService,
+  type PolyQuotaSnapshot,
+  type PublicRefreshSchedulerState,
+  type ServiceResult,
+} from "@astra-conductor/polyquota-contract";
 
-export interface IPolyQuotaService {
-  listAccounts(): Promise<IpcResult<PublicAccount[]>>;
-  getUsage(accountId: string): Promise<IpcResult<PublicUsage | null>>;
-  setAccountEnabled(accountId: string, enabled: boolean): Promise<IpcResult<PublicAccount>>;
-  deleteAccount(accountId: string): Promise<IpcResult<{ accountId: string }>>;
-  refreshAccount(accountId: string): Promise<IpcResult<unknown>>;
-  refreshCredentials(accountId: string): Promise<IpcResult<unknown>>;
-  startAuth(
-    provider: ProviderId,
-    method: AuthMethod,
-    options?: { region?: GlmRegion; apiKey?: string },
-  ): Promise<IpcResult<AuthStartResult>>;
-  finishAuth(sessionId: string): Promise<IpcResult<PublicAccount>>;
-  cancelAuth(sessionId: string): Promise<IpcResult<{ sessionId: string }>>;
-  getSettings(): Promise<IpcResult<Settings>>;
-  saveSettings(settings: Settings): Promise<IpcResult<Settings>>;
-  getProxy(): Promise<IpcResult<string>>;
-}
+export type { IPolyQuotaService } from "@astra-conductor/polyquota-contract";
 
 const unavailableError = {
   code: "service-unavailable",
@@ -34,80 +14,95 @@ const unavailableError = {
   retryable: false,
 } as const;
 
-function unavailable<T>(): Promise<IpcResult<T>> {
+function unavailable<T>(): Promise<ServiceResult<T>> {
   return Promise.resolve({ ok: false, error: unavailableError });
 }
 
+const emptyScheduler: PublicRefreshSchedulerState = {
+  status: "disabled",
+  intervalMinutes: 15,
+  nextRunAt: null,
+  lastRunStartedAt: null,
+  lastRunFinishedAt: null,
+  lastResult: null,
+};
+
+function emptySnapshot(): PolyQuotaSnapshot {
+  return {
+    schemaVersion: POLYQUOTA_SCHEMA_VERSION,
+    revision: 0,
+    generatedAt: new Date(0).toISOString(),
+    accounts: [],
+    usageByAccountId: {},
+    operations: [],
+    settings: { pollingEnabled: false, pollingIntervalMinutes: 15 },
+    scheduler: emptyScheduler,
+  };
+}
+
 export class EmptyPolyQuotaService implements IPolyQuotaService {
-  listAccounts(): Promise<IpcResult<PublicAccount[]>> {
-    return Promise.resolve({ ok: true, value: [] });
+  getSnapshot(): Promise<ServiceResult<PolyQuotaSnapshot>> {
+    return Promise.resolve({ ok: true, value: emptySnapshot() });
   }
 
-  getUsage(_accountId: string): Promise<IpcResult<PublicUsage | null>> {
-    return Promise.resolve({ ok: true, value: null });
+  subscribe(_listener: Parameters<IPolyQuotaService["subscribe"]>[0]): () => void {
+    return () => undefined;
   }
 
-  setAccountEnabled(_accountId: string, _enabled: boolean): Promise<IpcResult<PublicAccount>> {
+  setAccountEnabled(): Promise<ServiceResult<void>> {
     return unavailable();
   }
 
-  deleteAccount(_accountId: string): Promise<IpcResult<{ accountId: string }>> {
+  deleteAccount(): Promise<ServiceResult<void>> {
     return unavailable();
   }
 
-  refreshAccount(_accountId: string): Promise<IpcResult<unknown>> {
+  refreshAccount(): ReturnType<IPolyQuotaService["refreshAccount"]> {
     return unavailable();
   }
 
-  refreshCredentials(_accountId: string): Promise<IpcResult<unknown>> {
+  refreshAll(): ReturnType<IPolyQuotaService["refreshAll"]> {
     return unavailable();
   }
 
-  startAuth(
-    _provider: ProviderId,
-    _method: AuthMethod,
-    _options?: { region?: GlmRegion; apiKey?: string },
-  ): Promise<IpcResult<AuthStartResult>> {
+  refreshCredentials(): ReturnType<IPolyQuotaService["refreshCredentials"]> {
     return unavailable();
   }
 
-  finishAuth(_sessionId: string): Promise<IpcResult<PublicAccount>> {
+  startAuth(): ReturnType<IPolyQuotaService["startAuth"]> {
     return unavailable();
   }
 
-  cancelAuth(_sessionId: string): Promise<IpcResult<{ sessionId: string }>> {
+  finishAuth(): ReturnType<IPolyQuotaService["finishAuth"]> {
     return unavailable();
   }
 
-  getSettings(): Promise<IpcResult<Settings>> {
-    return Promise.resolve({
-      ok: true,
-      value: { pollingEnabled: false, pollingIntervalMinutes: 15 },
-    });
-  }
-
-  saveSettings(_settings: Settings): Promise<IpcResult<Settings>> {
+  cancelAuth(): Promise<ServiceResult<void>> {
     return unavailable();
   }
 
-  getProxy(): Promise<IpcResult<string>> {
-    return Promise.resolve({ ok: true, value: "" });
+  saveSettings(): Promise<ServiceResult<void>> {
+    return unavailable();
+  }
+
+  getSystemStatus(): ReturnType<IPolyQuotaService["getSystemStatus"]> {
+    return Promise.resolve({ ok: true, value: { proxy: "" } });
   }
 }
 
 const methodNames = [
-  "listAccounts",
-  "getUsage",
+  "getSnapshot",
+  "subscribe",
   "setAccountEnabled",
   "deleteAccount",
   "refreshAccount",
+  "refreshAll",
   "refreshCredentials",
   "startAuth",
   "finishAuth",
   "cancelAuth",
-  "getSettings",
   "saveSettings",
-  "getProxy",
+  "getSystemStatus",
 ] as const satisfies readonly (keyof IPolyQuotaService)[];
 
 function isPolyQuotaService(value: unknown): value is IPolyQuotaService {

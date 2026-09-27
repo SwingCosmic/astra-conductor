@@ -92,6 +92,15 @@ process.on("SIGINT", () => {
   });
 });
 
+const contractBuildCode = await exitCode(
+  run(["--filter", "@astra-conductor/polyquota-contract", "run", "build"]),
+);
+if (contractBuildCode !== 0) {
+  await stopAll();
+  process.exitCode = contractBuildCode;
+  process.exit();
+}
+
 const coreBuildCode = await exitCode(run(["--filter", "@astra-conductor/core", "run", "build"]));
 if (coreBuildCode !== 0) {
   await stopAll();

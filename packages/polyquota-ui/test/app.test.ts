@@ -2,7 +2,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "../src/App.vue";
 import QuotaCard from "../src/components/QuotaCard.vue";
-import type { PublicAccount } from "../src/models";
+import type { PolyQuotaSnapshot, PublicAccount, PublicUsage } from "../src/models";
 import ProvidersView from "../src/views/ProvidersView.vue";
 import { EmptyPolyQuotaService, type IPolyQuotaService } from "../src/services/polyquota-service";
 import { polyQuotaServiceKey } from "../src/services/polyquota-service-vue";
@@ -40,6 +40,41 @@ function mountApp(service: IPolyQuotaService) {
 }
 
 const emptyService = new EmptyPolyQuotaService();
+
+function snapshot(
+  accounts: PublicAccount[],
+  usageByAccountId: Record<string, PublicUsage | null> = Object.fromEntries(
+    accounts.map((item) => [item.id, null]),
+  ),
+  revision = 1,
+): PolyQuotaSnapshot {
+  return {
+    schemaVersion: 1,
+    revision,
+    generatedAt: "2026-09-27T00:00:00.000Z",
+    accounts,
+    usageByAccountId,
+    operations: [],
+    settings: { pollingEnabled: true, pollingIntervalMinutes: 15 },
+    scheduler: {
+      status: "waiting",
+      intervalMinutes: 15,
+      nextRunAt: "2026-09-27T00:15:00.000Z",
+      lastRunStartedAt: null,
+      lastRunFinishedAt: null,
+      lastResult: null,
+    },
+  };
+}
+
+function serviceWithSnapshot(
+  value: PolyQuotaSnapshot,
+  overrides: Partial<IPolyQuotaService> = {},
+): IPolyQuotaService {
+  const service = new EmptyPolyQuotaService();
+  vi.spyOn(service, "getSnapshot").mockResolvedValue({ ok: true, value });
+  return Object.assign(service, overrides);
+}
 
 describe("desktop account UI", () => {
   it("keeps the ordinary browser preview runnable with the empty service", async () => {
@@ -287,15 +322,9 @@ describe("desktop account UI", () => {
   });
 
   it("loads accounts without exposing credentials to the renderer", async () => {
-    const service = {
-      listAccounts: vi.fn().mockResolvedValue({ ok: true, value: [account] }),
-      getUsage: vi.fn().mockResolvedValue({ ok: true, value: null }),
-      getSettings: vi.fn().mockResolvedValue({
-        ok: true,
-        value: { pollingEnabled: true, pollingIntervalMinutes: 15 },
-      }),
-      getProxy: vi.fn().mockResolvedValue({ ok: true, value: "DIRECT" }),
-    } as unknown as IPolyQuotaService;
+    const service = serviceWithSnapshot(snapshot([account]), {
+      getSystemStatus: vi.fn().mockResolvedValue({ ok: true, value: { proxy: "DIRECT" } }),
+    });
     const wrapper = mountApp(service);
     await vi.waitFor(() => expect(wrapper.text()).toContain("te***@example.test"));
     expect(wrapper.text()).not.toMatch(/accessToken|refreshToken|idToken/);
@@ -307,20 +336,66 @@ describe("desktop account UI", () => {
     await vi.waitFor(() => expect(wrapper.text()).toContain("DIRECT"));
   });
 
+  it("subscribes before the first snapshot and reloads after a newer revision", async () => {
+    const order: string[] = [];
+    let listener!: Parameters<IPolyQuotaService["subscribe"]>[0];
+    const dispose = vi.fn();
+    const getSnapshot = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        order.push("snapshot");
+        return { ok: true as const, value: snapshot([], {}, 1) };
+      })
+      .mockResolvedValue({ ok: true, value: snapshot([account], undefined, 2) });
+    const service = serviceWithSnapshot(snapshot([], {}, 1), {
+      getSnapshot,
+      subscribe: vi.fn((nextListener) => {
+        order.push("subscribe");
+        listener = nextListener;
+        return dispose;
+      }),
+    });
+
+    const wrapper = mountApp(service);
+    await vi.waitFor(() => expect(getSnapshot).toHaveBeenCalledOnce());
+    expect(order).toEqual(["subscribe", "snapshot"]);
+
+    listener({
+      schemaVersion: 1,
+      revision: 2,
+      reasons: ["accounts"],
+      occurredAt: "2026-09-27T00:01:00.000Z",
+    });
+    await vi.waitFor(() => expect(wrapper.text()).toContain("te***@example.test"));
+    expect(getSnapshot).toHaveBeenCalledTimes(2);
+
+    wrapper.unmount();
+    expect(dispose).toHaveBeenCalledOnce();
+  });
+
   it("refreshes a newly connected account before loading its first snapshot", async () => {
-    const listAccounts = vi.fn().mockResolvedValue({ ok: true, value: [account] });
-    const getUsage = vi.fn().mockResolvedValue({ ok: true, value: null });
+    const getSnapshot = vi.fn().mockResolvedValue({ ok: true, value: snapshot([account]) });
     const refreshAccount = vi.fn().mockResolvedValue({
       ok: true,
-      value: { status: "updated", accountId: account.id },
+      value: {
+        status: "updated",
+        accountId: account.id,
+        snapshot: {
+          accountId: account.id,
+          plan: "plus",
+          overallRemainingPercentage: 100,
+          groups: [],
+          extras: [],
+          fetchedAt: "2026-09-27T00:00:00.000Z",
+        },
+      },
     });
-    const service = {
-      listAccounts,
-      getUsage,
+    const service = serviceWithSnapshot(snapshot([account]), {
+      getSnapshot,
       refreshAccount,
-    } as unknown as IPolyQuotaService;
+    });
     const wrapper = mountApp(service);
-    await vi.waitFor(() => expect(listAccounts).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(getSnapshot).toHaveBeenCalledOnce());
     await flushPromises();
     const providersButton = wrapper
       .findAll("button")
@@ -331,7 +406,7 @@ describe("desktop account UI", () => {
     wrapper.findComponent(ProvidersView).vm.$emit("connected", account);
 
     await vi.waitFor(() => expect(refreshAccount).toHaveBeenCalledWith(account.id));
-    await vi.waitFor(() => expect(listAccounts).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(getSnapshot).toHaveBeenCalledTimes(2));
     await vi.waitFor(() => expect(wrapper.text()).toContain("账号已接入并刷新用量"));
   });
 
@@ -341,7 +416,7 @@ describe("desktop account UI", () => {
       authMethod: "browser-oauth",
       tokenExpiresAt: "2099-09-25T13:00:00.000Z",
     };
-    const listAccounts = vi.fn().mockResolvedValue({ ok: true, value: [oauthAccount] });
+    const getSnapshot = vi.fn().mockResolvedValue({ ok: true, value: snapshot([oauthAccount]) });
     const refreshCredentials = vi.fn().mockResolvedValue({
       ok: true,
       value: {
@@ -350,13 +425,12 @@ describe("desktop account UI", () => {
         tokenExpiresAt: "2099-09-25T15:00:00.000Z",
       },
     });
-    const service = {
-      listAccounts,
-      getUsage: vi.fn().mockResolvedValue({ ok: true, value: null }),
+    const service = serviceWithSnapshot(snapshot([oauthAccount]), {
+      getSnapshot,
       refreshCredentials,
-    } as unknown as IPolyQuotaService;
+    });
     const wrapper = mountApp(service);
-    await vi.waitFor(() => expect(listAccounts).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(getSnapshot).toHaveBeenCalledOnce());
     const providersButton = wrapper
       .findAll("button")
       .find((button) => button.text().includes("服务商"));
@@ -371,14 +445,23 @@ describe("desktop account UI", () => {
 
   it("dismisses the global message automatically", async () => {
     vi.useFakeTimers();
-    const service = {
-      listAccounts: vi.fn().mockResolvedValue({ ok: true, value: [account] }),
-      getUsage: vi.fn().mockResolvedValue({ ok: true, value: null }),
+    const service = serviceWithSnapshot(snapshot([account]), {
       refreshAccount: vi.fn().mockResolvedValue({
         ok: true,
-        value: { status: "updated", accountId: account.id },
+        value: {
+          status: "updated",
+          accountId: account.id,
+          snapshot: {
+            accountId: account.id,
+            plan: "plus",
+            overallRemainingPercentage: 100,
+            groups: [],
+            extras: [],
+            fetchedAt: "2026-09-27T00:00:00.000Z",
+          },
+        },
       }),
-    } as unknown as IPolyQuotaService;
+    });
     const wrapper = mountApp(service);
     await flushPromises();
     await wrapper.get(".quota-card-foot button").trigger("click");

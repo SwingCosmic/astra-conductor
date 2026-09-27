@@ -6,8 +6,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const mode = process.argv[2];
-if (!new Set(["dev", "reset", "codex-cli-smoke"]).has(mode)) {
-  throw new Error("Expected dev, reset, or codex-cli-smoke mode");
+if (!new Set(["dev", "reset", "codex-cli-smoke", "ipc-smoke"]).has(mode)) {
+  throw new Error("Expected dev, reset, codex-cli-smoke, or ipc-smoke mode");
 }
 
 const polyquotaRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -15,12 +15,15 @@ const sourceRoot = path.join(polyquotaRoot, "src");
 const electron = (await import("electron")).default;
 const pnpmScript = process.env.npm_execpath;
 const temporaryUserData =
-  mode === "codex-cli-smoke" ? await mkdtemp(path.join(tmpdir(), "polyquota-live-")) : null;
+  mode === "codex-cli-smoke" || mode === "ipc-smoke"
+    ? await mkdtemp(path.join(tmpdir(), "polyquota-live-"))
+    : null;
 
 const env = {
   ...process.env,
   ...(mode === "reset" ? { POLYQUOTA_RESET_DATA: "1" } : {}),
   ...(mode === "codex-cli-smoke" ? { POLYQUOTA_CODEX_CLI_SMOKE: "1" } : {}),
+  ...(mode === "ipc-smoke" ? { POLYQUOTA_IPC_SMOKE: "1" } : {}),
   ...(temporaryUserData ? { POLYQUOTA_USER_DATA: temporaryUserData } : {}),
 };
 
@@ -67,7 +70,7 @@ async function runDevelopmentSupervisor() {
 
   const sourceWatcher = watch(sourceRoot, { recursive: true }, (_eventType, filename) => {
     const relativePath = filename?.toString().replaceAll("\\", "/") ?? "";
-    if (!relativePath.endsWith(".ts") && relativePath !== "preload.cjs") return;
+    if (!relativePath.endsWith(".ts")) return;
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => void rebuildAndRestart(), 150);
   });

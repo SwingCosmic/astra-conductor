@@ -160,8 +160,10 @@ export class RefreshCoordinator {
         if (forced.changed) await this.persistCredentials(account, envelope);
         snapshot = await adapter.fetchUsage(account, envelope);
       }
-      this.storage.snapshots.save(snapshot);
-      this.storage.accounts.setCredentialState(account.id, "available", snapshot.fetchedAt);
+      this.storage.transaction(() => {
+        this.storage.snapshots.save(snapshot);
+        this.storage.accounts.setCredentialState(account.id, "available", snapshot.fetchedAt);
+      });
       this.logger.info("Account usage refreshed", {
         provider: account.provider,
         account: account.maskedIdentifier,

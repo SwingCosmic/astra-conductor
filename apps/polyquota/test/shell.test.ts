@@ -8,7 +8,7 @@ const mainSource = readFileSync(
   "utf8",
 );
 const preloadSource = readFileSync(
-  path.join(path.dirname(fileURLToPath(import.meta.url)), "../src/preload.cjs"),
+  path.join(path.dirname(fileURLToPath(import.meta.url)), "../src/preload.ts"),
   "utf8",
 );
 const developmentRunnerSource = readFileSync(
@@ -52,6 +52,8 @@ describe("PolyQuota desktop shell", () => {
 
     expect(preloadSource).toContain("startAuth");
     expect(preloadSource).toContain("cancelAuth");
+    expect(preloadSource).toContain("polyQuotaIpcEvents.stateChanged");
+    expect(preloadSource).toContain("ipcRenderer.removeListener");
     expect(preloadSource).not.toMatch(/accessToken|refreshToken|idToken|safeStorage/);
   });
 
@@ -67,7 +69,7 @@ describe("PolyQuota desktop shell", () => {
   it("rebuilds and gracefully restarts Electron without watching Core", () => {
     expect(developmentRunnerSource).toContain("watch(sourceRoot, { recursive: true }");
     expect(developmentRunnerSource).toContain('relativePath.endsWith(".ts")');
-    expect(developmentRunnerSource).toContain('relativePath !== "preload.cjs"');
+    expect(developmentRunnerSource).not.toContain('relativePath !== "preload.cjs"');
     expect(developmentRunnerSource).toContain('"build:main"');
     expect(developmentRunnerSource).toContain('type: "polyquota:dev-restart"');
     expect(developmentRunnerSource).not.toContain("packages/core");

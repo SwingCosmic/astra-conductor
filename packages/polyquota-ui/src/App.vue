@@ -1,20 +1,24 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import AppSidebar, { type PageId } from "./components/AppSidebar.vue";
-import type { IpcResult, PublicAccount, PublicUsage } from "./models";
+import type { IpcResult, PolyQuotaSnapshot, PublicAccount } from "./models";
 import { usePolyQuotaService } from "./services/polyquota-service-vue";
 import ProvidersView from "./views/ProvidersView.vue";
 import SettingsView from "./views/SettingsView.vue";
 import UsageView from "./views/UsageView.vue";
 
 const page = ref<PageId>("usage");
-const accounts = ref<PublicAccount[]>([]);
-const usage = ref<Record<string, PublicUsage | null>>({});
+const snapshot = ref<PolyQuotaSnapshot | null>(null);
+const accounts = computed(() => snapshot.value?.accounts ?? []);
+const usage = computed(() => snapshot.value?.usageByAccountId ?? {});
 const busy = ref<string | null>(null);
 const message = ref("");
 const GLOBAL_MESSAGE_DURATION_MS = 5_000;
 let messageTimer: ReturnType<typeof setTimeout> | null = null;
 const service = usePolyQuotaService();
+let unsubscribe: (() => void) | null = null;
+let snapshotRequest: Promise<void> | null = null;
+let highestObservedRevision = 0;
 
 watch(message, (value) => {
   if (messageTimer) clearTimeout(messageTimer);
@@ -30,16 +34,23 @@ function unwrap<T>(result: IpcResult<T>): T {
   return result.value;
 }
 
-async function load(): Promise<void> {
-  accounts.value = unwrap(await service.listAccounts());
-  usage.value = Object.fromEntries(
-    await Promise.all(
-      accounts.value.map(async (account) => [
-        account.id,
-        unwrap(await service.getUsage(account.id)),
-      ]),
-    ),
-  );
+function reloadSnapshot(targetRevision = snapshot.value?.revision ?? 0): Promise<void> {
+  highestObservedRevision = Math.max(highestObservedRevision, targetRevision);
+  if (snapshotRequest) return snapshotRequest;
+  snapshotRequest = (async () => {
+    do {
+      const next = unwrap(await service.getSnapshot());
+      if (!snapshot.value || next.revision >= snapshot.value.revision) snapshot.value = next;
+    } while ((snapshot.value?.revision ?? 0) < highestObservedRevision);
+  })().finally(() => {
+    snapshotRequest = null;
+    if ((snapshot.value?.revision ?? 0) < highestObservedRevision) {
+      void reloadSnapshot(highestObservedRevision).catch((error: unknown) => {
+        message.value = error instanceof Error ? error.message : "状态更新失败";
+      });
+    }
+  });
+  return snapshotRequest;
 }
 
 async function run(label: string, operation: () => Promise<void>): Promise<void> {
@@ -60,7 +71,7 @@ function connected(account: PublicAccount): void {
       status?: string;
       error?: { message: string };
     };
-    await load();
+    await reloadSnapshot();
     message.value =
       outcome.status === "failed"
         ? `账号已接入，但首次刷新失败：${outcome.error?.message ?? "未知错误"}`
@@ -75,19 +86,17 @@ function refresh(account: PublicAccount): void {
       error?: { message: string };
     };
     if (outcome.status === "failed") throw new Error(outcome.error?.message ?? "刷新失败");
-    await load();
+    await reloadSnapshot();
     message.value = "用量已刷新";
   });
 }
 
 function refreshAll(): void {
   void run("refresh-all", async () => {
-    for (const account of accounts.value.filter((item) => item.enabled)) {
-      const outcome = unwrap(await service.refreshAccount(account.id)) as { status?: string };
-      if (outcome.status === "failed") throw new Error(`${account.maskedIdentifier} 刷新失败`);
-    }
-    await load();
-    message.value = "全部用量已刷新";
+    const batch = unwrap(await service.refreshAll());
+    await reloadSnapshot();
+    const failures = batch.outcomes.filter((outcome) => outcome.status === "failed").length;
+    message.value = failures ? `刷新完成，${failures} 个账号失败` : "全部用量已刷新";
   });
 }
 
@@ -100,7 +109,7 @@ function refreshCredentials(account: PublicAccount): void {
     if (outcome.status === "failed") {
       throw new Error(outcome.error?.message ?? "令牌刷新失败");
     }
-    await load();
+    await reloadSnapshot();
     message.value = outcome.status === "unchanged" ? "令牌仍然有效" : "令牌已刷新";
   });
 }
@@ -108,7 +117,7 @@ function refreshCredentials(account: PublicAccount): void {
 function toggle(account: PublicAccount): void {
   void run(`toggle:${account.id}`, async () => {
     unwrap(await service.setAccountEnabled(account.id, !account.enabled));
-    await load();
+    await reloadSnapshot();
   });
 }
 
@@ -116,12 +125,21 @@ function remove(account: PublicAccount): void {
   if (!window.confirm(`删除 ${account.displayName}？本地加密凭据和用量快照也会一并删除。`)) return;
   void run(`delete:${account.id}`, async () => {
     unwrap(await service.deleteAccount(account.id));
-    await load();
+    await reloadSnapshot();
   });
 }
 
-onMounted(() => void run("load", load));
+onMounted(() => {
+  unsubscribe = service.subscribe((event) => {
+    if (event.revision <= (snapshot.value?.revision ?? -1)) return;
+    void reloadSnapshot(event.revision).catch((error: unknown) => {
+      message.value = error instanceof Error ? error.message : "状态更新失败";
+    });
+  });
+  void run("load", () => reloadSnapshot());
+});
 onBeforeUnmount(() => {
+  unsubscribe?.();
   if (messageTimer) clearTimeout(messageTimer);
 });
 </script>
@@ -149,7 +167,11 @@ onBeforeUnmount(() => {
         @toggle="toggle"
         @remove="remove"
       />
-      <SettingsView v-else />
+      <SettingsView
+        v-else-if="snapshot"
+        :settings="snapshot.settings"
+        :scheduler="snapshot.scheduler"
+      />
     </main>
   </div>
 </template>

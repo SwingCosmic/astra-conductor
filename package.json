@@ -19,7 +19,8 @@
     "test:codex-cli": "pnpm --filter @astra-conductor/core build && pnpm --filter @astra-conductor/polyquota build:main && pnpm --filter @astra-conductor/polyquota test:codex-cli"
   },
   "devDependencies": {
-    "prettier": "catalog:"
+    "prettier": "catalog:",
+    "typescript": "catalog:"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

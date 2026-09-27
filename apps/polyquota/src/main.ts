@@ -5,10 +5,12 @@ import {
   Tray,
   nativeImage,
   net,
+  powerMonitor,
   session,
   shell,
   type NativeImage,
 } from "electron";
+import { polyQuotaIpcEvents } from "@astra-conductor/polyquota-contract";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,12 +25,15 @@ import {
 import { AuthService } from "./auth-service.js";
 import { registerIpcHandlers, unregisterIpcHandlers, waitForIpcHandlersToDrain } from "./ipc.js";
 import { PollingService } from "./polling-service.js";
+import { PolyQuotaApplicationService } from "./polyquota-application-service.js";
+import { RefreshScheduler } from "./refresh-scheduler.js";
 import { ElectronSafeStorageCipher } from "./safe-storage-cipher.js";
 import { SqliteStorage } from "./sqlite-storage.js";
 import { runStorageSmoke } from "./storage-smoke.js";
 
 const devServer = process.env.POLYQUOTA_DEV_SERVER;
 const smoke = process.env.POLYQUOTA_SMOKE === "1";
+const ipcSmoke = process.env.POLYQUOTA_IPC_SMOKE === "1";
 const storageSmoke = process.env.POLYQUOTA_STORAGE_SMOKE === "1";
 const resetData = process.env.POLYQUOTA_RESET_DATA === "1";
 const codexCliSmoke = process.env.POLYQUOTA_CODEX_CLI_SMOKE === "1";
@@ -37,8 +42,11 @@ const productUserData = path.join(app.getPath("appData"), "AstraConductor", "Pol
 const databaseName = "polyquota.db";
 let storage: SqliteStorage | null = null;
 let polling: PollingService | null = null;
+let polyQuotaService: PolyQuotaApplicationService | null = null;
+let refreshScheduler: RefreshScheduler | null = null;
 let auth: AuthService | null = null;
 let tray: Tray | null = null;
+let mainWindow: BrowserWindow | null = null;
 let quitting = false;
 let shutdownComplete = false;
 let shutdownPromise: Promise<void> | null = null;
@@ -140,16 +148,21 @@ async function createWindow(): Promise<void> {
       webSecurity: true,
     },
   });
+  mainWindow = win;
 
   win.once("ready-to-show", () => {
     win.show();
   });
 
   win.on("close", (event) => {
-    if (!quitting && !smoke) {
+    if (!quitting && !smoke && !ipcSmoke) {
       event.preventDefault();
       win.hide();
     }
+  });
+
+  win.on("closed", () => {
+    if (mainWindow === win) mainWindow = null;
   });
 
   win.webContents.on("did-fail-load", (_event, code, description) => {
@@ -164,10 +177,64 @@ async function createWindow(): Promise<void> {
     return { action: "deny" };
   });
 
-  win.webContents.on("did-finish-load", () => {
+  win.webContents.on("did-finish-load", async () => {
     if (smoke) {
       console.log("POLYQUOTA_SMOKE_OK");
       setTimeout(() => app.quit(), 250);
+      return;
+    }
+    if (ipcSmoke) {
+      try {
+        const result = (await win.webContents.executeJavaScript(`
+          (async () => {
+            const service = window.polyQuotaElectronService;
+            if (!service) throw new Error("missing-service");
+            const initialResult = await service.getSnapshot();
+            if (!initialResult.ok) throw new Error(initialResult.error.code);
+            const invalidResult = await service.deleteAccount("../invalid-account");
+            if (invalidResult.ok || invalidResult.error.code !== "validation") {
+              throw new Error("invalid-input-not-rejected");
+            }
+            const initial = initialResult.value;
+            let timeout;
+            const eventPromise = new Promise((resolve, reject) => {
+              timeout = setTimeout(() => reject(new Error("event-timeout")), 5000);
+              const dispose = service.subscribe((event) => {
+                if (event.revision <= initial.revision) return;
+                clearTimeout(timeout);
+                dispose();
+                resolve(event);
+              });
+            });
+            const changedSettings = {
+              ...initial.settings,
+              pollingEnabled: !initial.settings.pollingEnabled,
+            };
+            const saveResult = await service.saveSettings(changedSettings);
+            if (!saveResult.ok) throw new Error(saveResult.error.code);
+            const event = await eventPromise;
+            const changedResult = await service.getSnapshot();
+            if (!changedResult.ok) throw new Error(changedResult.error.code);
+            if (changedResult.value.revision < event.revision) throw new Error("stale-snapshot");
+            if (changedResult.value.settings.pollingEnabled !== changedSettings.pollingEnabled) {
+              throw new Error("settings-not-applied");
+            }
+            const restoreResult = await service.saveSettings(initial.settings);
+            if (!restoreResult.ok) throw new Error(restoreResult.error.code);
+            return { revision: changedResult.value.revision, reasons: event.reasons };
+          })()
+        `)) as { revision: number; reasons: string[] };
+        console.log(
+          `POLYQUOTA_IPC_SMOKE_OK revision=${result.revision} reasons=${result.reasons.join(",")}`,
+        );
+        app.quit();
+      } catch (error) {
+        console.error(
+          "POLYQUOTA_IPC_SMOKE_FAILED",
+          error instanceof Error ? error.message : "unknown error",
+        );
+        app.exit(1);
+      }
     }
   });
 
@@ -185,7 +252,10 @@ function createTray(): void {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: "显示 PolyQuota", click: () => BrowserWindow.getAllWindows()[0]?.show() },
-      { label: "刷新全部账号", click: () => void polling?.refreshAll() },
+      {
+        label: "刷新全部账号",
+        click: () => void polyQuotaService?.refreshAll("tray"),
+      },
       { type: "separator" },
       {
         label: "退出",
@@ -202,16 +272,28 @@ function requestGracefulQuit(): void {
 }
 
 async function shutdownServices(): Promise<void> {
+  mainWindow?.destroy();
+  mainWindow = null;
   unregisterIpcHandlers();
   auth?.cancelAll();
-  polling?.stop();
+  powerMonitor.removeListener("resume", handleSystemResume);
   tray?.destroy();
   tray = null;
-  await Promise.all([waitForIpcHandlersToDrain(), polling?.stopAndDrain()]);
+  await Promise.all([
+    waitForIpcHandlersToDrain(),
+    refreshScheduler?.stopAndDrain(),
+    polling?.stopAndDrain(),
+  ]);
+  refreshScheduler = null;
+  polyQuotaService = null;
   polling = null;
   storage?.close();
   storage = null;
   auth = null;
+}
+
+function handleSystemResume(): void {
+  refreshScheduler?.resume();
 }
 
 process.on("message", (message: unknown) => {
@@ -281,10 +363,25 @@ if (hasSingleInstanceLock) {
         app.quit();
         return;
       }
-      registerIpcHandlers(storage, vault, polling, auth, () =>
-        session.defaultSession.resolveProxy("https://chatgpt.com/backend-api/wham/usage"),
+      polyQuotaService = new PolyQuotaApplicationService(storage, vault, polling, auth, {
+        resolveProxy: () =>
+          session.defaultSession.resolveProxy("https://chatgpt.com/backend-api/wham/usage"),
+        publishChanged: (event) => {
+          if (quitting) return;
+          const webContents = mainWindow?.webContents;
+          if (webContents && !webContents.isDestroyed()) {
+            webContents.send(polyQuotaIpcEvents.stateChanged, event);
+          }
+        },
+      });
+      refreshScheduler = new RefreshScheduler(
+        (source) => polyQuotaService!.executeRefreshBatch(source),
+        () => polyQuotaService?.schedulerChanged(),
       );
-      polling.start();
+      polyQuotaService.attachScheduler(refreshScheduler);
+      registerIpcHandlers(polyQuotaService);
+      refreshScheduler.start(polyQuotaService.getSettings());
+      powerMonitor.on("resume", handleSystemResume);
       if (!devServer) installProductionCsp();
       await createWindow();
       createTray();
