@@ -18,6 +18,7 @@ import {
   AntigravityAccountProvisioner,
   AntigravityAdapter,
   AppError,
+  AuthCoordinator,
   CodexAccountProvisioner,
   CodexAdapter,
   CredentialVault,
@@ -26,9 +27,13 @@ import {
   GrokBuildAccountProvisioner,
   GrokBuildAdapter,
   RefreshCoordinator,
+  createAntigravityAuthFlow,
+  createCodexAuthFlow,
+  createGlmAuthFlow,
+  createGrokBuildAuthFlow,
   providerCatalog,
 } from "@astra-conductor/core/internal";
-import { AuthService } from "./auth-service.js";
+import { startOAuthCallbackServer } from "./auth/callback-server.js";
 import { registerIpcHandlers, unregisterIpcHandlers, waitForIpcHandlersToDrain } from "./ipc.js";
 import { PollingService } from "./polling-service.js";
 import { PolyQuotaApplicationService } from "./polyquota-application-service.js";
@@ -50,7 +55,7 @@ let storage: SqliteStorage | null = null;
 let polling: PollingService | null = null;
 let polyQuotaService: PolyQuotaApplicationService | null = null;
 let refreshScheduler: RefreshScheduler | null = null;
-let auth: AuthService | null = null;
+let auth: AuthCoordinator | null = null;
 let tray: Tray | null = null;
 let mainWindow: BrowserWindow | null = null;
 let quitting = false;
@@ -355,17 +360,27 @@ if (hasSingleInstanceLock) {
       const glmProvisioner = new GlmAccountProvisioner(storage, vault);
       const grokProvisioner = new GrokBuildAccountProvisioner(storage, vault);
       const antigravityProvisioner = new AntigravityAccountProvisioner(storage, vault);
-      auth = new AuthService(
-        adapter,
-        provisioner,
-        (url) => shell.openExternal(url),
-        glmAdapter,
-        glmProvisioner,
-        grokAdapter,
-        grokProvisioner,
-        antigravityAdapter,
-        antigravityProvisioner,
-      );
+      auth = new AuthCoordinator([
+        createCodexAuthFlow({
+          adapter,
+          provisioner,
+          openExternal: (url) => shell.openExternal(url),
+          startCallbackServer: startOAuthCallbackServer,
+        }),
+        createGlmAuthFlow({ adapter: glmAdapter, provisioner: glmProvisioner }),
+        createGrokBuildAuthFlow({
+          adapter: grokAdapter,
+          provisioner: grokProvisioner,
+          openExternal: (url) => shell.openExternal(url),
+          startCallbackServer: startOAuthCallbackServer,
+        }),
+        createAntigravityAuthFlow({
+          adapter: antigravityAdapter,
+          provisioner: antigravityProvisioner,
+          openExternal: (url) => shell.openExternal(url),
+          startCallbackServer: startOAuthCallbackServer,
+        }),
+      ]);
       polling = new PollingService(storage, coordinator);
       if (codexCliSmoke) {
         const authResult = await auth.start("codex", "cli-import");

@@ -891,6 +891,8 @@ Electron 测试只覆盖共享 schema、固定通道、订阅释放、CSP、prel
 4. 把 GLM 地区从松散 presentation metadata 迁到明确字段或版本化扩展；
 5. 删除 UI 与 IPC 中按服务商校验具体字段的分支，改为共享 schema 与实现校验。
 
+第 1、2 条先行落地：桌面 `auth-service.ts` 的认证分支按供应商拆进 core `providers/<id>/auth-flow.ts`，回调处理逻辑（校验、超时、应答页）抽为 core 回调处理器而监听启动由桌面端口执行，CLI 凭据读取与解析全部收进 core，无分支的 `AuthCoordinator` 只管会话表并与 providerCatalog 对账——方案与边界见[认证服务抽取设计](../../polyquota/auth-service-extraction-design.md)。保存归属与 offeringId 仍留在完整阶段处理。
+
 ### 阶段 D：PolyQuota 应用服务、目录与展示收敛
 
 1. 实现 `IPolyQuotaService`、空白实现和类型化 Vue 注入；

@@ -24,12 +24,12 @@ import {
   toPublicUsage,
   type Account,
   type CredentialEnvelope,
+  type AuthCoordinator,
   type CredentialRefreshOutcome,
   type RefreshOutcome,
   type StoragePort,
   type UsageSnapshot,
 } from "@astra-conductor/core/internal";
-import type { AuthService } from "./auth-service.js";
 import type { PollingService } from "./polling-service.js";
 import type { RefreshScheduler, RefreshSource } from "./refresh-scheduler.js";
 
@@ -81,7 +81,7 @@ export class PolyQuotaApplicationService {
     private readonly storage: StoragePort,
     private readonly vault: CredentialVault,
     private readonly polling: PollingService,
-    private readonly auth: AuthService,
+    private readonly auth: AuthCoordinator,
     private readonly options: PolyQuotaApplicationServiceOptions,
   ) {
     this.now = options.now ?? (() => new Date());

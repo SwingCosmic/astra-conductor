@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   readZCodeCodingPlanApiKey,
   resolveZCodeCredentialsPath,
-} from "../src/zcode-credentials.js";
+} from "../src/providers/glm/zcode-credentials.js";
 
 function encryptCredential(value: string, secret: string): string {
   const iv = randomBytes(12);

@@ -7,8 +7,8 @@ import {
   type RefreshOutcome,
 } from "@astra-conductor/core/internal";
 import type { PolyQuotaChangedEvent } from "@astra-conductor/polyquota-contract";
+import type { AuthCoordinator } from "@astra-conductor/core/internal";
 import { PolyQuotaApplicationService } from "../src/polyquota-application-service.js";
-import type { AuthService } from "../src/auth-service.js";
 import type { PollingService } from "../src/polling-service.js";
 import { RefreshScheduler } from "../src/refresh-scheduler.js";
 
@@ -72,7 +72,7 @@ function createService(savedAccount: Account = account) {
     refreshAll: vi.fn().mockResolvedValue([refreshOutcome]),
     refreshCredentials: vi.fn(),
   } as unknown as PollingService;
-  const auth = { cancel: vi.fn() } as unknown as AuthService;
+  const auth = { cancel: vi.fn() } as unknown as AuthCoordinator;
   const service = new PolyQuotaApplicationService(
     storage,
     new CredentialVault(storage, cipher),
