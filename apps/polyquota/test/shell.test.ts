@@ -32,7 +32,7 @@ describe("PolyQuota desktop shell", () => {
     expect(mainSource).toContain("process.env.HTTPS_PROXY?.trim()");
     expect(mainSource).toContain('mode: "system"');
     expect(mainSource).toContain('mode: "fixed_servers"');
-    expect(mainSource).toContain("resolveProxy");
+    expect(mainSource).toContain("proxyStatus");
     expect(mainSource).toContain("setWindowOpenHandler");
     expect(mainSource).toContain('url.startsWith("https://")');
     expect(mainSource).toContain("POLYQUOTA_RESET_DATA_OK");

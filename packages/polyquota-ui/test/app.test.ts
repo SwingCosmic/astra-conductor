@@ -249,6 +249,33 @@ describe("desktop account UI", () => {
     expect(startAuth).toHaveBeenCalledWith({ provider: "grok-build", method: "device-code" });
   });
 
+  it("renders the CLI import hint from presentation data", async () => {
+    const codex = providerPresentation("codex");
+    expect(codex.cliImportPath).toBe("~/.codex/auth.json");
+    const catalogCodex = catalogPresentations(providerCatalogFixture).find(
+      (item) => item.id === "codex",
+    );
+    expect(catalogCodex?.cliImportPath).toBe("~/.codex/auth.json");
+
+    const service = Object.assign(new EmptyPolyQuotaService(), {
+      startAuth: vi.fn().mockResolvedValue({
+        ok: true,
+        value: { status: "completed", account },
+      }),
+    });
+    const wrapper = mount(AuthModal, {
+      props: { provider: catalogCodex! },
+      global: { provide: { [polyQuotaServiceKey as symbol]: service } },
+    });
+    const cliTab = wrapper
+      .findAll(".auth-tabs button")
+      .find((button) => button.text() === "Codex CLI");
+    await cliTab!.trigger("click");
+
+    expect(wrapper.text()).toContain("检测本地 Codex CLI 凭据文件");
+    expect(wrapper.text()).toContain("~/.codex/auth.json");
+  });
+
   it("renders Codex quota data and account controls", async () => {
     const wrapper = mount(QuotaCard, {
       props: {
@@ -557,7 +584,7 @@ describe("desktop account UI", () => {
 
   it("loads accounts without exposing credentials to the renderer", async () => {
     const service = serviceWithSnapshot(snapshot([account]), {
-      getSystemStatus: vi.fn().mockResolvedValue({ ok: true, value: { proxy: "DIRECT" } }),
+      getSystemStatus: vi.fn().mockResolvedValue({ ok: true, value: { proxy: "system" } }),
     });
     const wrapper = mountApp(service);
     await vi.waitFor(() => expect(wrapper.text()).toContain("te***@example.test"));
@@ -567,7 +594,7 @@ describe("desktop account UI", () => {
       .find((button) => button.text().includes("设置"));
     expect(settingsButton).toBeDefined();
     await settingsButton!.trigger("click");
-    await vi.waitFor(() => expect(wrapper.text()).toContain("DIRECT"));
+    await vi.waitFor(() => expect(wrapper.text()).toContain("system"));
   });
 
   it("subscribes before the first snapshot and reloads after a newer revision", async () => {

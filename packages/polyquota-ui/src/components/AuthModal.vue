@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref } from "vue";
+import { computed, onBeforeUnmount, ref } from "vue";
 import type {
   AuthMethod,
   AuthStartResult,
@@ -17,6 +17,9 @@ const pending = ref<Extract<AuthStartResult, { status: "pending" }> | null>(null
 const busy = ref(false);
 const message = ref("");
 const apiKey = ref("");
+const cliImportSourceLabel = computed(
+  () => props.provider.authMethods.find((method) => method.id === "cli-import")?.label ?? "CLI",
+);
 const service = usePolyQuotaService();
 
 function unwrap<T>(result: IpcResult<T>): T {
@@ -188,24 +191,8 @@ onBeforeUnmount(cancelPending);
       </div>
 
       <div v-else-if="selected === 'cli-import'" class="cli-import-panel">
-        <strong
-          >检测本地
-          {{
-            provider.provider === "glm"
-              ? "ZCode"
-              : provider.provider === "grok-build"
-                ? "Grok CLI"
-                : "Codex CLI"
-          }}
-          凭据文件</strong
-        >
-        <code>{{
-          provider.provider === "glm"
-            ? "~/.zcode/v2/credentials.json"
-            : provider.provider === "grok-build"
-              ? "~/.grok/auth.json"
-              : "~/.codex/auth.json"
-        }}</code>
+        <strong>检测本地 {{ cliImportSourceLabel }} 凭据文件</strong>
+        <code v-if="provider.cliImportPath">{{ provider.cliImportPath }}</code>
         <p>只读取现有凭据并保存应用自己的加密副本，不修改 CLI 文件。</p>
       </div>
 

@@ -16,6 +16,7 @@ import type {
   UsageProviderAdapter,
 } from "../../ports.js";
 import { CredentialVault } from "../../credential-vault.js";
+import { redeemCodexResetCredit } from "./reset-card-redemption.js";
 import { getCodexUsage } from "@omniroute/open-sse/services/usage/codex.ts";
 import { refreshCodexToken } from "@omniroute/open-sse/services/tokenRefresh/providers/codex.ts";
 import { getRefreshLeadMs } from "@omniroute/open-sse/services/tokenRefresh.ts";
@@ -263,11 +264,44 @@ export class CodexAdapter implements UsageProviderAdapter {
               {
                 key: "reset-credits",
                 value: String(result.bankedResetCredits),
+                // 用量接口只给计数没有逐项 id：兑换入口收敛为一个"使用"项，
+                // 兑换时按上游语义选择最先过期的一张（reset-card-redemption.ts）。
+                items:
+                  result.bankedResetCredits > 0
+                    ? [
+                        {
+                          key: "banked",
+                          kind: "banked",
+                          expiresAt: null,
+                          actionToken: "codex-banked-reset",
+                        },
+                      ]
+                    : undefined,
               },
             ]
           : [],
       fetchedAt: this.clock.now().toISOString(),
     };
+  }
+
+  async redeemResetCard(
+    account: Account,
+    envelope: CredentialEnvelope,
+    _selectionToken: string,
+  ): Promise<void> {
+    if (account.provider !== "codex" || envelope.provider !== "codex") {
+      throw new AppError("validation", "只有 Codex 账号支持使用重置额度");
+    }
+    const accessToken = envelope.secrets.accessToken;
+    if (!accessToken) throw new AppError("authentication", "Codex 访问令牌不可用");
+    await redeemCodexResetCredit({
+      accessToken,
+      workspaceId:
+        typeof account.publicMetadata.workspaceId === "string"
+          ? account.publicMetadata.workspaceId
+          : undefined,
+      fetchImpl: this.fetchImpl,
+    });
   }
 
   private fromOAuthTokens(

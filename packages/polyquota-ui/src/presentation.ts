@@ -30,6 +30,7 @@ export interface ProviderPresentation {
   websiteUrl?: string;
   available: boolean;
   authMethods: AuthMethodPresentation[];
+  cliImportPath?: string;
   planLabels: Record<string, string>;
   quotaLabels: Record<string, string>;
   groupLabels: Record<string, string>;
@@ -85,6 +86,7 @@ const presentationRegistry: ProviderPresentation[] = [
       authMethods["device-code"],
       authMethods["cli-import"],
     ],
+    cliImportPath: "~/.codex/auth.json",
     planLabels: {
       prolite: "Pro 5x",
       free: "Free",
@@ -103,7 +105,7 @@ const presentationRegistry: ProviderPresentation[] = [
     },
     groupLabels: {},
     extraLabels: { "reset-credits": "Reset credits" },
-    extraItemLabels: {},
+    extraItemLabels: { banked: "Banked reset credit" },
   },
   {
     id: "bigmodel-coding-plan",
@@ -116,6 +118,7 @@ const presentationRegistry: ProviderPresentation[] = [
     websiteUrl: "https://bigmodel.cn/coding-plan/personal/overview",
     available: true,
     authMethods: [zcodeImport, authMethods["api-key"]],
+    cliImportPath: "~/.zcode/v2/credentials.json",
     planLabels: {
       lite: "Lite",
       pro: "Pro",
@@ -140,6 +143,7 @@ const presentationRegistry: ProviderPresentation[] = [
     websiteUrl: "https://z.ai/manage-apikey/apikey-list",
     available: true,
     authMethods: [zcodeImport, authMethods["api-key"]],
+    cliImportPath: "~/.zcode/v2/credentials.json",
     planLabels: {
       lite: "Lite",
       pro: "Pro",
@@ -162,6 +166,7 @@ const presentationRegistry: ProviderPresentation[] = [
     icon: grokIcon,
     available: true,
     authMethods: [authMethods["device-code"], authMethods["browser-oauth"], grokCliImport],
+    cliImportPath: "~/.grok/auth.json",
     planLabels: {},
     quotaLabels: { weekly: "Weekly" },
     groupLabels: {},
@@ -215,6 +220,7 @@ export function catalogPresentations(
         icon: fallback?.icon,
         websiteUrl: offering.websiteUrl ?? fallback?.websiteUrl,
         available: true,
+        cliImportPath: fallback?.cliImportPath,
         authMethods: offering.authMethods.map((method) => ({
           id: method.method,
           label: method.sourceLabel ?? authMethods[method.method].label,
@@ -299,7 +305,9 @@ export function extraItemLabel(provider: ProviderId | PublicAccount, kind: strin
 }
 
 export function authMethodLabel(method: AuthMethod, provider?: ProviderId): string {
-  if (method === "cli-import" && provider === "glm") return zcodeImport.label;
-  if (method === "cli-import" && provider === "grok-build") return grokCliImport.label;
-  return authMethods[method].label;
+  if (method !== "cli-import" || !provider) return authMethods[method].label;
+  return (
+    providerPresentation(provider).authMethods.find((item) => item.id === "cli-import")?.label ??
+    authMethods["cli-import"].label
+  );
 }

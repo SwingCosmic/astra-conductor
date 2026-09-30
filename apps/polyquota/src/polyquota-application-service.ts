@@ -26,6 +26,7 @@ import {
   type CredentialEnvelope,
   type AuthCoordinator,
   type CredentialRefreshOutcome,
+  type ProviderId,
   type RefreshOutcome,
   type StoragePort,
   type UsageSnapshot,
@@ -33,15 +34,17 @@ import {
 import type { PollingService } from "./polling-service.js";
 import type { RefreshScheduler, RefreshSource } from "./refresh-scheduler.js";
 
+export type ResetCreditRedeemer = (
+  account: Account,
+  envelope: CredentialEnvelope,
+  selectionToken: string,
+) => Promise<void>;
+
 export interface PolyQuotaApplicationServiceOptions {
   publishChanged: (event: PolyQuotaChangedEvent) => void;
-  resolveProxy: () => Promise<string>;
+  proxyStatus: () => string;
   providerCatalog: readonly PublicProviderDescriptor[];
-  redeemResetCredit: (
-    account: Account,
-    envelope: CredentialEnvelope,
-    selectionToken: string,
-  ) => Promise<void>;
+  resetCreditRedeemers: Partial<Record<ProviderId, ResetCreditRedeemer>>;
   now?: () => Date;
 }
 
@@ -215,7 +218,11 @@ export class PolyQuotaApplicationService {
         if (!account) throw new AppError("validation", "Account does not exist");
         if (!account.enabled) throw new AppError("permission", "请先启用该账号再使用重置额度");
         const envelope = await this.vault.load(accountId);
-        await this.options.redeemResetCredit(account, envelope, selectionToken);
+        const redeem = this.options.resetCreditRedeemers[account.provider];
+        if (!redeem) {
+          throw new AppError("validation", "该服务商的重置额度使用协议尚未接入");
+        }
+        await redeem(account, envelope, selectionToken);
         const pending = this.pendingResetCreditUses.get(accountId) ?? new Set<string>();
         pending.add(selectionToken);
         this.pendingResetCreditUses.set(accountId, pending);
@@ -314,7 +321,7 @@ export class PolyQuotaApplicationService {
   }
 
   async getSystemStatus(): Promise<PublicSystemStatus> {
-    return { proxy: await this.options.resolveProxy() };
+    return { proxy: this.options.proxyStatus() };
   }
 
   schedulerChanged(): void {

@@ -30,10 +30,7 @@ function toggleExpanded(provider: ProviderPresentation): void {
 }
 
 function hasRefreshableToken(account: PublicAccount): boolean {
-  return (
-    account.provider !== "glm" &&
-    (account.authMethod === "browser-oauth" || account.authMethod === "device-code")
-  );
+  return account.authMethod === "browser-oauth" || account.authMethod === "device-code";
 }
 
 function tokenExpiryLabel(value: string | null): string {

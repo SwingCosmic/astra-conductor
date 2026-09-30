@@ -17,7 +17,6 @@ import { fileURLToPath } from "node:url";
 import {
   AntigravityAccountProvisioner,
   AntigravityAdapter,
-  AppError,
   AuthCoordinator,
   CodexAccountProvisioner,
   CodexAdapter,
@@ -120,11 +119,15 @@ function installProductionCsp(): void {
   });
 }
 
-async function configureNetworkProxy(): Promise<void> {
+/**
+ * 按环境变量决定会话代理，并返回对这一决定的可读描述（设置页"当前代理"
+ * 直接展示该值；不按 URL 探测，也不做供应商分流）。
+ */
+async function configureNetworkProxy(): Promise<string> {
   const raw = process.env.HTTPS_PROXY?.trim() || process.env.HTTP_PROXY?.trim();
   if (!raw) {
     await session.defaultSession.setProxy({ mode: "system" });
-    return;
+    return "system";
   }
   const proxy = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `http://${raw}`);
   if (!new Set(["http:", "https:", "socks:", "socks4:", "socks5:"]).has(proxy.protocol)) {
@@ -139,6 +142,7 @@ async function configureNetworkProxy(): Promise<void> {
       .filter(Boolean)
       .join(";"),
   });
+  return environmentBypass ? `${rule}; bypass: ${environmentBypass}` : rule;
 }
 
 async function createWindow(): Promise<void> {
@@ -341,7 +345,7 @@ if (hasSingleInstanceLock) {
         app.quit();
         return;
       }
-      await configureNetworkProxy();
+      const effectiveProxy = await configureNetworkProxy();
       storage = new SqliteStorage(databaseFile, { nativeBinding: sqliteNativeBindingPath() });
       const vault = new CredentialVault(storage, new ElectronSafeStorageCipher());
       const fetchImpl: typeof fetch = (input, init) =>
@@ -399,14 +403,13 @@ if (hasSingleInstanceLock) {
       }
       polyQuotaService = new PolyQuotaApplicationService(storage, vault, polling, auth, {
         providerCatalog,
-        redeemResetCredit: (account, envelope, selectionToken) => {
-          if (account.provider === "glm") {
-            return glmAdapter.redeemResetCard(account, envelope, selectionToken);
-          }
-          throw new AppError("validation", "该服务商的重置额度使用协议尚未接入");
+        resetCreditRedeemers: {
+          codex: (account, envelope, selectionToken) =>
+            adapter.redeemResetCard(account, envelope, selectionToken),
+          glm: (account, envelope, selectionToken) =>
+            glmAdapter.redeemResetCard(account, envelope, selectionToken),
         },
-        resolveProxy: () =>
-          session.defaultSession.resolveProxy("https://chatgpt.com/backend-api/wham/usage"),
+        proxyStatus: () => effectiveProxy,
         publishChanged: (event) => {
           if (quitting) return;
           const webContents = mainWindow?.webContents;

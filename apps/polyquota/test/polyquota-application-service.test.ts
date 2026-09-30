@@ -67,6 +67,7 @@ function createService(savedAccount: Account = account) {
   });
   const events: PolyQuotaChangedEvent[] = [];
   const redeemResetCredit = vi.fn().mockResolvedValue(undefined);
+  const resetCreditRedeemers = { glm: redeemResetCredit };
   const polling = {
     refresh: vi.fn().mockResolvedValue(refreshOutcome),
     refreshAll: vi.fn().mockResolvedValue([refreshOutcome]),
@@ -81,8 +82,8 @@ function createService(savedAccount: Account = account) {
     {
       publishChanged: (event) => events.push(event),
       providerCatalog: [],
-      redeemResetCredit,
-      resolveProxy: vi.fn().mockResolvedValue("DIRECT"),
+      resetCreditRedeemers,
+      proxyStatus: vi.fn().mockReturnValue("system"),
       now: () => new Date("2026-09-27T00:02:00.000Z"),
     },
   );
