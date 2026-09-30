@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { AppError } from "./errors.js";
+import { AppError } from "../../errors.js";
 import type {
   Account,
   AuthMethod,
@@ -8,15 +8,14 @@ import type {
   ProviderId,
   UsageQuota,
   UsageSnapshot,
-} from "./models.js";
+} from "../../models.js";
 import type {
   ClockPort,
   CredentialRefreshResult,
-  LoggerPort,
   StoragePort,
   UsageProviderAdapter,
-} from "./ports.js";
-import { CredentialVault } from "./credential-vault.js";
+} from "../../ports.js";
+import { CredentialVault } from "../../credential-vault.js";
 import { getCodexUsage } from "@omniroute/open-sse/services/usage/codex.ts";
 import { refreshCodexToken } from "@omniroute/open-sse/services/tokenRefresh/providers/codex.ts";
 import { getRefreshLeadMs } from "@omniroute/open-sse/services/tokenRefresh.ts";
@@ -345,8 +344,3 @@ export class CodexAccountProvisioner {
     return account;
   }
 }
-
-export const silentLogger: LoggerPort = {
-  info: () => undefined,
-  error: () => undefined,
-};

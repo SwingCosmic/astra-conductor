@@ -873,6 +873,8 @@ Electron 测试只覆盖共享 schema、固定通道、订阅释放、CSP、prel
 
 这一阶段只建立可演进边界，不要求立即搬运 OmniRoute 的 translator、Executor 或完整模型表。
 
+进展记录（2026-09-30）：provider / offering / 认证方式的轻量声明与统一目录端点已落地——core 按供应商建立 `src/providers/<id>/` 目录（adapter 与 descriptor 同处一目录），`providers/catalog.ts` 聚合全部声明并在重复 provider、offering 或认证方式时构造失败；快照 `providers` 字段（`PublicProviderDescriptor[]`）经 IPC 提供给前端，schemaVersion 升至 2；UI 接入页的结构改为目录驱动，`presentation.ts` 只保留文案与图标。protocol route、model、operation 与 capability 类型仍未落地。
+
 ### 阶段 B：能力注册表包装现有实现
 
 1. 定义 descriptor、capability facet、contribution 和严格注册表；

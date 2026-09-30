@@ -9,6 +9,7 @@ import {
   type PublicAccount,
   type PublicOperationKind,
   type PublicOperationState,
+  type PublicProviderDescriptor,
   type PublicSystemStatus,
   type RedeemResetCreditOutcomeDto,
   type RefreshBatchOutcomeDto,
@@ -35,6 +36,7 @@ import type { RefreshScheduler, RefreshSource } from "./refresh-scheduler.js";
 export interface PolyQuotaApplicationServiceOptions {
   publishChanged: (event: PolyQuotaChangedEvent) => void;
   resolveProxy: () => Promise<string>;
+  providerCatalog: readonly PublicProviderDescriptor[];
   redeemResetCredit: (
     account: Account,
     envelope: CredentialEnvelope,
@@ -127,6 +129,7 @@ export class PolyQuotaApplicationService {
         schemaVersion: POLYQUOTA_SCHEMA_VERSION,
         revision,
         generatedAt: this.now().toISOString(),
+        providers: this.options.providerCatalog.map((descriptor) => ({ ...descriptor })),
         accounts: publicAccounts,
         usageByAccountId,
         operations,

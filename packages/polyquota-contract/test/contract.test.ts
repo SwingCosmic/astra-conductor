@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   ContractValidationError,
+  POLYQUOTA_SCHEMA_VERSION,
   parseChangedEvent,
+  parseProviderDescriptor,
   parseRedeemResetCreditOutcome,
   parseRedeemResetCreditRequest,
   parseSettings,
+  parseSnapshot,
   parseStartAuthRequest,
 } from "../src/index";
 
@@ -46,12 +49,129 @@ describe("PolyQuota contract", () => {
   it("rejects changed events from a different contract version", () => {
     expect(() =>
       parseChangedEvent({
-        schemaVersion: 2,
+        schemaVersion: 3,
         revision: 1,
         reasons: ["usage"],
         occurredAt: "2026-09-27T00:00:00.000Z",
       }),
     ).toThrow(ContractValidationError);
+  });
+
+  it("parses provider descriptors with offerings and auth methods", () => {
+    expect(
+      parseProviderDescriptor({
+        provider: "glm",
+        displayName: "GLM Coding Plan",
+        offerings: [
+          {
+            id: "bigmodel-coding-plan",
+            provider: "glm",
+            displayName: "BigModel Coding Plan",
+            region: "china",
+            authMethods: [
+              { method: "cli-import", interaction: "local-import", sourceLabel: "ZCode" },
+              { method: "api-key", interaction: "secret-form" },
+            ],
+          },
+        ],
+      }),
+    ).toEqual({
+      provider: "glm",
+      displayName: "GLM Coding Plan",
+      offerings: [
+        {
+          id: "bigmodel-coding-plan",
+          provider: "glm",
+          displayName: "BigModel Coding Plan",
+          region: "china",
+          authMethods: [
+            { method: "cli-import", interaction: "local-import", sourceLabel: "ZCode" },
+            { method: "api-key", interaction: "secret-form" },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("rejects provider descriptors with broken ownership or duplicates", () => {
+    expect(() =>
+      parseProviderDescriptor({
+        provider: "codex",
+        displayName: "Codex",
+        offerings: [{ id: "codex", provider: "glm", displayName: "Codex", authMethods: [] }],
+      }),
+    ).toThrow(ContractValidationError);
+    expect(() =>
+      parseProviderDescriptor({
+        provider: "codex",
+        displayName: "Codex",
+        offerings: [
+          { id: "codex", provider: "codex", displayName: "Codex", authMethods: [] },
+          { id: "codex", provider: "codex", displayName: "Codex", authMethods: [] },
+        ],
+      }),
+    ).toThrow(ContractValidationError);
+    expect(() =>
+      parseProviderDescriptor({
+        provider: "codex",
+        displayName: "Codex",
+        offerings: [
+          {
+            id: "codex",
+            provider: "codex",
+            displayName: "Codex",
+            authMethods: [
+              { method: "browser-oauth", interaction: "browser-callback" },
+              { method: "browser-oauth", interaction: "browser-callback" },
+            ],
+          },
+        ],
+      }),
+    ).toThrow(ContractValidationError);
+  });
+
+  it("requires the provider catalog in snapshots and rejects duplicates", () => {
+    const snapshotBase = {
+      schemaVersion: POLYQUOTA_SCHEMA_VERSION,
+      revision: 1,
+      generatedAt: "2026-09-27T00:00:00.000Z",
+      accounts: [],
+      usageByAccountId: {},
+      operations: [],
+      settings: { pollingEnabled: true, pollingIntervalMinutes: 15 },
+      scheduler: {
+        status: "waiting",
+        intervalMinutes: 15,
+        nextRunAt: null,
+        lastRunStartedAt: null,
+        lastRunFinishedAt: null,
+        lastResult: null,
+      },
+    };
+    const codexDescriptor = {
+      provider: "codex",
+      displayName: "OpenAI Codex",
+      offerings: [
+        {
+          id: "codex",
+          provider: "codex",
+          displayName: "OpenAI Codex",
+          authMethods: [{ method: "browser-oauth", interaction: "browser-callback" }],
+        },
+      ],
+    };
+    expect(parseSnapshot({ ...snapshotBase, providers: [codexDescriptor] }).providers).toHaveLength(
+      1,
+    );
+    expect(() => parseSnapshot({ ...snapshotBase, providers: [] })).not.toThrow();
+    expect(() =>
+      parseSnapshot({ ...snapshotBase, providers: [codexDescriptor, codexDescriptor] }),
+    ).toThrow(ContractValidationError);
+    const { providers: _providers, ...withoutProviders } = {
+      ...snapshotBase,
+      providers: [],
+    };
+    expect(() => parseSnapshot(withoutProviders)).toThrow(ContractValidationError);
   });
 
   it("accepts only bounded reset-credit use requests", () => {

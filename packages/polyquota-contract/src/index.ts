@@ -1,4 +1,4 @@
-export const POLYQUOTA_SCHEMA_VERSION = 1 as const;
+export const POLYQUOTA_SCHEMA_VERSION = 2 as const;
 
 export const providerIds = ["codex", "glm", "grok-build", "antigravity"] as const;
 export type ProviderId = (typeof providerIds)[number];
@@ -22,6 +22,34 @@ export interface PublicAccount {
   publicMetadata: PublicMetadata;
   createdAt: string;
   updatedAt: string;
+}
+
+export type PublicAuthInteraction =
+  | "browser-callback"
+  | "device-code"
+  | "local-import"
+  | "secret-form";
+
+export interface PublicAuthMethodDescriptor {
+  method: AuthMethod;
+  interaction: PublicAuthInteraction;
+  sourceLabel?: string;
+}
+
+export interface PublicOfferingDescriptor {
+  id: string;
+  provider: ProviderId;
+  displayName: string;
+  description?: string;
+  websiteUrl?: string;
+  region?: GlmRegion;
+  authMethods: PublicAuthMethodDescriptor[];
+}
+
+export interface PublicProviderDescriptor {
+  provider: ProviderId;
+  displayName: string;
+  offerings: PublicOfferingDescriptor[];
 }
 
 export interface UsageQuota {
@@ -163,6 +191,7 @@ export interface PolyQuotaSnapshot {
   schemaVersion: typeof POLYQUOTA_SCHEMA_VERSION;
   revision: number;
   generatedAt: string;
+  providers: PublicProviderDescriptor[];
   accounts: PublicAccount[];
   usageByAccountId: Record<string, PublicUsage | null>;
   operations: PublicOperationState[];
@@ -419,6 +448,65 @@ function parseMetadata(value: unknown): PublicMetadata {
   return record as PublicMetadata;
 }
 
+function parseAuthMethodDescriptor(value: unknown): PublicAuthMethodDescriptor {
+  const record = object(value, "authMethod");
+  const interaction = oneOf(
+    record.interaction,
+    ["browser-callback", "device-code", "local-import", "secret-form"] as const,
+    "authMethod.interaction",
+  );
+  return {
+    method: oneOf(record.method, authMethods, "authMethod.method"),
+    interaction,
+    ...(record.sourceLabel === undefined
+      ? {}
+      : { sourceLabel: string(record.sourceLabel, "authMethod.sourceLabel") }),
+  };
+}
+
+function parseOfferingDescriptor(value: unknown): PublicOfferingDescriptor {
+  const record = object(value, "offering");
+  return {
+    id: string(record.id, "offering.id"),
+    provider: oneOf(record.provider, providerIds, "offering.provider"),
+    displayName: string(record.displayName, "offering.displayName"),
+    ...(record.description === undefined
+      ? {}
+      : { description: string(record.description, "offering.description") }),
+    ...(record.websiteUrl === undefined
+      ? {}
+      : { websiteUrl: string(record.websiteUrl, "offering.websiteUrl") }),
+    ...(record.region === undefined
+      ? {}
+      : { region: oneOf(record.region, glmRegions, "offering.region") }),
+    authMethods: array(record.authMethods, "offering.authMethods", parseAuthMethodDescriptor),
+  };
+}
+
+export function parseProviderDescriptor(value: unknown): PublicProviderDescriptor {
+  const record = object(value, "providerDescriptor");
+  const descriptor: PublicProviderDescriptor = {
+    provider: oneOf(record.provider, providerIds, "providerDescriptor.provider"),
+    displayName: string(record.displayName, "providerDescriptor.displayName"),
+    offerings: array(record.offerings, "providerDescriptor.offerings", parseOfferingDescriptor),
+  };
+  const seenOfferings = new Set<string>();
+  for (const offering of descriptor.offerings) {
+    if (offering.provider !== descriptor.provider) {
+      fail("providerDescriptor.offerings.provider");
+    }
+    if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(offering.id)) fail("offering.id");
+    if (seenOfferings.has(offering.id)) fail("offering.id");
+    seenOfferings.add(offering.id);
+    const seenMethods = new Set<string>();
+    for (const method of offering.authMethods) {
+      if (seenMethods.has(method.method)) fail("authMethod.method");
+      seenMethods.add(method.method);
+    }
+  }
+  return descriptor;
+}
+
 export function parsePublicAccount(value: unknown): PublicAccount {
   const record = object(value, "account");
   return {
@@ -661,10 +749,17 @@ export function parseSnapshot(value: unknown): PolyQuotaSnapshot {
   ) {
     return fail("snapshot.usageByAccountId");
   }
+  const providers = array(record.providers, "snapshot.providers", parseProviderDescriptor);
+  const seenProviders = new Set<string>();
+  for (const descriptor of providers) {
+    if (seenProviders.has(descriptor.provider)) fail("snapshot.providers");
+    seenProviders.add(descriptor.provider);
+  }
   return {
     schemaVersion: POLYQUOTA_SCHEMA_VERSION,
     revision: nonnegativeInteger(record.revision, "snapshot.revision"),
     generatedAt: isoDate(record.generatedAt, "snapshot.generatedAt"),
+    providers,
     accounts,
     usageByAccountId,
     operations: array(record.operations, "snapshot.operations", parseOperation),

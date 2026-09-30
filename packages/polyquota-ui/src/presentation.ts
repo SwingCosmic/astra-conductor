@@ -8,6 +8,7 @@ import type {
   GlmRegion,
   ProviderId,
   PublicAccount,
+  PublicProviderDescriptor,
   UsageExtra,
   UsageQuota,
   UsageQuotaGroup,
@@ -65,7 +66,12 @@ const grokCliImport: AuthMethodPresentation = {
   label: "Grok CLI",
 };
 
-export const providers: ProviderPresentation[] = [
+/**
+ * 本地文案与视觉注册表，按 offering id 索引。接入哪些服务商、每家提供哪些
+ * 认证方式由主进程快照中的 provider 目录决定；这里只补充图标、标签映射和
+ * 目录缺失时的展示回退，不决定可用性。
+ */
+const presentationRegistry: ProviderPresentation[] = [
   {
     id: "codex",
     provider: "codex",
@@ -183,6 +189,47 @@ export const providers: ProviderPresentation[] = [
   },
 ];
 
+const registryById = new Map(presentationRegistry.map((item) => [item.id, item]));
+
+/**
+ * 把主进程提供的 provider 目录投影为接入页的展示行。目录决定结构与顺序，
+ * 文案注册表补充图标和标签；目录为空（例如浏览器预览）时不虚构任何服务商。
+ */
+export function catalogPresentations(
+  catalog: readonly PublicProviderDescriptor[] | null | undefined,
+): ProviderPresentation[] {
+  if (!catalog?.length) return [];
+  const rows: ProviderPresentation[] = [];
+  for (const descriptor of catalog) {
+    for (const offering of descriptor.offerings) {
+      const fallback =
+        registryById.get(offering.id) ??
+        presentationRegistry.find((item) => item.provider === descriptor.provider);
+      rows.push({
+        id: offering.id,
+        provider: descriptor.provider,
+        region: offering.region,
+        name: offering.displayName || fallback?.name || descriptor.displayName,
+        description: offering.description ?? fallback?.description ?? "",
+        mark: fallback?.mark ?? "",
+        icon: fallback?.icon,
+        websiteUrl: offering.websiteUrl ?? fallback?.websiteUrl,
+        available: true,
+        authMethods: offering.authMethods.map((method) => ({
+          id: method.method,
+          label: method.sourceLabel ?? authMethods[method.method].label,
+        })),
+        planLabels: fallback?.planLabels ?? {},
+        quotaLabels: fallback?.quotaLabels ?? {},
+        groupLabels: fallback?.groupLabels ?? {},
+        extraLabels: fallback?.extraLabels ?? {},
+        extraItemLabels: fallback?.extraItemLabels ?? {},
+      });
+    }
+  }
+  return rows;
+}
+
 export function accountPresentationId(account: PublicAccount): string {
   if (account.provider !== "glm") return account.provider;
   if (typeof account.publicMetadata.presentationId === "string") {
@@ -199,9 +246,9 @@ export function providerPresentation(
       ? providerOrAccount
       : accountPresentationId(providerOrAccount);
   return (
-    providers.find((item) => item.id === id) ??
-    providers.find((item) => item.provider === id) ??
-    providers[0]!
+    registryById.get(id) ??
+    presentationRegistry.find((item) => item.provider === id) ??
+    presentationRegistry[0]!
   );
 }
 

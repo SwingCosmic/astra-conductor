@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import AppSidebar, { type PageId } from "./components/AppSidebar.vue";
 import type { IpcResult, PolyQuotaSnapshot, PublicAccount } from "./models";
+import { catalogPresentations } from "./presentation";
 import { usePolyQuotaService } from "./services/polyquota-service-vue";
 import ProvidersView from "./views/ProvidersView.vue";
 import SettingsView from "./views/SettingsView.vue";
@@ -11,6 +12,7 @@ const page = ref<PageId>("usage");
 const snapshot = ref<PolyQuotaSnapshot | null>(null);
 const accounts = computed(() => snapshot.value?.accounts ?? []);
 const usage = computed(() => snapshot.value?.usageByAccountId ?? {});
+const providerPresentations = computed(() => catalogPresentations(snapshot.value?.providers));
 const busy = ref<string | null>(null);
 const message = ref("");
 const messageTone = ref<"info" | "success" | "error">("info");
@@ -187,6 +189,7 @@ onBeforeUnmount(() => {
       <ProvidersView
         v-else-if="page === 'providers'"
         :accounts="accounts"
+        :presentations="providerPresentations"
         :busy="busy !== null"
         @connected="connected"
         @refresh-credentials="refreshCredentials"

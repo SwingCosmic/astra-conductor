@@ -2,14 +2,13 @@
 import { computed, ref } from "vue";
 import AuthModal from "../components/AuthModal.vue";
 import type { PublicAccount } from "../models";
-import {
-  accountPresentationId,
-  authMethodLabel,
-  providers,
-  type ProviderPresentation,
-} from "../presentation";
+import { accountPresentationId, authMethodLabel, type ProviderPresentation } from "../presentation";
 
-const props = defineProps<{ accounts: PublicAccount[]; busy: boolean }>();
+const props = defineProps<{
+  accounts: PublicAccount[];
+  presentations: ProviderPresentation[];
+  busy: boolean;
+}>();
 const emit = defineEmits<{
   connected: [account: PublicAccount];
   refreshCredentials: [account: PublicAccount];
@@ -65,7 +64,7 @@ const connectedCount = computed(() => new Set(props.accounts.map(accountPresenta
       </div>
     </header>
     <div class="provider-list">
-      <article v-for="provider in providers" :key="provider.id" class="provider-row">
+      <article v-for="provider in presentations" :key="provider.id" class="provider-row">
         <div class="provider-summary">
           <span class="provider-mark">
             <img v-if="provider.icon" :src="provider.icon" alt="" />

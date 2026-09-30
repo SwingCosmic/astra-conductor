@@ -3,17 +3,102 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "../src/App.vue";
 import AuthModal from "../src/components/AuthModal.vue";
 import QuotaCard from "../src/components/QuotaCard.vue";
-import type { PolyQuotaSnapshot, PublicAccount, PublicUsage } from "../src/models";
+import type {
+  PolyQuotaSnapshot,
+  PublicAccount,
+  PublicProviderDescriptor,
+  PublicUsage,
+} from "../src/models";
 import ProvidersView from "../src/views/ProvidersView.vue";
 import UsageView from "../src/views/UsageView.vue";
 import { EmptyPolyQuotaService, type IPolyQuotaService } from "../src/services/polyquota-service";
 import { polyQuotaServiceKey } from "../src/services/polyquota-service-vue";
 import {
   accountPresentationId,
+  catalogPresentations,
   planLabel,
   providerPresentation,
   quotaLabel,
 } from "../src/presentation";
+import { POLYQUOTA_SCHEMA_VERSION } from "@astra-conductor/polyquota-contract";
+
+const providerCatalogFixture: PublicProviderDescriptor[] = [
+  {
+    provider: "codex",
+    displayName: "OpenAI Codex",
+    offerings: [
+      {
+        id: "codex",
+        provider: "codex",
+        displayName: "OpenAI Codex",
+        description: "查看 ChatGPT 订阅中的 Codex 用量。",
+        authMethods: [
+          { method: "browser-oauth", interaction: "browser-callback" },
+          { method: "device-code", interaction: "device-code" },
+          { method: "cli-import", interaction: "local-import", sourceLabel: "Codex CLI" },
+        ],
+      },
+    ],
+  },
+  {
+    provider: "glm",
+    displayName: "GLM Coding Plan",
+    offerings: [
+      {
+        id: "bigmodel-coding-plan",
+        provider: "glm",
+        displayName: "BigModel Coding Plan",
+        description: "智谱国内 Coding Plan，查看 5 小时、周配额和重置卡。",
+        region: "china",
+        authMethods: [
+          { method: "cli-import", interaction: "local-import", sourceLabel: "ZCode" },
+          { method: "api-key", interaction: "secret-form" },
+        ],
+      },
+      {
+        id: "zai-coding-plan",
+        provider: "glm",
+        displayName: "Z.ai Coding Plan",
+        description: "智谱国际版 Coding Plan，查看 5 小时、周配额和重置卡。",
+        region: "international",
+        authMethods: [
+          { method: "cli-import", interaction: "local-import", sourceLabel: "ZCode" },
+          { method: "api-key", interaction: "secret-form" },
+        ],
+      },
+    ],
+  },
+  {
+    provider: "grok-build",
+    displayName: "Grok Build",
+    offerings: [
+      {
+        id: "grok-build",
+        provider: "grok-build",
+        displayName: "Grok Build",
+        description: "查看 Grok Build 订阅用量。",
+        authMethods: [
+          { method: "device-code", interaction: "device-code" },
+          { method: "browser-oauth", interaction: "browser-callback" },
+          { method: "cli-import", interaction: "local-import", sourceLabel: "Grok CLI" },
+        ],
+      },
+    ],
+  },
+  {
+    provider: "antigravity",
+    displayName: "Antigravity",
+    offerings: [
+      {
+        id: "antigravity",
+        provider: "antigravity",
+        displayName: "Antigravity",
+        description: "查看 Antigravity 订阅用量。",
+        authMethods: [{ method: "browser-oauth", interaction: "browser-callback" }],
+      },
+    ],
+  },
+];
 
 const account: PublicAccount = {
   id: "account-1",
@@ -51,9 +136,10 @@ function snapshot(
   revision = 1,
 ): PolyQuotaSnapshot {
   return {
-    schemaVersion: 1,
+    schemaVersion: POLYQUOTA_SCHEMA_VERSION,
     revision,
     generatedAt: "2026-09-27T00:00:00.000Z",
+    providers: providerCatalogFixture,
     accounts,
     usageByAccountId,
     operations: [],
@@ -251,7 +337,11 @@ describe("desktop account UI", () => {
 
   it("keeps only the method-specific explanation in the account modal", async () => {
     const wrapper = mount(ProvidersView, {
-      props: { accounts: [], busy: false },
+      props: {
+        accounts: [],
+        presentations: catalogPresentations(providerCatalogFixture),
+        busy: false,
+      },
       global: { provide: { [polyQuotaServiceKey as symbol]: emptyService } },
     });
     const zaiRow = wrapper
@@ -272,7 +362,11 @@ describe("desktop account UI", () => {
       tokenExpiresAt: "2099-09-25T13:00:00.000Z",
     };
     const wrapper = mount(ProvidersView, {
-      props: { accounts: [oauthAccount], busy: false },
+      props: {
+        accounts: [oauthAccount],
+        presentations: catalogPresentations(providerCatalogFixture),
+        busy: false,
+      },
     });
 
     expect(wrapper.text()).toContain("令牌到期：");
@@ -501,7 +595,7 @@ describe("desktop account UI", () => {
     expect(order).toEqual(["subscribe", "snapshot"]);
 
     listener({
-      schemaVersion: 1,
+      schemaVersion: POLYQUOTA_SCHEMA_VERSION,
       revision: 2,
       reasons: ["accounts"],
       occurredAt: "2026-09-27T00:01:00.000Z",

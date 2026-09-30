@@ -1,14 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { AppError } from "./errors.js";
+import { AppError } from "../../errors.js";
 import {
   GLM_RESET_CARD_URLS,
   getGlmApiRegion,
   getGlmTeamQuotaConfig,
-} from "./vendor/omniroute/open-sse/config/glmProvider.js";
+} from "../../vendor/omniroute/open-sse/config/glmProvider.js";
 import {
   fetchGlmResetCardList,
   type GlmResetCard,
-} from "./vendor/omniroute/open-sse/services/usage/glmResetCards.js";
+} from "../../vendor/omniroute/open-sse/services/usage/glmResetCards.js";
 
 const GLM_RESET_CARD_TIMEOUT_MS = 15_000;
 

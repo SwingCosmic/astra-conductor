@@ -8,7 +8,7 @@ import type {
 import type { ClockPort, LoggerPort, StoragePort } from "./ports.js";
 import type { UsageProviderAdapter } from "./ports.js";
 import { CredentialVault } from "./credential-vault.js";
-import { silentLogger } from "./codex-adapter.js";
+import { silentLogger } from "./logger.js";
 
 export type RefreshOutcome =
   | {

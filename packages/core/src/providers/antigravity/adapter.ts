@@ -1,19 +1,19 @@
 import { randomUUID } from "node:crypto";
-import { AppError } from "./errors.js";
+import { AppError } from "../../errors.js";
 import type {
   Account,
   CredentialEnvelope,
   PublicMetadata,
   ProviderId,
   UsageSnapshot,
-} from "./models.js";
+} from "../../models.js";
 import type {
   ClockPort,
   CredentialRefreshResult,
   StoragePort,
   UsageProviderAdapter,
-} from "./ports.js";
-import { CredentialVault } from "./credential-vault.js";
+} from "../../ports.js";
+import { CredentialVault } from "../../credential-vault.js";
 import { generateState } from "@omniroute/src/lib/oauth/utils/pkce.ts";
 import {
   buildAntigravityAuthUrl,

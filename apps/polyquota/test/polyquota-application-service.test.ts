@@ -80,6 +80,7 @@ function createService(savedAccount: Account = account) {
     auth,
     {
       publishChanged: (event) => events.push(event),
+      providerCatalog: [],
       redeemResetCredit,
       resolveProxy: vi.fn().mockResolvedValue("DIRECT"),
       now: () => new Date("2026-09-27T00:02:00.000Z"),

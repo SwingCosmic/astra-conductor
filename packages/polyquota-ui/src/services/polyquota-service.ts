@@ -32,6 +32,7 @@ function emptySnapshot(): PolyQuotaSnapshot {
     schemaVersion: POLYQUOTA_SCHEMA_VERSION,
     revision: 0,
     generatedAt: new Date(0).toISOString(),
+    providers: [],
     accounts: [],
     usageByAccountId: {},
     operations: [],

@@ -26,6 +26,7 @@ import {
   GrokBuildAccountProvisioner,
   GrokBuildAdapter,
   RefreshCoordinator,
+  providerCatalog,
 } from "@astra-conductor/core/internal";
 import { AuthService } from "./auth-service.js";
 import { registerIpcHandlers, unregisterIpcHandlers, waitForIpcHandlersToDrain } from "./ipc.js";
@@ -382,6 +383,7 @@ if (hasSingleInstanceLock) {
         return;
       }
       polyQuotaService = new PolyQuotaApplicationService(storage, vault, polling, auth, {
+        providerCatalog,
         redeemResetCredit: (account, envelope, selectionToken) => {
           if (account.provider === "glm") {
             return glmAdapter.redeemResetCard(account, envelope, selectionToken);
