@@ -20,7 +20,7 @@ import {
   exchangeAntigravityToken,
   finishAntigravityExchange,
 } from "@omniroute/src/lib/oauth/providers/antigravity.ts";
-import { ANTIGRAVITY_CONFIG } from "@omniroute/src/lib/oauth/constants/stage7.ts";
+import { ANTIGRAVITY_CONFIG } from "@omniroute/src/lib/oauth/constants/oauth.ts";
 import { refreshGoogleToken } from "@omniroute/open-sse/services/tokenRefresh/providers/google.ts";
 import { getAntigravityUsage } from "@omniroute/open-sse/services/usage/antigravity.ts";
 

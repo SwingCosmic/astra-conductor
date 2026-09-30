@@ -207,14 +207,7 @@ describe("vendored public credential helpers", () => {
     else process.env[envName] = original;
   });
 
-  it("keeps only the four credential keys selected by the project", () => {
-    type SelectedKey = "codex_id" | "grok_id" | "antigravity_id" | "antigravity_alt";
-    type IsExactKeySet = EmbeddedDefaultKey extends SelectedKey
-      ? SelectedKey extends EmbeddedDefaultKey
-        ? true
-        : false
-      : false;
-    const isExactKeySet: IsExactKeySet = true;
+  it("resolves the four credential keys the project consumes", () => {
     const keys = [
       "codex_id",
       "grok_id",
@@ -222,7 +215,6 @@ describe("vendored public credential helpers", () => {
       "antigravity_alt",
     ] satisfies EmbeddedDefaultKey[];
 
-    expect(isExactKeySet).toBe(true);
     for (const key of keys) expect(resolvePublicCred(key).length).toBeGreaterThan(0);
     expect(resolvePublicCred("grok_id")).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,

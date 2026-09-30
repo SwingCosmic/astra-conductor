@@ -2,7 +2,7 @@ import {
   getGrokBuildOAuthHeaders,
   GROK_BUILD_OAUTH_REFERRER,
 } from "@omniroute/open-sse/config/grokBuild.ts";
-import { GROK_BUILD_OAUTH_CONFIG, GROK_CLI_CONFIG } from "../constants/stage7.ts";
+import { GROK_BUILD_OAUTH_CONFIG, GROK_CLI_CONFIG } from "../constants/oauth.ts";
 
 export interface GrokDeviceAuthorization {
   deviceCode: string;

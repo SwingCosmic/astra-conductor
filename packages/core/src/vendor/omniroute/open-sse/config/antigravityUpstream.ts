@@ -12,8 +12,23 @@ export const ANTIGRAVITY_BOOTSTRAP_BASE_URLS = Object.freeze([
   "https://cloudcode-pa.googleapis.com",
 ]);
 
+export const ANTIGRAVITY_ONBOARD_PATH = "/v1internal:onboardUser";
+
+export function getAntigravityOnboardUrls(): string[] {
+  return ANTIGRAVITY_BOOTSTRAP_BASE_URLS.map((base) => `${base}${ANTIGRAVITY_ONBOARD_PATH}`);
+}
+
+const ANTIGRAVITY_MODELS_PATH = "/v1internal:models";
+const ANTIGRAVITY_FETCH_AVAILABLE_MODELS_PATH = "/v1internal:fetchAvailableModels";
+
+function buildAntigravityDiscoveryUrls(path: string): string[] {
+  return ANTIGRAVITY_DISCOVERY_BASE_URLS.map((baseUrl) => `${baseUrl}${path}`);
+}
+
+export function getAntigravityModelsDiscoveryUrls(): string[] {
+  return buildAntigravityDiscoveryUrls(ANTIGRAVITY_MODELS_PATH);
+}
+
 export function getAntigravityFetchAvailableModelsUrls(): string[] {
-  return ANTIGRAVITY_DISCOVERY_BASE_URLS.map(
-    (baseUrl) => `${baseUrl}/v1internal:fetchAvailableModels`,
-  );
+  return buildAntigravityDiscoveryUrls(ANTIGRAVITY_FETCH_AVAILABLE_MODELS_PATH);
 }

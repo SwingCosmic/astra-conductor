@@ -6,7 +6,7 @@
 | 更新日期 | 2026-09-27 |
 | 适用范围 | 服务商目录、认证、账号、凭据刷新、用量、模型目录、API 协议族、推理执行边界与产品服务 |
 | 暂缓细节 | 统一消息 IR 的全部字段、完整流事件表、路由算法、第三方可执行插件、共享凭据代理物理实现 |
-| 参考输入 | [OmniRoute 原始协议探索](./omniroute-exploration.md)、[当前搬运基线](./omniroute-manual-extraction-baseline.md)、[ZCode](./zcode-provider-architecture-exploration.md)、[DSH](./deepseek-harness-provider-architecture-exploration.md)、[Hermes Agent](./hermes-agent-provider-architecture-exploration.md) |
+| 参考输入 | [OmniRoute 原始协议探索](./omniroute-exploration.md)、[当前搬运基线](./omniroute-manual-extraction-baseline.md)、[同步工具形态设计](./omniroute-sync-tool-design.md)、[ZCode](./zcode-provider-architecture-exploration.md)、[DSH](./deepseek-harness-provider-architecture-exploration.md)、[Hermes Agent](./hermes-agent-provider-architecture-exploration.md) |
 
 ## 1. 目标
 
@@ -43,13 +43,15 @@ OmniRoute 并不存在一个包办所有职责的 `ProviderAdapter`。它的完�
 
 ### 2.2 已经搬运的范围
 
-当前 `packages/core/src/vendor/omniroute` 固定来源为 `references/omniroute` 的 `3ee283bb944d6d62cc219f74317d5186942e1780`，已经搬运 24 个一一留有 diff 的产物，范围只有：
+当前 `packages/core/src/vendor/omniroute` 固定来源为 `references/omniroute` 的 `3ee283bb944d6d62cc219f74317d5186942e1780`，阶段 7 后已经搬运 38 个一一留有 diff 的产物，范围只有：
 
 - 通用配额标量、配额构造、窗口标题和 Codex 配额归一化；
 - Codex 浏览器 OAuth、设备授权、CLI 凭据解析、JWT/工作区映射；
 - Codex token refresh、旋转刷新串行和提前刷新时间；
-- Codex 用量请求与 GLM Coding Plan 配额、重置卡查询；
+- Codex 用量请求、GLM Coding Plan 配额与重置卡查询、Grok Build 与 Antigravity 的认证、刷新和用量协议；
 - 为本项目注入 `fetchImpl`、收窄声明和替换路径别名所需的可审查改动。
+
+阶段 6 起按[同步工具形态设计](./omniroute-sync-tool-design.md)的最小修改原则维护：抽取产物可以保留尚未支持厂商的纯声明与数据，只要其依赖闭包不超出清单和外部依赖白名单；vendor 的惰性声明不构成能力声明，共享 Core 的公开边界仍由 `ProviderDescriptor` 与能力 facet 决定。
 
 当前明确没有搬运：
 
@@ -74,7 +76,7 @@ OmniRoute 并不存在一个包办所有职责的 `ProviderAdapter`。它的完�
 | 尚未搬运的 Executor | `ProviderInferenceCapability` 候选来源 | 只抽纯协议/执行叶子，宿主策略由本项目实现 |
 | 尚未搬运的模型能力 | `ProviderModelCatalogCapability` 候选来源 | 保留来源、静态/动态目录和模型级协议覆盖 |
 
-现有[手工抽取基线](./omniroute-manual-extraction-baseline.md)仍是当前 24 个产物的事实记录。本设计扩大未来共享 Core 的能力边界，不追溯修改该基线来假装推理协议已经搬运。
+现有[手工抽取基线](./omniroute-manual-extraction-baseline.md)仍是当前 38 个产物的事实记录。本设计扩大未来共享 Core 的能力边界，不追溯修改该基线来假装推理协议已经搬运。
 
 ## 3. 参考架构的综合取舍
 
@@ -105,7 +107,7 @@ OmniRoute 并不存在一个包办所有职责的 `ProviderAdapter`。它的完�
 - 共享 Core 当前只有认证、凭据刷新和用量能力，没有模型目录、API 协议类型、推理请求与流式结果契约；
 - 先前草案中的 `ProviderRuntime` 强制所有实现提供用量方法，错误地以 PolyQuota 能力定义共享服务商边界；
 - GraphAgent 的 `ModelPolicy`、`ModelLease`、额度感知调度和模型执行尚无可绑定的共享协议；
-- 当前 OmniRoute vendor 基线与未来推理协议抽取之间没有演进位置，容易在 GraphAgent 启动时另起一套不兼容抽象。
+- 当前 OmniRoute vendor 基线与未来推理协议抽取之间没有演进位置，容易在 GraphAgent 启动时另起一套不兼容抽象（该位置已由[同步工具形态设计](./omniroute-sync-tool-design.md)确定：现有产物与未来抽取共用同一清单、闭包规则和门禁）。
 
 最终结构应消除这些分散判断，保留当前已经验证的凭据、刷新与用量逻辑，并在 GraphAgent 启动前固定模型与协议层的关键边界。
 
@@ -911,7 +913,7 @@ Electron 测试只覆盖共享 schema、固定通道、订阅释放、CSP、prel
 
 1. 以固定上游 commit 审核 registry model、format、translator 和 Executor 的最小依赖闭包；
 2. 优先抽取纯类型、纯转换器和 fixture，宿主编排留在产品层；
-3. 每批搬运更新来源路径、上游 commit、删减项和离线基线；
+3. 每批搬运以 `tools/omniroute-sync` 清单条目的形式登记来源路径、上游 commit、规则与补丁，并更新基线文档；闭包、拒绝路径和幂等门禁按[同步工具形态设计](./omniroute-sync-tool-design.md)执行；
 4. 不让 `references/omniroute` 成为运行时依赖，也不机械复制 `chatCore`、数据库和代理宿主；
 5. 若 OmniRoute 的 OpenAI 中转语义与本项目规范 IR 冲突，以无损能力和 GraphAgent 工具循环需求为准，而不是维持源码形状。
 

@@ -4,7 +4,7 @@ import {
   getAntigravityLoadCodeAssistMetadata,
 } from "../antigravityHeaders.ts";
 import { extractCodeAssistSubscriptionTier } from "../codeAssistSubscription.ts";
-import { ANTIGRAVITY_CONFIG } from "@omniroute/src/lib/oauth/constants/stage7.ts";
+import { ANTIGRAVITY_CONFIG } from "@omniroute/src/lib/oauth/constants/oauth.ts";
 
 interface AntigravityQuota {
   key: string;
@@ -132,7 +132,7 @@ async function subscriptionInfo(accessToken: string, fetchImpl: typeof fetch): P
     try {
       const response = await fetchImpl(url, {
         method: "POST",
-        headers: getAntigravityContentHeaders(accessToken),
+        headers: getAntigravityContentHeaders("ide", accessToken),
         body: JSON.stringify({ metadata: getAntigravityLoadCodeAssistMetadata() }),
         signal: AbortSignal.timeout(10_000),
       });
@@ -153,7 +153,7 @@ async function quotaSummary(
     try {
       const response = await fetchImpl(`${baseUrl}/v1internal:retrieveUserQuotaSummary`, {
         method: "POST",
-        headers: getAntigravityContentHeaders(accessToken),
+        headers: getAntigravityContentHeaders("ide", accessToken),
         body: JSON.stringify({ project: projectId }),
         signal: AbortSignal.timeout(10_000),
       });

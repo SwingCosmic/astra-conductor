@@ -2,13 +2,13 @@
 
 ## 1. 文档用途
 
-本文记录阶段 2 已完成的 OmniRoute 手工抽取结果，供阶段 5 校正输出形态、阶段 6 编写自动化同步工具时参考。它回答三个问题：
+本文记录阶段 2 与阶段 7 的 OmniRoute 手工抽取结果，供真实账号校正输出形态、阶段 6 确定迁移与同步方式时参考。它回答三个问题：
 
 1. 当前从固定上游复制了哪些文件；
 2. 哪些文件保持原文，哪些文件做了手工裁剪或改写；
-3. 后续同步工具应把哪些变化固化为可重复的生成规则。
+3. 哪些变化已由现有同步工具维护，哪些仍需在阶段 6 评估自动化程度。
 
-本文不是机器可读 manifest，也不替代逐文件 diff 和特征测试。当前输出、`.diff` 与测试结果才是实际基线；真实账号验证发现遗漏时，应先修正手工样板和本文，再编写同步规则。
+本文不是机器可读 manifest，也不替代逐文件 diff 和特征测试。阶段 6 已在[同步工具形态设计](./omniroute-sync-tool-design.md)中定稿工具形态，并已按其收敛方案完成一次手动迁移：扩大清单闭包、取消成员裁剪、合并 `stage7.ts`、反内联帧解码，产物从 38 个调整为 45 个（见第 3、4 节的当前形态）。同步工具本身尚未实现（`tools/omniroute-sync` 只有 README 与空目录，根目录同步脚本不可运行），清单化仍待实施。当前输出、`.diff` 与测试结果仍是实际基线。真实账号验证发现遗漏时，应先修正手工样板和本文，再按工具设计转化为清单条目。
 
 ## 2. 基线与目录约定
 
@@ -21,6 +21,8 @@
 | 特征测试   | `packages/core/test/omniroute-vendor.test.ts`                 |
 | Codex 测试 | `packages/core/test/omniroute-codex-auth.test.ts`             |
 | GLM 测试   | `packages/core/test/glm-adapter.test.ts`                       |
+| Grok 测试  | `packages/core/test/grok-build-adapter.test.ts`                |
+| Anti 测试  | `packages/core/test/antigravity-adapter.test.ts`               |
 
 vendor 内部使用两个明确的路径别名：
 
@@ -29,7 +31,7 @@ vendor 内部使用两个明确的路径别名：
 
 不使用上游的单个 `@/*`，也不安装外部 `@omniroute/*` 包。短的同目录或同子树相对引用保留上游写法；只有原本使用别名或需要跨越 `open-sse` 与 `src` 根目录的引用才改用上述别名。
 
-每个复制产物都必须存在一份同路径 `.diff`。当前差异使用以下命令生成，忽略 Windows 检出造成的 CRLF / LF 差异：
+每个复制产物都必须存在一份 `.diff`。通常按上游相对路径保存；一个上游文件拆成多个目标文件时，新增产物按目标相对路径保存，diff 头仍记录真实来源。当前差异使用以下命令生成，忽略 Windows 检出造成的 CRLF / LF 差异：
 
 ```powershell
 git -c core.safecrlf=false diff --no-index --ignore-space-at-eol --no-ext-diff --text -- <source> <target>
@@ -49,16 +51,9 @@ git -c core.safecrlf=false diff --no-index --ignore-space-at-eol --no-ext-diff -
 | `open-sse/services/quotaWindowLabel.ts` | 整文件复制   | 按窗口时长推导配额显示名称                                 |
 | `open-sse/config/codexQuotaScopes.ts`   | 整文件复制   | Codex、Review 和 Spark 配额键与显示名                      |
 | `open-sse/services/codexUsageQuotas.ts` | 整文件复制   | Codex 主窗口、周窗口、附加窗口和只读重置次数归一化         |
-| `open-sse/utils/publicCreds.ts`         | 对象成员裁剪 | 公共凭证编解码，以及当前厂商需要的四个嵌入式公开客户端凭证 |
+| `open-sse/utils/publicCreds.ts`         | 整文件复制   | 公共凭证编解码与全部嵌入式公开客户端凭证                   |
 
-`publicCreds.ts` 的 `EMBEDDED_DEFAULTS` 只保留以下成员：
-
-- `codex_id`
-- `grok_id`
-- `antigravity_id`
-- `antigravity_alt`
-
-编解码、环境变量覆盖和类型推导函数保持上游实现。其它厂商的公开凭证成员被删除，不修改保留成员的值。
+按最小修改原则收敛后，`publicCreds.ts` 不再裁剪 `EMBEDDED_DEFAULTS` 成员：上游全部公开客户端凭证都是零依赖纯数据，项目继续只消费 `codex_id`、`grok_id`、`antigravity_id`、`antigravity_alt` 四项，特征测试相应改为断言所需键可解析。
 
 ### 3.2 Codex 完整协议
 
@@ -71,25 +66,67 @@ git -c core.safecrlf=false diff --no-index --ignore-space-at-eol --no-ext-diff -
 | `src/shared/constants/codexClient.ts`               | 整文件复制   | Codex CLI 版本、originator 和基础身份头               |
 | `open-sse/config/codexClient.ts`                    | 别名改写     | 后端用量身份头、版本和 User-Agent                     |
 | `open-sse/services/tokenRefresh/shared.ts`          | 类型补充     | 表单构造、刷新错误读取和不可恢复错误识别              |
-| `open-sse/services/refreshSerializer.ts`            | 对象成员裁剪 | Codex / OpenAI 刷新串行组、间隔控制和旋转判断         |
+| `open-sse/services/refreshSerializer.ts`            | 整文件复制   | 全部厂商的刷新串行组、间隔控制和旋转判断              |
 | `open-sse/services/usage/codex.ts`                  | 传输注入     | Codex 用量请求、工作区绑定和配额归一化                |
-| `src/lib/oauth/constants/oauth.ts`                  | 声明裁剪     | `CODEX_CONFIG` 及其公开 client ID 直接依赖            |
+| `src/lib/oauth/constants/oauth.ts`                  | 整文件复制   | 全部厂商 OAuth 配置与 `PROVIDERS` 汇总表             |
 | `src/lib/oauth/utils/codexAuthImport.ts`            | 声明裁剪     | `parseAndValidateCodexAuth`、JWT 解析与返回类型       |
 | `src/lib/oauth/utils/codexAuthFile.ts`              | 声明裁剪     | `CodexAuthFileError`                                  |
-| `open-sse/services/tokenRefresh.ts`                 | 声明裁剪     | 默认提前量、Codex 5 分钟提前量和 `getRefreshLeadMs`   |
+| `open-sse/services/tokenRefresh.ts`                 | 声明裁剪     | 提前量、全部厂商 lead 成员、废弃 provider 表和 `getRefreshLeadMs` |
 | `open-sse/services/tokenRefresh/providers/codex.ts` | 宿主依赖替换 | Codex 刷新请求、旋转 refresh token 和不可恢复错误分类 |
 
-这一范围只包含稳定授权与用量协议，不包含页面、数据库、桌面宿主或同步工具自身。该句描述当前 24 个产物的事实基线，不是共享 Core 的永久能力上限；GraphAgent 所需的 provider/model registry、协议 codec 和 Executor 必须按[跨服务商服务协议设计](./cross-provider-service-protocol-design.md)另立清单、固定来源并选择性抽取，不能无记录地扩进本基线。
+这一范围只包含稳定授权与用量协议，不包含页面、数据库、桌面宿主或同步工具自身。当前 45 个产物是手工维护的事实基线（含第 3.6 节闭包扩展模块），不是共享 Core 的永久能力上限；阶段 6 的目标是把它们全部纳入同步清单，GraphAgent 所需的 provider/model registry、协议 codec 和 Executor 必须按[跨服务商服务协议设计](./cross-provider-service-protocol-design.md)另立清单分节、固定来源并选择性抽取，不能无记录地扩进本基线。
 
 ### 3.3 GLM Coding Plan
 
 | 上游相对路径                                        | 处理方式           | 当前保留内容                                               |
 | --------------------------------------------------- | ------------------ | ---------------------------------------------------------- |
-| `open-sse/config/glmProvider.ts`                    | 声明裁剪           | 国内/国际配额与重置卡端点、区域选择、团队计划请求头        |
+| `open-sse/config/glmProvider.ts`                    | 整文件复制、别名改写 | 全部 GLM 配置：区域端点、共享模型表、anthropic 传输端点、团队计划请求头 |
 | `open-sse/services/usage/glm.ts`                    | 声明裁剪、传输注入 | Coding Plan 配额请求及 `CREDIT_LIMIT`、Token、时间窗口解析 |
 | `open-sse/services/usage/glmResetCards.ts`          | 声明裁剪、传输注入 | 重置卡列表、信封校验、过期过滤和排序                       |
 
-GLM 的三份产物只保留 Coding Plan 的只读用量链路。国内与国际共用实现，通过 `apiRegion` 选择 `open.bigmodel.cn` 或 `api.z.ai`；标准按量 API 不进入该链路。重置卡文件不保留 `/use`、request ID、兑换请求体或其它消耗额度的声明。
+GLM 的 vendor 产物只保留 Coding Plan 的用量读取链路（按量 API 的推理执行不在范围）。国内与国际共用实现，通过 `apiRegion` 选择 `open.bigmodel.cn` 或 `api.z.ai`。整文件恢复后的 `glmProvider.ts` 含上游统一的 `buildGlmResetCardFetch(action)`（含 `/use` 的 URL 构造），vendor 重置卡服务只调用 `"list"` 动作，不保留使用请求体；用户确认后的 `/use` 调用仍由项目自有的 `glm-reset-card-redemption.ts` 实现。真实账号已验证卡片可以使用，ZCode 的剩余次数可能延迟刷新。
+
+### 3.4 Grok Build
+
+| 上游相对路径                                  | 处理方式           | 当前保留内容                                             |
+| --------------------------------------------- | ------------------ | -------------------------------------------------------- |
+| `open-sse/config/grokBuild.ts`                | 整文件复制         | 全部 Grok Build 端点、客户端版本、会话头和授权配置       |
+| `src/lib/oauth/providers/grok-cli.ts`         | 宿主解耦、传输注入 | 设备码、浏览器 PKCE、换票、JWT 身份和凭证映射            |
+| `src/lib/oauth/utils/grokCliAuthJson.ts`      | 声明裁剪           | 完整 CLI `auth.json` 解析与刷新能力校验                  |
+| `open-sse/executors/grok-cli.ts`              | 宿主解耦、传输注入 | 输出为 `tokenRefresh/providers/grok.ts` 的主体化令牌刷新 |
+| `open-sse/services/usage/grokCli.ts`          | 宿主解耦、传输注入 | 套餐、账户级与产品级配额、额外积分和自动充值状态         |
+| `open-sse/services/grokCliQuotaFrame.ts`      | 整文件复制         | gRPC-web 帧头探测与 Protobuf 解码基础                    |
+| `open-sse/services/grokResetCreditsFrame.ts`  | 整文件复制         | 重置卡 Protobuf 帧解码、编码与 RPC 拆帧                  |
+| `open-sse/services/grokResetCredits.ts`       | 声明裁剪、传输注入 | 重置卡查询（兑换协议属拒绝范围，由项目边界接入）         |
+
+Grok Build 同时保留设备码、浏览器 OAuth PKCE 和完整 CLI 导入。刷新请求继续携带 CLI 响应给出的 `userId`、`email` 与 `principalType`；CLI 导入不接受只有短期 access token、缺少 refresh token 的记录。`grokResetCreditsFrame.ts` 恢复上游结构并重新依赖整文件复制的 `grokCliQuotaFrame.ts`，不再内联解码实现；解码结果回到上游判别联合形态，适配器按 `ok` 分支读取 `snapshot.count`。当前 vendor 样板保留重置卡查询，使用能力后续在项目边界内接入。
+
+### 3.5 Antigravity
+
+| 上游相对路径                                         | 处理方式           | 当前保留内容                                   |
+| ---------------------------------------------------- | ------------------ | ---------------------------------------------- |
+| `open-sse/config/antigravityUpstream.ts`             | 整文件复制         | Code Assist 上游端点、onboard 与模型发现 URL   |
+| `open-sse/services/antigravityHeaders.ts`            | 最小签名保形补丁   | 全部 IDE 身份请求头函数与 profile 参数         |
+| `open-sse/services/codeAssistSubscription.ts`        | 声明裁剪、传输注入 | 套餐查询及套餐 ID 提取                         |
+| `open-sse/services/tokenRefresh/providers/google.ts` | 宿主解耦、传输注入 | Google refresh token 换票                      |
+| `src/lib/oauth/providers/antigravity.ts`             | 宿主解耦、传输注入 | Google 授权码换票、身份读取和 Cloud Code 项目发现 |
+| `open-sse/services/usage/antigravity.ts`             | 宿主解耦、传输注入 | 按模型族分组的 5 小时与周配额                 |
+
+Antigravity 不复制上游数据库、连接记录和版本探测网络请求。`antigravityHeaders.ts` 恢复上游签名（含 `AntigravityClientProfile` 参数，默认 `"ide"`），唯一补丁是用固定回退版本（IDE `2.1.1`、CLI `1.1.5`，即上游缓存模块自身的回退值）替换在线版本缓存依赖。项目标识、OAuth 客户端选择与套餐信息由适配器保存为公开元数据，刷新凭证仍只进入加密信封；无法发现项目时明确拒绝接入，不用伪造项目 ID 继续请求。
+
+### 3.6 闭包扩展模块
+
+按最小修改原则，以下纯上游模块为支持整文件复制而扩入 vendor，全部零外部依赖：
+
+| 上游相对路径                                        | 引入原因                                                       |
+| --------------------------------------------------- | -------------------------------------------------------------- |
+| `open-sse/config/providerHeaderProfiles.ts`         | `oauth.ts` 与 `grokBuild.ts` 整文件复制的头部指纹来源          |
+| `open-sse/config/anthropicHeaders.ts`               | `glmProvider.ts` 整文件复制的 Anthropic 版本头与 beta 头来源  |
+| `open-sse/config/context1m.ts`                      | `anthropicHeaders.ts` 的 1M 上下文 beta 判定                  |
+| `src/shared/constants/claudeCodeClient.ts`          | `glmProvider.ts` 与 `anthropicHeaders.ts` 的 Claude Code 指纹 |
+| `src/shared/constants/antigravityClientProfile.ts`  | `antigravityHeaders.ts` 的 profile 类型                       |
+| `open-sse/utils/cursorAgentCliVersionPin.ts`        | `oauth.ts` 的 Cursor 版本固定值                                |
+| `src/lib/oauth/gitlab.ts`                           | `oauth.ts` 的 GitLab OAuth 端点构造                            |
 
 ## 4. 手工改动明细
 
@@ -101,6 +138,10 @@ GLM 的三份产物只保留 Coding Plan 的只读用量链路。国内与国际
 | `src/lib/oauth/constants/oauth.ts`                  | `@omniroute/open-sse/utils/publicCreds.ts` | 保持该命名别名                                    |
 | `src/lib/oauth/utils/codexAuthImport.ts`            | `@/lib/oauth/utils/codexAuthFile`          | `@omniroute/src/lib/oauth/utils/codexAuthFile.ts` |
 | `open-sse/services/tokenRefresh/providers/codex.ts` | 跨目录依赖 OmniRoute 配置模块              | `@omniroute/src/lib/oauth/constants/oauth.ts`     |
+| `open-sse/config/glmProvider.ts`                    | `@/shared/constants/claudeCodeClient`      | `@omniroute/src/shared/constants/claudeCodeClient.ts` |
+| `open-sse/config/anthropicHeaders.ts`               | `@/shared/constants/claudeCodeClient`      | `@omniroute/src/shared/constants/claudeCodeClient.ts` |
+| `open-sse/config/providerHeaderProfiles.ts`         | `@/shared/constants/antigravityClientProfile` | `@omniroute/src/shared/constants/antigravityClientProfile.ts` |
+| `open-sse/services/antigravityHeaders.ts`           | `@/shared/constants/antigravityClientProfile` | `@omniroute/src/shared/constants/antigravityClientProfile.ts` |
 
 别名同时配置在 Core 的 TypeScript、Vitest 和 esbuild 构建链中。同步工具只负责生成源码写法，不应把 `references/omniroute` 变成运行时依赖。
 
@@ -119,28 +160,20 @@ GLM 的三份产物只保留 Coding Plan 的只读用量链路。国内与国际
 
 #### `src/lib/oauth/constants/oauth.ts`
 
-只保留 `CODEX_CONFIG`，删除其它厂商的 OAuth 配置及其导入。保留 Codex 的 client ID、授权端点、token 端点、scope、PKCE 方法和 `prompt=login` 等附加参数。
+历史上的 `stage7.ts` 拆分已在收敛中取消：`oauth.ts` 整文件复制，保留全部厂商 OAuth 配置与 `PROVIDERS` 汇总表，原 `GROK_CLI_CONFIG`、`GROK_BUILD_OAUTH_CONFIG`、`ANTIGRAVITY_CONFIG` 等声明回到同一来源文件，四个纯依赖模块扩入清单（见第 3.6 节）。公开客户端凭证继续从 `publicCreds.ts` 读取，不在项目适配器中复制常量。
 
 #### `open-sse/services/refreshSerializer.ts`
 
-保留串行器完整实现，但将 `ROTATION_LOCK_GROUP` 裁到：
-
-```ts
-{
-  codex: "openai-auth0",
-  openai: "openai-auth0",
-}
-```
-
-其它厂商的旋转组成员删除。串行队列、可配置间隔、旋转判断和测试清理函数保持上游行为。
+整文件复制。历史裁剪只保留 Codex / OpenAI 旋转组，收敛后 `ROTATION_LOCK_GROUP` 保留上游全部成员——串行组映射是零依赖纯数据，未接入厂商的成员不产生任何行为。
 
 #### `open-sse/services/tokenRefresh.ts`
 
-该文件不复制总刷新调度器，只保留：
+该文件不复制总刷新调度器（其依赖闭包命中 `proxyFetch` 拒绝路径），`select` 保留：
 
-- `TOKEN_EXPIRY_BUFFER_MS`
-- `REFRESH_LEAD_MS` 中的 Codex 成员
-- `getRefreshLeadMs`
+- `TOKEN_EXPIRY_BUFFER_MS`；
+- `REFRESH_LEAD_MS`（上游全部厂商成员，含 Antigravity / AGY 的 15 分钟非旋转提前量）；
+- `DEPRECATED_PROVIDERS`、`isDeprecatedProvider`、`getDeprecationNotice`；
+- `getRefreshLeadMs`。
 
 连接读取、数据库更新、代理、provider 分派、定时任务和全局状态全部删除。
 
@@ -169,7 +202,11 @@ GLM 的三份产物只保留 Coding Plan 的只读用量链路。国内与国际
 
 #### GLM 用量与重置卡
 
-`getGlmUsage` 与 `fetchGlmResetCardList` 增加可选 `fetchImpl`，由桌面宿主统一注入 Electron 网络传输。配额解析保留上游区域、窗口和额度语义；重置卡请求失败按不可用处理，不伪造空卡。上游卡片记录 ID 只在协议叶子内参与解析，不进入公开 DTO。
+`getGlmUsage` 与 `fetchGlmResetCardList` 增加可选 `fetchImpl`，由桌面宿主统一注入 Electron 网络传输。配额解析保留上游区域、窗口和额度语义；重置卡请求失败按不可用处理，不伪造空卡。默认展示不暴露上游记录 ID；可使用条目只把记录 ID 作为不透明 `actionToken` 交给渲染层，主进程在使用前重新读取列表并匹配该标识，API Key 与请求体不进入渲染层。使用成功后应用先移除本地对应条目；后续刷新持续过滤上游仍返回的已用标识，直到服务商首次确认该条目消失，避免缓存旧列表恢复已用次数。
+
+#### Grok Build 与 Antigravity
+
+两家新增协议函数都增加可选 `fetchImpl`，由 Core 适配器注入桌面 HTTP 宿主。Grok Build 删除连接数据库、Cookie 会话和执行器调用，保留 OAuth、完整 CLI 凭据、主体化刷新、用量与重置卡查询；使用协议后续由项目边界接入。Antigravity 删除数据库读写、连接选择、代理上下文和在线版本探测，保留 Google OAuth、身份请求头、项目发现、套餐与用量请求，并复用服务无关的额度动作契约承接后续能力。
 
 #### `open-sse/services/tokenRefresh/providers/codex.ts`
 
@@ -187,7 +224,7 @@ GLM 的三份产物只保留 Coding Plan 的只读用量链路。国内与国际
 
 ## 5. 明确排除的来源
 
-自动化同步不得因为导入闭包或目录扫描而带入以下内容：
+手工抽取和后续自动化都不得因为导入闭包或目录扫描而带入以下内容：
 
 - `src/app/**`、React、Next.js 和 OAuth 页面；
 - `src/lib/db/**` 及连接创建、更新、查重和云同步；
@@ -203,7 +240,7 @@ GLM 的三份产物只保留 Coding Plan 的只读用量链路。国内与国际
 
 ## 6. 自动化提取规则建议
 
-同步工具可以把当前手工变化归纳为以下规则类型：
+本节是阶段 6 定型前的归纳，最终规则体系以[同步工具形态设计](./omniroute-sync-tool-design.md)为准：七类规则在该设计中收敛为全局 import 规范化加 `select`、`injectFetch`、`patch` 三种条目规则，`copy-file` 表现为无规则条目，`reject-path` 转为校验门禁。下表保留作为手工改动类型的历史索引：
 
 | 规则类型         | 适用内容                                       | 首选实现方式             |
 | ---------------- | ---------------------------------------------- | ------------------------ |
@@ -220,20 +257,21 @@ GLM 的三份产物只保留 Coding Plan 的只读用量链路。国内与国际
 建议采用两段式生成：
 
 1. 从固定提交生成到临时目录，执行复制、裁剪、别名转换和依赖注入；
-2. 检查文件集合、拒绝路径、逐文件 diff、类型、测试和构建，全部通过后再原子替换 vendor。
+2. 检查工具负责的文件集合、拒绝路径、逐文件 diff、类型、测试和构建，全部通过后再与清单外的手工扩展合并并原子替换 vendor。
 
-同步工具不能直接在现有 vendor 上原地修改，否则删除规则失效时可能留下已经不属于范围的旧文件。
+同步工具不能直接在现有 vendor 上原地修改，否则删除规则失效时可能留下已经不属于范围的旧文件。最小修改原则（优先整文件复制和扩大清单闭包，而非裁剪声明）同样由工具设计确定。
 
 ## 7. 验收基线
 
-当前手工输出满足以下条件，自动化结果至少需要保持同等约束：
+当前手工输出满足以下条件，后续迁移或同步方式至少需要保持同等约束：
 
-- vendor 共有 24 个抽取产物，另有 24 个一一对应的 `.diff`；
-- 不存在手工 manifest；机器清单只在阶段 6 随同步工具一起建立；
-- 不存在 `references/omniroute` 运行时导入、单个 `@/*` 或外部 `@omniroute/*` 依赖；
+- vendor 共有 45 个协议与许可证产物（含第 3.6 节的 7 个闭包扩展模块），另有 45 个可追溯到上游来源的 `.diff`；
+- 其中 20 个为零 diff 整文件复制；全部产物的 diff 合计约 -3750 / +990 行（收敛前 38 个产物约 -5761 / +1186 行）；
+- 45 个产物当前全部手工维护；阶段 6 的目标是按[同步工具形态设计](./omniroute-sync-tool-design.md)把它们全部纳入清单，工具实现落地前清单完备门禁不生效；
+- 不存在 `references/omniroute` 运行时导入、单个 `@/*` 或外部 `@omniroute/*` 依赖；vendor 的外部依赖只有 Node 内置模块与 `zod`；
 - 浏览器 OAuth、设备授权、CLI 导入、换票、刷新和用量均有无网络特征测试；
 - Core 的类型检查、测试、构建和编译后模块加载通过；
 - 编译后的 JavaScript 不残留未解析的 `@omniroute/*`；
-- Codex CLI 凭据的真实账号闭环已经验证；浏览器 OAuth 与设备码仍需完成交互式手工验收，不能只凭静态生成一致性认定协议完整。
+- Codex 三种认证方式已经完成真实账号闭环；Grok Build 与 Antigravity 已随阶段 7 完成逐种交互式真实账号验收，验收发现的遗漏按第 1 节流程回补本基线。
 
-阶段 6 的最终验收应把自动生成目录与本手工基线逐文件比较。只有阶段 5 已确认的差异才能固化为同步规则；为了让生成结果匹配而新增的例外，必须先回到手工样板说明原因并补充测试。
+阶段 6 应以四家手工样板的实际差异为依据，决定自动生成、辅助迁移和差异校验各自覆盖的范围。为了让工具通过而新增的例外，必须先回到手工样板说明原因并补充测试。

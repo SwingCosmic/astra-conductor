@@ -1,4 +1,4 @@
-import { buildGlmResetCardListFetch } from "../../config/glmProvider.ts";
+import { buildGlmResetCardFetch } from "../../config/glmProvider.ts";
 import { toNumber, toRecord } from "./scalars.ts";
 
 type JsonRecord = Record<string, unknown>;
@@ -131,7 +131,7 @@ export async function fetchGlmResetCardList(
   fetchImpl: typeof fetch = fetch,
 ): Promise<GlmResetCardList | null> {
   try {
-    const { url, headers } = buildGlmResetCardListFetch(apiKey, providerSpecificData);
+    const { url, headers } = buildGlmResetCardFetch(apiKey, providerSpecificData, "list");
     const response = await fetchImpl(url, {
       method: "GET",
       headers,

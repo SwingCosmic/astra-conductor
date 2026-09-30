@@ -1,4 +1,4 @@
-import { ANTIGRAVITY_CONFIG } from "../constants/stage7.ts";
+import { ANTIGRAVITY_CONFIG } from "../constants/oauth.ts";
 import {
   getAntigravityIdeNodeHeaders,
   getAntigravityLoadCodeAssistMetadata,

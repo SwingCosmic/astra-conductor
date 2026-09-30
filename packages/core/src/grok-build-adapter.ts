@@ -225,8 +225,11 @@ export class GrokBuildAdapter implements UsageProviderAdapter {
       };
     });
     const extras = [];
-    if (result.resetCredits) {
-      extras.push({ key: "reset-credits", value: String(result.resetCredits.count) });
+    if (result.resetCredits?.ok) {
+      extras.push({
+        key: "reset-credits",
+        value: String(result.resetCredits.snapshot.count),
+      });
     }
     if (result.billing.extraCreditsMinorUnits !== null) {
       extras.push({

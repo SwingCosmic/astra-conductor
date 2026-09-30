@@ -125,6 +125,16 @@ export function decodePublicCredBytes(bytes: readonly number[]): string {
  * Or use the helper below `embeddedBytesFor()`.
  */
 const EMBEDDED_DEFAULTS = {
+  // Gemini / Code Assist — google oauth client (public, PKCE)
+  gemini_id: [
+    89, 85, 95, 91, 71, 90, 77, 68, 92, 30, 73, 64, 79, 3, 6, 91, 75, 2, 3, 0, 29, 28, 13, 0, 1, 5,
+    77, 0, 30, 17, 4, 4, 90, 8, 21, 30, 30, 92, 11, 4, 12, 88, 65, 90, 31, 90, 4, 93, 0, 6, 76, 11,
+    6, 12, 74, 26, 84, 26, 30, 11, 27, 17, 0, 27, 0, 0, 67, 4, 91, 1, 3, 4,
+  ],
+  gemini_alt: [
+    40, 34, 45, 58, 34, 55, 88, 64, 16, 101, 23, 56, 50, 1, 68, 82, 66, 65, 98, 4, 64, 9, 12, 36,
+    89, 54, 1, 80, 78, 28, 45, 36, 31, 17, 15,
+  ],
   // Antigravity — google oauth client (public)
   antigravity_id: [
     94, 93, 89, 88, 66, 95, 67, 68, 83, 29, 69, 76, 83, 65, 29, 14, 69, 5, 66, 6, 3, 92, 1, 64, 94,
@@ -135,16 +145,50 @@ const EMBEDDED_DEFAULTS = {
     40, 34, 45, 58, 34, 55, 88, 63, 80, 21, 54, 34, 48, 88, 81, 85, 97, 18, 125, 37, 92, 3, 37, 48,
     87, 6, 44, 38, 25, 10, 67, 19, 40, 40, 5,
   ],
+  // Claude Code CLI — anthropic oauth client (public, PKCE)
+  claude_id: [
+    86, 9, 95, 10, 64, 90, 69, 21, 72, 72, 70, 68, 0, 65, 93, 87, 73, 79, 28, 87, 85, 11, 13, 95,
+    90, 76, 64, 81, 73, 65, 76, 84, 94, 15, 86, 72,
+  ],
   // Codex CLI — openai oauth client (public, PKCE)
   codex_id: [
     14, 29, 30, 54, 55, 34, 26, 21, 8, 104, 53, 47, 85, 95, 15, 83, 110, 29, 105, 14, 53, 30, 94,
     26, 29, 20, 26, 11,
   ],
+  // Kimi coding CLI — moonshot oauth client (public)
+  kimi_id: [
+    94, 90, 11, 92, 20, 89, 66, 69, 72, 73, 65, 76, 86, 65, 93, 7, 75, 20, 28, 86, 90, 94, 95, 95,
+    90, 64, 69, 83, 78, 18, 65, 90, 15, 89, 90, 21,
+  ],
+  // GitHub Copilot CLI — github oauth app id (public, device flow)
+  github_copilot_id: [38, 27, 95, 71, 16, 90, 69, 67, 4, 29, 72, 22, 90, 91, 12, 0, 75, 19, 8, 87],
   // Grok Build CLI (xAI) — public oauth client id (import-token flow)
   grok_id: [
     13, 92, 15, 89, 66, 91, 76, 70, 72, 29, 71, 70, 3, 65, 93, 84, 72, 23, 28, 87, 92, 88, 15, 95,
     91, 22, 71, 87, 20, 66, 67, 86, 13, 81, 81, 21,
   ],
+  // Openference OAuth — public PKCE client id. The plaintext equals the first
+  // nine bytes of MASK, so its XOR-masked representation is nine zero bytes.
+  openference_id: [0, 0, 0, 0, 0, 0, 0, 0, 0],
+  // Trae Cloud IDE — public oauth client id
+  trae_id: [10, 3, 95, 6, 10, 22, 66, 3, 11, 90, 72, 31, 91, 2],
+  // Microsoft 365 Copilot web (m365.cloud.microsoft) — public SPA client id
+  // observed in browser tokens and M365-Copilot2API. Not a per-user secret.
+  m365_oauth_client_id: [
+    12, 93, 15, 11, 74, 12, 16, 77, 72, 72, 73, 20, 82, 65, 93, 81, 72, 65, 28, 13, 93, 88, 93, 95,
+    92, 70, 16, 81, 31, 66, 17, 4, 88, 88, 5, 28,
+  ],
+  // Adobe Firefly web (firefly.adobe.com) — public x-api-key + IMS client_id
+  // (`clio-playground-web`). Captured from live browser generate/discovery calls.
+  // Not a per-user secret; every Firefly SPA session sends the same value.
+  // (Express still uses `projectx_webapp` — see adobe_firefly_express_client_id.)
+  adobe_firefly_api_key: [12, 1, 7, 6, 95, 31, 25, 21, 28, 74, 2, 26, 23, 2, 13, 78, 90, 19, 83],
+  // Adobe Express fallback IMS client_id for cookie exchange when Firefly
+  // clio-playground-web refresh fails (older Express cookies).
+  adobe_firefly_express_client_id: [31, 31, 1, 3, 23, 12, 1, 12, 58, 90, 21, 23, 3, 28, 25],
+  // Firefly credits balance endpoint public x-api-key (`SunbreakWebUI1`) from
+  // GET firefly.adobe.io/v1/credits/balance browser traffic.
+  adobe_firefly_balance_api_key: [60, 24, 0, 11, 0, 10, 20, 31, 50, 72, 18, 32, 43, 93],
 } as const;
 
 export type EmbeddedDefaultKey = keyof typeof EMBEDDED_DEFAULTS;
