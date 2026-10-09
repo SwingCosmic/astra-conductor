@@ -1,7 +1,9 @@
 import antigravityIcon from "./assets/icon/antigravity.png";
 import bigmodelIcon from "./assets/icon/bigmodel.svg";
+import claudeIcon from "./assets/icon/claude.svg";
 import gptIcon from "./assets/icon/gpt.png";
 import grokIcon from "./assets/icon/grok.svg";
+import opencodeIcon from "./assets/icon/opencode.png";
 import zaiIcon from "./assets/icon/zai.svg";
 import type {
   AuthMethod,
@@ -9,6 +11,7 @@ import type {
   ProviderId,
   PublicAccount,
   PublicProviderDescriptor,
+  PublicSystemStatus,
   UsageExtra,
   UsageQuota,
   UsageQuotaGroup,
@@ -65,6 +68,11 @@ const zcodeImport: AuthMethodPresentation = {
 const grokCliImport: AuthMethodPresentation = {
   id: "cli-import",
   label: "Grok CLI",
+};
+
+const claudeCliImport: AuthMethodPresentation = {
+  id: "cli-import",
+  label: "Claude Code",
 };
 
 /**
@@ -192,6 +200,39 @@ const presentationRegistry: ProviderPresentation[] = [
     extraLabels: {},
     extraItemLabels: {},
   },
+  {
+    id: "claude",
+    provider: "claude",
+    name: "Claude Code",
+    description: "读取 Claude Code OAuth 凭据并查看订阅用量。",
+    mark: "C",
+    icon: claudeIcon,
+    websiteUrl: "https://claude.ai/settings/usage",
+    available: true,
+    authMethods: [claudeCliImport],
+    cliImportPath: "~/.claude/.credentials.json",
+    planLabels: {},
+    quotaLabels: { session: "5-hour", weekly: "Weekly" },
+    groupLabels: { "model-limits": "Model limits" },
+    extraLabels: {},
+    extraItemLabels: {},
+  },
+  {
+    id: "opencode-go",
+    provider: "opencode-go",
+    name: "OpenCode Go",
+    description: "查看 OpenCode Go 的 5 小时、周和月用量。",
+    mark: "O",
+    icon: opencodeIcon,
+    websiteUrl: "https://opencode.ai/zen",
+    available: true,
+    authMethods: [authMethods["api-key"]],
+    planLabels: {},
+    quotaLabels: { session: "$12 / 5-hour", weekly: "$30 / week", monthly: "$60 / month" },
+    groupLabels: {},
+    extraLabels: {},
+    extraItemLabels: {},
+  },
 ];
 
 const registryById = new Map(presentationRegistry.map((item) => [item.id, item]));
@@ -310,4 +351,17 @@ export function authMethodLabel(method: AuthMethod, provider?: ProviderId): stri
     providerPresentation(provider).authMethods.find((item) => item.id === "cli-import")?.label ??
     authMethods["cli-import"].label
   );
+}
+
+export function systemProxyLabel(status: PublicSystemStatus): string {
+  if (status.proxyMode === "environment") {
+    return `环境变量：${status.proxyAddress ?? "未提供地址"}`;
+  }
+  if (status.proxyMode === "system") {
+    return `系统代理：${status.proxyAddress ?? "未提供地址"}`;
+  }
+  if (status.proxyMode === "unknown") {
+    return "无法检测，遵循系统";
+  }
+  return "直连";
 }

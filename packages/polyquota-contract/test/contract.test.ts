@@ -9,6 +9,7 @@ import {
   parseSettings,
   parseSnapshot,
   parseStartAuthRequest,
+  parseSystemStatus,
 } from "../src/index";
 
 describe("PolyQuota contract", () => {
@@ -33,6 +34,16 @@ describe("PolyQuota contract", () => {
       method: "browser-oauth",
     });
     expect(() => parseStartAuthRequest({ provider: "antigravity", method: "device-code" })).toThrow(
+      ContractValidationError,
+    );
+    expect(parseStartAuthRequest({ provider: "claude", method: "cli-import" })).toEqual({
+      provider: "claude",
+      method: "cli-import",
+    });
+    expect(
+      parseStartAuthRequest({ provider: "opencode-go", method: "api-key", apiKey: "oc-key" }),
+    ).toEqual({ provider: "opencode-go", method: "api-key", apiKey: "oc-key" });
+    expect(() => parseStartAuthRequest({ provider: "claude", method: "browser-oauth" })).toThrow(
       ContractValidationError,
     );
   });
@@ -208,5 +219,23 @@ describe("PolyQuota contract", () => {
         remainingResetCredits: -1,
       }),
     ).toThrow(ContractValidationError);
+  });
+
+  it("parses system status with a known proxy mode and nullable address", () => {
+    expect(parseSystemStatus({ proxyMode: "direct", proxyAddress: null })).toEqual({
+      proxyMode: "direct",
+      proxyAddress: null,
+    });
+    expect(
+      parseSystemStatus({ proxyMode: "environment", proxyAddress: "http://127.0.0.1:7890" }),
+    ).toEqual({ proxyMode: "environment", proxyAddress: "http://127.0.0.1:7890" });
+    expect(parseSystemStatus({ proxyMode: "unknown", proxyAddress: null })).toEqual({
+      proxyMode: "unknown",
+      proxyAddress: null,
+    });
+    expect(() => parseSystemStatus({ proxyMode: "url-probe", proxyAddress: null })).toThrow(
+      ContractValidationError,
+    );
+    expect(() => parseSystemStatus({ proxyMode: "system" })).toThrow(ContractValidationError);
   });
 });

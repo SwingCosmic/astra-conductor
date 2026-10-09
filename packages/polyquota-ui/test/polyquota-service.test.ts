@@ -21,7 +21,7 @@ describe("PolyQuota frontend service", () => {
     });
     await expect(service.getSystemStatus()).resolves.toEqual({
       ok: true,
-      value: { proxy: "" },
+      value: { proxyMode: "direct", proxyAddress: null },
     });
   });
 

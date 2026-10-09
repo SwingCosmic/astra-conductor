@@ -1,6 +1,13 @@
 export const POLYQUOTA_SCHEMA_VERSION = 2 as const;
 
-export const providerIds = ["codex", "glm", "grok-build", "antigravity"] as const;
+export const providerIds = [
+  "codex",
+  "glm",
+  "grok-build",
+  "antigravity",
+  "claude",
+  "opencode-go",
+] as const;
 export type ProviderId = (typeof providerIds)[number];
 export const glmRegions = ["china", "international"] as const;
 export type GlmRegion = (typeof glmRegions)[number];
@@ -111,7 +118,9 @@ export type StartAuthRequest =
   | { provider: "glm"; method: "cli-import"; region: GlmRegion }
   | { provider: "glm"; method: "api-key"; region: GlmRegion; apiKey: string }
   | { provider: "grok-build"; method: "browser-oauth" | "device-code" | "cli-import" }
-  | { provider: "antigravity"; method: "browser-oauth" };
+  | { provider: "antigravity"; method: "browser-oauth" }
+  | { provider: "claude"; method: "cli-import" }
+  | { provider: "opencode-go"; method: "api-key"; apiKey: string };
 
 export type AuthStartResult =
   | { status: "completed"; account: PublicAccount }
@@ -183,8 +192,11 @@ export interface PublicRefreshSchedulerState {
   lastResult: PublicRefreshBatchSummary | null;
 }
 
+export const polyQuotaProxyModes = ["direct", "system", "environment", "unknown"] as const;
+
 export interface PublicSystemStatus {
-  proxy: string;
+  proxyMode: (typeof polyQuotaProxyModes)[number];
+  proxyAddress: string | null;
 }
 
 export interface PolyQuotaSnapshot {
@@ -380,6 +392,18 @@ export function parseStartAuthRequest(value: unknown): StartAuthRequest {
     exact(record, ["provider", "method"], "authRequest");
     if (method !== "browser-oauth") return fail("authRequest.method");
     return { provider, method };
+  }
+  if (provider === "claude") {
+    exact(record, ["provider", "method"], "authRequest");
+    if (method !== "cli-import") return fail("authRequest.method");
+    return { provider, method };
+  }
+  if (provider === "opencode-go") {
+    exact(record, ["provider", "method", "apiKey"], "authRequest");
+    if (method !== "api-key") return fail("authRequest.method");
+    const apiKey = string(record.apiKey, "authRequest.apiKey");
+    if (!apiKey.trim() || apiKey.length > 4096) return fail("authRequest.apiKey");
+    return { provider, method, apiKey };
   }
   const region = oneOf(record.region, glmRegions, "authRequest.region");
   if (method === "cli-import") {
@@ -770,7 +794,10 @@ export function parseSnapshot(value: unknown): PolyQuotaSnapshot {
 
 export function parseSystemStatus(value: unknown): PublicSystemStatus {
   const record = object(value, "systemStatus");
-  return { proxy: string(record.proxy, "systemStatus.proxy") };
+  return {
+    proxyMode: oneOf(record.proxyMode, polyQuotaProxyModes, "systemStatus.proxyMode"),
+    proxyAddress: nullableString(record.proxyAddress, "systemStatus.proxyAddress"),
+  };
 }
 
 export function parseChangedEvent(value: unknown): PolyQuotaChangedEvent {

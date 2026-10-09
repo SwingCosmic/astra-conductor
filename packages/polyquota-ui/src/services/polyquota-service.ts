@@ -91,7 +91,7 @@ export class EmptyPolyQuotaService implements IPolyQuotaService {
   }
 
   getSystemStatus(): ReturnType<IPolyQuotaService["getSystemStatus"]> {
-    return Promise.resolve({ ok: true, value: { proxy: "" } });
+    return Promise.resolve({ ok: true, value: { proxyMode: "direct", proxyAddress: null } });
   }
 }
 

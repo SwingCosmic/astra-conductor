@@ -18,6 +18,8 @@ import {
   AntigravityAccountProvisioner,
   AntigravityAdapter,
   AuthCoordinator,
+  ClaudeAccountProvisioner,
+  ClaudeAdapter,
   CodexAccountProvisioner,
   CodexAdapter,
   CredentialVault,
@@ -25,17 +27,22 @@ import {
   GlmAdapter,
   GrokBuildAccountProvisioner,
   GrokBuildAdapter,
+  OpencodeGoAccountProvisioner,
+  OpencodeGoAdapter,
   RefreshCoordinator,
   createAntigravityAuthFlow,
+  createClaudeAuthFlow,
   createCodexAuthFlow,
   createGlmAuthFlow,
   createGrokBuildAuthFlow,
+  createOpencodeGoAuthFlow,
   providerCatalog,
 } from "@astra-conductor/core/internal";
 import { startOAuthCallbackServer } from "./auth/callback-server.js";
 import { registerIpcHandlers, unregisterIpcHandlers, waitForIpcHandlersToDrain } from "./ipc.js";
 import { PollingService } from "./polling-service.js";
 import { PolyQuotaApplicationService } from "./polyquota-application-service.js";
+import { detectProxyStatus, envProxyAddress } from "./proxy-detection.js";
 import { RefreshScheduler } from "./refresh-scheduler.js";
 import { ElectronSafeStorageCipher } from "./safe-storage-cipher.js";
 import { SqliteStorage } from "./sqlite-storage.js";
@@ -120,29 +127,24 @@ function installProductionCsp(): void {
 }
 
 /**
- * 按环境变量决定会话代理，并返回对这一决定的可读描述（设置页"当前代理"
- * 直接展示该值；不按 URL 探测，也不做供应商分流）。
+ * 启动时仅按环境变量决定会话代理；没有环境变量则让 Chromium 遵循系统设置。
+ * 不读取系统配置、不做检测——设置页"当前代理"的检测结论由 proxy-detection
+ * 在被查询时按需得出。
  */
-async function configureNetworkProxy(): Promise<string> {
-  const raw = process.env.HTTPS_PROXY?.trim() || process.env.HTTP_PROXY?.trim();
-  if (!raw) {
+async function configureSessionProxy(): Promise<void> {
+  const address = envProxyAddress(process.env);
+  if (!address) {
     await session.defaultSession.setProxy({ mode: "system" });
-    return "system";
+    return;
   }
-  const proxy = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `http://${raw}`);
-  if (!new Set(["http:", "https:", "socks:", "socks4:", "socks5:"]).has(proxy.protocol)) {
-    throw new Error("Unsupported HTTP_PROXY or HTTPS_PROXY scheme");
-  }
-  const rule = `${proxy.protocol}//${proxy.hostname}${proxy.port ? `:${proxy.port}` : ""}`;
   const environmentBypass = process.env.NO_PROXY?.trim().replaceAll(",", ";");
   await session.defaultSession.setProxy({
     mode: "fixed_servers",
-    proxyRules: rule,
+    proxyRules: address,
     proxyBypassRules: ["<local>", "localhost", "127.0.0.1", environmentBypass]
       .filter(Boolean)
       .join(";"),
   });
-  return environmentBypass ? `${rule}; bypass: ${environmentBypass}` : rule;
 }
 
 async function createWindow(): Promise<void> {
@@ -345,7 +347,7 @@ if (hasSingleInstanceLock) {
         app.quit();
         return;
       }
-      const effectiveProxy = await configureNetworkProxy();
+      await configureSessionProxy();
       storage = new SqliteStorage(databaseFile, { nativeBinding: sqliteNativeBindingPath() });
       const vault = new CredentialVault(storage, new ElectronSafeStorageCipher());
       const fetchImpl: typeof fetch = (input, init) =>
@@ -354,16 +356,22 @@ if (hasSingleInstanceLock) {
       const glmAdapter = new GlmAdapter(fetchImpl);
       const grokAdapter = new GrokBuildAdapter(fetchImpl);
       const antigravityAdapter = new AntigravityAdapter(fetchImpl);
+      const claudeAdapter = new ClaudeAdapter(fetchImpl);
+      const opencodeGoAdapter = new OpencodeGoAdapter(fetchImpl);
       const coordinator = new RefreshCoordinator(storage, vault, [
         adapter,
         glmAdapter,
         grokAdapter,
         antigravityAdapter,
+        claudeAdapter,
+        opencodeGoAdapter,
       ]);
       const provisioner = new CodexAccountProvisioner(storage, vault);
       const glmProvisioner = new GlmAccountProvisioner(storage, vault);
       const grokProvisioner = new GrokBuildAccountProvisioner(storage, vault);
       const antigravityProvisioner = new AntigravityAccountProvisioner(storage, vault);
+      const claudeProvisioner = new ClaudeAccountProvisioner(storage, vault);
+      const opencodeGoProvisioner = new OpencodeGoAccountProvisioner(storage, vault);
       auth = new AuthCoordinator([
         createCodexAuthFlow({
           adapter,
@@ -383,6 +391,11 @@ if (hasSingleInstanceLock) {
           provisioner: antigravityProvisioner,
           openExternal: (url) => shell.openExternal(url),
           startCallbackServer: startOAuthCallbackServer,
+        }),
+        createClaudeAuthFlow({ adapter: claudeAdapter, provisioner: claudeProvisioner }),
+        createOpencodeGoAuthFlow({
+          adapter: opencodeGoAdapter,
+          provisioner: opencodeGoProvisioner,
         }),
       ]);
       polling = new PollingService(storage, coordinator);
@@ -409,7 +422,7 @@ if (hasSingleInstanceLock) {
           glm: (account, envelope, selectionToken) =>
             glmAdapter.redeemResetCard(account, envelope, selectionToken),
         },
-        proxyStatus: () => effectiveProxy,
+        detectProxyStatus: () => detectProxyStatus(),
         publishChanged: (event) => {
           if (quitting) return;
           const webContents = mainWindow?.webContents;

@@ -8,12 +8,14 @@ import {
 } from "../src/internal.js";
 
 describe("provider catalog", () => {
-  it("collects the four first-party providers with their offerings", () => {
+  it("collects the implemented providers with their offerings", () => {
     expect(providerCatalog.map((descriptor) => descriptor.provider)).toEqual([
       "codex",
       "glm",
       "grok-build",
       "antigravity",
+      "claude",
+      "opencode-go",
     ]);
     expect(getProviderDescriptor("glm").offerings.map((offering) => offering.id)).toEqual([
       "bigmodel-coding-plan",
@@ -26,11 +28,17 @@ describe("provider catalog", () => {
     expect(
       getProviderDescriptor("codex").offerings[0]!.authMethods.map((method) => method.method),
     ).toEqual(["browser-oauth", "device-code", "cli-import"]);
+    expect(getProviderDescriptor("claude").offerings[0]!.authMethods[0]?.method).toBe("cli-import");
+    expect(getProviderDescriptor("opencode-go").offerings[0]!.authMethods[0]?.method).toBe(
+      "api-key",
+    );
   });
 
   it("resolves offerings back to their owning provider", () => {
     expect(findOffering("zai-coding-plan")?.provider).toBe("glm");
     expect(findOffering("grok-build")?.offering.displayName).toBe("Grok Build");
+    expect(findOffering("claude")?.provider).toBe("claude");
+    expect(findOffering("opencode-go")?.provider).toBe("opencode-go");
     expect(findOffering("unknown-offering")).toBeNull();
   });
 

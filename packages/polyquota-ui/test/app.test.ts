@@ -98,6 +98,34 @@ const providerCatalogFixture: PublicProviderDescriptor[] = [
       },
     ],
   },
+  {
+    provider: "claude",
+    displayName: "Claude Code",
+    offerings: [
+      {
+        id: "claude",
+        provider: "claude",
+        displayName: "Claude Code",
+        description: "读取 Claude Code OAuth 凭据并查看订阅用量。",
+        authMethods: [
+          { method: "cli-import", interaction: "local-import", sourceLabel: "Claude Code" },
+        ],
+      },
+    ],
+  },
+  {
+    provider: "opencode-go",
+    displayName: "OpenCode Go",
+    offerings: [
+      {
+        id: "opencode-go",
+        provider: "opencode-go",
+        displayName: "OpenCode Go",
+        description: "查看 OpenCode Go 的 5 小时、周和月用量。",
+        authMethods: [{ method: "api-key", interaction: "secret-form" }],
+      },
+    ],
+  },
 ];
 
 const account: PublicAccount = {
@@ -276,6 +304,41 @@ describe("desktop account UI", () => {
     expect(wrapper.text()).toContain("~/.codex/auth.json");
   });
 
+  it("starts Claude import and OpenCode Go API key auth from catalog data", async () => {
+    const presentations = catalogPresentations(providerCatalogFixture);
+    const claude = presentations.find((item) => item.id === "claude")!;
+    const opencode = presentations.find((item) => item.id === "opencode-go")!;
+    expect(claude.cliImportPath).toBe("~/.claude/.credentials.json");
+    expect(claude.authMethods.map((method) => method.label)).toEqual(["Claude Code"]);
+    expect(opencode.authMethods.map((method) => method.id)).toEqual(["api-key"]);
+
+    const startAuth = vi.fn().mockResolvedValue({
+      ok: true,
+      value: { status: "completed", account },
+    });
+    const service = Object.assign(new EmptyPolyQuotaService(), { startAuth });
+    const claudeWrapper = mount(AuthModal, {
+      props: { provider: claude },
+      global: { provide: { [polyQuotaServiceKey as symbol]: service } },
+    });
+    await claudeWrapper.get("footer .primary-action").trigger("click");
+    await flushPromises();
+    expect(startAuth).toHaveBeenCalledWith({ provider: "claude", method: "cli-import" });
+
+    const opencodeWrapper = mount(AuthModal, {
+      props: { provider: opencode },
+      global: { provide: { [polyQuotaServiceKey as symbol]: service } },
+    });
+    await opencodeWrapper.get("input").setValue("oc-key");
+    await opencodeWrapper.get("footer .primary-action").trigger("click");
+    await flushPromises();
+    expect(startAuth).toHaveBeenCalledWith({
+      provider: "opencode-go",
+      method: "api-key",
+      apiKey: "oc-key",
+    });
+  });
+
   it("renders Codex quota data and account controls", async () => {
     const wrapper = mount(QuotaCard, {
       props: {
@@ -362,6 +425,11 @@ describe("desktop account UI", () => {
     expect(providerPresentation(bigmodel).icon).not.toBe(providerPresentation(zai).icon);
   });
 
+  it("wires the Claude and OpenCode Go provider icons", () => {
+    expect(providerPresentation("claude").icon).toMatch(/claude\.svg$/);
+    expect(providerPresentation("opencode-go").icon).toMatch(/opencode\.png$/);
+  });
+
   it("keeps only the method-specific explanation in the account modal", async () => {
     const wrapper = mount(ProvidersView, {
       props: {
@@ -374,7 +442,7 @@ describe("desktop account UI", () => {
     const zaiRow = wrapper
       .findAll(".provider-row")
       .find((row) => row.text().includes("Z.ai Coding Plan"));
-    const addButton = zaiRow?.findAll("button").find((button) => button.text() === "添加");
+    const addButton = zaiRow?.findAll("button").find((button) => button.text() === "添加账号");
 
     await addButton!.trigger("click");
     expect(wrapper.text()).toContain("只读取现有凭据并保存应用自己的加密副本");
@@ -584,7 +652,10 @@ describe("desktop account UI", () => {
 
   it("loads accounts without exposing credentials to the renderer", async () => {
     const service = serviceWithSnapshot(snapshot([account]), {
-      getSystemStatus: vi.fn().mockResolvedValue({ ok: true, value: { proxy: "system" } }),
+      getSystemStatus: vi.fn().mockResolvedValue({
+        ok: true,
+        value: { proxyMode: "system", proxyAddress: "127.0.0.1:7890" },
+      }),
     });
     const wrapper = mountApp(service);
     await vi.waitFor(() => expect(wrapper.text()).toContain("te***@example.test"));
@@ -594,7 +665,7 @@ describe("desktop account UI", () => {
       .find((button) => button.text().includes("设置"));
     expect(settingsButton).toBeDefined();
     await settingsButton!.trigger("click");
-    await vi.waitFor(() => expect(wrapper.text()).toContain("system"));
+    await vi.waitFor(() => expect(wrapper.text()).toContain("系统代理：127.0.0.1:7890"));
   });
 
   it("subscribes before the first snapshot and reloads after a newer revision", async () => {

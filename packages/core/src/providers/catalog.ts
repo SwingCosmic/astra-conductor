@@ -4,6 +4,8 @@ import { codexDescriptor } from "./codex/descriptor.js";
 import { glmDescriptor } from "./glm/descriptor.js";
 import { grokBuildDescriptor } from "./grok-build/descriptor.js";
 import { antigravityDescriptor } from "./antigravity/descriptor.js";
+import { claudeDescriptor } from "./claude/descriptor.js";
+import { opencodeGoDescriptor } from "./opencode-go/descriptor.js";
 
 /**
  * 收集全部供应商对外暴露的能力声明。这是唯一的目录端点：新增供应商时在
@@ -53,6 +55,8 @@ const descriptors: readonly ProviderDescriptor[] = [
   glmDescriptor,
   grokBuildDescriptor,
   antigravityDescriptor,
+  claudeDescriptor,
+  opencodeGoDescriptor,
 ];
 
 validateProviderCatalog(descriptors);

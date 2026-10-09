@@ -75,6 +75,10 @@ async function begin(): Promise<void> {
       request = { provider: "grok-build", method: selected.value };
     } else if (props.provider.provider === "antigravity" && selected.value === "browser-oauth") {
       request = { provider: "antigravity", method: "browser-oauth" };
+    } else if (props.provider.provider === "claude" && selected.value === "cli-import") {
+      request = { provider: "claude", method: "cli-import" };
+    } else if (props.provider.provider === "opencode-go" && selected.value === "api-key") {
+      request = { provider: "opencode-go", method: "api-key", apiKey: apiKey.value };
     } else {
       throw new Error("当前服务商尚未开放接入");
     }
@@ -197,14 +201,14 @@ onBeforeUnmount(cancelPending);
       </div>
 
       <div v-else-if="selected === 'api-key'" class="api-key-panel">
-        <label for="provider-api-key">Coding Plan API Key</label>
+        <label for="provider-api-key">{{ provider.name }} API Key</label>
         <input
           id="provider-api-key"
           v-model="apiKey"
           type="password"
           autocomplete="off"
           spellcheck="false"
-          placeholder="输入服务商签发的 API Key"
+          :placeholder="`输入 ${provider.name} API Key`"
           :disabled="busy"
         />
         <p>应用会先验证配额接口，再通过系统安全存储保存加密副本。</p>

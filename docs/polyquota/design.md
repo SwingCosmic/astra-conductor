@@ -26,7 +26,7 @@
 
 ### 2.1 首个版本
 
-- 首批支持 Codex / ChatGPT、智谱 GLM（国内与国际区域）、Grok Build、Antigravity；同一服务允许添加多个账号。
+- 首批支持 Codex / ChatGPT、智谱 GLM（国内与国际区域）、Grok Build、Antigravity；边界验证样板另接入 Claude Code 与 OpenCode Go；同一服务允许添加多个账号。
 - 支持 OAuth、设备码、API Key 和官方 CLI 凭证导入；对已经列入范围的厂商，保留固定上游中全部稳定方式，不因界面只设置一个默认入口而删减协议能力。
 - 每个账号可单独启用或停用。停用后不再轮询，也不发送通知。
 - 有 `HTTP_PROXY` 或 `HTTPS_PROXY` 时走环境变量；否则使用系统代理中的显式服务器地址；都没有时直连。切换系统代理后，下一次新建请求生效。首版不执行 PAC。
@@ -36,7 +36,7 @@
 
 ### 2.2 后续方向
 
-GitHub Copilot、Claude、OpenCode Go 及其他已有稳定用量实现的服务，在首批闭环稳定后按同一适配器边界逐步加入。后续支持顺序仍需结合协议稳定性、账号可验证性和维护成本评估。
+Claude Code 与 OpenCode Go 已作为首轮边界验证样板接入，范围分别是 Claude Code CLI OAuth 凭据只读导入、刷新和订阅用量，以及 OpenCode Go API Key 与三窗口用量。GitHub Copilot 及其他已有稳定用量实现的服务，后续仍按同一流程逐步加入。
 
 ### 2.3 明确不做
 
@@ -119,6 +119,8 @@ OmniRoute 放在 `references/omniroute`，以 Git 子模块记录固定提交。
 | GLM             | Coding Plan API Key、ZCode v2 凭据只读导入；核心按区域复用适配器，UI 分为 BigModel 与 Z.ai | 国内/国际端点、短周期与周配额、重置卡查询与逐张使用、导入源不回写 |
 | Grok Build      | 设备码、浏览器 OAuth PKCE、完整 CLI `auth.json` 只读导入          | 刷新时保留账号主体信息、额外额度查询与后续使用协议接入       |
 | Antigravity     | Google OAuth 授权码                                               | 身份请求头、项目标识和上游数据库耦合的解除                   |
+| Claude Code     | `~/.claude/.credentials.json` OAuth 凭据只读导入                  | 旋转刷新、账号身份、5 小时/周/模型范围用量                   |
+| OpenCode Go     | API Key                                                           | 官方 5 小时、周、月三窗口用量与密钥校验                      |
 
 Codex 所需上游文件先由手工样板和逐文件 diff 确认，真实闭环通过后再纳入同步清单。文件选择和耦合拆分的依据见 [OmniRoute 探索报告](../common/core/omniroute-exploration.md)。新增服务前应先确认 OmniRoute 中存在可独立抽取且可验证的实现。
 
@@ -169,6 +171,8 @@ GLM 的国内与国际 Coding Plan 在核心中共用 `glm` 适配器，由账�
 | GLM             | `planName`，否则 `level`                                  | Coding Plan 的 `lite`、`pro`、`max`，界面写成 Lite、Pro、Max                                                  | `5 Hours Quota`、`Weekly Quota`。存在月度工具窗口时加 `Monthly`；重置卡按适用窗口和过期时间逐项展示，并支持确认使用                                                               |
 | Grok Build      | `/user` 的 `subscriptionTier`                             | `SuperGrokPro`、`SuperGrok Heavy`，以及用量页上的 `Grokpro`。字符串原样展示                                   | 产品名用计费响应里的产品名，如 `GrokChat`、`Grok Build`。账户级百分比标题为 `Weekly`。不展示余额、自动充值或其他充值相关内容                                                       |
 | Antigravity     | `getAntigravityPlanLabel` 的结果                          | `Ultra`、`Pro`、`Enterprise`、`Business`、`Plus`、`Lite`、`Free`，以及原样保留的 `Starter`                    | 组标题和组内标题都用汇总响应里的 `displayName`                                                                                                                                   |
+| Claude Code     | OAuth 用量响应的 `tier` / `plan` / `subscription_type`   | 上游原文；缺失时回退到导入凭据或 bootstrap 中的等级                                                                        | `5-hour`、`Weekly`；模型范围限制单列为 `Model limits`                                                                                                                            |
+| OpenCode Go     | 固定产品名                                              | `OpenCode Go`                                                                                                               | `$12 / 5-hour`、`$30 / week`、`$60 / month`                                                                                                                                      |
 
 进度条采用三档颜色：剩余量高于 50% 为绿色，20% 到 50% 为橙色，不高于 20% 为红色；不高于 5% 时仍使用红色，但进入更危险的状态。卡片整体颜色按账号总用量使用同一档位，不以单个配额条的颜色替代账号总状态。
 

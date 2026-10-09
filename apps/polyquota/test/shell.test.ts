@@ -11,6 +11,10 @@ const preloadSource = readFileSync(
   path.join(path.dirname(fileURLToPath(import.meta.url)), "../src/preload.ts"),
   "utf8",
 );
+const proxyDetectionSource = readFileSync(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), "../src/proxy-detection.ts"),
+  "utf8",
+);
 const developmentRunnerSource = readFileSync(
   path.join(path.dirname(fileURLToPath(import.meta.url)), "../scripts/run-electron-mode.mjs"),
   "utf8",
@@ -29,10 +33,17 @@ describe("PolyQuota desktop shell", () => {
   it("provides tray, proxy-aware networking, notifications, and recoverable data reset", () => {
     expect(mainSource).toContain("new Tray");
     expect(mainSource).toContain("net.fetch");
-    expect(mainSource).toContain("process.env.HTTPS_PROXY?.trim()");
+    expect(mainSource).toContain("configureSessionProxy");
+    expect(mainSource).toContain("detectProxyStatus");
     expect(mainSource).toContain('mode: "system"');
     expect(mainSource).toContain('mode: "fixed_servers"');
-    expect(mainSource).toContain("proxyStatus");
+    expect(proxyDetectionSource).toContain("env.HTTPS_PROXY?.trim()");
+    expect(proxyDetectionSource).toContain('"ProxyEnable"');
+    expect(proxyDetectionSource).toContain('"ProxyServer"');
+    expect(proxyDetectionSource).toContain('"scutil"');
+    expect(proxyDetectionSource).toContain('"gsettings"');
+    expect(proxyDetectionSource).toContain('"unknown"');
+    expect(proxyDetectionSource).not.toContain("resolveProxy");
     expect(mainSource).toContain("setWindowOpenHandler");
     expect(mainSource).toContain('url.startsWith("https://")');
     expect(mainSource).toContain("POLYQUOTA_RESET_DATA_OK");

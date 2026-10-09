@@ -4,9 +4,11 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createAntigravityAuthFlow,
+  createClaudeAuthFlow,
   createCodexAuthFlow,
   createGlmAuthFlow,
   createGrokBuildAuthFlow,
+  createOpencodeGoAuthFlow,
   type Account,
   type OAuthCallbackHandler,
 } from "../src/internal.js";
@@ -352,5 +354,44 @@ describe("antigravity auth flow", () => {
     await expect(flow.start("cli-import", {})).rejects.toThrow(
       "Antigravity 仅支持 Google 浏览器授权",
     );
+  });
+});
+
+describe("claude auth flow", () => {
+  it("reads the Claude Code credential file from the home directory", async () => {
+    const readFile = vi
+      .fn()
+      .mockResolvedValue(JSON.stringify({ claudeAiOauth: { fixture: true } }));
+    const createProvisioningFromCli = vi.fn().mockResolvedValue({ marker: "claude-provisioning" });
+    const provisioner = provisionerFake();
+    const flow = createClaudeAuthFlow({
+      adapter: { createProvisioningFromCli } as never,
+      provisioner,
+      readFile,
+    });
+
+    const result = await flow.start("cli-import", {});
+
+    expect(readFile).toHaveBeenCalledWith(
+      expect.stringMatching(/[/\\]\.claude[/\\]\.credentials\.json$/),
+    );
+    expect(createProvisioningFromCli).toHaveBeenCalledWith({ claudeAiOauth: { fixture: true } });
+    expect(result.status).toBe("completed");
+  });
+});
+
+describe("opencode go auth flow", () => {
+  it("provisions the entered API key", async () => {
+    const createProvisioning = vi.fn().mockResolvedValue({ marker: "opencode-provisioning" });
+    const provisioner = provisionerFake();
+    const flow = createOpencodeGoAuthFlow({
+      adapter: { createProvisioning } as never,
+      provisioner,
+    });
+
+    const result = await flow.start("api-key", { apiKey: "oc-key" });
+
+    expect(createProvisioning).toHaveBeenCalledWith("oc-key");
+    expect(result.status).toBe("completed");
   });
 });

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from "vue";
 import type { IpcResult, PublicRefreshSchedulerState, Settings } from "../models";
+import { systemProxyLabel } from "../presentation";
 import { usePolyQuotaService } from "../services/polyquota-service-vue";
 
 const props = defineProps<{ settings: Settings; scheduler: PublicRefreshSchedulerState }>();
@@ -15,7 +16,7 @@ function unwrap<T>(result: IpcResult<T>): T {
   return result.value;
 }
 async function load(): Promise<void> {
-  proxy.value = unwrap(await service.getSystemStatus()).proxy;
+  proxy.value = systemProxyLabel(unwrap(await service.getSystemStatus()));
 }
 async function save(): Promise<void> {
   busy.value = true;
@@ -70,7 +71,8 @@ onMounted(() => void load());
     <section class="settings-card">
       <h2>网络与代理</h2>
       <div class="setting-row">
-        <span><strong>当前代理</strong><small>由桌面主进程按系统和环境变量解析</small></span
+        <span
+          ><strong>当前代理</strong><small>由桌面主进程读取环境变量与系统代理配置得出</small></span
         ><code>{{ proxy }}</code>
       </div>
     </section>

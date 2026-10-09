@@ -207,8 +207,9 @@ describe("vendored public credential helpers", () => {
     else process.env[envName] = original;
   });
 
-  it("resolves the four credential keys the project consumes", () => {
+  it("resolves the credential keys the project consumes", () => {
     const keys = [
+      "claude_id",
       "codex_id",
       "grok_id",
       "antigravity_id",

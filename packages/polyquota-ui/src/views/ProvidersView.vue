@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import AuthModal from "../components/AuthModal.vue";
+import ChevronIcon from "../components/ChevronIcon.vue";
 import type { PublicAccount } from "../models";
 import { accountPresentationId, authMethodLabel, type ProviderPresentation } from "../presentation";
 
@@ -91,7 +92,7 @@ const connectedCount = computed(() => new Set(props.accounts.map(accountPresenta
             :disabled="busy || !provider.available"
             @click="modalProvider = provider"
           >
-            {{ providerAccounts(provider).length ? "添加账号" : "添加" }}
+            添加账号
           </button>
           <button
             class="icon-button"
@@ -99,7 +100,7 @@ const connectedCount = computed(() => new Set(props.accounts.map(accountPresenta
             :aria-label="expanded.has(provider.id) ? '收起账号' : '展开账号'"
             @click="toggleExpanded(provider)"
           >
-            {{ expanded.has(provider.id) ? "⌃" : "⌄" }}
+            <ChevronIcon :collapsed="!expanded.has(provider.id)" />
           </button>
         </div>
         <div

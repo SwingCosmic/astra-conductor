@@ -1,4 +1,11 @@
-export const providerIds = ["codex", "glm", "grok-build", "antigravity"] as const;
+export const providerIds = [
+  "codex",
+  "glm",
+  "grok-build",
+  "antigravity",
+  "claude",
+  "opencode-go",
+] as const;
 export type ProviderId = (typeof providerIds)[number];
 
 export const glmRegions = ["china", "international"] as const;

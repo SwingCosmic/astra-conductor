@@ -74,6 +74,7 @@ function createService(savedAccount: Account = account) {
     refreshCredentials: vi.fn(),
   } as unknown as PollingService;
   const auth = { cancel: vi.fn() } as unknown as AuthCoordinator;
+  const detectProxyStatus = vi.fn().mockResolvedValue({ proxyMode: "system", proxyAddress: null });
   const service = new PolyQuotaApplicationService(
     storage,
     new CredentialVault(storage, cipher),
@@ -83,7 +84,7 @@ function createService(savedAccount: Account = account) {
       publishChanged: (event) => events.push(event),
       providerCatalog: [],
       resetCreditRedeemers,
-      proxyStatus: vi.fn().mockReturnValue("system"),
+      detectProxyStatus,
       now: () => new Date("2026-09-27T00:02:00.000Z"),
     },
   );
@@ -95,7 +96,7 @@ function createService(savedAccount: Account = account) {
   );
   service.attachScheduler(scheduler);
   scheduler.start(service.getSettings());
-  return { service, storage, polling, scheduler, events, redeemResetCredit };
+  return { service, storage, polling, scheduler, events, redeemResetCredit, detectProxyStatus };
 }
 
 describe("PolyQuotaApplicationService", () => {
@@ -107,6 +108,16 @@ describe("PolyQuotaApplicationService", () => {
     expect(Object.keys(snapshot.usageByAccountId)).toEqual([account.id]);
     expect(snapshot.usageByAccountId[account.id]?.plan).toBe("plus");
     expect(snapshot.settings).toEqual({ pollingEnabled: true, pollingIntervalMinutes: 15 });
+  });
+
+  it("answers system status by invoking the injected on-demand proxy detector", async () => {
+    const { service, detectProxyStatus } = createService();
+
+    await expect(service.getSystemStatus()).resolves.toEqual({
+      proxyMode: "system",
+      proxyAddress: null,
+    });
+    expect(detectProxyStatus).toHaveBeenCalledOnce();
   });
 
   it("publishes one coalesced invalidation after committed account changes", async () => {

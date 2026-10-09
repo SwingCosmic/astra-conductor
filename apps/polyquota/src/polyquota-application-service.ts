@@ -42,7 +42,7 @@ export type ResetCreditRedeemer = (
 
 export interface PolyQuotaApplicationServiceOptions {
   publishChanged: (event: PolyQuotaChangedEvent) => void;
-  proxyStatus: () => string;
+  detectProxyStatus: () => Promise<PublicSystemStatus>;
   providerCatalog: readonly PublicProviderDescriptor[];
   resetCreditRedeemers: Partial<Record<ProviderId, ResetCreditRedeemer>>;
   now?: () => Date;
@@ -321,7 +321,7 @@ export class PolyQuotaApplicationService {
   }
 
   async getSystemStatus(): Promise<PublicSystemStatus> {
-    return { proxy: this.options.proxyStatus() };
+    return this.options.detectProxyStatus();
   }
 
   schedulerChanged(): void {

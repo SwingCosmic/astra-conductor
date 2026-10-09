@@ -138,16 +138,28 @@ button:disabled {
   background: #0969e8;
 }
 .icon-button {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
   padding: 7px 10px;
   border-color: transparent;
   background: transparent;
   font-size: 19px;
 }
+.chevron {
+  display: block;
+  flex: 0 0 auto;
+  transition: transform 0.15s ease;
+}
+.chevron.is-collapsed {
+  transform: rotate(-90deg);
+}
 .global-message {
   position: fixed;
   z-index: 80;
   top: 18px;
-  right: 18px;
+  left: 50%;
   max-width: min(420px, calc(100vw - 36px));
   margin: 0;
   padding: 11px 15px;
@@ -158,6 +170,7 @@ button:disabled {
   box-shadow: 0 8px 24px #64748b24;
   font-size: 13px;
   font-weight: 650;
+  transform: translateX(-50%);
 }
 .global-message.message-success {
   border-color: #86d9af;
@@ -562,6 +575,8 @@ button:disabled {
 }
 .auth-modal {
   width: min(540px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
   padding: 22px;
   border-radius: 12px;
   background: white;
@@ -714,10 +729,15 @@ button:disabled {
 
 .detail-modal {
   width: min(440px, 100%);
+  /* 限制在视口内（backdrop 上下留白各 24px）；条目多时由列表内部滚动。 */
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
   padding: 20px;
   border-radius: 12px;
   background: white;
   box-shadow: 0 22px 60px #0f172a55;
+  overflow: hidden;
 }
 .detail-modal > header {
   display: flex;
@@ -740,6 +760,10 @@ button:disabled {
   margin: 12px 0 0;
   padding: 0;
   list-style: none;
+  /* 弹框限高后此列表承担滚动，头部、汇总与操作区保持可见。 */
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .credit-items li {
   display: grid;

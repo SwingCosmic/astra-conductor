@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from "vue";
+import ChevronIcon from "./ChevronIcon.vue";
 import type {
   PublicAccount,
   PublicUsage,
@@ -125,7 +126,7 @@ function useResetCredit(item: UsageExtraItem): void {
           :aria-expanded="!collapsed.has(group.key)"
           @click="toggleGroup(group.key)"
         >
-          <span aria-hidden="true">{{ collapsed.has(group.key) ? "›" : "⌄" }}</span>
+          <ChevronIcon :collapsed="collapsed.has(group.key)" />
           <span>{{ groupLabel(account, group) }}</span>
           <span
             v-if="collapsed.has(group.key)"
