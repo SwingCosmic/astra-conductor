@@ -11,6 +11,7 @@ import {
   type NativeImage,
 } from "electron";
 import { polyQuotaIpcEvents } from "@astra-conductor/polyquota-contract";
+import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -57,6 +58,7 @@ const codexCliSmoke = process.env.POLYQUOTA_CODEX_CLI_SMOKE === "1";
 const userDataOverride = process.env.POLYQUOTA_USER_DATA;
 const productUserData = path.join(app.getPath("appData"), "AstraConductor", "PolyQuota");
 const databaseName = "polyquota.db";
+const productAppUserModelId = "io.astraconductor.polyquota";
 let storage: SqliteStorage | null = null;
 let polling: PollingService | null = null;
 let polyQuotaService: PolyQuotaApplicationService | null = null;
@@ -68,9 +70,19 @@ let quitting = false;
 let shutdownComplete = false;
 let shutdownPromise: Promise<void> | null = null;
 
+function isWindowsNsisInstall(): boolean {
+  return (
+    process.platform === "win32" &&
+    app.isPackaged &&
+    existsSync(path.join(path.dirname(process.execPath), "Uninstall PolyQuota.exe"))
+  );
+}
+
 app.setName("PolyQuota");
 app.setPath("userData", userDataOverride ? path.resolve(userDataOverride) : productUserData);
-if (process.platform === "win32") app.setAppUserModelId("io.astraconductor.polyquota");
+if (isWindowsNsisInstall()) {
+  app.setAppUserModelId(productAppUserModelId);
+}
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
@@ -107,10 +119,7 @@ function loadProductIcon(filename: string, fallback = "polyquota.png"): NativeIm
 }
 
 function loadTrayIcon(): NativeImage {
-  const icon = loadProductIcon("tray-16.png");
-  const highDpi = loadProductIcon("tray-32.png");
-  icon.addRepresentation({ scaleFactor: 2, dataURL: highDpi.toDataURL() });
-  return icon;
+  return loadProductIcon("tray-24.png");
 }
 
 function installProductionCsp(): void {
@@ -156,7 +165,7 @@ async function createWindow(): Promise<void> {
     show: false,
     backgroundColor: "#f3f4f6",
     title: "PolyQuota",
-    icon: loadProductIcon("polyquota.png"),
+    icon: loadProductIcon(process.platform === "win32" ? "polyquota.ico" : "polyquota.png"),
     webPreferences: {
       preload: path.join(appDir(), "preload.cjs"),
       contextIsolation: true,

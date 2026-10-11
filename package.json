@@ -8,9 +8,10 @@
   },
   "scripts": {
     "dev": "node scripts/dev-polyquota.mjs",
-    "build": "pnpm --filter @astra-conductor/core build && pnpm --filter @astra-conductor/polyquota-ui build && pnpm --filter @astra-conductor/polyquota build",
-    "typecheck": "pnpm --filter @astra-conductor/core typecheck && pnpm --filter @astra-conductor/polyquota-ui typecheck && pnpm --filter @astra-conductor/polyquota typecheck",
-    "test": "pnpm --filter @astra-conductor/core test && pnpm --filter @astra-conductor/polyquota-ui test && pnpm --filter @astra-conductor/polyquota test",
+    "build": "pnpm --filter @astra-conductor/polyquota-contract build && pnpm --filter @astra-conductor/core build && pnpm --filter @astra-conductor/polyquota-ui build && pnpm --filter @astra-conductor/polyquota build",
+    "typecheck": "pnpm --filter @astra-conductor/polyquota-contract typecheck && pnpm --filter @astra-conductor/core typecheck && pnpm --filter @astra-conductor/polyquota-ui typecheck && pnpm --filter @astra-conductor/polyquota typecheck",
+    "test": "pnpm --filter @astra-conductor/polyquota-contract test && pnpm --filter @astra-conductor/core test && pnpm --filter @astra-conductor/polyquota-ui test && pnpm --filter @astra-conductor/polyquota test",
+    "test:ipc": "pnpm build && pnpm --filter @astra-conductor/polyquota test:ipc",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "native:prepare": "pnpm --filter @astra-conductor/polyquota native:prepare",

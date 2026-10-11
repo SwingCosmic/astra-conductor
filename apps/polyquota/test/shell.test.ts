@@ -50,7 +50,16 @@ describe("PolyQuota desktop shell", () => {
     expect(mainSource).toContain("`${databaseFile}-wal`");
     expect(mainSource).toContain('"lib", "better-sqlite3", "better_sqlite3.node"');
     expect(mainSource).toContain("nativeBinding: sqliteNativeBindingPath()");
-    expect(mainSource).toContain('app.setAppUserModelId("io.astraconductor.polyquota")');
+    expect(mainSource).toContain('const productAppUserModelId = "io.astraconductor.polyquota"');
+    expect(mainSource).toContain("isWindowsNsisInstall");
+    expect(mainSource).toContain('"Uninstall PolyQuota.exe"');
+    expect(mainSource).toContain("app.setAppUserModelId(productAppUserModelId)");
+    expect(mainSource).not.toContain("${productAppUserModelId}.dev");
+    expect(mainSource).not.toContain("ensureWindowsTaskbarIdentity");
+    expect(mainSource).not.toContain("writeShortcutLink");
+    expect(mainSource).not.toContain("readShortcutLink");
+    expect(mainSource).not.toContain("windowsProductShortcutPaths");
+    expect(mainSource).not.toContain("readdirSync");
     expect(mainSource).toContain('app.setName("PolyQuota")');
     expect(mainSource).toContain('"AstraConductor", "PolyQuota"');
     expect(mainSource).toContain('const databaseName = "polyquota.db"');

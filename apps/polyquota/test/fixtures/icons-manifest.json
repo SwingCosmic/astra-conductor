@@ -1,0 +1,30 @@
+{
+  "icoSizes": [16, 20, 24, 32, 40, 48, 64, 256],
+  "sources": {
+    "apps/polyquota/scripts/small-icon.mjs": "8144aaf5bfd912cebe957acc4db696d32c513ca74d6e96ab35fde7bb22fdeb01",
+    "docs/common/icon-design/polyquota-white.svg": "f686fec2b9c4f315294011c97c24c1dfa4e5249b488de4babbea99672df5fbbf",
+    "docs/common/icon-design/polyquota.svg": "7cf19efab248efffc99d5633f486d06b060cdd3f788430590a533d74446d20df",
+    "docs/common/icon-design/polyquota-green.svg": "6b0ca622ea19cb7fe3b75d82af5b2f8a913bd36a994cb5704ca125903afe1429",
+    "docs/common/icon-design/polyquota-orange.svg": "9a1e570b946a3e2db827f6aacda7426aaaa52fa6f0561a0bb4d4c847238555e9",
+    "docs/common/icon-design/polyquota-red.svg": "176ff3bfa3d8133316cd75a296441e6704a4c449841259999109920855dab7ca",
+    "docs/common/icon-design/polyquota-unknown.svg": "025b2320b809cf10ac1ffa621a50c96d88e45e43116cde2b5172aa6d1603ad4e"
+  },
+  "outputs": {
+    "polyquota.svg": "7cf19efab248efffc99d5633f486d06b060cdd3f788430590a533d74446d20df",
+    "polyquota.png": "55708b29e9cc17c8e81fa0a48ed86fe1bec171566b706b336b3a2854a7974b88",
+    "tray-24.png": "b3748655bb6b54de2f175839228fc4b3c77c24ce3571977853f145895098ab74",
+    "polyquota-green.svg": "6b0ca622ea19cb7fe3b75d82af5b2f8a913bd36a994cb5704ca125903afe1429",
+    "polyquota-green.png": "e6a86fdbbd83510b567d994b21264496fdb24bf7b7bee611d65226b785aab892",
+    "tray-green-24.png": "44031ad0e623ffb2a10929aa66ca0cf15235681ee5927b840b494105a74b5f19",
+    "polyquota-orange.svg": "9a1e570b946a3e2db827f6aacda7426aaaa52fa6f0561a0bb4d4c847238555e9",
+    "polyquota-orange.png": "e6245b8e32c7dd0a8918551e19bae34139f5f4b6b5a7690431e84d557a48ea2c",
+    "tray-orange-24.png": "1da933ef3b8d7e65fa68d408c99bebd6c8dc6c2644198613f8ab64115deec831",
+    "polyquota-red.svg": "176ff3bfa3d8133316cd75a296441e6704a4c449841259999109920855dab7ca",
+    "polyquota-red.png": "a510b6ea616b5fa86a3a883c27922e0615521e779af3ba3e55e948fc8ca032b0",
+    "tray-red-24.png": "bd2e613be2a691a7a745690fa346523c03507735ded865fa0e997b8c33036715",
+    "polyquota-unknown.svg": "025b2320b809cf10ac1ffa621a50c96d88e45e43116cde2b5172aa6d1603ad4e",
+    "polyquota-unknown.png": "c1c65006bc190f3e6da1338a5ed661d955c8c87973629818c24eec637673e0a0",
+    "tray-unknown-24.png": "53562145a5a9f1114f953674db2e1e1bc9d831af7aae6efe7141069f4b656b83",
+    "polyquota.ico": "7b2fa3be6bf8003926729f72848b7a1696ca91bc83669562c2e154a948f945e9"
+  }
+}

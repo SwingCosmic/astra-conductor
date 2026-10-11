@@ -5,38 +5,426 @@
       <rect width="16" height="16" fill="#FFFFFF"/>
       <path d="M0 0H8V8H0ZM8 8H16V16H8Z" fill="#F0F3F8"/>
     </pattern>
-    <symbol id="polyquotaCore" viewBox="0 0 64 64">
-      <g fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
-        <circle cx="32" cy="28.5" r="22.8"/>
-        <path d="M32 5.7V18.5M12.255 39.9 22 34.274M51.745 39.9 42 34.274"/>
-      </g>
-      <g fill="currentColor">
-        <circle cx="32" cy="5.7" r="5.4"/>
-        <circle cx="12.255" cy="39.9" r="5.4"/>
-        <circle cx="51.745" cy="39.9" r="5.4"/>
-        <path fill-rule="evenodd" d="M26 18.5H38Q42 18.5 42 22.5V34.5Q42 38.5 38 38.5H26Q22 38.5 22 34.5V22.5Q22 18.5 26 18.5ZM26.7 22.7H37.3Q38 22.7 38 23.4V24.4Q38 25.1 37.3 25.1H26.7Q26 25.1 26 24.4V23.4Q26 22.7 26.7 22.7ZM26.7 27.3H37.3Q38 27.3 38 28V29Q38 29.7 37.3 29.7H26.7Q26 29.7 26 29V28Q26 27.3 26.7 27.3ZM26.7 31.9H37.3Q38 31.9 38 32.6V33.6Q38 34.3 37.3 34.3H26.7Q26 34.3 26 33.6V32.6Q26 31.9 26.7 31.9Z"/>
-      </g>
-    </symbol>
     <symbol id="polyquota" viewBox="0 0 64 64">
-      <use href="#polyquotaCore"/>
-      <rect x="14" y="57.2" width="21.6" height="2.8" rx="1.4" fill="currentColor"/>
-      <rect x="14" y="57.2" width="36" height="2.8" rx="1.4" fill="none" stroke="currentColor" stroke-width="1"/>
+<g transform="translate(-4.48 2.189) scale(1.14)" fill="none" stroke="#164BDD" stroke-width="1.4" stroke-linecap="round">
+    <circle cx="32" cy="28.5" r="22.8"/>
+    <path d="M32 5.7V18.5M12.255 39.9 22 34.274M51.745 39.9 42 34.274"/>
+  </g>
+  <g fill="#164BDD">
+    <circle cx="32" cy="8.687" r="5.2"/>
+    <circle cx="9.4907" cy="47.675" r="5.2"/>
+    <circle cx="54.5093" cy="47.675" r="5.2"/>
+  </g>
+  <g transform="translate(32 34.679) scale(1.25) translate(-32 -28.5)">
+    <path fill="#164BDD" fill-rule="evenodd" d="M26 18.5H38Q42 18.5 42 22.5V34.5Q42 38.5 38 38.5H26Q22 38.5 22 34.5V22.5Q22 18.5 26 18.5ZM25.7 21.5H38.3Q39 21.5 39 22.2V24Q39 24.7 38.3 24.7H25.7Q25 24.7 25 24V22.2Q25 21.5 25.7 21.5ZM25.7 26.9H38.3Q39 26.9 39 27.6V29.4Q39 30.1 38.3 30.1H25.7Q25 30.1 25 29.4V27.6Q25 26.9 25.7 26.9ZM25.7 32.3H38.3Q39 32.3 39 33V34.8Q39 35.5 38.3 35.5H25.7Q25 35.5 25 34.8V33Q25 32.3 25.7 32.3Z"/>
+    <path fill="none" stroke="#164BDD" stroke-width="1.28" d="M26 18.5H38Q42 18.5 42 22.5V34.5Q42 38.5 38 38.5H26Q22 38.5 22 34.5V22.5Q22 18.5 26 18.5Z"/>
+    <rect x="25" y="21.5" width="14" height="3.2" rx="0.7" fill="#FFFFFF"/>
+    <rect x="25" y="26.9" width="14" height="3.2" rx="0.7" fill="#FFFFFF"/>
+    <rect x="25" y="32.3" width="14" height="3.2" rx="0.7" fill="#FFFFFF"/>
+  </g>
     </symbol>
     <symbol id="polyquotaGreen" viewBox="0 0 64 64">
-      <use href="#polyquotaCore" color="#164BDD"/>
-      <rect x="14" y="57.2" width="21.6" height="2.8" rx="1.4" fill="#168C4B"/>
-      <rect x="14" y="57.2" width="36" height="2.8" rx="1.4" fill="none" stroke="#168C4B" stroke-width="1"/>
+<g transform="translate(-4.48 2.189) scale(1.14)" fill="none" stroke="#164BDD" stroke-width="1.4" stroke-linecap="round">
+    <circle cx="32" cy="28.5" r="22.8"/>
+    <path d="M32 5.7V18.5M12.255 39.9 22 34.274M51.745 39.9 42 34.274"/>
+  </g>
+  <g fill="#164BDD">
+    <circle cx="32" cy="8.687" r="5.2"/>
+    <circle cx="9.4907" cy="47.675" r="5.2"/>
+    <circle cx="54.5093" cy="47.675" r="5.2"/>
+  </g>
+  <g transform="translate(32 34.679) scale(1.25) translate(-32 -28.5)">
+    <path fill="#FFFFFF" fill-rule="evenodd" d="M26 18.5H38Q42 18.5 42 22.5V34.5Q42 38.5 38 38.5H26Q22 38.5 22 34.5V22.5Q22 18.5 26 18.5Z"/>
+    <path fill="none" stroke="#164BDD" stroke-width="1.28" d="M26 18.5H38Q42 18.5 42 22.5V34.5Q42 38.5 38 38.5H26Q22 38.5 22 34.5V22.5Q22 18.5 26 18.5Z"/>
+    <rect x="25" y="21.5" width="14" height="3.2" rx="0.7" fill="#168C4B"/>
+    <rect x="25" y="26.9" width="14" height="3.2" rx="0.7" fill="#168C4B"/>
+    <rect x="25" y="32.3" width="14" height="3.2" rx="0.7" fill="#168C4B"/>
+  </g>
     </symbol>
     <symbol id="polyquotaOrange" viewBox="0 0 64 64">
-      <use href="#polyquotaCore" color="#164BDD"/>
-      <rect x="14" y="57.2" width="14.4" height="2.8" rx="1.4" fill="#D97908"/>
-      <rect x="14" y="57.2" width="36" height="2.8" rx="1.4" fill="none" stroke="#D97908" stroke-width="1"/>
+<g transform="translate(-4.48 2.189) scale(1.14)" fill="none" stroke="#164BDD" stroke-width="1.4" stroke-linecap="round">
+    <circle cx="32" cy="28.5" r="22.8"/>
+    <path d="M32 5.7V18.5M12.255 39.9 22 34.274M51.745 39.9 42 34.274"/>
+  </g>
+  <g fill="#164BDD">
+    <circle cx="32" cy="8.687" r="5.2"/>
+    <circle cx="9.4907" cy="47.675" r="5.2"/>
+    <circle cx="54.5093" cy="47.675" r="5.2"/>
+  </g>
+  <g transform="translate(32 34.679) scale(1.25) translate(-32 -28.5)">
+    <path fill="#FFFFFF" fill-rule="evenodd" d="M26 18.5H38Q42 18.5 42 22.5V34.5Q42 38.5 38 38.5H26Q22 38.5 22 34.5V22.5Q22 18.5 26 18.5Z"/>
+    <path fill="none" stroke="#164BDD" stroke-width="1.28" d="M26 18.5H38Q42 18.5 42 22.5V34.5Q42 38.5 38 38.5H26Q22 38.5 22 34.5V22.5Q22 18.5 26 18.5Z"/>
+    <rect x="25" y="21.5" width="14" height="3.2" rx="0.7" fill="#FFFFFF"/>
+    <rect x="25" y="26.9" width="14" height="3.2" rx="0.7" fill="#D97908"/>
+    <rect x="25" y="32.3" width="14" height="3.2" rx="0.7" fill="#D97908"/>
+  </g>
     </symbol>
     <symbol id="polyquotaRed" viewBox="0 0 64 64">
-      <use href="#polyquotaCore" color="#164BDD"/>
-      <rect x="14" y="57.2" width="7.2" height="2.8" rx="1.4" fill="#DA304B"/>
-      <rect x="14" y="57.2" width="36" height="2.8" rx="1.4" fill="none" stroke="#DA304B" stroke-width="1"/>
+<g transform="translate(-4.48 2.189) scale(1.14)" fill="none" stroke="#164BDD" stroke-width="1.4" stroke-linecap="round">
+    <circle cx="32" cy="28.5" r="22.8"/>
+    <path d="M32 5.7V18.5M12.255 39.9 22 34.274M51.745 39.9 42 34.274"/>
+  </g>
+  <g fill="#164BDD">
+    <circle cx="32" cy="8.687" r="5.2"/>
+    <circle cx="9.4907" cy="47.675" r="5.2"/>
+    <circle cx="54.5093" cy="47.675" r="5.2"/>
+  </g>
+  <g transform="translate(32 34.679) scale(1.25) translate(-32 -28.5)">
+    <path fill="#FFFFFF" fill-rule="evenodd" d="M26 18.5H38Q42 18.5 42 22.5V34.5Q42 38.5 38 38.5H26Q22 38.5 22 34.5V22.5Q22 18.5 26 18.5Z"/>
+    <path fill="none" stroke="#164BDD" stroke-width="1.28" d="M26 18.5H38Q42 18.5 42 22.5V34.5Q42 38.5 38 38.5H26Q22 38.5 22 34.5V22.5Q22 18.5 26 18.5Z"/>
+    <rect x="25" y="21.5" width="14" height="3.2" rx="0.7" fill="#FFFFFF"/>
+    <rect x="25" y="26.9" width="14" height="3.2" rx="0.7" fill="#FFFFFF"/>
+    <rect x="25" y="32.3" width="14" height="3.2" rx="0.7" fill="#DA304B"/>
+  </g>
     </symbol>
+    <symbol id="polyquotaUnknown" viewBox="0 0 64 64">
+<g transform="translate(-4.48 2.189) scale(1.14)" fill="none" stroke="#164BDD" stroke-width="1.4" stroke-linecap="round">
+    <circle cx="32" cy="28.5" r="22.8"/>
+    <path d="M32 5.7V18.5M12.255 39.9 22 34.274M51.745 39.9 42 34.274"/>
+  </g>
+  <g fill="#164BDD">
+    <circle cx="32" cy="8.687" r="5.2"/>
+    <circle cx="9.4907" cy="47.675" r="5.2"/>
+    <circle cx="54.5093" cy="47.675" r="5.2"/>
+  </g>
+  <g transform="translate(32 34.679) scale(1.25) translate(-32 -28.5)">
+    <path fill="#FFFFFF" fill-rule="evenodd" d="M26 18.5H38Q42 18.5 42 22.5V34.5Q42 38.5 38 38.5H26Q22 38.5 22 34.5V22.5Q22 18.5 26 18.5Z"/>
+    <path fill="none" stroke="#164BDD" stroke-width="1.28" d="M26 18.5H38Q42 18.5 42 22.5V34.5Q42 38.5 38 38.5H26Q22 38.5 22 34.5V22.5Q22 18.5 26 18.5Z"/>
+    <rect x="25" y="21.5" width="14" height="3.2" rx="0.7" fill="#6E7C8A"/>
+    <rect x="25" y="26.9" width="14" height="3.2" rx="0.7" fill="#6E7C8A"/>
+    <rect x="25" y="32.3" width="14" height="3.2" rx="0.7" fill="#6E7C8A"/>
+  </g>
+    </symbol>
+    <symbol id="polyquotaWhite" viewBox="0 0 64 64">
+<g transform="translate(-4.48 2.189) scale(1.14)" fill="none" stroke="#FFFFFF" stroke-width="1.4" stroke-linecap="round">
+    <circle cx="32" cy="28.5" r="22.8"/>
+    <path d="M32 5.7V18.5M12.255 39.9 22 34.274M51.745 39.9 42 34.274"/>
+  </g>
+  <g fill="#FFFFFF">
+    <circle cx="32" cy="8.687" r="5.2"/>
+    <circle cx="9.4907" cy="47.675" r="5.2"/>
+    <circle cx="54.5093" cy="47.675" r="5.2"/>
+  </g>
+  <g transform="translate(32 34.679) scale(1.25) translate(-32 -28.5)">
+    <path fill="#FFFFFF" fill-rule="evenodd" d="M26 18.5H38Q42 18.5 42 22.5V34.5Q42 38.5 38 38.5H26Q22 38.5 22 34.5V22.5Q22 18.5 26 18.5ZM25.7 21.5H38.3Q39 21.5 39 22.2V24Q39 24.7 38.3 24.7H25.7Q25 24.7 25 24V22.2Q25 21.5 25.7 21.5ZM25.7 26.9H38.3Q39 26.9 39 27.6V29.4Q39 30.1 38.3 30.1H25.7Q25 30.1 25 29.4V27.6Q25 26.9 25.7 26.9ZM25.7 32.3H38.3Q39 32.3 39 33V34.8Q39 35.5 38.3 35.5H25.7Q25 35.5 25 34.8V33Q25 32.3 25.7 32.3Z"/>
+    <path fill="none" stroke="#FFFFFF" stroke-width="1.28" d="M26 18.5H38Q42 18.5 42 22.5V34.5Q42 38.5 38 38.5H26Q22 38.5 22 34.5V22.5Q22 18.5 26 18.5Z"/>
+
+  </g>
+    </symbol>
+    <!-- small-icons:start -->
+<symbol id="polyquotaSmall16" viewBox="0 0 16 16">
+  <defs><mask id="card-polyquota16"><rect width="16" height="16" fill="white"/></mask></defs>
+  <g mask="url(#card-polyquota16)">
+  <g fill="none" stroke="#164BDD" stroke-width="1" stroke-linecap="round">
+    <circle cx="8" cy="8.66975" r="6.498"/>
+    <path d="M8 2.17175V8.66975M2.372675 11.91875 8 8.66975M13.627325 11.91875 8 8.66975"/>
+  </g>
+  <g fill="#164BDD">
+    <circle cx="8" cy="2.17175" r="1.3"/>
+    <circle cx="2.372675" cy="11.91875" r="1.3"/>
+    <circle cx="13.627325" cy="11.91875" r="1.3"/>
+    <rect x="4" y="5" width="8" height="8" rx="1" fill="#164BDD" data-border-width="1"/>
+  </g>
+  </g>
+<rect x="5" y="6" width="6" height="6" fill="#FFFFFF"/>
+
+</symbol>
+<symbol id="polyquotaSmall20" viewBox="0 0 20 20">
+  <defs><mask id="card-polyquota20"><rect width="20" height="20" fill="white"/></mask></defs>
+  <g mask="url(#card-polyquota20)">
+  <g fill="none" stroke="#164BDD" stroke-width="1" stroke-linecap="round">
+    <circle cx="10" cy="10.8371875" r="8.1225"/>
+    <path d="M10 2.7146874999999997V10.8371875M2.9658437500000003 14.8984375 10 10.8371875M17.034156250000002 14.8984375 10 10.8371875"/>
+  </g>
+  <g fill="#164BDD">
+    <circle cx="10" cy="2.7146874999999997" r="1.625"/>
+    <circle cx="2.9658437500000003" cy="14.8984375" r="1.625"/>
+    <circle cx="17.034156250000002" cy="14.8984375" r="1.625"/>
+    <rect x="5" y="6" width="10" height="10" rx="1" fill="#164BDD" data-border-width="1"/>
+  </g>
+  </g>
+<rect x="6" y="7" width="8" height="8" fill="#FFFFFF"/>
+
+</symbol>
+<symbol id="polyquotaSmall24" viewBox="0 0 24 24">
+  <defs><mask id="card-polyquota24"><rect width="24" height="24" fill="white"/></mask></defs>
+  <g mask="url(#card-polyquota24)">
+  <g fill="none" stroke="#164BDD" stroke-width="1" stroke-linecap="round">
+    <circle cx="12" cy="13.004625" r="9.747"/>
+    <path d="M12 3.257625V13.004625M3.5590125 17.878124999999997 12 13.004625M20.440987500000002 17.878124999999997 12 13.004625"/>
+  </g>
+  <g fill="#164BDD">
+    <circle cx="12" cy="3.257625" r="1.9500000000000002"/>
+    <circle cx="3.5590125" cy="17.878124999999997" r="1.9500000000000002"/>
+    <circle cx="20.440987500000002" cy="17.878124999999997" r="1.9500000000000002"/>
+    <rect x="6" y="7" width="12" height="12" rx="1" fill="#164BDD" data-border-width="1"/>
+  </g>
+  </g>
+<rect x="7" y="8" width="10" height="10" fill="#FFFFFF"/>
+
+</symbol>
+<symbol id="polyquotaGreenSmall16" viewBox="0 0 16 16">
+  <defs><mask id="card-polyquotaGreen16"><rect width="16" height="16" fill="white"/></mask></defs>
+  <g mask="url(#card-polyquotaGreen16)">
+  <g fill="none" stroke="#164BDD" stroke-width="1" stroke-linecap="round">
+    <circle cx="8" cy="8.66975" r="6.498"/>
+    <path d="M8 2.17175V8.66975M2.372675 11.91875 8 8.66975M13.627325 11.91875 8 8.66975"/>
+  </g>
+  <g fill="#164BDD">
+    <circle cx="8" cy="2.17175" r="1.3"/>
+    <circle cx="2.372675" cy="11.91875" r="1.3"/>
+    <circle cx="13.627325" cy="11.91875" r="1.3"/>
+    <rect x="4" y="5" width="8" height="8" rx="1" fill="#164BDD" data-border-width="1"/>
+  </g>
+  </g>
+<rect x="5" y="6" width="6" height="6" fill="#168C4B"/>
+
+</symbol>
+<symbol id="polyquotaGreenSmall20" viewBox="0 0 20 20">
+  <defs><mask id="card-polyquotaGreen20"><rect width="20" height="20" fill="white"/></mask></defs>
+  <g mask="url(#card-polyquotaGreen20)">
+  <g fill="none" stroke="#164BDD" stroke-width="1" stroke-linecap="round">
+    <circle cx="10" cy="10.8371875" r="8.1225"/>
+    <path d="M10 2.7146874999999997V10.8371875M2.9658437500000003 14.8984375 10 10.8371875M17.034156250000002 14.8984375 10 10.8371875"/>
+  </g>
+  <g fill="#164BDD">
+    <circle cx="10" cy="2.7146874999999997" r="1.625"/>
+    <circle cx="2.9658437500000003" cy="14.8984375" r="1.625"/>
+    <circle cx="17.034156250000002" cy="14.8984375" r="1.625"/>
+    <rect x="5" y="6" width="10" height="10" rx="1" fill="#164BDD" data-border-width="1"/>
+  </g>
+  </g>
+<rect x="6" y="7" width="8" height="8" fill="#168C4B"/>
+
+</symbol>
+<symbol id="polyquotaGreenSmall24" viewBox="0 0 24 24">
+  <defs><mask id="card-polyquotaGreen24"><rect width="24" height="24" fill="white"/></mask></defs>
+  <g mask="url(#card-polyquotaGreen24)">
+  <g fill="none" stroke="#164BDD" stroke-width="1" stroke-linecap="round">
+    <circle cx="12" cy="13.004625" r="9.747"/>
+    <path d="M12 3.257625V13.004625M3.5590125 17.878124999999997 12 13.004625M20.440987500000002 17.878124999999997 12 13.004625"/>
+  </g>
+  <g fill="#164BDD">
+    <circle cx="12" cy="3.257625" r="1.9500000000000002"/>
+    <circle cx="3.5590125" cy="17.878124999999997" r="1.9500000000000002"/>
+    <circle cx="20.440987500000002" cy="17.878124999999997" r="1.9500000000000002"/>
+    <rect x="6" y="7" width="12" height="12" rx="1" fill="#164BDD" data-border-width="1"/>
+  </g>
+  </g>
+<rect x="7" y="8" width="10" height="10" fill="#168C4B"/>
+
+</symbol>
+<symbol id="polyquotaOrangeSmall16" viewBox="0 0 16 16">
+  <defs><mask id="card-polyquotaOrange16"><rect width="16" height="16" fill="white"/></mask></defs>
+  <g mask="url(#card-polyquotaOrange16)">
+  <g fill="none" stroke="#164BDD" stroke-width="1" stroke-linecap="round">
+    <circle cx="8" cy="8.66975" r="6.498"/>
+    <path d="M8 2.17175V8.66975M2.372675 11.91875 8 8.66975M13.627325 11.91875 8 8.66975"/>
+  </g>
+  <g fill="#164BDD">
+    <circle cx="8" cy="2.17175" r="1.3"/>
+    <circle cx="2.372675" cy="11.91875" r="1.3"/>
+    <circle cx="13.627325" cy="11.91875" r="1.3"/>
+    <rect x="4" y="5" width="8" height="8" rx="1" fill="#164BDD" data-border-width="1"/>
+  </g>
+  </g>
+<rect x="5" y="6" width="6" height="2" fill="#FFFFFF"/>
+  <rect x="5" y="8" width="6" height="4" fill="#D97908"/>
+
+</symbol>
+<symbol id="polyquotaOrangeSmall20" viewBox="0 0 20 20">
+  <defs><mask id="card-polyquotaOrange20"><rect width="20" height="20" fill="white"/></mask></defs>
+  <g mask="url(#card-polyquotaOrange20)">
+  <g fill="none" stroke="#164BDD" stroke-width="1" stroke-linecap="round">
+    <circle cx="10" cy="10.8371875" r="8.1225"/>
+    <path d="M10 2.7146874999999997V10.8371875M2.9658437500000003 14.8984375 10 10.8371875M17.034156250000002 14.8984375 10 10.8371875"/>
+  </g>
+  <g fill="#164BDD">
+    <circle cx="10" cy="2.7146874999999997" r="1.625"/>
+    <circle cx="2.9658437500000003" cy="14.8984375" r="1.625"/>
+    <circle cx="17.034156250000002" cy="14.8984375" r="1.625"/>
+    <rect x="5" y="6" width="10" height="10" rx="1" fill="#164BDD" data-border-width="1"/>
+  </g>
+  </g>
+<rect x="6" y="7" width="8" height="2.6666666666666665" fill="#FFFFFF"/>
+  <rect x="6" y="9.666666666666666" width="8" height="5.333333333333333" fill="#D97908"/>
+
+</symbol>
+<symbol id="polyquotaOrangeSmall24" viewBox="0 0 24 24">
+  <defs><mask id="card-polyquotaOrange24"><rect width="24" height="24" fill="white"/></mask></defs>
+  <g mask="url(#card-polyquotaOrange24)">
+  <g fill="none" stroke="#164BDD" stroke-width="1" stroke-linecap="round">
+    <circle cx="12" cy="13.004625" r="9.747"/>
+    <path d="M12 3.257625V13.004625M3.5590125 17.878124999999997 12 13.004625M20.440987500000002 17.878124999999997 12 13.004625"/>
+  </g>
+  <g fill="#164BDD">
+    <circle cx="12" cy="3.257625" r="1.9500000000000002"/>
+    <circle cx="3.5590125" cy="17.878124999999997" r="1.9500000000000002"/>
+    <circle cx="20.440987500000002" cy="17.878124999999997" r="1.9500000000000002"/>
+    <rect x="6" y="7" width="12" height="12" rx="1" fill="#164BDD" data-border-width="1"/>
+  </g>
+  </g>
+<rect x="7" y="8" width="10" height="3.3333333333333335" fill="#FFFFFF"/>
+  <rect x="7" y="11.333333333333334" width="10" height="6.666666666666667" fill="#D97908"/>
+
+</symbol>
+<symbol id="polyquotaRedSmall16" viewBox="0 0 16 16">
+  <defs><mask id="card-polyquotaRed16"><rect width="16" height="16" fill="white"/></mask></defs>
+  <g mask="url(#card-polyquotaRed16)">
+  <g fill="none" stroke="#164BDD" stroke-width="1" stroke-linecap="round">
+    <circle cx="8" cy="8.66975" r="6.498"/>
+    <path d="M8 2.17175V8.66975M2.372675 11.91875 8 8.66975M13.627325 11.91875 8 8.66975"/>
+  </g>
+  <g fill="#164BDD">
+    <circle cx="8" cy="2.17175" r="1.3"/>
+    <circle cx="2.372675" cy="11.91875" r="1.3"/>
+    <circle cx="13.627325" cy="11.91875" r="1.3"/>
+    <rect x="4" y="5" width="8" height="8" rx="1" fill="#164BDD" data-border-width="1"/>
+  </g>
+  </g>
+<rect x="5" y="6" width="6" height="4" fill="#FFFFFF"/>
+  <rect x="5" y="10" width="6" height="2" fill="#DA304B"/>
+
+</symbol>
+<symbol id="polyquotaRedSmall20" viewBox="0 0 20 20">
+  <defs><mask id="card-polyquotaRed20"><rect width="20" height="20" fill="white"/></mask></defs>
+  <g mask="url(#card-polyquotaRed20)">
+  <g fill="none" stroke="#164BDD" stroke-width="1" stroke-linecap="round">
+    <circle cx="10" cy="10.8371875" r="8.1225"/>
+    <path d="M10 2.7146874999999997V10.8371875M2.9658437500000003 14.8984375 10 10.8371875M17.034156250000002 14.8984375 10 10.8371875"/>
+  </g>
+  <g fill="#164BDD">
+    <circle cx="10" cy="2.7146874999999997" r="1.625"/>
+    <circle cx="2.9658437500000003" cy="14.8984375" r="1.625"/>
+    <circle cx="17.034156250000002" cy="14.8984375" r="1.625"/>
+    <rect x="5" y="6" width="10" height="10" rx="1" fill="#164BDD" data-border-width="1"/>
+  </g>
+  </g>
+<rect x="6" y="7" width="8" height="5.333333333333333" fill="#FFFFFF"/>
+  <rect x="6" y="12.333333333333332" width="8" height="2.6666666666666665" fill="#DA304B"/>
+
+</symbol>
+<symbol id="polyquotaRedSmall24" viewBox="0 0 24 24">
+  <defs><mask id="card-polyquotaRed24"><rect width="24" height="24" fill="white"/></mask></defs>
+  <g mask="url(#card-polyquotaRed24)">
+  <g fill="none" stroke="#164BDD" stroke-width="1" stroke-linecap="round">
+    <circle cx="12" cy="13.004625" r="9.747"/>
+    <path d="M12 3.257625V13.004625M3.5590125 17.878124999999997 12 13.004625M20.440987500000002 17.878124999999997 12 13.004625"/>
+  </g>
+  <g fill="#164BDD">
+    <circle cx="12" cy="3.257625" r="1.9500000000000002"/>
+    <circle cx="3.5590125" cy="17.878124999999997" r="1.9500000000000002"/>
+    <circle cx="20.440987500000002" cy="17.878124999999997" r="1.9500000000000002"/>
+    <rect x="6" y="7" width="12" height="12" rx="1" fill="#164BDD" data-border-width="1"/>
+  </g>
+  </g>
+<rect x="7" y="8" width="10" height="6.666666666666667" fill="#FFFFFF"/>
+  <rect x="7" y="14.666666666666668" width="10" height="3.3333333333333335" fill="#DA304B"/>
+
+</symbol>
+<symbol id="polyquotaUnknownSmall16" viewBox="0 0 16 16">
+  <defs><mask id="card-polyquotaUnknown16"><rect width="16" height="16" fill="white"/></mask></defs>
+  <g mask="url(#card-polyquotaUnknown16)">
+  <g fill="none" stroke="#164BDD" stroke-width="1" stroke-linecap="round">
+    <circle cx="8" cy="8.66975" r="6.498"/>
+    <path d="M8 2.17175V8.66975M2.372675 11.91875 8 8.66975M13.627325 11.91875 8 8.66975"/>
+  </g>
+  <g fill="#164BDD">
+    <circle cx="8" cy="2.17175" r="1.3"/>
+    <circle cx="2.372675" cy="11.91875" r="1.3"/>
+    <circle cx="13.627325" cy="11.91875" r="1.3"/>
+    <rect x="4" y="5" width="8" height="8" rx="1" fill="#164BDD" data-border-width="1"/>
+  </g>
+  </g>
+<rect x="5" y="6" width="6" height="6" fill="#6E7C8A"/>
+
+</symbol>
+<symbol id="polyquotaUnknownSmall20" viewBox="0 0 20 20">
+  <defs><mask id="card-polyquotaUnknown20"><rect width="20" height="20" fill="white"/></mask></defs>
+  <g mask="url(#card-polyquotaUnknown20)">
+  <g fill="none" stroke="#164BDD" stroke-width="1" stroke-linecap="round">
+    <circle cx="10" cy="10.8371875" r="8.1225"/>
+    <path d="M10 2.7146874999999997V10.8371875M2.9658437500000003 14.8984375 10 10.8371875M17.034156250000002 14.8984375 10 10.8371875"/>
+  </g>
+  <g fill="#164BDD">
+    <circle cx="10" cy="2.7146874999999997" r="1.625"/>
+    <circle cx="2.9658437500000003" cy="14.8984375" r="1.625"/>
+    <circle cx="17.034156250000002" cy="14.8984375" r="1.625"/>
+    <rect x="5" y="6" width="10" height="10" rx="1" fill="#164BDD" data-border-width="1"/>
+  </g>
+  </g>
+<rect x="6" y="7" width="8" height="8" fill="#6E7C8A"/>
+
+</symbol>
+<symbol id="polyquotaUnknownSmall24" viewBox="0 0 24 24">
+  <defs><mask id="card-polyquotaUnknown24"><rect width="24" height="24" fill="white"/></mask></defs>
+  <g mask="url(#card-polyquotaUnknown24)">
+  <g fill="none" stroke="#164BDD" stroke-width="1" stroke-linecap="round">
+    <circle cx="12" cy="13.004625" r="9.747"/>
+    <path d="M12 3.257625V13.004625M3.5590125 17.878124999999997 12 13.004625M20.440987500000002 17.878124999999997 12 13.004625"/>
+  </g>
+  <g fill="#164BDD">
+    <circle cx="12" cy="3.257625" r="1.9500000000000002"/>
+    <circle cx="3.5590125" cy="17.878124999999997" r="1.9500000000000002"/>
+    <circle cx="20.440987500000002" cy="17.878124999999997" r="1.9500000000000002"/>
+    <rect x="6" y="7" width="12" height="12" rx="1" fill="#164BDD" data-border-width="1"/>
+  </g>
+  </g>
+<rect x="7" y="8" width="10" height="10" fill="#6E7C8A"/>
+
+</symbol>
+<symbol id="polyquotaWhiteSmall16" viewBox="0 0 16 16">
+  <defs><mask id="card-polyquotaWhite16"><rect width="16" height="16" fill="white"/><rect x="5" y="6" width="6" height="6" fill="black"/></mask></defs>
+  <g mask="url(#card-polyquotaWhite16)">
+  <g fill="none" stroke="#FFFFFF" stroke-width="1" stroke-linecap="round">
+    <circle cx="8" cy="8.66975" r="6.498"/>
+    <path d="M8 2.17175V8.66975M2.372675 11.91875 8 8.66975M13.627325 11.91875 8 8.66975"/>
+  </g>
+  <g fill="#FFFFFF">
+    <circle cx="8" cy="2.17175" r="1.3"/>
+    <circle cx="2.372675" cy="11.91875" r="1.3"/>
+    <circle cx="13.627325" cy="11.91875" r="1.3"/>
+    <rect x="4" y="5" width="8" height="8" rx="1" fill="#FFFFFF" data-border-width="1"/>
+  </g>
+  </g>
+
+
+</symbol>
+<symbol id="polyquotaWhiteSmall20" viewBox="0 0 20 20">
+  <defs><mask id="card-polyquotaWhite20"><rect width="20" height="20" fill="white"/><rect x="6" y="7" width="8" height="8" fill="black"/></mask></defs>
+  <g mask="url(#card-polyquotaWhite20)">
+  <g fill="none" stroke="#FFFFFF" stroke-width="1" stroke-linecap="round">
+    <circle cx="10" cy="10.8371875" r="8.1225"/>
+    <path d="M10 2.7146874999999997V10.8371875M2.9658437500000003 14.8984375 10 10.8371875M17.034156250000002 14.8984375 10 10.8371875"/>
+  </g>
+  <g fill="#FFFFFF">
+    <circle cx="10" cy="2.7146874999999997" r="1.625"/>
+    <circle cx="2.9658437500000003" cy="14.8984375" r="1.625"/>
+    <circle cx="17.034156250000002" cy="14.8984375" r="1.625"/>
+    <rect x="5" y="6" width="10" height="10" rx="1" fill="#FFFFFF" data-border-width="1"/>
+  </g>
+  </g>
+
+
+</symbol>
+<symbol id="polyquotaWhiteSmall24" viewBox="0 0 24 24">
+  <defs><mask id="card-polyquotaWhite24"><rect width="24" height="24" fill="white"/><rect x="7" y="8" width="10" height="10" fill="black"/></mask></defs>
+  <g mask="url(#card-polyquotaWhite24)">
+  <g fill="none" stroke="#FFFFFF" stroke-width="1" stroke-linecap="round">
+    <circle cx="12" cy="13.004625" r="9.747"/>
+    <path d="M12 3.257625V13.004625M3.5590125 17.878124999999997 12 13.004625M20.440987500000002 17.878124999999997 12 13.004625"/>
+  </g>
+  <g fill="#FFFFFF">
+    <circle cx="12" cy="3.257625" r="1.9500000000000002"/>
+    <circle cx="3.5590125" cy="17.878124999999997" r="1.9500000000000002"/>
+    <circle cx="20.440987500000002" cy="17.878124999999997" r="1.9500000000000002"/>
+    <rect x="6" y="7" width="12" height="12" rx="1" fill="#FFFFFF" data-border-width="1"/>
+  </g>
+  </g>
+
+
+</symbol>
+    <!-- small-icons:end -->
     <symbol id="graphagent" viewBox="0 0 64 64">
       <g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
         <path d="M43.64 52.48 10.65 37.42 34.97 8.6 53.34 29.5 48.49 40.99"/>
@@ -84,7 +472,7 @@
 
     <text x="258" y="190" font-size="17" fill="#164BDD" font-weight="600">120° 三等分汇聚</text>
     <text x="258" y="219" font-size="14" fill="#647087">−90° / 30° / 150°</text>
-    <text x="258" y="245" font-size="14" fill="#647087">圆环与额度条净距约 4.7</text>
+    <text x="258" y="245" font-size="14" fill="#647087">等大节点 · 中央卡片 125%</text>
     <text x="258" y="277" font-size="15" fill="#172A43" font-weight="600">三种额度状态</text>
     <use href="#polyquotaGreen" x="254" y="290" width="66" height="66"/>
     <use href="#polyquotaOrange" x="343" y="290" width="66" height="66"/>
@@ -95,10 +483,10 @@
     <text x="287" y="395" text-anchor="middle" font-size="12" fill="#647087">R &gt; 50%</text>
     <text x="376" y="395" text-anchor="middle" font-size="12" fill="#647087">20% &lt; R ≤ 50%</text>
     <text x="465" y="395" text-anchor="middle" font-size="12" fill="#647087">R ≤ 20%</text>
-    <text x="287" y="420" text-anchor="middle" font-size="12" fill="#647087">条长 60%</text>
-    <text x="376" y="420" text-anchor="middle" font-size="12" fill="#647087">条长 40%</text>
-    <text x="465" y="420" text-anchor="middle" font-size="12" fill="#647087">条长 20%</text>
-    <text x="48" y="449" font-size="12" fill="#647087">透明底 · 主色结构不变 · 状态只作用于固定长度额度条</text>
+    <text x="287" y="420" text-anchor="middle" font-size="12" fill="#647087">填充 3 条</text>
+    <text x="376" y="420" text-anchor="middle" font-size="12" fill="#647087">下方填充 2 条</text>
+    <text x="465" y="420" text-anchor="middle" font-size="12" fill="#647087">底部填充 1 条</text>
+    <text x="48" y="449" font-size="12" fill="#647087">透明底 · 默认三条白色 · 状态色自下向上填充</text>
 
     <text x="784" y="190" font-size="17" fill="#6423D9" font-weight="600">正四面体空间投影</text>
     <text x="784" y="219" font-size="14" fill="#647087">标准四顶点保持等距</text>
@@ -126,7 +514,7 @@
 
     <rect x="24" y="762" width="1032" height="150" rx="18" fill="#101B2E"/>
     <text x="48" y="798" font-size="19" fill="#FFFFFF" font-weight="600">纯白单色版</text>
-    <use href="#polyquota" x="52" y="811" width="86" height="86" color="#FFFFFF"/>
+    <use href="#polyquotaWhite" x="52" y="811" width="86" height="86" color="#FFFFFF"/>
     <use href="#graphagent" x="252" y="811" width="86" height="86" color="#FFFFFF"/>
     <text x="150" y="855" font-size="15" fill="#FFFFFF" font-weight="600">PolyQuota</text>
     <text x="350" y="855" font-size="15" fill="#FFFFFF" font-weight="600">GraphAgent</text>
@@ -139,20 +527,20 @@
     <text x="48" y="966" font-size="15" fill="#164BDD" font-weight="600">默认版 · 原尺寸</text>
     <text x="574" y="966" font-size="15" fill="#FFFFFF" font-weight="600">白色版 · 原尺寸</text>
     <g fill="#647087" font-size="12">
-      <use href="#polyquota" x="48" y="990" width="16" height="16" color="#164BDD"/><use href="#graphagent" x="70" y="990" width="16" height="16" color="#6423D9"/><text x="48" y="1081">16px</text>
-      <use href="#polyquota" x="140" y="988" width="20" height="20" color="#164BDD"/><use href="#graphagent" x="166" y="988" width="20" height="20" color="#6423D9"/><text x="140" y="1081">20px</text>
-      <use href="#polyquota" x="232" y="986" width="24" height="24" color="#164BDD"/><use href="#graphagent" x="262" y="986" width="24" height="24" color="#6423D9"/><text x="232" y="1081">24px</text>
+      <use href="#polyquotaSmall16" x="48" y="990" width="16" height="16" color="#164BDD"/><use href="#graphagent" x="70" y="990" width="16" height="16" color="#6423D9"/><text x="48" y="1081">16px</text>
+      <use href="#polyquotaSmall20" x="140" y="988" width="20" height="20" color="#164BDD"/><use href="#graphagent" x="166" y="988" width="20" height="20" color="#6423D9"/><text x="140" y="1081">20px</text>
+      <use href="#polyquotaSmall24" x="232" y="986" width="24" height="24" color="#164BDD"/><use href="#graphagent" x="262" y="986" width="24" height="24" color="#6423D9"/><text x="232" y="1081">24px</text>
       <use href="#polyquota" x="324" y="982" width="32" height="32" color="#164BDD"/><use href="#graphagent" x="362" y="982" width="32" height="32" color="#6423D9"/><text x="324" y="1081">32px</text>
       <use href="#polyquota" x="416" y="974" width="48" height="48" color="#164BDD"/><use href="#graphagent" x="470" y="974" width="48" height="48" color="#6423D9"/><text x="416" y="1081">48px</text>
     </g>
     <g fill="#B9C7DB" font-size="12">
-      <use href="#polyquota" x="574" y="990" width="16" height="16" color="#FFFFFF"/><use href="#graphagent" x="596" y="990" width="16" height="16" color="#FFFFFF"/><text x="574" y="1081">16px</text>
-      <use href="#polyquota" x="666" y="988" width="20" height="20" color="#FFFFFF"/><use href="#graphagent" x="692" y="988" width="20" height="20" color="#FFFFFF"/><text x="666" y="1081">20px</text>
-      <use href="#polyquota" x="758" y="986" width="24" height="24" color="#FFFFFF"/><use href="#graphagent" x="788" y="986" width="24" height="24" color="#FFFFFF"/><text x="758" y="1081">24px</text>
-      <use href="#polyquota" x="850" y="982" width="32" height="32" color="#FFFFFF"/><use href="#graphagent" x="888" y="982" width="32" height="32" color="#FFFFFF"/><text x="850" y="1081">32px</text>
-      <use href="#polyquota" x="942" y="974" width="48" height="48" color="#FFFFFF"/><use href="#graphagent" x="996" y="974" width="48" height="48" color="#FFFFFF"/><text x="942" y="1081">48px</text>
+      <use href="#polyquotaWhiteSmall16" x="574" y="990" width="16" height="16" color="#FFFFFF"/><use href="#graphagent" x="596" y="990" width="16" height="16" color="#FFFFFF"/><text x="574" y="1081">16px</text>
+      <use href="#polyquotaWhiteSmall20" x="666" y="988" width="20" height="20" color="#FFFFFF"/><use href="#graphagent" x="692" y="988" width="20" height="20" color="#FFFFFF"/><text x="666" y="1081">20px</text>
+      <use href="#polyquotaWhiteSmall24" x="758" y="986" width="24" height="24" color="#FFFFFF"/><use href="#graphagent" x="788" y="986" width="24" height="24" color="#FFFFFF"/><text x="758" y="1081">24px</text>
+      <use href="#polyquotaWhite" x="850" y="982" width="32" height="32" color="#FFFFFF"/><use href="#graphagent" x="888" y="982" width="32" height="32" color="#FFFFFF"/><text x="850" y="1081">32px</text>
+      <use href="#polyquotaWhite" x="942" y="974" width="48" height="48" color="#FFFFFF"/><use href="#graphagent" x="996" y="974" width="48" height="48" color="#FFFFFF"/><text x="942" y="1081">48px</text>
     </g>
     <text x="32" y="1141" font-size="14" fill="#647087">PolyQuota 视觉方向已定稿；GraphAgent 保留构造稿用于继续核对空间投影与小尺寸辨识度。</text>
-    <text x="32" y="1165" font-size="12" fill="#647087">SVG 设计最终稿，尚未应用到程序、Windows 托盘或 ICO。</text>
+    <text x="32" y="1165" font-size="12" fill="#647087">SVG 母版同步前端、应用 PNG、Windows 托盘和多尺寸 ICO。</text>
   </g>
 </svg>

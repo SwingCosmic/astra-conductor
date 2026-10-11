@@ -1,15 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 64 64" role="img" aria-label="PolyQuota: 120-degree aggregation ring with a fixed 60-percent primary bar">
-  <title>PolyQuota: 120-degree aggregation ring and fixed 60-percent primary bar</title>
-  <g fill="none" stroke="#164BDD" stroke-width="1.4" stroke-linecap="round">
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 64 64" role="img" aria-label="PolyQuota: aggregation ring with three white usage cards">
+  <title>PolyQuota: aggregation ring with three white usage cards</title>
+  <g transform="translate(-4.48 2.189) scale(1.14)" fill="none" stroke="#164BDD" stroke-width="1.4" stroke-linecap="round">
     <circle cx="32" cy="28.5" r="22.8"/>
     <path d="M32 5.7V18.5M12.255 39.9 22 34.274M51.745 39.9 42 34.274"/>
   </g>
   <g fill="#164BDD">
-    <circle cx="32" cy="5.7" r="5.4"/>
-    <circle cx="12.255" cy="39.9" r="5.4"/>
-    <circle cx="51.745" cy="39.9" r="5.4"/>
-    <path fill-rule="evenodd" d="M26 18.5H38Q42 18.5 42 22.5V34.5Q42 38.5 38 38.5H26Q22 38.5 22 34.5V22.5Q22 18.5 26 18.5ZM26.7 22.7H37.3Q38 22.7 38 23.4V24.4Q38 25.1 37.3 25.1H26.7Q26 25.1 26 24.4V23.4Q26 22.7 26.7 22.7ZM26.7 27.3H37.3Q38 27.3 38 28V29Q38 29.7 37.3 29.7H26.7Q26 29.7 26 29V28Q26 27.3 26.7 27.3ZM26.7 31.9H37.3Q38 31.9 38 32.6V33.6Q38 34.3 37.3 34.3H26.7Q26 34.3 26 33.6V32.6Q26 31.9 26.7 31.9Z"/>
-    <rect x="14" y="57.2" width="21.6" height="2.8" rx="1.4"/>
+    <circle cx="32" cy="8.687" r="5.2"/>
+    <circle cx="9.4907" cy="47.675" r="5.2"/>
+    <circle cx="54.5093" cy="47.675" r="5.2"/>
   </g>
-  <rect x="14" y="57.2" width="36" height="2.8" rx="1.4" fill="none" stroke="#164BDD" stroke-width="1"/>
+  <g transform="translate(32 34.679) scale(1.25) translate(-32 -28.5)">
+    <path fill="#164BDD" fill-rule="evenodd" d="M26 18.5H38Q42 18.5 42 22.5V34.5Q42 38.5 38 38.5H26Q22 38.5 22 34.5V22.5Q22 18.5 26 18.5ZM25.7 21.5H38.3Q39 21.5 39 22.2V24Q39 24.7 38.3 24.7H25.7Q25 24.7 25 24V22.2Q25 21.5 25.7 21.5ZM25.7 26.9H38.3Q39 26.9 39 27.6V29.4Q39 30.1 38.3 30.1H25.7Q25 30.1 25 29.4V27.6Q25 26.9 25.7 26.9ZM25.7 32.3H38.3Q39 32.3 39 33V34.8Q39 35.5 38.3 35.5H25.7Q25 35.5 25 34.8V33Q25 32.3 25.7 32.3Z"/>
+    <path fill="none" stroke="#164BDD" stroke-width="1.28" d="M26 18.5H38Q42 18.5 42 22.5V34.5Q42 38.5 38 38.5H26Q22 38.5 22 34.5V22.5Q22 18.5 26 18.5Z"/>
+    <rect x="25" y="21.5" width="14" height="3.2" rx="0.7" fill="#FFFFFF"/>
+    <rect x="25" y="26.9" width="14" height="3.2" rx="0.7" fill="#FFFFFF"/>
+    <rect x="25" y="32.3" width="14" height="3.2" rx="0.7" fill="#FFFFFF"/>
+  </g>
 </svg>
