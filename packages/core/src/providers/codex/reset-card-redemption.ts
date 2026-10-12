@@ -5,9 +5,10 @@ import { getCodexBackendIdentityHeaders } from "../../vendor/omniroute/open-sse/
 /**
  * Codex "banked reset credits" 兑换（写操作，项目代码，不进 vendor 子集）。
  * 协议移植自上游 OmniRoute 宿主层的 codexResetCredits 模块
- * （commit 3ee283b，issue #5199：用量侧只展示计数，兑换是独立的
- * 非官方变更端点）。上游的连接库、代理上下文、独占锁、缓存失效与用量
- * 回写等宿主关注点在此剔除：令牌与 workspace 由 adapter 提供，兑换后的
+ * （commit 3ee283b，issue #5199：兑换是独立的非官方变更端点，列表
+ * 端点逐卡携带 id、reset_type 与过期时间）。上游的连接库、代理上下文、
+ * 独占锁、缓存失效与用量回写等宿主关注点在此剔除：令牌与 workspace
+ * 由 adapter 提供，列表同时供 adapter 的用量侧逐项展示，兑换后的
  * 用量刷新由应用服务统一执行。
  */
 
@@ -156,8 +157,10 @@ function parseAvailableResetCredits(payload: unknown): CodexResetCredit[] {
     .map(({ credit }) => credit);
 }
 
-function selectResetCredit(payload: unknown, requestedCreditId?: string): CodexResetCredit {
-  const credits = parseAvailableResetCredits(payload);
+function selectFromListed(
+  credits: readonly CodexResetCredit[],
+  requestedCreditId?: string,
+): CodexResetCredit {
   if (requestedCreditId) {
     const selected = credits.find((credit) => credit.id === requestedCreditId);
     if (selected) return selected;
@@ -165,6 +168,31 @@ function selectResetCredit(payload: unknown, requestedCreditId?: string): CodexR
   }
   if (credits[0]) return credits[0];
   throw new AppError("validation", "没有可用的 Codex 重置额度");
+}
+
+export interface ListCodexResetCreditsOptions {
+  accessToken: string;
+  workspaceId?: string;
+  fetchImpl?: typeof fetch;
+}
+
+/** 列出当前可用的重置卡（过滤已消耗与已过期，按最先过期排序）。 */
+export async function listAvailableCodexResetCredits(
+  options: ListCodexResetCreditsOptions,
+): Promise<CodexResetCredit[]> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const listed = await request(
+    CODEX_RESET_CREDITS_URL,
+    {
+      method: "GET",
+      headers: buildHeaders(options.accessToken, options.workspaceId),
+      signal: AbortSignal.timeout(CODEX_RESET_CREDIT_TIMEOUT_MS),
+    },
+    fetchImpl,
+    "使用前无法确认 Codex 重置额度列表，请稍后重试",
+  );
+  if (!listed.response.ok) throw mapUpstreamFailure(listed.response, listed.payload);
+  return parseAvailableResetCredits(listed.payload);
 }
 
 async function readResponsePayload(response: Response): Promise<unknown> {
@@ -245,23 +273,14 @@ export async function redeemCodexResetCredit(
   options: RedeemCodexResetCreditOptions,
 ): Promise<CodexResetCreditOutcome> {
   const fetchImpl = options.fetchImpl ?? fetch;
-  const headers = buildHeaders(options.accessToken, options.workspaceId);
-
-  const listed = await request(
-    CODEX_RESET_CREDITS_URL,
-    { method: "GET", headers, signal: AbortSignal.timeout(CODEX_RESET_CREDIT_TIMEOUT_MS) },
-    fetchImpl,
-    "使用前无法确认 Codex 重置额度列表，请稍后重试",
-  );
-  if (!listed.response.ok) throw mapUpstreamFailure(listed.response, listed.payload);
-
-  const credit = selectResetCredit(listed.payload, options.creditId);
+  const credits = await listAvailableCodexResetCredits(options);
+  const credit = selectFromListed(credits, options.creditId);
 
   const consumed = await request(
     CODEX_RESET_CREDIT_CONSUME_URL,
     {
       method: "POST",
-      headers,
+      headers: buildHeaders(options.accessToken, options.workspaceId),
       body: JSON.stringify({ redeem_request_id: randomUUID(), credit_id: credit.id }),
       signal: AbortSignal.timeout(CODEX_RESET_CREDIT_TIMEOUT_MS),
     },

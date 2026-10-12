@@ -103,7 +103,7 @@ const presentationRegistry: ProviderPresentation[] = [
     },
     groupLabels: {},
     extraLabels: { "reset-credits": "Reset credits" },
-    extraItemLabels: { banked: "Banked reset credit" },
+    extraItemLabels: { banked: "Banked reset credit", "five-hour": "5-hour", weekly: "Weekly" },
   },
   {
     id: "bigmodel-coding-plan",

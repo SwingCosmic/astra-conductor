@@ -16,7 +16,7 @@ import type {
   UsageProviderAdapter,
 } from "../../ports.js";
 import { CredentialVault } from "../../credential-vault.js";
-import { redeemCodexResetCredit } from "./reset-card-redemption.js";
+import { listAvailableCodexResetCredits, redeemCodexResetCredit } from "./reset-card-redemption.js";
 import { getCodexUsage } from "@omniroute/open-sse/services/usage/codex.ts";
 import { refreshCodexToken } from "@omniroute/open-sse/services/tokenRefresh/providers/codex.ts";
 import { getRefreshLeadMs } from "@omniroute/open-sse/services/tokenRefresh.ts";
@@ -99,6 +99,12 @@ function normalizeQuotas(value: unknown): UsageQuota[] {
       unlimited: quota.unlimited === true,
     };
   });
+}
+
+function resetCreditKind(resetType: string | undefined): string {
+  if (resetType === "WEEK") return "weekly";
+  if (resetType === "FIVE_HOUR") return "five-hour";
+  return "banked";
 }
 
 export class CodexAdapter implements UsageProviderAdapter {
@@ -258,48 +264,75 @@ export class CodexAdapter implements UsageProviderAdapter {
       plan: result.plan,
       overallRemainingPercentage: quotas[0]?.remainingPercentage ?? null,
       groups: [{ key: "default", displayName: null, quotas }],
-      extras:
-        typeof result.bankedResetCredits === "number"
-          ? [
-              {
-                key: "reset-credits",
-                value: String(result.bankedResetCredits),
-                // 用量接口只给计数没有逐项 id：兑换入口收敛为一个"使用"项，
-                // 兑换时按上游语义选择最先过期的一张（reset-card-redemption.ts）。
-                items:
-                  result.bankedResetCredits > 0
-                    ? [
-                        {
-                          key: "banked",
-                          kind: "banked",
-                          expiresAt: null,
-                          actionToken: "codex-banked-reset",
-                        },
-                      ]
-                    : undefined,
-              },
-            ]
-          : [],
+      extras: await this.resetCreditsExtras(account, envelope, result.bankedResetCredits),
       fetchedAt: this.clock.now().toISOString(),
     };
+  }
+
+  /**
+   * 重置卡逐项展示：用量端点只有计数，明细（id、类型、过期时间）来自独立的
+   * 列表端点；列表失败时退回计数展示，不影响用量主数据。
+   */
+  private async resetCreditsExtras(
+    account: Account,
+    envelope: CredentialEnvelope,
+    bankedCount: number | undefined,
+  ): Promise<UsageSnapshot["extras"]> {
+    if (typeof bankedCount !== "number") return [];
+    if (bankedCount <= 0) return [{ key: "reset-credits", value: "0" }];
+    const accessToken = envelope.secrets.accessToken;
+    if (!accessToken) return [{ key: "reset-credits", value: String(bankedCount) }];
+    try {
+      const credits = await listAvailableCodexResetCredits({
+        accessToken,
+        workspaceId:
+          typeof account.publicMetadata.workspaceId === "string"
+            ? account.publicMetadata.workspaceId
+            : undefined,
+        fetchImpl: this.fetchImpl,
+      });
+      return [
+        {
+          key: "reset-credits",
+          value: String(credits.length),
+          ...(credits.length
+            ? {
+                items: credits.map((credit, index) => {
+                  const kind = resetCreditKind(credit.resetType);
+                  return {
+                    key: `${kind}:${index}`,
+                    kind,
+                    expiresAt: credit.expiresAt ?? null,
+                    actionToken: credit.id,
+                  };
+                }),
+              }
+            : {}),
+        },
+      ];
+    } catch {
+      return [{ key: "reset-credits", value: String(bankedCount) }];
+    }
   }
 
   async redeemResetCard(
     account: Account,
     envelope: CredentialEnvelope,
-    _selectionToken: string,
+    selectionToken: string,
   ): Promise<void> {
     if (account.provider !== "codex" || envelope.provider !== "codex") {
       throw new AppError("validation", "只有 Codex 账号支持使用重置额度");
     }
     const accessToken = envelope.secrets.accessToken;
     if (!accessToken) throw new AppError("authentication", "Codex 访问令牌不可用");
+    const creditId = selectionToken.trim();
     await redeemCodexResetCredit({
       accessToken,
       workspaceId:
         typeof account.publicMetadata.workspaceId === "string"
           ? account.publicMetadata.workspaceId
           : undefined,
+      ...(creditId ? { creditId } : {}),
       fetchImpl: this.fetchImpl,
     });
   }
