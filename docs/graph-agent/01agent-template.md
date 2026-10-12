@@ -1,9 +1,14 @@
 # Graph Agent：Agent 职位模板与实例模型设计
 
-> 状态：Draft v0.2  
-> 日期：2026-09-26  
-> 范围：AgentTemplate、AgentInstance、初步运行架构，以及它们与 A2A AgentCard / AgentSkill / Task 的互操作边界  
+> 状态：初版设计草案确定；尚未实现后端
+>
+> 日期：2026-10-03
+>
+> 范围：AgentTemplate、AgentInstance、初步运行架构，以及它们与 A2A AgentCard / AgentSkill / Task 的互操作边界
+>
 > 非目标：本稿暂不完整设计任务图、调度算法、Policy Gate、预算系统和存储实现。
+
+本稿定义职位与实例；完整产品模块见[功能总览](./design.md)。Assignment 的工作版本与责任、邮箱并发、ModelLease 和记忆整理分别由 02–06 号设计补充。代码片段是候选契约，不表示已建立运行 schema。
 
 ## 1. 目标
 
@@ -77,6 +82,8 @@ instance:  agent-instance://{workspaceId}/{instanceId}
 ## 4. AgentTemplateRevision
 
 模板采用不可变修订。修改职位定义时创建新 `revisionId`；兼容性或行为发生可观察变化时，同时提升 `templateVersion`。已经创建的实例固定引用原修订，不随模板更新而静默变化。
+
+下述 `status` 是模板目录的发布/可用性管理视图，实施时与不可变修订正文分开存储。停用目录项阻止新派单，不原地修改旧能力与身份内容。
 
 ### 4.1 顶层结构
 
@@ -400,6 +407,8 @@ interface ProviderRouteSelection {
 ```
 
 租约建立后，一次模型调用必须固定到同一 provider、账号、模型、协议 route 和实现代次。目录刷新或注册表更新可以影响下一次选择，但不得把正在进行的流静默迁移。租约只保存凭据引用和选择结果，不保存 token、API Key 或请求头。
+
+`ProviderRouteSelection` 片段仅复述共享平台目标形状，实施时引用共享定义，不在 GraphAgent 再建一份。实例 `modelLease` 是当前绑定摘要；实际每次 Activity 的租约、预算预留和跨模型交接见[模型策略与预算](./05model-policy-and-budget.md)。
 
 ### 5.2 实例身份种子
 
@@ -834,15 +843,15 @@ createdAt: 2026-09-09T00:00:00Z
 
 ## 11. 暂缓决定的问题
 
+启动模块稿已补充：一个 TaskAttempt 的单一交付责任人、子任务/辅助职责与产物合并；实例邮箱顺序提交、长活动让出邮箱；长期经验的分层归属与版本化晋升。相关约束以[任务图](./02task-graph-and-assignment.md)、[运行时](./03runtime-and-scheduling.md)和[记忆设计](./06memory-and-self-optimization.md)为准。以下其余问题仍需后续验证。
+
 以下问题留给后续设计阶段：
 
 - Workspace 长期员工的经验如何晋升为共享职位知识；
 - `experienced` 选择所依赖的绩效指标和偏差控制；
-- 多个实例共同负责一个 Task 时的署名、责任和 Artifact 合并规则；
 - 是否将实例亲和、预算声明、图依赖和 Policy Gate 分别注册为 A2A 扩展；
 - 外部 A2A 服务是否可信地支持实例亲和，及如何验证；
 - 模板兼容性等级和实例热迁移协议；
-- AgentInstance 的邮箱是否采用 Actor 顺序处理、可配置并发，或 Assignment 级隔离。
 
 ## 12. 实现架构方向：Kubernetes 式控制面与 Actor Runtime
 
@@ -1043,15 +1052,11 @@ Actor 可以担任需要语义判断的审查员，但确定性安全规则仍�
 
 初步结论是：**Kubernetes 调度思想 + Virtual Actor Runtime 是当前业务模型最匹配的实现方向，但二者都只是可替换的运行适配器，而不是领域模型本身。**
 
-## 13. 下一阶段建议
+## 13. 启动设计衔接
 
-下一份设计应聚焦 **Assignment 与 Staffing 协议**，具体回答：
+[任务图与 Assignment](./02task-graph-and-assignment.md)已细化邀请、接受/拒绝/反报价/排队/转包、多来源派单、共同执行、产物与用户干预。[运行时与调度](./03runtime-and-scheduling.md)进一步规定邮箱、Activity、放置和恢复。
 
-1. 一个 Agent 如何向另一个职位池正式发出任务邀请；
-2. 员工如何接受、拒绝、反报价、排队或转包；
-3. 多个上游同时向同一员工派单时如何排序；
-4. 一个任务由多个员工共同执行时如何形成 DAG 和 Artifact；
-5. 用户插入、修改或叫停任务时，Assignment 状态如何变化。
+本稿 A2A 状态映射是早期粗粒度建议。内部 TaskAttempt/Assignment 使用 02 号稿的状态与原因；具体外部映射由后续部署适配器完成，不把 PAUSED、WAITING 或未知效果原因扩充为标准 A2A 枚举。发布与远端导入的完成信号见[启动计划](./plan.md)。
 
 在启动 GraphAgent 的模型执行代码前，还必须先完成共享 Provider Platform 迁移计划的“推理骨架”阶段：固定 protocol route、模型目录、codec registry、规范流事件和 `ModelLease` contract suite。它不阻塞 Assignment 领域设计，但不能推迟到具体供应商接入之后再补。
 
