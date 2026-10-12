@@ -1,7 +1,7 @@
 # PolyQuota 产品信息与图标方案
 
 评审日期：2026-09-25。图标颜色与综合剩余口径于 2026-10-11 调整。对应[运行流程与通信机制现状报告](./runtime-and-communication-review.md)第 7.3 节。
-共用的 PolyQuota / GraphAgent 图标最终稿位于 [`../common/icon-design`](../common/icon-design/README.md)。PolyQuota 已将对应的派生资源接入应用窗口、托盘和 Windows 打包配置；动态额度状态切换仍按本文后续边界单独实施。
+共用的 PolyQuota / GraphAgent 图标最终稿位于 [`../common/icon-design`](../common/icon-design/README.md)。PolyQuota 已将对应的派生资源接入应用窗口、托盘和 Windows 打包配置；综合剩余计分、托盘按 R 换色、任务栏原生进度条与用量概览双环也已按第 5、6 节落地，剩余安装产物上的人工视觉验收见第 6 节。
 
 ## 1. 产品信息
 
@@ -10,7 +10,7 @@
 - 完整展示：**PolyQuota · 大模型订阅额度聚合**。
 - 侧栏以 PolyQuota 为主标题，中文说明作为次级文案；空间不足时放入设置中的产品信息区域。
 - 窗口标题、HTML 标题、安装程序、快捷方式、托盘菜单、授权完成页面统一使用新名称；EXE 为 `PolyQuota.exe`，安装包建议为 `PolyQuota-${version}-setup.exe`。
-- 版本从实际构建版本生成。目前侧栏硬编码为 v0.1.0，而 Desktop package 为 0.0.1，需要在实施时统一。
+- 版本从实际构建版本生成。目前侧栏硬编码为 v0.1.0，而 Desktop package 已是 0.3.0，需要在实施时统一。
 
 工作区包名使用 `@astra-conductor/*`，PolyQuota 开发与测试环境变量使用 `POLYQUOTA_*`。Electron app name 和 `productName` 为 `PolyQuota`，appId 与 AppUserModelID 为 `io.astraconductor.polyquota`，`userData` 固定在系统 `appData/AstraConductor/PolyQuota`，数据库名为 `polyquota.db`。早期测试数据已在新身份下完成凭据解密与重加密，不再保留旧占位身份兼容代码。跨产品复用仍按[跨产品凭据共享与迁移](../common/core/credential-sharing.md)单独实施。
 
@@ -20,7 +20,7 @@
 
 PolyQuota 基础资产为 `polyquota.svg` 与 `polyquota-white.svg`，状态资产为 `polyquota-green.svg`、`polyquota-orange.svg`、`polyquota-red.svg` 和 `polyquota-unknown.svg`。SVG 均位于 `docs/common/icon-design`，是独立矢量资产，不依赖外部图片或字体。
 
-应用派生资源位于 `apps/polyquota/assets/icons`。`polyquota.ico` 包含 16、20、24、32、40、48、64、256 像素八种尺寸，全部为标准图形（小尺寸由 256px 缩小），用于 EXE、安装器、卸载器和 Windows 窗口；基础版及绿、橙、红、灰状态均提供 256 像素 PNG，托盘另有 24 像素像素优化 PNG。`manifest.json` 保存母版与派生文件的 SHA-256，测试会拒绝母版更新后未重新生成的资源。
+应用派生资源位于 `apps/polyquota/assets/icons`。`polyquota.ico` 包含 16、20、24、32、40、48、64、256 像素八种尺寸，全部为标准图形（小尺寸由 256px 缩小），用于 EXE、安装器、卸载器和 Windows 窗口；基础版及绿、橙、红、灰状态均提供 256 像素 PNG，托盘另有 24 像素像素优化 PNG。图标哈希清单 `apps/polyquota/test/fixtures/icons-manifest.json` 保存母版与派生文件的 SHA-256，测试会拒绝母版更新后未重新生成的资源。
 
 ### 正式资产范围
 

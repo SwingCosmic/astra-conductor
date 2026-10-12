@@ -4,10 +4,10 @@ AstraConductor 用于统一利用大模型与智能体，并管理相关控制�
 
 - **PolyQuota** 是面向本地桌面的 LLM 订阅用量聚合工具，以 Windows 托盘应用为首要形态。
 - **GraphAgent** 目前只预留文档和应用位置，后续采用独立结构，不复用 PolyQuota UI。
-- `packages/core` 由两个产品共享；`packages/polyquota-ui` 仅属于 PolyQuota。
+- `packages/core` 由两个产品共享；`packages/polyquota-contract` 是 PolyQuota 渲染层、preload 与主进程共享的 IPC 契约包；`packages/polyquota-ui` 仅属于 PolyQuota。
 - 工作区包统一使用 `@astra-conductor/*` 命名空间；产品运行身份仍相互独立。
 
-PolyQuota 当前已完成 Codex 和 GLM Coding Plan 接入。Codex CLI 凭据、浏览器 OAuth PKCE 和设备码均已通过真实用量闭环；GLM 支持国内与国际 API Key，并可只读导入 ZCode v2 凭据。
+PolyQuota 当前已接入六家服务商：Codex、GLM Coding Plan、Grok Build、Antigravity、Claude Code 与 OpenCode Go，且均已通过真实账号测试确认可用。其中 Codex（CLI 凭据导入、浏览器 OAuth PKCE、设备码）、GLM（国内与国际 API Key、只读导入 ZCode v2 凭据）、Grok Build 与 Antigravity 完成真实账号用量闭环，Claude Code（CLI 凭据只读导入）与 OpenCode Go（API Key）随后接入并通过真实账号验证。
 
 ## 文档
 
@@ -18,19 +18,23 @@ PolyQuota 当前已完成 Codex 和 GLM Coding Plan 接入。Codex CLI 凭据、
 
 ## 上游参考源码
 
-`references/` 下的仓库仅作为协议研究、实现参考和后续提取输入，不参与 pnpm workspace 或应用构建，运行时代码不得直接导入它们。
+`references/` 下的仓库仅作为协议研究、实现参考和后续提取输入，不参与 pnpm workspace 或应用构建，运行时代码不得直接导入它们。其中只有 `references/omniroute` 是开发必需项（vendor 抽取与同步治理的对照来源），其余仓库按需单独拉取。
 
-| 参考仓库                      | 固定分支与提交                                                 | 用途                             |
-| ----------------------------- | -------------------------------------------------------------- | -------------------------------- |
-| `references/omniroute`        | `release/v3.8.51` @ `3ee283bb944d6d62cc219f74317d5186942e1780` | 订阅认证与用量协议参考           |
-| `references/deepseek-harness` | `master` @ `477b4f420553e8a52c2fbccc464d7561b239c443`          | GraphAgent 启动阶段参考          |
-| `references/zcode`            | `main` @ `29628c9acdb81b703bbd4080c207a0e7ce5e276e`            | GraphAgent 与 ZCode 凭据格式参考 |
+| 参考仓库                      | 固定分支与提交                                                 | 用途                                |
+| ----------------------------- | -------------------------------------------------------------- | ----------------------------------- |
+| `references/omniroute`        | `release/v3.8.51` @ `3ee283bb944d6d62cc219f74317d5186942e1780` | 订阅认证与用量协议参考（开发必需）  |
+| `references/deepseek-harness` | `master` @ `477b4f420553e8a52c2fbccc464d7561b239c443`          | GraphAgent 启动阶段参考             |
+| `references/zcode`            | `main` @ `29628c9acdb81b703bbd4080c207a0e7ce5e276e`            | GraphAgent 与 ZCode 凭据格式参考    |
+| `references/hermes-agent`     | `main` @ `6a6766fb896043ab3757a30713f1248b6054e0a6`            | GraphAgent 服务商架构与会话记忆参考 |
+| `references/openclaw`         | `main` @ `47a026ea3fe6201de974628a7c80228a4434a0e4`            | GraphAgent 记忆索引与会话捕获参考   |
 
-首次检出项目后执行：
+首次检出项目后只拉取开发必需的子模块：
 
 ```bash
-git submodule update --init --recursive
+git submodule update --init references/omniroute
 ```
+
+需要其余参考仓库时逐个执行 `git submodule update --init references/<名称>`，确有需要时才用 `git submodule update --init --recursive` 一次拉取全部，避免不必要的下载。
 
 升级任一上游时应单独审查固定提交和提取结果，不直接让应用引用子模块源码。
 
@@ -58,7 +62,7 @@ pnpm data:reset
 ```
 
 - `pnpm native:prepare` 在隔离的临时目录中为当前 Electron、平台和架构构建 `apps/polyquota/lib/better-sqlite3/better_sqlite3.node`。首次开发前或 Electron、Node、`better-sqlite3`、平台、架构变化后手动执行；普通开发启动不重复检查。生产 `build` 会通过 Desktop 的 `prebuild` 自动重新生成。
-- `pnpm dev` 打开 PolyQuota 桌面窗口，可只读导入 Codex CLI 或 ZCode v2 凭据，也可启动浏览器 OAuth、设备码授权或填写 GLM Coding Plan API Key。
+- `pnpm dev` 打开 PolyQuota 桌面窗口，按各服务商声明的方式接入：可只读导入 Codex CLI、Grok CLI、Claude Code 或 ZCode v2 凭据，可发起浏览器 OAuth（Codex、Grok Build、Antigravity）或设备码授权（Codex、Grok Build），也可填写 GLM 或 OpenCode Go 的 API Key。
 - `pnpm build` 依次构建共享 Core、PolyQuota UI 和 PolyQuota Desktop；Desktop 会把 UI 构建结果复制到 `apps/polyquota/renderer`。
 - `pnpm package` 生成 Windows NSIS 安装包，产物位于 `apps/polyquota/release/`。
 - `pnpm test:codex-cli` 使用本机 Codex CLI 凭据执行隔离的真实用量闭环，不改写 CLI 凭据，临时应用数据会在测试后删除。

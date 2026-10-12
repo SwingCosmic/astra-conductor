@@ -16,7 +16,7 @@
 | Hermes Agent     | `6a6766fb896043ab3757a30713f1248b6054e0a6` |
 | OpenClaw         | `47a026ea3fe6201de974628a7c80228a4434a0e4` |
 
-本轮没有更新原有参考版本，新增 OpenClaw 固定提交子模块用于记忆系统核对。Hermes 当前有独立 Git checkout，可读取固定 HEAD；当前主仓库索引尚未将它登记为与其他三个相同的已提交 gitlink，研究内容不据此声称子模块登记已完成。
+本轮没有更新原有参考版本，新增 OpenClaw 固定提交子模块用于记忆系统核对。Hermes 的 `.gitmodules` 条目与 gitlink 已于 2026-10-12 登记入主仓库索引（`main` @ `6a6766fb896043ab3757a30713f1248b6054e0a6`），新检出可通过 `git submodule update --init references/hermes-agent` 取得固定 HEAD。
 
 ## 2. 从源码观察到的机制
 
@@ -60,4 +60,4 @@ Hermes 的 `hermes_cli/session_recap.py` 是会话展示摘要生成入口，不
 
 共享平台目标见[跨服务商设计](../common/core/cross-provider-service-protocol-design.md)，实际目录见 [Core providerCatalog](../../packages/core/src/providers/catalog.ts)。本轮只核对设计与当前源码边界；新增 OpenClaw 研究 checkout，不搬运 vendor 或修改服务商适配器。
 
-后续每批源码提取记录固定 commit、源路径、目标路径、许可证、依赖闭包、调整理由和离线 fixture；OmniRoute 继续使用[既有抽取与同步流程](../common/core/omniroute-sync-tool-design.md)。其他项目也须单独记录，不能把研究路径直接写入运行 imports。
+后续每批源码提取记录固定 commit、源路径、目标路径、许可证、依赖闭包、调整理由和离线 fixture；OmniRoute 继续按[手工抽取基线](../common/core/omniroute-manual-extraction-baseline.md)维护，同步工具实现落地后（形态见[同步工具形态设计](../common/core/omniroute-sync-tool-design.md)）转为清单化管理。其他项目也须单独记录，不能把研究路径直接写入运行 imports。

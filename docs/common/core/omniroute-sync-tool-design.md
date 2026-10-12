@@ -18,13 +18,13 @@
 
 ### 2.1 产物现状
 
-- vendor 共 38 个协议与许可证产物，覆盖基础协议叶子、Codex、GLM、Grok Build 与 Antigravity 四家；
+- vendor 共 49 个协议与许可证产物，覆盖基础协议叶子以及 Codex、GLM、Grok Build、Antigravity、Claude Code 与 OpenCode Go 六家；
 - 每个产物有一份本地再生成的 `.diff`，`.diff/` 目录被 git 忽略，属于审查产物而非提交物；
 - vendor 的外部依赖只有 Node 内置模块（`crypto` 等）和 `zod` 4.5.4（`@astra-conductor/core` 现有运行时依赖）。
 
 ### 2.2 手工改动分布
 
-按 `.diff` 的实际形态归类，38 个产物分为五类：
+本节记录设计定稿时点（收敛前）的分布，作为第 5 节收敛动作的依据；收敛后的当前形态见[手工抽取基线](./omniroute-manual-extraction-baseline.md)第 3、4 节。按当时 `.diff` 的实际形态归类，38 个产物分为五类：
 
 | 类别             | 数量 | 代表                                                                 |
 | ---------------- | ---- | -------------------------------------------------------------------- |
@@ -34,7 +34,7 @@
 | 类型补充与别名   | 3    | `pkce.ts`、`tokenRefresh/shared.ts`、`codexClient.ts`                |
 | 结构性改写       | 2    | `grokResetCreditsFrame.ts`（内联未抽取依赖）、`antigravityHeaders.ts`（移除版本缓存） |
 
-另有两种目标路径调整：`oauth.ts` 被拆分为 `oauth.ts` 与 `stage7.ts` 两个目标文件，`open-sse/executors/grok-cli.ts` 被改名为 `tokenRefresh/providers/grok.ts`。
+另有两种目标路径调整：`oauth.ts` 被拆分为 `oauth.ts` 与 `stage7.ts` 两个目标文件，`open-sse/executors/grok-cli.ts` 被改名为 `tokenRefresh/providers/grok.ts`（前者的拆分已在收敛中取消，见第 5 节）。
 
 ### 2.3 工具现状
 
@@ -112,7 +112,7 @@ tools/omniroute-sync/
 
 ### 4.3 清单格式
 
-`manifest.mjs` 是唯一的生成事实来源，按基线文档的分节组织条目（基础叶子、Codex、GLM、Grok Build、Antigravity），并记录上游固定提交：
+`manifest.mjs` 是唯一的生成事实来源，按基线文档的分节组织条目（基础叶子、Codex、GLM、Grok Build、Antigravity、Claude Code 与 OpenCode Go），并记录上游固定提交：
 
 ```js
 export const upstream = {
@@ -208,7 +208,7 @@ export const entries = [
 | 13 处 `fetchImpl` 注入                   | 手工修改                   | 已是目标形态，待工具以 `injectFetch` 规则接管                            |
 | `pkce.ts` 等类型补充                     | 手工修改                   | 已是目标形态，待工具以带理由头的小补丁接管                               |
 
-上述"已执行"项于 2026-09-30 以手动迁移完成并通过 Core 与全工作区的类型检查、测试、构建及编译后模块加载验证；产物从 38 个调整为 45 个，零 diff 整文件复制从 8 个增加到 20 个，全部 `.diff` 合计从约 -5761 / +1186 行降到约 -3750 / +990 行。当前事实记录见[手工抽取基线](./omniroute-manual-extraction-baseline.md)第 3、4 节。
+上述"已执行"项于 2026-09-30 以手动迁移完成并通过 Core 与全工作区的类型检查、测试、构建及编译后模块加载验证；产物从 38 个调整为 45 个，零 diff 整文件复制从 8 个增加到 20 个，全部 `.diff` 合计从约 -5761 / +1186 行降到约 -3750 / +990 行（其后 Claude Code 与 OpenCode Go 边界验证把产物扩展到 49 个）。当前事实记录见[手工抽取基线](./omniroute-manual-extraction-baseline.md)第 3、4 节。
 
 收敛完成标志（手动迁移已达成前两条，后两条随工具实施生效）：
 

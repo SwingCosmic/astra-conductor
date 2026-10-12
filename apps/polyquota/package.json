@@ -1,6 +1,6 @@
 {
   "name": "@astra-conductor/polyquota",
-  "version": "0.0.1",
+  "version": "0.3.0",
   "private": true,
   "description": "PolyQuota desktop application",
   "type": "module",

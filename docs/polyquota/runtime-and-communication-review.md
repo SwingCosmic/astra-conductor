@@ -8,6 +8,8 @@
 | 覆盖范围 | 开发、构建、打包、启动、终止、热更新、进程边界、IPC、网络与 OAuth |
 | 非目标   | 本文不替代 `design.md` 和 `plan.md`，也不引入第 7.3 节的运行时抽象 |
 
+本报告审计于 2026-09-25，早于 2026-09-30 落地的[认证服务抽取](./auth-service-extraction-design.md)：文中出现的 `auth-service.ts`、`CodexAuthService` / `AuthService` 对应抽取前结构，现由 core `providers/<id>/auth-flow.ts` 与无分支的 `AuthCoordinator`（`packages/core/src/auth/coordinator.ts`）取代，桌面仅保留 `src/auth/callback-server.ts`；第 5 节相关流程语义不变，代码位置以第 9 节当前链接为准。
+
 ## 1. 结论摘要
 
 当前实现已经形成一条边界清楚的 Codex 闭环：Vue 渲染进程只通过 preload 暴露的白名单 API 访问 Electron 主进程；凭证、SQLite、`safeStorage`、轮询、通知、OAuth 会话和服务商请求均留在主进程；Core 通过注入的 `fetch` 使用 Electron 网络栈，不依赖 Electron，也不让渲染进程接触令牌。
@@ -721,9 +723,9 @@ Vue → preload → IPC handler → PolyQuotaApplicationService
 - IPC handlers：[`../../apps/polyquota/src/ipc.ts`](../../apps/polyquota/src/ipc.ts)
 - PolyQuota 应用服务：[`../../apps/polyquota/src/polyquota-application-service.ts`](../../apps/polyquota/src/polyquota-application-service.ts)
 - 自动刷新调度器：[`../../apps/polyquota/src/refresh-scheduler.ts`](../../apps/polyquota/src/refresh-scheduler.ts)
-- OAuth 与 CLI 认证：[`../../apps/polyquota/src/auth-service.ts`](../../apps/polyquota/src/auth-service.ts)
+- OAuth 与 CLI 认证编排：[`../../packages/core/src/auth/coordinator.ts`](../../packages/core/src/auth/coordinator.ts) 与各 [`providers/<id>/auth-flow.ts`](../../packages/core/src/providers/)（原桌面 `src/auth-service.ts`，2026-09-30 抽取后迁入 core；桌面仅保留 [`src/auth/callback-server.ts`](../../apps/polyquota/src/auth/callback-server.ts)）
 - 轮询与通知：[`../../apps/polyquota/src/polling-service.ts`](../../apps/polyquota/src/polling-service.ts)
-- Core Codex 适配器：[`../../packages/core/src/codex-adapter.ts`](../../packages/core/src/codex-adapter.ts)
+- Core Codex 适配器：[`../../packages/core/src/providers/codex/adapter.ts`](../../packages/core/src/providers/codex/adapter.ts)
 - 刷新协调器：[`../../packages/core/src/refresh-coordinator.ts`](../../packages/core/src/refresh-coordinator.ts)
 - Vue 调用侧：[`../../packages/polyquota-ui/src/App.vue`](../../packages/polyquota-ui/src/App.vue)
 - Vite 配置：[`../../packages/polyquota-ui/vite.config.ts`](../../packages/polyquota-ui/vite.config.ts)

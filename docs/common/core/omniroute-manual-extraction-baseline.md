@@ -8,7 +8,7 @@
 2. 哪些文件保持原文，哪些文件做了手工裁剪或改写；
 3. 哪些变化已由现有同步工具维护，哪些仍需在阶段 6 评估自动化程度。
 
-本文不是机器可读 manifest，也不替代逐文件 diff 和特征测试。阶段 6 已在[同步工具形态设计](./omniroute-sync-tool-design.md)中定稿工具形态，并已按其收敛方案完成一次手动迁移：扩大清单闭包、取消成员裁剪、合并 `stage7.ts`、反内联帧解码，产物从 38 个调整为 45 个（见第 3、4 节的当前形态）。同步工具本身尚未实现（`tools/omniroute-sync` 只有 README 与空目录，根目录同步脚本不可运行），清单化仍待实施。当前输出、`.diff` 与测试结果仍是实际基线。真实账号验证发现遗漏时，应先修正手工样板和本文，再按工具设计转化为清单条目。
+本文不是机器可读 manifest，也不替代逐文件 diff 和特征测试。阶段 6 已在[同步工具形态设计](./omniroute-sync-tool-design.md)中定稿工具形态，并已按其收敛方案完成一次手动迁移：扩大清单闭包、取消成员裁剪、合并 `stage7.ts`、反内联帧解码；Claude Code 与 OpenCode Go 边界验证又把产物从 45 个扩展到 49 个（见第 3、4 节的当前形态）。同步工具本身尚未实现（`tools/omniroute-sync` 只有 README 与空目录，根目录同步脚本不可运行），清单化仍待实施。当前输出、`.diff` 与测试结果仍是实际基线。真实账号验证发现遗漏时，应先修正手工样板和本文，再按工具设计转化为清单条目。
 
 ## 2. 基线与目录约定
 
@@ -23,6 +23,8 @@
 | GLM 测试   | `packages/core/test/glm-adapter.test.ts`                       |
 | Grok 测试  | `packages/core/test/grok-build-adapter.test.ts`                |
 | Anti 测试  | `packages/core/test/antigravity-adapter.test.ts`               |
+| Claude 测试 | `packages/core/test/claude-adapter.test.ts`                    |
+| OpenCode 测试 | `packages/core/test/opencode-go-adapter.test.ts`              |
 
 vendor 内部使用两个明确的路径别名：
 
@@ -74,7 +76,7 @@ git -c core.safecrlf=false diff --no-index --ignore-space-at-eol --no-ext-diff -
 | `open-sse/services/tokenRefresh.ts`                 | 声明裁剪     | 提前量、全部厂商 lead 成员、废弃 provider 表和 `getRefreshLeadMs` |
 | `open-sse/services/tokenRefresh/providers/codex.ts` | 宿主依赖替换 | Codex 刷新请求、旋转 refresh token 和不可恢复错误分类 |
 
-这一范围只包含稳定授权与用量协议，不包含页面、数据库、桌面宿主或同步工具自身。当前 45 个产物是手工维护的事实基线（含第 3.6 节闭包扩展模块），不是共享 Core 的永久能力上限；阶段 6 的目标是把它们全部纳入同步清单，GraphAgent 所需的 provider/model registry、协议 codec 和 Executor 必须按[跨服务商服务协议设计](./cross-provider-service-protocol-design.md)另立清单分节、固定来源并选择性抽取，不能无记录地扩进本基线。
+这一范围只包含稳定授权与用量协议，不包含页面、数据库、桌面宿主或同步工具自身。当前 49 个产物是手工维护的事实基线（含第 3.7 节闭包扩展模块），不是共享 Core 的永久能力上限；阶段 6 的目标是把它们全部纳入同步清单，GraphAgent 所需的 provider/model registry、协议 codec 和 Executor 必须按[跨服务商服务协议设计](./cross-provider-service-protocol-design.md)另立清单分节、固定来源并选择性抽取，不能无记录地扩进本基线。
 
 ### 3.3 GLM Coding Plan
 
@@ -84,7 +86,7 @@ git -c core.safecrlf=false diff --no-index --ignore-space-at-eol --no-ext-diff -
 | `open-sse/services/usage/glm.ts`                    | 声明裁剪、传输注入 | Coding Plan 配额请求及 `CREDIT_LIMIT`、Token、时间窗口解析 |
 | `open-sse/services/usage/glmResetCards.ts`          | 声明裁剪、传输注入 | 重置卡列表、信封校验、过期过滤和排序                       |
 
-GLM 的 vendor 产物只保留 Coding Plan 的用量读取链路（按量 API 的推理执行不在范围）。国内与国际共用实现，通过 `apiRegion` 选择 `open.bigmodel.cn` 或 `api.z.ai`。整文件恢复后的 `glmProvider.ts` 含上游统一的 `buildGlmResetCardFetch(action)`（含 `/use` 的 URL 构造），vendor 重置卡服务只调用 `"list"` 动作，不保留使用请求体；用户确认后的 `/use` 调用仍由项目自有的 `glm-reset-card-redemption.ts` 实现。真实账号已验证卡片可以使用，ZCode 的剩余次数可能延迟刷新。
+GLM 的 vendor 产物只保留 Coding Plan 的用量读取链路（按量 API 的推理执行不在范围）。国内与国际共用实现，通过 `apiRegion` 选择 `open.bigmodel.cn` 或 `api.z.ai`。整文件恢复后的 `glmProvider.ts` 含上游统一的 `buildGlmResetCardFetch(action)`（含 `/use` 的 URL 构造），vendor 重置卡服务只调用 `"list"` 动作，不保留使用请求体；用户确认后的 `/use` 调用仍由项目自有的 `providers/glm/reset-card-redemption.ts` 实现。真实账号已验证卡片可以使用，ZCode 的剩余次数可能延迟刷新。
 
 ### 3.4 Grok Build
 
@@ -114,7 +116,18 @@ Grok Build 同时保留设备码、浏览器 OAuth PKCE 和完整 CLI 导入。�
 
 Antigravity 不复制上游数据库、连接记录和版本探测网络请求。`antigravityHeaders.ts` 恢复上游签名（含 `AntigravityClientProfile` 参数，默认 `"ide"`），唯一补丁是用固定回退版本（IDE `2.1.1`、CLI `1.1.5`，即上游缓存模块自身的回退值）替换在线版本缓存依赖。项目标识、OAuth 客户端选择与套餐信息由适配器保存为公开元数据，刷新凭证仍只进入加密信封；无法发现项目时明确拒绝接入，不用伪造项目 ID 继续请求。
 
-### 3.6 闭包扩展模块
+### 3.6 Claude Code 与 OpenCode Go
+
+| 上游相对路径                                             | 处理方式           | 当前保留内容                                      |
+| -------------------------------------------------------- | ------------------ | ------------------------------------------------- |
+| `src/lib/oauth/utils/claudeAuthImport.ts`                | 声明裁剪           | Claude Code `.credentials.json` 纯解析与校验      |
+| `open-sse/services/tokenRefresh/providers/claudeOAuth.ts` | 宿主解耦、传输注入 | Claude OAuth 旋转刷新与不可恢复错误分类（目标产物改名 `tokenRefresh/providers/claude.ts`）           |
+| `open-sse/services/usage/claude.ts`                      | 宿主解耦、传输注入 | OAuth 用量、bootstrap 身份及模型范围额度           |
+| `open-sse/services/usage/opencode.ts`                    | 合并裁剪、传输注入 | OpenCode Go 三窗口展示；请求和校验逻辑同时参考 `opencodeQuotaFetcher.ts` |
+
+Claude Code 当前只开放官方 CLI OAuth 凭据只读导入，不增加与现有本机回环语义不同的托管回调交互。导入时验证用量；令牌临近到期或用量端点拒绝时走旋转刷新。OpenCode Go 只接收长期 API Key，使用官方 `https://opencode.ai/zen/go/v1/usage` 端点并保留 5 小时、周、月三个窗口。两者均删除 OmniRoute 数据库、缓存注册、限流总线、路由和推理依赖，通过注入的 `fetchImpl` 使用桌面网络宿主。
+
+### 3.7 闭包扩展模块
 
 按最小修改原则，以下纯上游模块为支持整文件复制而扩入 vendor，全部零外部依赖：
 
@@ -265,13 +278,13 @@ Antigravity 不复制上游数据库、连接记录和版本探测网络请求�
 
 当前手工输出满足以下条件，后续迁移或同步方式至少需要保持同等约束：
 
-- vendor 共有 45 个协议与许可证产物（含第 3.6 节的 7 个闭包扩展模块），另有 45 个可追溯到上游来源的 `.diff`；
-- 其中 20 个为零 diff 整文件复制；全部产物的 diff 合计约 -3750 / +990 行（收敛前 38 个产物约 -5761 / +1186 行）；
-- 45 个产物当前全部手工维护；阶段 6 的目标是按[同步工具形态设计](./omniroute-sync-tool-design.md)把它们全部纳入清单，工具实现落地前清单完备门禁不生效；
+- vendor 共有 49 个协议与许可证产物（含第 3.7 节的 7 个闭包扩展模块），另有 49 个可追溯到上游来源的 `.diff`；
+- 其中 20 个为零 diff 整文件复制；按当前 49 份差异文件重新统计，非空差异合计为 -4687 / +1314 行；
+- 49 个产物当前全部手工维护；阶段 6 的目标是按[同步工具形态设计](./omniroute-sync-tool-design.md)把它们全部纳入清单，工具实现落地前清单完备门禁不生效；
 - 不存在 `references/omniroute` 运行时导入、单个 `@/*` 或外部 `@omniroute/*` 依赖；vendor 的外部依赖只有 Node 内置模块与 `zod`；
 - 浏览器 OAuth、设备授权、CLI 导入、换票、刷新和用量均有无网络特征测试；
 - Core 的类型检查、测试、构建和编译后模块加载通过；
 - 编译后的 JavaScript 不残留未解析的 `@omniroute/*`；
-- Codex 三种认证方式已经完成真实账号闭环；Grok Build 与 Antigravity 已随阶段 7 完成逐种交互式真实账号验收，验收发现的遗漏按第 1 节流程回补本基线。
+- Codex 三种认证方式已经完成真实账号闭环；Grok Build 与 Antigravity 已随阶段 7 完成逐种交互式真实账号验收；Claude Code 与 OpenCode Go 已于 2026-10-12 通过真实账号测试验收。
 
 阶段 6 应以四家手工样板的实际差异为依据，决定自动生成、辅助迁移和差异校验各自覆盖的范围。为了让工具通过而新增的例外，必须先回到手工样板说明原因并补充测试。

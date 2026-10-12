@@ -43,12 +43,12 @@ OmniRoute 并不存在一个包办所有职责的 `ProviderAdapter`。它的完�
 
 ### 2.2 已经搬运的范围
 
-当前 `packages/core/src/vendor/omniroute` 固定来源为 `references/omniroute` 的 `3ee283bb944d6d62cc219f74317d5186942e1780`，阶段 7 后已经搬运 38 个一一留有 diff 的产物，范围只有：
+当前 `packages/core/src/vendor/omniroute` 固定来源为 `references/omniroute` 的 `3ee283bb944d6d62cc219f74317d5186942e1780`，阶段 7 后已经搬运 49 个一一留有 diff 的产物（Claude Code 与 OpenCode Go 接入后由 38 个扩展而来），范围包括：
 
 - 通用配额标量、配额构造、窗口标题和 Codex 配额归一化；
 - Codex 浏览器 OAuth、设备授权、CLI 凭据解析、JWT/工作区映射；
 - Codex token refresh、旋转刷新串行和提前刷新时间；
-- Codex 用量请求、GLM Coding Plan 配额与重置卡查询、Grok Build 与 Antigravity 的认证、刷新和用量协议；
+- Codex 用量请求、GLM Coding Plan 配额与重置卡查询、Grok Build 与 Antigravity 的认证、刷新和用量协议、Claude Code 的 CLI 凭据导入/刷新/用量，以及 OpenCode Go 的 API Key 用量；
 - 为本项目注入 `fetchImpl`、收窄声明和替换路径别名所需的可审查改动。
 
 阶段 6 起按[同步工具形态设计](./omniroute-sync-tool-design.md)的最小修改原则维护：抽取产物可以保留尚未支持厂商的纯声明与数据，只要其依赖闭包不超出清单和外部依赖白名单；vendor 的惰性声明不构成能力声明，共享 Core 的公开边界仍由 `ProviderDescriptor` 与能力 facet 决定。
@@ -76,7 +76,7 @@ OmniRoute 并不存在一个包办所有职责的 `ProviderAdapter`。它的完�
 | 尚未搬运的 Executor | `ProviderInferenceCapability` 候选来源 | 只抽纯协议/执行叶子，宿主策略由本项目实现 |
 | 尚未搬运的模型能力 | `ProviderModelCatalogCapability` 候选来源 | 保留来源、静态/动态目录和模型级协议覆盖 |
 
-现有[手工抽取基线](./omniroute-manual-extraction-baseline.md)仍是当前 38 个产物的事实记录。本设计扩大未来共享 Core 的能力边界，不追溯修改该基线来假装推理协议已经搬运。
+现有[手工抽取基线](./omniroute-manual-extraction-baseline.md)仍是当前 49 个产物的事实记录。本设计扩大未来共享 Core 的能力边界，不追溯修改该基线来假装推理协议已经搬运。
 
 ## 3. 参考架构的综合取舍
 
@@ -94,15 +94,15 @@ OmniRoute 并不存在一个包办所有职责的 `ProviderAdapter`。它的完�
 
 ## 4. 当前问题
 
-现有实现已经有良好分层，但服务商边界仍分散：
+现有实现已经有良好分层，但服务商边界仍分散（下列问题部分已在阶段 A/C 与 IPC 契约改造中解决，已解决的以括号标注，其余仍为现状）：
 
-- `ProviderId`、`AuthMethod` 在 Core 与 UI 各维护一份封闭联合；
-- UI 的 `presentation.ts` 同时承担目录、可用性、地区默认值和文案；
-- `AuthService.start()` 直接判断 `provider === "glm"` 或 `provider !== "codex"`；
+- `ProviderId`、`AuthMethod` 在 Core 与 `polyquota-contract` 各维护一份封闭联合（UI 已改为 re-export 契约定义，重复收敛待阶段 D 第 6 条）；
+- UI 的 `presentation.ts` 同时承担目录、可用性、地区默认值和文案（已解决：接入页已改为目录驱动，`presentation.ts` 只保留文案与图标，见第 15 节阶段 A 进展记录）；
+- `AuthService.start()` 直接判断 `provider === "glm"` 或 `provider !== "codex"`（已解决：桌面 `auth-service.ts` 已按[认证服务抽取设计](../../polyquota/auth-service-extraction-design.md)拆除，认证分派由 core 各 `auth-flow.ts` 与无分支的 `AuthCoordinator` 承担）；
 - `RefreshCoordinator` 已按 `provider` 查 `UsageProviderAdapter`，但构造 `Map` 时重复实现会静默覆盖；
 - 账号公开元数据使用无命名空间的 primitive map，字段所有权和版本不明确；
-- `window.llmUsage`、preload、IPC 与 UI 类型分别维护，容易漂移；
-- 账号与用量逐项读取，没有一份带修订号的一致前端快照；
+- `window.llmUsage`、preload、IPC 与 UI 类型分别维护，容易漂移（已解决：preload 全局已更名为 `window.polyQuotaElectronService`，channel 与校验由 `polyquota-contract` 单一来源提供）；
+- 账号与用量逐项读取，没有一份带修订号的一致前端快照（已解决：`getSnapshot()` 已提供带 `revision` 的单一快照与失效事件）；
 - BigModel 与 Z.ai 共享 `glm` 实现，却靠 `publicMetadata.presentationId` 和页面判断恢复展示入口。
 - 共享 Core 当前只有认证、凭据刷新和用量能力，没有模型目录、API 协议类型、推理请求与流式结果契约；
 - 先前草案中的 `ProviderRuntime` 强制所有实现提供用量方法，错误地以 PolyQuota 能力定义共享服务商边界；
@@ -667,7 +667,7 @@ interface PolyQuotaSnapshot {
 
 ### 10.1 IPolyQuotaService
 
-公共契约应位于 UI、preload 与主进程都能依赖的轻量包中，例如未来的 `packages/polyquota-contract`。该包只能包含类型、schema 和纯序列化辅助函数，不依赖 Vue、Electron、数据库或 Node API。
+公共契约位于 UI、preload 与主进程都能依赖的轻量包 `packages/polyquota-contract` 中（已落地，见第 15 节阶段 D 进展记录）。该包只能包含类型、schema 和纯序列化辅助函数，不依赖 Vue、Electron、数据库或 Node API。
 
 ```ts
 interface IPolyQuotaService {
@@ -866,14 +866,14 @@ Electron 测试只覆盖共享 schema、固定通道、订阅释放、CSP、prel
 
 ### 阶段 A：盘点基线并建立共享类型
 
-1. 以 OmniRoute 探索文档和 24 个 vendor 产物清单固定“上游原始结构/当前已搬运/尚未搬运”三种事实；
+1. 以 OmniRoute 探索文档和 vendor 产物清单（成文时 24 个，现为 49 个）固定“上游原始结构/当前已搬运/尚未搬运”三种事实；
 2. 建立 provider、offering、account、protocol route、model、operation 和 capability 的轻量公共类型及运行时 schema；
 3. 明确当前 Codex、GLM 实现只覆盖 account/usage，不伪装成已支持 inference；
 4. 为 GraphAgent 的 `ModelPolicy` 和未来 `ModelLease` 引用共享标识，不再自建 provider/apiType 字符串体系。
 
 这一阶段只建立可演进边界，不要求立即搬运 OmniRoute 的 translator、Executor 或完整模型表。
 
-进展记录（2026-09-30）：provider / offering / 认证方式的轻量声明与统一目录端点已落地——core 按供应商建立 `src/providers/<id>/` 目录（adapter 与 descriptor 同处一目录），`providers/catalog.ts` 聚合全部声明并在重复 provider、offering 或认证方式时构造失败；快照 `providers` 字段（`PublicProviderDescriptor[]`）经 IPC 提供给前端，schemaVersion 升至 2；UI 接入页的结构改为目录驱动，`presentation.ts` 只保留文案与图标。protocol route、model、operation 与 capability 类型仍未落地。
+进展记录（2026-09-30）：provider / offering / 认证方式的轻量声明与统一目录端点已落地——core 按供应商建立 `src/providers/<id>/` 目录（adapter 与 descriptor 同处一目录），`providers/catalog.ts` 聚合全部声明并在重复 provider、offering 或认证方式时构造失败；快照 `providers` 字段（`PublicProviderDescriptor[]`）经 IPC 提供给前端，schemaVersion 升至 2（其后随快照契约演进，当前 `POLYQUOTA_SCHEMA_VERSION` 为 3）；UI 接入页的结构改为目录驱动，`presentation.ts` 只保留文案与图标。protocol route、model、operation 与 capability 类型仍未落地。
 
 ### 阶段 B：能力注册表包装现有实现
 
@@ -902,6 +902,8 @@ Electron 测试只覆盖共享 schema、固定通道、订阅释放、CSP、prel
 5. 把 plan、quota、extra 文案映射改为 offering 或扩展展示器；
 6. 删除 Core 与 UI 重复的 `ProviderId`、`AuthMethod` 定义；
 7. 清理旧 `publicMetadata` 和逐账号读取 API。
+
+进展记录：第 1—3 条已随[运行流程与通信机制现状报告](../../polyquota/runtime-and-communication-review.md)第 7.1、7.2 节实施完成——`packages/polyquota-contract` 已建立为 UI、preload 与主进程的共同契约来源，preload 全局已更名为 `window.polyQuotaElectronService`，带 `revision` 的 `getSnapshot()` 与失效事件已替代分散读取；第 6 条部分完成（UI 侧已改为 re-export 契约定义，Core 与契约包的重复仍在）。
 
 ### 阶段 E：在 GraphAgent 可运行前固定推理骨架
 
