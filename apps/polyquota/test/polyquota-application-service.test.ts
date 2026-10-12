@@ -2,11 +2,18 @@ import { describe, expect, it, vi } from "vitest";
 import {
   CredentialVault,
   MemoryStorage,
+  computeCompositeRemaining,
+  providerCatalog,
   type Account,
   type CredentialCipherPort,
   type RefreshOutcome,
 } from "@astra-conductor/core/internal";
-import type { PolyQuotaChangedEvent } from "@astra-conductor/polyquota-contract";
+import {
+  parseSnapshot,
+  type PolyQuotaChangedEvent,
+  type PolyQuotaSnapshot,
+  type PublicProviderDescriptor,
+} from "@astra-conductor/polyquota-contract";
 import type { AuthCoordinator } from "@astra-conductor/core/internal";
 import { PolyQuotaApplicationService } from "../src/polyquota-application-service.js";
 import type { PollingService } from "../src/polling-service.js";
@@ -40,7 +47,10 @@ const refreshOutcome: Extract<RefreshOutcome, { status: "updated" }> = {
   notifications: [],
 };
 
-function createService(savedAccount: Account = account) {
+function createService(
+  savedAccount: Account = account,
+  catalog: readonly PublicProviderDescriptor[] = [],
+) {
   const storage = new MemoryStorage();
   storage.accounts.save(savedAccount);
   storage.snapshots.save(refreshOutcome.snapshot);
@@ -82,7 +92,7 @@ function createService(savedAccount: Account = account) {
     auth,
     {
       publishChanged: (event) => events.push(event),
-      providerCatalog: [],
+      providerCatalog: catalog,
       resetCreditRedeemers,
       detectProxyStatus,
       now: () => new Date("2026-09-27T00:02:00.000Z"),
@@ -99,6 +109,16 @@ function createService(savedAccount: Account = account) {
   return { service, storage, polling, scheduler, events, redeemResetCredit, detectProxyStatus };
 }
 
+function remainingFromVisibleUsage(snapshot: PolyQuotaSnapshot) {
+  return computeCompositeRemaining(
+    snapshot.accounts.map((item) => ({
+      enabled: item.enabled,
+      provider: item.provider,
+      snapshot: snapshot.usageByAccountId[item.id] ?? null,
+    })),
+  );
+}
+
 describe("PolyQuotaApplicationService", () => {
   it("returns one revisioned snapshot with matching account and usage keys", async () => {
     const { service } = createService();
@@ -107,7 +127,293 @@ describe("PolyQuotaApplicationService", () => {
     expect(snapshot.accounts.map((item) => item.id)).toEqual([account.id]);
     expect(Object.keys(snapshot.usageByAccountId)).toEqual([account.id]);
     expect(snapshot.usageByAccountId[account.id]?.plan).toBe("plus");
-    expect(snapshot.settings).toEqual({ pollingEnabled: true, pollingIntervalMinutes: 15 });
+    expect(snapshot.settings).toEqual({
+      pollingEnabled: true,
+      pollingIntervalMinutes: 15,
+      taskbarProgressEnabled: true,
+    });
+    expect(snapshot.compositeRemaining).toMatchObject({
+      status: "incomplete",
+      enabledAccountCount: 1,
+      scoredAccountCount: 0,
+    });
+  });
+
+  it("emits a snapshot the desktop preload parser accepts, including the live provider catalog", async () => {
+    const { service, storage } = createService(account, providerCatalog);
+    storage.snapshots.save({
+      ...refreshOutcome.snapshot,
+      groups: [
+        {
+          key: "default",
+          displayName: null,
+          quotas: [
+            {
+              key: "session",
+              displayName: null,
+              windowSeconds: 18_000,
+              used: 0,
+              total: 100,
+              remaining: 100,
+              remainingPercentage: 100,
+              resetAt: null,
+              unlimited: false,
+            },
+            {
+              key: "weekly",
+              displayName: null,
+              windowSeconds: 604_800,
+              used: 0,
+              total: 100,
+              remaining: 100,
+              remainingPercentage: 100,
+              resetAt: null,
+              unlimited: false,
+            },
+          ],
+        },
+      ],
+    });
+    const snapshot = structuredClone(await service.getSnapshot());
+    expect(() => parseSnapshot(snapshot)).not.toThrow();
+    expect(parseSnapshot(snapshot).compositeRemaining.status).toBe("complete");
+    expect(parseSnapshot(snapshot).providers.length).toBeGreaterThan(0);
+  });
+
+  it("computes composite remaining from enabled account snapshots", async () => {
+    const { service, storage } = createService();
+    storage.snapshots.save({
+      ...refreshOutcome.snapshot,
+      groups: [
+        {
+          key: "default",
+          displayName: null,
+          quotas: [
+            {
+              key: "session",
+              displayName: null,
+              windowSeconds: 18_000,
+              used: 20,
+              total: 100,
+              remaining: 80,
+              remainingPercentage: 80,
+              resetAt: null,
+              unlimited: false,
+            },
+            {
+              key: "weekly",
+              displayName: null,
+              windowSeconds: 604_800,
+              used: 50,
+              total: 100,
+              remaining: 50,
+              remainingPercentage: 50,
+              resetAt: null,
+              unlimited: false,
+            },
+          ],
+        },
+      ],
+    });
+
+    await expect(service.getSnapshot()).resolves.toMatchObject({
+      compositeRemaining: {
+        status: "complete",
+        sessionScore: 80,
+        weeklyScore: 50,
+        remaining: 50,
+        band: "attention",
+        sessionBand: "healthy",
+        weeklyBand: "attention",
+        enabledAccountCount: 1,
+        scoredAccountCount: 1,
+      },
+    });
+  });
+
+  it("recomputes R from all stored snapshots on startup and after one account refresh", async () => {
+    const second: Account = {
+      ...account,
+      id: "account-2",
+      stableIdentity: "codex:second",
+      displayName: "Second account",
+    };
+    const { service, storage } = createService();
+    storage.accounts.save(second);
+    const quotas = (
+      session: number,
+      weekly: number,
+      fetchedAt: string,
+      accountId: string,
+    ): (typeof refreshOutcome)["snapshot"] => ({
+      accountId,
+      plan: "plus",
+      overallRemainingPercentage: Math.min(session, weekly),
+      fetchedAt,
+      extras: [],
+      groups: [
+        {
+          key: "default",
+          displayName: null,
+          quotas: [
+            {
+              key: "session",
+              displayName: null,
+              windowSeconds: 18_000,
+              used: 100 - session,
+              total: 100,
+              remaining: session,
+              remainingPercentage: session,
+              resetAt: null,
+              unlimited: false,
+            },
+            {
+              key: "weekly",
+              displayName: null,
+              windowSeconds: 604_800,
+              used: 100 - weekly,
+              total: 100,
+              remaining: weekly,
+              remainingPercentage: weekly,
+              resetAt: null,
+              unlimited: false,
+            },
+          ],
+        },
+      ],
+    });
+    storage.snapshots.save(quotas(80, 40, "2026-09-26T00:00:00.000Z", account.id));
+    storage.snapshots.save(quotas(20, 90, "2026-09-26T00:00:00.000Z", second.id));
+
+    await expect(service.getSnapshot()).resolves.toMatchObject({
+      compositeRemaining: {
+        status: "complete",
+        sessionScore: 50,
+        weeklyScore: 65,
+        remaining: 50,
+        scoredAccountCount: 2,
+      },
+    });
+
+    storage.snapshots.save(quotas(100, 100, "2026-09-27T00:02:00.000Z", account.id));
+    await expect(service.getSnapshot()).resolves.toMatchObject({
+      compositeRemaining: {
+        status: "complete",
+        sessionScore: 60,
+        weeklyScore: 95,
+        remaining: 60,
+        scoredAccountCount: 2,
+      },
+    });
+  });
+
+  it("derives R from visible enabled-account usage and stays stable across repeated reads", async () => {
+    const second: Account = {
+      ...account,
+      id: "account-2",
+      stableIdentity: "codex:second",
+      displayName: "Second account",
+    };
+    const { service, storage } = createService();
+    storage.accounts.save(second);
+    storage.snapshots.save({
+      ...refreshOutcome.snapshot,
+      groups: [
+        {
+          key: "default",
+          displayName: null,
+          quotas: [
+            {
+              key: "session",
+              displayName: null,
+              windowSeconds: 18_000,
+              used: 20,
+              total: 100,
+              remaining: 80,
+              remainingPercentage: 80,
+              resetAt: null,
+              unlimited: false,
+            },
+            {
+              key: "weekly",
+              displayName: null,
+              windowSeconds: 604_800,
+              used: 60,
+              total: 100,
+              remaining: 40,
+              remainingPercentage: 40,
+              resetAt: null,
+              unlimited: false,
+            },
+          ],
+        },
+      ],
+    });
+    storage.snapshots.save({
+      accountId: second.id,
+      plan: "plus",
+      overallRemainingPercentage: 20,
+      extras: [],
+      fetchedAt: "2026-09-26T00:00:00.000Z",
+      groups: [
+        {
+          key: "default",
+          displayName: null,
+          quotas: [
+            {
+              key: "session",
+              displayName: null,
+              windowSeconds: 18_000,
+              used: 80,
+              total: 100,
+              remaining: 20,
+              remainingPercentage: 20,
+              resetAt: null,
+              unlimited: false,
+            },
+            {
+              key: "weekly",
+              displayName: null,
+              windowSeconds: 604_800,
+              used: 10,
+              total: 100,
+              remaining: 90,
+              remainingPercentage: 90,
+              resetAt: null,
+              unlimited: false,
+            },
+          ],
+        },
+      ],
+    });
+
+    const first = await service.getSnapshot();
+    const secondRead = await service.getSnapshot();
+    expect(first.compositeRemaining).toEqual(remainingFromVisibleUsage(first));
+    expect(secondRead.compositeRemaining).toEqual(first.compositeRemaining);
+    expect(first.compositeRemaining).toMatchObject({
+      remaining: 50,
+      sessionScore: 50,
+      weeklyScore: 65,
+      scoredAccountCount: 2,
+    });
+
+    service.setAccountEnabled(second.id, false);
+    const afterDisable = await service.getSnapshot();
+    expect(afterDisable.compositeRemaining).toEqual(remainingFromVisibleUsage(afterDisable));
+    expect(afterDisable.compositeRemaining).toMatchObject({
+      remaining: 40,
+      sessionScore: 80,
+      weeklyScore: 40,
+      enabledAccountCount: 1,
+      scoredAccountCount: 1,
+    });
+
+    service.deleteAccount(account.id);
+    const afterDelete = await service.getSnapshot();
+    expect(afterDelete.compositeRemaining).toEqual(remainingFromVisibleUsage(afterDelete));
+    expect(afterDelete.compositeRemaining.status).toBe("empty");
+    expect(afterDelete.compositeRemaining.remaining).toBeNull();
   });
 
   it("answers system status by invoking the injected on-demand proxy detector", async () => {

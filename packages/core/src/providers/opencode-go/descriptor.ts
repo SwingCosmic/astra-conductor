@@ -13,4 +13,14 @@ export const opencodeGoDescriptor: ProviderDescriptor = {
       authMethods: [{ method: "api-key", interaction: "secret-form" }],
     },
   ],
+  // Single product, no published relative ladder. "Go" here is the product name.
+  plans: [
+    {
+      id: "opencode-go",
+      displayName: "OpenCode Go",
+      match: ["opencode go"],
+      multiplier: 5,
+      source: "inferred",
+    },
+  ],
 };

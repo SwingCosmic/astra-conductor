@@ -3,22 +3,28 @@ import { computed, reactive, ref } from "vue";
 import ChevronIcon from "./ChevronIcon.vue";
 import type {
   PublicAccount,
+  PublicPlanDescriptor,
   PublicUsage,
   UsageExtra,
   UsageExtraItem,
   UsageQuota,
   UsageQuotaGroup,
 } from "../models";
+import { publicPlanDisplayName } from "@astra-conductor/polyquota-contract";
 import {
   extraLabel,
   extraItemLabel,
   groupLabel,
-  planLabel,
   providerPresentation,
   quotaLabel,
 } from "../presentation";
 
-const props = defineProps<{ account: PublicAccount; usage: PublicUsage | null; busy: boolean }>();
+const props = defineProps<{
+  account: PublicAccount;
+  usage: PublicUsage | null;
+  busy: boolean;
+  plans?: readonly PublicPlanDescriptor[];
+}>();
 const emit = defineEmits<{ refresh: []; toggle: []; redeem: [selectionToken: string] }>();
 
 type Tone = "unknown" | "ok" | "warning" | "danger" | "critical";
@@ -26,6 +32,10 @@ const collapsed = reactive(new Set<string>());
 const selectedExtra = ref<UsageExtra | null>(null);
 const presentation = computed(() => providerPresentation(props.account));
 const cardTone = computed(() => tone(props.usage?.overallRemainingPercentage ?? null));
+const planName = computed(() => {
+  const raw = props.usage?.plan.trim() ?? "";
+  return raw ? publicPlanDisplayName(props.plans, raw) : null;
+});
 
 function tone(percent: number | null): Tone {
   if (percent === null) return "unknown";
@@ -98,12 +108,11 @@ function useResetCredit(item: UsageExtraItem): void {
         <template v-else>{{ presentation.mark }}</template>
       </span>
       <div class="provider-identity">
-        <h2>{{ presentation.name }}</h2>
-        <p>
-          <span>{{ usage ? planLabel(account, usage.plan) : "未刷新" }}</span>
-          <span aria-hidden="true">·</span>
-          <span>{{ account.maskedIdentifier }}</span>
-        </p>
+        <div class="provider-title">
+          <h2>{{ presentation.name }}</h2>
+          <span v-if="planName" class="plan-tag">{{ planName }}</span>
+        </div>
+        <p>{{ account.maskedIdentifier }}</p>
       </div>
       <label class="switch-field">
         <input

@@ -5,6 +5,7 @@ import gptIcon from "./assets/icon/gpt.png";
 import grokIcon from "./assets/icon/grok.svg";
 import opencodeIcon from "./assets/icon/opencode.png";
 import zaiIcon from "./assets/icon/zai.svg";
+import { publicPlanDisplayName } from "@astra-conductor/polyquota-contract";
 import type {
   AuthMethod,
   GlmRegion,
@@ -34,7 +35,6 @@ export interface ProviderPresentation {
   available: boolean;
   authMethods: AuthMethodPresentation[];
   cliImportPath?: string;
-  planLabels: Record<string, string>;
   quotaLabels: Record<string, string>;
   groupLabels: Record<string, string>;
   extraLabels: Record<string, string>;
@@ -77,8 +77,8 @@ const claudeCliImport: AuthMethodPresentation = {
 
 /**
  * 本地文案与视觉注册表，按 offering id 索引。接入哪些服务商、每家提供哪些
- * 认证方式由主进程快照中的 provider 目录决定；这里只补充图标、标签映射和
- * 目录缺失时的展示回退，不决定可用性。
+ * 认证方式由主进程快照中的 provider 目录决定；这里只补充图标、配额/附加项
+ * 标签和目录缺失时的展示回退。套餐展示名来自目录里的 `plans`，不在此映射。
  */
 const presentationRegistry: ProviderPresentation[] = [
   {
@@ -95,16 +95,6 @@ const presentationRegistry: ProviderPresentation[] = [
       authMethods["cli-import"],
     ],
     cliImportPath: "~/.codex/auth.json",
-    planLabels: {
-      prolite: "Pro 5x",
-      free: "Free",
-      go: "Go",
-      plus: "Plus",
-      pro: "Pro",
-      team: "Team",
-      enterprise: "Enterprise",
-      edu: "Edu",
-    },
     quotaLabels: {
       session: "5-hour",
       weekly: "Weekly",
@@ -127,14 +117,6 @@ const presentationRegistry: ProviderPresentation[] = [
     available: true,
     authMethods: [zcodeImport, authMethods["api-key"]],
     cliImportPath: "~/.zcode/v2/credentials.json",
-    planLabels: {
-      lite: "Lite",
-      pro: "Pro",
-      max: "Max",
-      "glm coding lite": "Lite",
-      "glm coding pro": "Pro",
-      "glm coding max": "Max",
-    },
     quotaLabels: { session: "5 Hours Quota", weekly: "Weekly Quota", mcp_monthly: "Monthly" },
     groupLabels: {},
     extraLabels: { "reset-credits": "重置卡" },
@@ -152,14 +134,6 @@ const presentationRegistry: ProviderPresentation[] = [
     available: true,
     authMethods: [zcodeImport, authMethods["api-key"]],
     cliImportPath: "~/.zcode/v2/credentials.json",
-    planLabels: {
-      lite: "Lite",
-      pro: "Pro",
-      max: "Max",
-      "glm coding lite": "Lite",
-      "glm coding pro": "Pro",
-      "glm coding max": "Max",
-    },
     quotaLabels: { session: "5 Hours Quota", weekly: "Weekly Quota", mcp_monthly: "Monthly" },
     groupLabels: {},
     extraLabels: { "reset-credits": "重置卡" },
@@ -175,7 +149,6 @@ const presentationRegistry: ProviderPresentation[] = [
     available: true,
     authMethods: [authMethods["device-code"], authMethods["browser-oauth"], grokCliImport],
     cliImportPath: "~/.grok/auth.json",
-    planLabels: {},
     quotaLabels: { weekly: "Weekly" },
     groupLabels: {},
     extraLabels: {
@@ -194,7 +167,6 @@ const presentationRegistry: ProviderPresentation[] = [
     icon: antigravityIcon,
     available: true,
     authMethods: [authMethods["browser-oauth"]],
-    planLabels: {},
     quotaLabels: {},
     groupLabels: {},
     extraLabels: {},
@@ -211,7 +183,6 @@ const presentationRegistry: ProviderPresentation[] = [
     available: true,
     authMethods: [claudeCliImport],
     cliImportPath: "~/.claude/.credentials.json",
-    planLabels: {},
     quotaLabels: { session: "5-hour", weekly: "Weekly" },
     groupLabels: { "model-limits": "Model limits" },
     extraLabels: {},
@@ -227,7 +198,6 @@ const presentationRegistry: ProviderPresentation[] = [
     websiteUrl: "https://opencode.ai/zen",
     available: true,
     authMethods: [authMethods["api-key"]],
-    planLabels: {},
     quotaLabels: { session: "$12 / 5-hour", weekly: "$30 / week", monthly: "$60 / month" },
     groupLabels: {},
     extraLabels: {},
@@ -266,7 +236,6 @@ export function catalogPresentations(
           id: method.method,
           label: method.sourceLabel ?? authMethods[method.method].label,
         })),
-        planLabels: fallback?.planLabels ?? {},
         quotaLabels: fallback?.quotaLabels ?? {},
         groupLabels: fallback?.groupLabels ?? {},
         extraLabels: fallback?.extraLabels ?? {},
@@ -309,10 +278,14 @@ function windowLabel(seconds: number | null): string | null {
   return null;
 }
 
-export function planLabel(provider: ProviderId | PublicAccount, plan: string): string {
-  const value = plan.trim();
-  if (!value) return "未提供";
-  return providerPresentation(provider).planLabels[value.toLowerCase()] ?? value;
+export function planLabel(
+  provider: ProviderId | PublicAccount,
+  plan: string,
+  catalog?: readonly PublicProviderDescriptor[] | null,
+): string {
+  const providerId = typeof provider === "string" ? provider : provider.provider;
+  const plans = catalog?.find((item) => item.provider === providerId)?.plans;
+  return publicPlanDisplayName(plans, plan);
 }
 
 export function quotaLabel(provider: ProviderId | PublicAccount, quota: UsageQuota): string {

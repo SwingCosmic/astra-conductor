@@ -36,9 +36,22 @@ export function toPublicUsage(snapshot: UsageSnapshot): PublicUsageDto {
       quotas: group.quotas.map((quota) => {
         const legacyQuota = quota as typeof quota & { title?: string };
         return {
-          ...quota,
+          key: quota.key,
           displayName: quota.displayName ?? legacyQuota.title ?? null,
           windowSeconds: quota.windowSeconds ?? null,
+          used: typeof quota.used === "number" && Number.isFinite(quota.used) ? quota.used : 0,
+          total: typeof quota.total === "number" && Number.isFinite(quota.total) ? quota.total : 0,
+          remaining:
+            typeof quota.remaining === "number" && Number.isFinite(quota.remaining)
+              ? quota.remaining
+              : null,
+          remainingPercentage:
+            typeof quota.remainingPercentage === "number" &&
+            Number.isFinite(quota.remainingPercentage)
+              ? quota.remainingPercentage
+              : null,
+          resetAt: quota.resetAt ?? null,
+          unlimited: quota.unlimited === true,
         };
       }),
     };
@@ -51,7 +64,7 @@ export function toPublicUsage(snapshot: UsageSnapshot): PublicUsageDto {
   }
   value.extras = value.extras.map(({ key, value: extraValue, items }) => ({
     key,
-    value: extraValue,
+    value: String(extraValue),
     ...(Array.isArray(items)
       ? {
           items: items.map((item) => ({

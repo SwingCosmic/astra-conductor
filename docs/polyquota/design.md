@@ -155,9 +155,9 @@ Codex 所需上游文件先由手工样板和逐文件 diff 确认，真实闭�
 
 界面使用 Vue 3 重新实现。`docs/common/core/omniroute.png` 只确认卡片、套餐、配额、重置时间和刷新这些信息层级。可见文案以本节为准。
 
-每张卡片呈现服务名称、套餐、打码账号、配额、重置时间、更新时间、状态开关和刷新反馈。套餐名称使用面向用户的服务商名称，不直接暴露协议内部值；除已经确认的名称映射外，只做首字母大小写等轻量整理，不翻译成中文。配额剩余量位于进度条右侧，重置时间位于进度条下方。停用账号仍保留最近一次用量卡片，使用弱化状态和关闭的右上角开关表示，不参与自动刷新和通知。
+每张卡片呈现服务名称、套餐、打码账号、配额、重置时间、更新时间、状态开关和刷新反馈。套餐展示名从 core 套餐配置的 `displayName` 经快照 `providers[].plans` 下发，命中 `match` 后显示配置名，未命中则原样显示 `usage.plan`。前端不得再维护套餐名称映射表。档位名画成圆头标签（四角半径为高度的 50%），放在供应商名称右侧；打码账号单独在名称下方，避免邮箱过长截断档位。配额剩余量位于进度条右侧，重置时间位于进度条下方。停用账号仍保留最近一次用量卡片，使用弱化状态和关闭的右上角开关表示，不参与自动刷新和通知。用量概览页头与标题+说明、刷新按钮同一行并排展示 session（5h）与 week 两个小环形进度，得分来自快照里的 `compositeRemaining`，不在前端重算。托盘换色和 Windows 任务栏进度使用同一口径的综合剩余 R，详见[产品信息与图标方案](./product-identity-and-runtime-icon-plan.md)第 5 节。
 
-服务适配器只返回原始套餐值、原始展示名、窗口秒数、额度数值和重置时间等事实字段，不生成 `5-hour`、`Weekly`、`Pro 5x`、`Reset credits` 等产品文案。服务商名称、认证方式名称、套餐映射、配额标题、分组标题和附加项标题统一维护在 UI 侧服务商字典中；新增服务商时扩展字典和适配器注册，不修改公共卡片与刷新流程。
+服务适配器只返回原始套餐值、原始展示名、窗口秒数、额度数值和重置时间等事实字段，不生成 `5-hour`、`Weekly`、`Pro 5x`、`Reset credits` 等产品文案。服务商名称、认证方式名称、配额标题、分组标题和附加项标题仍由 UI 侧服务商字典补充；**套餐展示名只来自套餐配置**，新增或改名时改 `descriptor.ts` 的 `plans`，不改卡片组件。
 
 GLM 的国内与国际 Coding Plan 在核心中共用 `glm` 适配器，由账号的 `region` 选择端点；界面必须分别呈现 `BigModel Coding Plan` 和 `Z.ai Coding Plan`，并分别维护名称、描述、图标和官网地址。ZCode v2 导入只读取对应 Individual Coding Plan 账号的长期 API Key，解密后仍先通过配额接口验证，再保存本应用的加密副本；不导入或接管 ZCode OAuth 令牌，也不回写原文件。ZCode 中的 `BigModel API` 与 `Z.ai API` 属于标准按量 API，不复用 Coding Plan 配额接口，本阶段不接入。
 
@@ -167,9 +167,9 @@ GLM 的国内与国际 Coding Plan 在核心中共用 `glm` 适配器，由账�
 
 | 服务            | 套餐原文来源                                              | 已见到的原文                                                                                                  | 配额标题                                                                                                                                                                         |
 | --------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Codex / ChatGPT | 用量响应 `plan_type`，以及登录 JWT 的 `chatgpt_plan_type` | `free`、`go`、`plus`、`pro`、`team`、`enterprise`、`edu`，界面写成 Free、Go、Plus、Pro、Team、Enterprise、Edu | 短窗口 `5-hour`；长窗口 `Weekly`。另有窗口时用上游 `limit_name` 加同样的时长，例如 `GPT-5.3-Codex-Spark` 的 `5-hour` 与 `Weekly`。重置次数是单独的只读数字，标题 `Reset credits` |
-| GLM             | `planName`，否则 `level`                                  | Coding Plan 的 `lite`、`pro`、`max`，界面写成 Lite、Pro、Max                                                  | `5 Hours Quota`、`Weekly Quota`。存在月度工具窗口时加 `Monthly`；重置卡按适用窗口和过期时间逐项展示，并支持确认使用                                                               |
-| Grok Build      | `/user` 的 `subscriptionTier`                             | `SuperGrokPro`、`SuperGrok Heavy`，以及用量页上的 `Grokpro`。字符串原样展示                                   | 产品名用计费响应里的产品名，如 `GrokChat`、`Grok Build`。账户级百分比标题为 `Weekly`。不展示余额、自动充值或其他充值相关内容                                                       |
+| Codex / ChatGPT | 用量响应 `plan_type`，以及登录 JWT 的 `chatgpt_plan_type` | `free`、`go`、`plus`、`prolite`、`pro`、`team`、`enterprise`、`edu` 等；界面用套餐配置的 `displayName`（如 `prolite` → Pro 5x），未登记的原样展示 | 短窗口 `5-hour`；长窗口 `Weekly`。另有窗口时用上游 `limit_name` 加同样的时长，例如 `GPT-5.3-Codex-Spark` 的 `5-hour` 与 `Weekly`。重置次数是单独的只读数字，标题 `Reset credits` |
+| GLM             | `planName`，否则 `level`                                  | Coding Plan 的 `lite`、`pro`、`max` 等；界面用套餐配置的 `displayName`                                        | `5 Hours Quota`、`Weekly Quota`。存在月度工具窗口时加 `Monthly`；重置卡按适用窗口和过期时间逐项展示，并支持确认使用                                                               |
+| Grok Build      | `/user` 的 `subscriptionTier`                             | `SuperGrokPro`、`SuperGrok Heavy`、`Grokpro` 等；命中配置则用 `displayName`，否则原样展示                     | 产品名用计费响应里的产品名，如 `GrokChat`、`Grok Build`。账户级百分比标题为 `Weekly`。不展示余额、自动充值或其他充值相关内容                                                       |
 | Antigravity     | `getAntigravityPlanLabel` 的结果                          | `Ultra`、`Pro`、`Enterprise`、`Business`、`Plus`、`Lite`、`Free`，以及原样保留的 `Starter`                    | 组标题和组内标题都用汇总响应里的 `displayName`                                                                                                                                   |
 | Claude Code     | OAuth 用量响应的 `tier` / `plan` / `subscription_type`   | 上游原文；缺失时回退到导入凭据或 bootstrap 中的等级                                                                        | `5-hour`、`Weekly`；模型范围限制单列为 `Model limits`                                                                                                                            |
 | OpenCode Go     | 固定产品名                                              | `OpenCode Go`                                                                                                               | `$12 / 5-hour`、`$30 / week`、`$60 / month`                                                                                                                                      |
@@ -232,7 +232,7 @@ Node 与 Electron 使用彼此隔离的原生二进制。workspace 中的 `bette
 - 首批四个服务能够使用本机真实账号完成用量获取，并与 OmniRoute 或官方页面在同一时间窗口内对照；
 - 停用账号后不再请求上游或发送通知；
 - 代理切换、凭证过期、网络失败和单个服务异常不会影响其他账号；系统代理开关对下一次新建请求生效；
-- 套餐名称保持上游原文；配额标题使用窗口或分组展示名，Codex 短窗口显示 `5-hour`；Antigravity 以分组标题展示整组配额；
+- 套餐名称取自套餐配置的 `displayName`，未命中时保持上游原文；配额标题使用窗口或分组展示名，Codex 短窗口显示 `5-hour`；Antigravity 以分组标题展示整组配额；
 - 日志、IPC 和系统通知中不出现明文凭证；
 - 应用构建不编译或打包 `references/omniroute`；
 - `packages/polyquota-ui` 不依赖 OmniRoute 的界面代码；

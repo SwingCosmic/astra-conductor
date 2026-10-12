@@ -1,11 +1,28 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_PLAN_MULTIPLIER,
   findOffering,
   getProviderDescriptor,
+  matchProviderPlan,
+  planMultiplier,
   providerCatalog,
   validateProviderCatalog,
   type ProviderDescriptor,
 } from "../src/internal.js";
+
+const catalogFixture: ProviderDescriptor = {
+  provider: "codex",
+  displayName: "Codex",
+  offerings: [
+    {
+      id: "codex",
+      provider: "codex",
+      displayName: "Codex",
+      authMethods: [{ method: "browser-oauth", interaction: "browser-callback" }],
+    },
+  ],
+  plans: [],
+};
 
 describe("provider catalog", () => {
   it("collects the implemented providers with their offerings", () => {
@@ -43,35 +60,28 @@ describe("provider catalog", () => {
   });
 
   it("rejects duplicate providers, offerings, methods and broken ownership", () => {
-    const base: ProviderDescriptor = {
-      provider: "codex",
-      displayName: "Codex",
-      offerings: [
-        {
-          id: "codex",
-          provider: "codex",
-          displayName: "Codex",
-          authMethods: [{ method: "browser-oauth", interaction: "browser-callback" }],
-        },
-      ],
-    };
-    expect(() => validateProviderCatalog([base, { ...base }])).toThrow(/duplicate provider/);
+    expect(() => validateProviderCatalog([catalogFixture, { ...catalogFixture }])).toThrow(
+      /duplicate provider/,
+    );
     expect(() =>
       validateProviderCatalog([
         {
-          ...base,
-          offerings: [...base.offerings, { ...base.offerings[0]! }],
+          ...catalogFixture,
+          offerings: [...catalogFixture.offerings, { ...catalogFixture.offerings[0]! }],
         },
       ]),
     ).toThrow(/duplicate offering/);
     expect(() =>
       validateProviderCatalog([
         {
-          ...base,
+          ...catalogFixture,
           offerings: [
             {
-              ...base.offerings[0]!,
-              authMethods: [...base.offerings[0]!.authMethods, ...base.offerings[0]!.authMethods],
+              ...catalogFixture.offerings[0]!,
+              authMethods: [
+                ...catalogFixture.offerings[0]!.authMethods,
+                ...catalogFixture.offerings[0]!.authMethods,
+              ],
             },
           ],
         },
@@ -80,11 +90,71 @@ describe("provider catalog", () => {
     expect(() =>
       validateProviderCatalog([
         {
-          ...base,
-          offerings: [{ ...base.offerings[0]!, provider: "glm" }],
+          ...catalogFixture,
+          offerings: [{ ...catalogFixture.offerings[0]!, provider: "glm" }],
         },
       ]),
     ).toThrow(/owned by/);
-    expect(() => validateProviderCatalog([{ ...base, offerings: [] }])).toThrow(/no offerings/);
+    expect(() => validateProviderCatalog([{ ...catalogFixture, offerings: [] }])).toThrow(
+      /no offerings/,
+    );
+  });
+
+  it("rejects duplicate plan ids, match keys, and invalid multipliers", () => {
+    const plan = {
+      id: "plus",
+      displayName: "Plus",
+      match: ["plus"],
+      multiplier: 1,
+      source: "published" as const,
+    };
+    expect(() =>
+      validateProviderCatalog([
+        { ...catalogFixture, plans: [plan, { ...plan, match: ["plus-alias"] }] },
+      ]),
+    ).toThrow(/duplicate plan/);
+    expect(() =>
+      validateProviderCatalog([
+        { ...catalogFixture, plans: [plan, { ...plan, id: "plus-2", match: ["PLUS"] }] },
+      ]),
+    ).toThrow(/duplicate plan match/);
+    expect(() =>
+      validateProviderCatalog([{ ...catalogFixture, plans: [{ ...plan, multiplier: 0 }] }]),
+    ).toThrow(/invalid plan multiplier/);
+  });
+});
+
+describe("provider plan catalog", () => {
+  it("matches known identifiers without guessing unmatched names at runtime", () => {
+    expect(planMultiplier("codex", "go")).toBe(0.1);
+    expect(planMultiplier("codex", "plus")).toBe(1);
+    expect(planMultiplier("codex", "prolite")).toBe(5);
+    expect(planMultiplier("codex", "pro_5x")).toBe(5);
+    expect(planMultiplier("codex", "pro")).toBe(5);
+    expect(planMultiplier("codex", "pro 20x")).toBe(20);
+    expect(planMultiplier("codex", "team")).toBe(5);
+    expect(matchProviderPlan("codex", "ChatGPT Super Ultra")).toBeNull();
+    expect(planMultiplier("codex", "ChatGPT Super Ultra")).toBe(DEFAULT_PLAN_MULTIPLIER);
+
+    expect(planMultiplier("glm", "Glm Coding Pro")).toBe(6);
+    expect(planMultiplier("glm", "max")).toBe(14);
+    expect(planMultiplier("claude", "pro")).toBe(1);
+    expect(planMultiplier("claude", "max")).toBe(20);
+    expect(planMultiplier("claude", "default_claude_max_20x")).toBe(20);
+    expect(planMultiplier("claude", "Max 5x")).toBe(5);
+    expect(planMultiplier("antigravity", "Free")).toBe(0.1);
+    expect(planMultiplier("antigravity", "Plus")).toBe(1);
+    expect(planMultiplier("antigravity", "Pro")).toBe(5);
+    expect(planMultiplier("antigravity", "Ultra")).toBe(20);
+    expect(planMultiplier("grok-build", "SuperGrok Pro")).toBe(5);
+    expect(planMultiplier("grok-build", "SuperGrok Heavy")).toBe(20);
+    expect(planMultiplier("opencode-go", "OpenCode Go")).toBe(5);
+    expect(planMultiplier("glm", "")).toBe(DEFAULT_PLAN_MULTIPLIER);
+  });
+
+  it("lists a plan catalog on every registered provider", () => {
+    for (const descriptor of providerCatalog) {
+      expect(descriptor.plans.length, descriptor.provider).toBeGreaterThan(0);
+    }
   });
 });

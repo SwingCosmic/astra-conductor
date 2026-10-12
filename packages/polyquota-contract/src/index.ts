@@ -1,4 +1,4 @@
-export const POLYQUOTA_SCHEMA_VERSION = 2 as const;
+export const POLYQUOTA_SCHEMA_VERSION = 3 as const;
 
 export const providerIds = [
   "codex",
@@ -53,10 +53,17 @@ export interface PublicOfferingDescriptor {
   authMethods: PublicAuthMethodDescriptor[];
 }
 
+export interface PublicPlanDescriptor {
+  id: string;
+  displayName: string;
+  match: readonly string[];
+}
+
 export interface PublicProviderDescriptor {
   provider: ProviderId;
   displayName: string;
   offerings: PublicOfferingDescriptor[];
+  plans: readonly PublicPlanDescriptor[];
 }
 
 export interface UsageQuota {
@@ -111,6 +118,38 @@ export type IpcResult<T> = ServiceResult<T>;
 export interface Settings {
   pollingEnabled: boolean;
   pollingIntervalMinutes: number;
+  taskbarProgressEnabled: boolean;
+}
+
+export const remainingStatuses = ["empty", "complete", "incomplete"] as const;
+export type RemainingStatus = (typeof remainingStatuses)[number];
+export const remainingBands = ["healthy", "attention", "critical", "unknown"] as const;
+export type RemainingBand = (typeof remainingBands)[number];
+
+export interface PublicCompositeRemaining {
+  status: RemainingStatus;
+  sessionScore: number | null;
+  weeklyScore: number | null;
+  remaining: number | null;
+  band: RemainingBand;
+  sessionBand: RemainingBand;
+  weeklyBand: RemainingBand;
+  enabledAccountCount: number;
+  scoredAccountCount: number;
+}
+
+export function emptyCompositeRemaining(): PublicCompositeRemaining {
+  return {
+    status: "empty",
+    sessionScore: null,
+    weeklyScore: null,
+    remaining: null,
+    band: "unknown",
+    sessionBand: "unknown",
+    weeklyBand: "unknown",
+    enabledAccountCount: 0,
+    scoredAccountCount: 0,
+  };
 }
 
 export type StartAuthRequest =
@@ -206,6 +245,7 @@ export interface PolyQuotaSnapshot {
   providers: PublicProviderDescriptor[];
   accounts: PublicAccount[];
   usageByAccountId: Record<string, PublicUsage | null>;
+  compositeRemaining: PublicCompositeRemaining;
   operations: PublicOperationState[];
   settings: Settings;
   scheduler: PublicRefreshSchedulerState;
@@ -359,7 +399,6 @@ export function parseSessionId(value: unknown): string {
 
 export function parseSettings(value: unknown): Settings {
   const record = object(value, "settings");
-  exact(record, ["pollingEnabled", "pollingIntervalMinutes"], "settings");
   const pollingIntervalMinutes = number(
     record.pollingIntervalMinutes,
     "settings.pollingIntervalMinutes",
@@ -374,6 +413,10 @@ export function parseSettings(value: unknown): Settings {
   return {
     pollingEnabled: boolean(record.pollingEnabled, "settings.pollingEnabled"),
     pollingIntervalMinutes,
+    taskbarProgressEnabled:
+      record.taskbarProgressEnabled === undefined
+        ? true
+        : boolean(record.taskbarProgressEnabled, "settings.taskbarProgressEnabled"),
   };
 }
 
@@ -507,12 +550,55 @@ function parseOfferingDescriptor(value: unknown): PublicOfferingDescriptor {
   };
 }
 
+function parsePlanDescriptor(value: unknown): PublicPlanDescriptor {
+  const record = object(value, "plan");
+  const plan: PublicPlanDescriptor = {
+    id: string(record.id, "plan.id"),
+    displayName: string(record.displayName, "plan.displayName"),
+    match: array(record.match, "plan.match", (item) => string(item, "plan.match")),
+  };
+  if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(plan.id)) fail("plan.id");
+  if (!plan.displayName.trim()) fail("plan.displayName");
+  if (!plan.match.length) fail("plan.match");
+  return plan;
+}
+
+export function normalizePlanMatch(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, " ");
+}
+
+export function matchPublicPlan(
+  plans: readonly PublicPlanDescriptor[] | null | undefined,
+  plan: string | null | undefined,
+): PublicPlanDescriptor | null {
+  if (typeof plan !== "string" || !plans?.length) return null;
+  const key = normalizePlanMatch(plan);
+  if (!key) return null;
+  return (
+    plans.find((item) => item.match.some((candidate) => normalizePlanMatch(candidate) === key)) ??
+    null
+  );
+}
+
+export function publicPlanDisplayName(
+  plans: readonly PublicPlanDescriptor[] | null | undefined,
+  plan: string | null | undefined,
+): string {
+  const value = typeof plan === "string" ? plan.trim() : "";
+  if (!value) return "未提供";
+  return matchPublicPlan(plans, value)?.displayName ?? value;
+}
+
 export function parseProviderDescriptor(value: unknown): PublicProviderDescriptor {
   const record = object(value, "providerDescriptor");
   const descriptor: PublicProviderDescriptor = {
     provider: oneOf(record.provider, providerIds, "providerDescriptor.provider"),
     displayName: string(record.displayName, "providerDescriptor.displayName"),
     offerings: array(record.offerings, "providerDescriptor.offerings", parseOfferingDescriptor),
+    plans: array(record.plans, "providerDescriptor.plans", parsePlanDescriptor),
   };
   const seenOfferings = new Set<string>();
   for (const offering of descriptor.offerings) {
@@ -526,6 +612,18 @@ export function parseProviderDescriptor(value: unknown): PublicProviderDescripto
     for (const method of offering.authMethods) {
       if (seenMethods.has(method.method)) fail("authMethod.method");
       seenMethods.add(method.method);
+    }
+  }
+  const seenPlanIds = new Set<string>();
+  const seenPlanMatches = new Set<string>();
+  for (const plan of descriptor.plans) {
+    if (seenPlanIds.has(plan.id)) fail("plan.id");
+    seenPlanIds.add(plan.id);
+    for (const raw of plan.match) {
+      const key = normalizePlanMatch(raw);
+      if (!key) fail("plan.match");
+      if (seenPlanMatches.has(key)) fail("plan.match");
+      seenPlanMatches.add(key);
     }
   }
   return descriptor;
@@ -569,7 +667,8 @@ function parseUsageQuota(value: unknown): UsageQuota {
       number(item, "quota.remainingPercentage"),
     ),
     resetAt: nullableString(record.resetAt, "quota.resetAt"),
-    unlimited: boolean(record.unlimited, "quota.unlimited"),
+    unlimited:
+      record.unlimited === undefined ? false : boolean(record.unlimited, "quota.unlimited"),
   };
 }
 
@@ -786,9 +885,44 @@ export function parseSnapshot(value: unknown): PolyQuotaSnapshot {
     providers,
     accounts,
     usageByAccountId,
+    compositeRemaining:
+      record.compositeRemaining === undefined
+        ? emptyCompositeRemaining()
+        : parseCompositeRemaining(record.compositeRemaining),
     operations: array(record.operations, "snapshot.operations", parseOperation),
     settings: parseSettings(record.settings),
     scheduler: parseSchedulerState(record.scheduler),
+  };
+}
+
+function parseRemainingScore(value: unknown, path: string): number | null {
+  if (value === null) return null;
+  const result = number(value, path);
+  return Math.min(100, Math.max(0, result));
+}
+
+export function parseCompositeRemaining(value: unknown): PublicCompositeRemaining {
+  const record = object(value, "compositeRemaining");
+  const enabledAccountCount = nonnegativeInteger(
+    record.enabledAccountCount,
+    "compositeRemaining.enabledAccountCount",
+  );
+  const scoredAccountCount = nonnegativeInteger(
+    record.scoredAccountCount,
+    "compositeRemaining.scoredAccountCount",
+  );
+  if (scoredAccountCount > enabledAccountCount)
+    return fail("compositeRemaining.scoredAccountCount");
+  return {
+    status: oneOf(record.status, remainingStatuses, "compositeRemaining.status"),
+    sessionScore: parseRemainingScore(record.sessionScore, "compositeRemaining.sessionScore"),
+    weeklyScore: parseRemainingScore(record.weeklyScore, "compositeRemaining.weeklyScore"),
+    remaining: parseRemainingScore(record.remaining, "compositeRemaining.remaining"),
+    band: oneOf(record.band, remainingBands, "compositeRemaining.band"),
+    sessionBand: oneOf(record.sessionBand, remainingBands, "compositeRemaining.sessionBand"),
+    weeklyBand: oneOf(record.weeklyBand, remainingBands, "compositeRemaining.weeklyBand"),
+    enabledAccountCount,
+    scoredAccountCount,
   };
 }
 

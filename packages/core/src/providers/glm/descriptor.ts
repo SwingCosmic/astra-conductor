@@ -29,4 +29,28 @@ export const glmDescriptor: ProviderDescriptor = {
       ],
     },
   ],
+  // Official weekly credits Lite 10000 / Pro 60000 / Max 140000 → 1 : 6 : 14.
+  plans: [
+    {
+      id: "lite",
+      displayName: "Lite",
+      match: ["lite", "glm coding lite"],
+      multiplier: 1,
+      source: "published",
+    },
+    {
+      id: "pro",
+      displayName: "Pro",
+      match: ["pro", "glm coding pro"],
+      multiplier: 6,
+      source: "published",
+    },
+    {
+      id: "max",
+      displayName: "Max",
+      match: ["max", "glm coding max"],
+      multiplier: 14,
+      source: "published",
+    },
+  ],
 };

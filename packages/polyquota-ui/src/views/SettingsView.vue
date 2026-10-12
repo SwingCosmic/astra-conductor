@@ -59,8 +59,14 @@ onMounted(() => void load());
           type="number"
           min="5"
           max="1440" /></label
-      ><button class="primary-action" :disabled="busy" @click="save">保存设置</button
-      ><span v-if="message" class="save-message">{{ message }}</span>
+      ><label class="setting-row"
+        ><span
+          ><strong>任务栏显示额度进度</strong
+          ><small>关闭后仍保留托盘换色与用量概览双环</small></span
+        ><input v-model="draft.taskbarProgressEnabled" type="checkbox"
+      /></label>
+      <button class="primary-action" :disabled="busy" @click="save">保存设置</button>
+      <span v-if="message" class="save-message">{{ message }}</span>
       <p class="setting-hint">
         当前状态：{{ scheduler.status
         }}{{

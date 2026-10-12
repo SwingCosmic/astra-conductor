@@ -1,5 +1,6 @@
 import {
   POLYQUOTA_SCHEMA_VERSION,
+  emptyCompositeRemaining,
   type IPolyQuotaService,
   type PolyQuotaSnapshot,
   type PublicRefreshSchedulerState,
@@ -35,8 +36,9 @@ function emptySnapshot(): PolyQuotaSnapshot {
     providers: [],
     accounts: [],
     usageByAccountId: {},
+    compositeRemaining: emptyCompositeRemaining(),
     operations: [],
-    settings: { pollingEnabled: false, pollingIntervalMinutes: 15 },
+    settings: { pollingEnabled: false, pollingIntervalMinutes: 15, taskbarProgressEnabled: true },
     scheduler: emptyScheduler,
   };
 }

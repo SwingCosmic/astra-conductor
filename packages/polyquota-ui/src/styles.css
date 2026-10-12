@@ -101,10 +101,14 @@ button:disabled {
 }
 .content-header {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
-  gap: 20px;
-  align-items: flex-start;
+  gap: 16px 20px;
+  align-items: center;
   margin-bottom: 22px;
+}
+.content-header-copy {
+  min-width: 0;
 }
 .content-header h1 {
   margin: 0;
@@ -116,6 +120,76 @@ button:disabled {
   margin: 7px 0 0;
   color: #718096;
   font-size: 14px;
+}
+.content-header .usage-score-rings {
+  margin-right: auto;
+}
+.content-header .outline-action {
+  flex: none;
+}
+.usage-score-rings {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+}
+.usage-score-ring {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 40px;
+}
+.usage-score-dial {
+  position: relative;
+  width: 36px;
+  height: 36px;
+}
+.usage-score-dial svg {
+  display: block;
+  width: 36px;
+  height: 36px;
+  transform: rotate(-90deg);
+}
+.usage-score-track,
+.usage-score-fill {
+  fill: none;
+  stroke-width: 3.5;
+}
+.usage-score-track {
+  stroke: #e6ebf2;
+}
+.usage-score-fill {
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.2s ease;
+}
+.usage-score-fill.score-band-healthy {
+  stroke: #16b364;
+}
+.usage-score-fill.score-band-attention {
+  stroke: #f59e0b;
+}
+.usage-score-fill.score-band-critical {
+  stroke: #ef4444;
+}
+.usage-score-fill.score-band-unknown {
+  stroke: transparent;
+}
+.usage-score-value {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #334155;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+.usage-score-caption {
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.2;
 }
 .outline-action,
 .primary-action,
@@ -273,13 +347,33 @@ button:disabled {
   min-width: 0;
   flex: 1;
 }
-.provider-identity h2 {
+.provider-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.provider-title h2 {
   margin: 0;
+  min-width: 0;
+  overflow: hidden;
   font-size: 17px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.plan-tag {
+  flex: 0 0 auto;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #fff;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
 }
 .provider-identity p {
-  display: flex;
-  gap: 8px;
   margin: 5px 0 0;
   overflow: hidden;
   color: #52627b;

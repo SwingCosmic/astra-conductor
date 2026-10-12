@@ -10,6 +10,7 @@ import {
   parseSnapshot,
   parseStartAuthRequest,
   parseSystemStatus,
+  publicPlanDisplayName,
 } from "../src/index";
 
 describe("PolyQuota contract", () => {
@@ -49,6 +50,22 @@ describe("PolyQuota contract", () => {
   });
 
   it("rejects unknown request fields and invalid polling intervals", () => {
+    expect(
+      parseSettings({
+        pollingEnabled: true,
+        pollingIntervalMinutes: 15,
+        taskbarProgressEnabled: false,
+      }),
+    ).toEqual({
+      pollingEnabled: true,
+      pollingIntervalMinutes: 15,
+      taskbarProgressEnabled: false,
+    });
+    expect(parseSettings({ pollingEnabled: true, pollingIntervalMinutes: 15 })).toEqual({
+      pollingEnabled: true,
+      pollingIntervalMinutes: 15,
+      taskbarProgressEnabled: true,
+    });
     expect(() => parseSettings({ pollingEnabled: true, pollingIntervalMinutes: 4 })).toThrow(
       ContractValidationError,
     );
@@ -60,7 +77,7 @@ describe("PolyQuota contract", () => {
   it("rejects changed events from a different contract version", () => {
     expect(() =>
       parseChangedEvent({
-        schemaVersion: 3,
+        schemaVersion: 4,
         revision: 1,
         reasons: ["usage"],
         occurredAt: "2026-09-27T00:00:00.000Z",
@@ -85,6 +102,15 @@ describe("PolyQuota contract", () => {
             ],
           },
         ],
+        plans: [
+          {
+            id: "pro",
+            displayName: "Pro",
+            match: ["pro", "glm coding pro"],
+            multiplier: 6,
+            source: "published",
+          },
+        ],
       }),
     ).toEqual({
       provider: "glm",
@@ -101,7 +127,15 @@ describe("PolyQuota contract", () => {
           ],
         },
       ],
+      plans: [{ id: "pro", displayName: "Pro", match: ["pro", "glm coding pro"] }],
     });
+  });
+
+  it("resolves plan display names from the catalog and keeps unknown plans verbatim", () => {
+    const plans = [{ id: "pro-5x", displayName: "Pro 5x", match: ["prolite", "pro 5x"] }];
+    expect(publicPlanDisplayName(plans, "prolite")).toBe("Pro 5x");
+    expect(publicPlanDisplayName(plans, "mystery-tier")).toBe("mystery-tier");
+    expect(publicPlanDisplayName([], "plus")).toBe("plus");
   });
 
   it("rejects provider descriptors with broken ownership or duplicates", () => {
@@ -110,6 +144,7 @@ describe("PolyQuota contract", () => {
         provider: "codex",
         displayName: "Codex",
         offerings: [{ id: "codex", provider: "glm", displayName: "Codex", authMethods: [] }],
+        plans: [],
       }),
     ).toThrow(ContractValidationError);
     expect(() =>
@@ -120,6 +155,7 @@ describe("PolyQuota contract", () => {
           { id: "codex", provider: "codex", displayName: "Codex", authMethods: [] },
           { id: "codex", provider: "codex", displayName: "Codex", authMethods: [] },
         ],
+        plans: [],
       }),
     ).toThrow(ContractValidationError);
     expect(() =>
@@ -137,6 +173,7 @@ describe("PolyQuota contract", () => {
             ],
           },
         ],
+        plans: [],
       }),
     ).toThrow(ContractValidationError);
   });
@@ -149,7 +186,18 @@ describe("PolyQuota contract", () => {
       accounts: [],
       usageByAccountId: {},
       operations: [],
-      settings: { pollingEnabled: true, pollingIntervalMinutes: 15 },
+      settings: { pollingEnabled: true, pollingIntervalMinutes: 15, taskbarProgressEnabled: true },
+      compositeRemaining: {
+        status: "empty",
+        sessionScore: null,
+        weeklyScore: null,
+        remaining: null,
+        band: "unknown",
+        sessionBand: "unknown",
+        weeklyBand: "unknown",
+        enabledAccountCount: 0,
+        scoredAccountCount: 0,
+      },
       scheduler: {
         status: "waiting",
         intervalMinutes: 15,
@@ -170,6 +218,7 @@ describe("PolyQuota contract", () => {
           authMethods: [{ method: "browser-oauth", interaction: "browser-callback" }],
         },
       ],
+      plans: [],
     };
     expect(parseSnapshot({ ...snapshotBase, providers: [codexDescriptor] }).providers).toHaveLength(
       1,
@@ -183,6 +232,11 @@ describe("PolyQuota contract", () => {
       providers: [],
     };
     expect(() => parseSnapshot(withoutProviders)).toThrow(ContractValidationError);
+    const { compositeRemaining: _remaining, ...withoutRemaining } = {
+      ...snapshotBase,
+      providers: [],
+    };
+    expect(parseSnapshot(withoutRemaining).compositeRemaining.status).toBe("empty");
   });
 
   it("accepts only bounded reset-credit use requests", () => {

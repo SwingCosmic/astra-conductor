@@ -415,11 +415,11 @@ flowchart LR
 
 ### 功能
 
-- [ ] Codex 套餐保持 Plus、Pro、Team 等原文；短窗口标题为 `5-hour`，长窗口标题为 `Weekly`，并展示只读 `Reset credits`；
-- [ ] GLM 正确区分国内与国际区域；套餐保持 Lite、Pro、Max 等原文；配额标题为 `5 Hours Quota` 与 `Weekly Quota`；
+- [ ] Codex 套餐名取自套餐配置 `displayName`（如 `prolite` → Pro 5x），未知原样；短窗口标题为 `5-hour`，长窗口标题为 `Weekly`，并展示只读 `Reset credits`；
+- [ ] GLM 正确区分国内与国际区域；套餐名取自套餐配置；配额标题为 `5 Hours Quota` 与 `Weekly Quota`；
 - [x] GLM 重置卡只允许用户逐张确认后使用；主进程使用前重新读取列表，成功后先扣除本地对应条目并刷新服务商用量。真实账号已确认 ZCode 曾延迟约 20 分钟更新展示，但卡片实际可用且使用成功；
-- [ ] Grok Build 套餐保持 `subscriptionTier` 原文；产品配额使用上游产品名，账户级配额标题为 `Weekly`；额外额度先接入查询，使用能力后续开放；刷新后保留账号主体信息；
-- [ ] Antigravity 套餐保持 Starter、Pro、Ultra 等原文；按 `Gemini Models` 这类分组标题展示该组的 `5 Hour Quota` 与 `Weekly Quota`；
+- [ ] Grok Build 套餐名取自套餐配置，未命中则保持 `subscriptionTier` 原文；产品配额使用上游产品名，账户级配额标题为 `Weekly`；额外额度先接入查询，使用能力后续开放；刷新后保留账号主体信息；
+- [ ] Antigravity 套餐名取自套餐配置，未命中则原样；按 `Gemini Models` 这类分组标题展示该组的 `5 Hour Quota` 与 `Weekly Quota`；
 - [ ] 同一服务可添加多个账号；
 - [ ] 停用账号后停止轮询和通知；
 - [ ] 登录、刷新、开关和错误都有可见反馈；

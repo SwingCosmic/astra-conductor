@@ -18,7 +18,7 @@ const pendingResponses = new Set<Promise<unknown>>();
 
 function publicError(error: unknown): PublicError {
   if (error instanceof ContractValidationError) {
-    return { code: "validation", message: "请求参数无效", retryable: false };
+    return { code: "validation", message: error.message, retryable: false };
   }
   const converted = toPublicError(error);
   return converted.code === "upstream" && converted.message === "Unexpected operation failure"

@@ -16,7 +16,12 @@ describe("PolyQuota frontend service", () => {
         revision: 0,
         accounts: [],
         usageByAccountId: {},
-        settings: { pollingEnabled: false, pollingIntervalMinutes: 15 },
+        settings: {
+          pollingEnabled: false,
+          pollingIntervalMinutes: 15,
+          taskbarProgressEnabled: true,
+        },
+        compositeRemaining: { status: "empty", remaining: null, band: "unknown" },
       },
     });
     await expect(service.getSystemStatus()).resolves.toEqual({
@@ -30,6 +35,7 @@ describe("PolyQuota frontend service", () => {
     const result = await service.saveSettings({
       pollingEnabled: true,
       pollingIntervalMinutes: 5,
+      taskbarProgressEnabled: true,
     });
 
     expect(result).toEqual({

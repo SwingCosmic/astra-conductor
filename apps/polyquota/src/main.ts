@@ -44,6 +44,7 @@ import { registerIpcHandlers, unregisterIpcHandlers, waitForIpcHandlersToDrain }
 import { PollingService } from "./polling-service.js";
 import { PolyQuotaApplicationService } from "./polyquota-application-service.js";
 import { detectProxyStatus, envProxyAddress } from "./proxy-detection.js";
+import { taskbarProgress, trayIconFilename, trayTooltip } from "./quota-chrome.js";
 import { RefreshScheduler } from "./refresh-scheduler.js";
 import { ElectronSafeStorageCipher } from "./safe-storage-cipher.js";
 import { SqliteStorage } from "./sqlite-storage.js";
@@ -118,8 +119,53 @@ function loadProductIcon(filename: string, fallback = "polyquota.png"): NativeIm
   throw new Error(`Unable to load PolyQuota icon: ${filename}`);
 }
 
-function loadTrayIcon(): NativeImage {
-  return loadProductIcon("tray-24.png");
+function loadTrayStatusIcon(filename: string): NativeImage {
+  for (const candidate of [filename, "tray-unknown-24.png", "tray-24.png", "polyquota.png"]) {
+    const icon = nativeImage.createFromPath(iconResourcePath(candidate));
+    if (!icon.isEmpty()) return icon;
+  }
+  throw new Error(`Unable to load PolyQuota tray icon: ${filename}`);
+}
+
+function windowOnTaskbar(): boolean {
+  const win = mainWindow;
+  if (!win || win.isDestroyed()) return false;
+  return win.isVisible() || win.isMinimized();
+}
+
+function applyTaskbarProgress(
+  remaining: Parameters<typeof taskbarProgress>[0],
+  enabled: boolean,
+): void {
+  const win = mainWindow;
+  if (!win || win.isDestroyed()) return;
+  const mapped = taskbarProgress(remaining, { enabled, windowOnTaskbar: windowOnTaskbar() });
+  if (!mapped) {
+    win.setProgressBar(-1);
+    return;
+  }
+  win.setProgressBar(mapped.progress, { mode: mapped.mode });
+}
+
+function applyQuotaChrome(): void {
+  if (!polyQuotaService || quitting) return;
+  void polyQuotaService
+    .getSnapshot()
+    .then((snapshot) => {
+      if (quitting) return;
+      const remaining = snapshot.compositeRemaining;
+      if (tray) {
+        tray.setImage(loadTrayStatusIcon(trayIconFilename(remaining)));
+        tray.setToolTip(trayTooltip(remaining));
+      }
+      applyTaskbarProgress(remaining, snapshot.settings.taskbarProgressEnabled);
+    })
+    .catch((error: unknown) => {
+      console.error(
+        "PolyQuota quota chrome failed",
+        error instanceof Error ? error.message : "unknown error",
+      );
+    });
 }
 
 function installProductionCsp(): void {
@@ -190,6 +236,10 @@ async function createWindow(): Promise<void> {
   win.on("closed", () => {
     if (mainWindow === win) mainWindow = null;
   });
+  win.on("show", () => applyQuotaChrome());
+  win.on("hide", () => applyQuotaChrome());
+  win.on("minimize", () => applyQuotaChrome());
+  win.on("restore", () => applyQuotaChrome());
 
   win.webContents.on("did-fail-load", (_event, code, description) => {
     console.error(`renderer failed: ${code} ${description}`);
@@ -273,7 +323,7 @@ async function createWindow(): Promise<void> {
 }
 
 function createTray(): void {
-  tray = new Tray(loadTrayIcon());
+  tray = new Tray(loadTrayStatusIcon("tray-unknown-24.png"));
   tray.setToolTip("PolyQuota");
   tray.setContextMenu(
     Menu.buildFromTemplate([
@@ -305,6 +355,7 @@ async function shutdownServices(): Promise<void> {
   powerMonitor.removeListener("resume", handleSystemResume);
   tray?.destroy();
   tray = null;
+  polyQuotaService?.dispose();
   await Promise.all([
     waitForIpcHandlersToDrain(),
     refreshScheduler?.stopAndDrain(),
@@ -438,6 +489,7 @@ if (hasSingleInstanceLock) {
           if (webContents && !webContents.isDestroyed()) {
             webContents.send(polyQuotaIpcEvents.stateChanged, event);
           }
+          applyQuotaChrome();
         },
       });
       refreshScheduler = new RefreshScheduler(
@@ -451,6 +503,7 @@ if (hasSingleInstanceLock) {
       if (!devServer) installProductionCsp();
       await createWindow();
       createTray();
+      applyQuotaChrome();
     })
     .catch((error: unknown) => {
       console.error(

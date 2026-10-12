@@ -181,6 +181,8 @@ onBeforeUnmount(() => {
         :accounts="accounts"
         :usage="usage"
         :busy="busy !== null"
+        :providers="snapshot?.providers ?? []"
+        :remaining="snapshot?.compositeRemaining"
         @refresh="refresh"
         @refresh-all="refreshAll"
         @redeem="useResetCredit"

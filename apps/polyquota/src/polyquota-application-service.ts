@@ -1,16 +1,19 @@
 import { randomUUID } from "node:crypto";
 import {
   POLYQUOTA_SCHEMA_VERSION,
+  parseSnapshot,
   type AuthStartResult,
   type CredentialRefreshOutcomeDto,
   type PolyQuotaChangedEvent,
   type PolyQuotaChangeReason,
   type PolyQuotaSnapshot,
   type PublicAccount,
+  type PublicCompositeRemaining,
   type PublicOperationKind,
   type PublicOperationState,
   type PublicProviderDescriptor,
   type PublicSystemStatus,
+  type PublicUsage,
   type RedeemResetCreditOutcomeDto,
   type RefreshBatchOutcomeDto,
   type RefreshOutcomeDto,
@@ -20,6 +23,7 @@ import {
 import {
   AppError,
   CredentialVault,
+  computeCompositeRemaining,
   toPublicAccount,
   toPublicUsage,
   type Account,
@@ -95,11 +99,16 @@ export class PolyQuotaApplicationService {
     this.scheduler = scheduler;
   }
 
+  dispose(): void {
+    return;
+  }
+
   getSettings(): Settings {
     const interval = this.storage.settings.get("pollingIntervalMinutes");
     return {
       pollingEnabled: this.storage.settings.get("pollingEnabled") !== false,
       pollingIntervalMinutes: typeof interval === "number" ? interval : 15,
+      taskbarProgressEnabled: this.storage.settings.get("taskbarProgressEnabled") !== false,
     };
   }
 
@@ -128,17 +137,44 @@ export class PolyQuotaApplicationService {
         accounts.map((account) => this.toPublicAccount(account)),
       );
       if (revision !== this.revision) continue;
-      return {
-        schemaVersion: POLYQUOTA_SCHEMA_VERSION,
-        revision,
-        generatedAt: this.now().toISOString(),
-        providers: this.options.providerCatalog.map((descriptor) => ({ ...descriptor })),
-        accounts: publicAccounts,
-        usageByAccountId,
-        operations,
-        settings,
-        scheduler,
-      };
+      try {
+        return parseSnapshot({
+          schemaVersion: POLYQUOTA_SCHEMA_VERSION,
+          revision,
+          generatedAt: this.now().toISOString(),
+          providers: this.options.providerCatalog.map((descriptor) => ({
+            provider: descriptor.provider,
+            displayName: descriptor.displayName,
+            offerings: descriptor.offerings.map((offering) => ({
+              id: offering.id,
+              provider: offering.provider,
+              displayName: offering.displayName,
+              ...(offering.description ? { description: offering.description } : {}),
+              ...(offering.websiteUrl ? { websiteUrl: offering.websiteUrl } : {}),
+              ...(offering.region ? { region: offering.region } : {}),
+              authMethods: offering.authMethods.map((method) => ({
+                method: method.method,
+                interaction: method.interaction,
+                ...(method.sourceLabel ? { sourceLabel: method.sourceLabel } : {}),
+              })),
+            })),
+            plans: descriptor.plans.map((plan) => ({
+              id: plan.id,
+              displayName: plan.displayName,
+              match: [...plan.match],
+            })),
+          })),
+          accounts: publicAccounts,
+          usageByAccountId,
+          compositeRemaining: this.compositeRemaining(publicAccounts, usageByAccountId),
+          operations,
+          settings,
+          scheduler,
+        });
+      } catch (error) {
+        console.error("PolyQuota snapshot failed contract validation", error);
+        throw error;
+      }
     }
   }
 
@@ -303,7 +339,8 @@ export class PolyQuotaApplicationService {
     const current = this.getSettings();
     if (
       current.pollingEnabled === settings.pollingEnabled &&
-      current.pollingIntervalMinutes === settings.pollingIntervalMinutes
+      current.pollingIntervalMinutes === settings.pollingIntervalMinutes &&
+      current.taskbarProgressEnabled === settings.taskbarProgressEnabled
     ) {
       return;
     }
@@ -313,6 +350,11 @@ export class PolyQuotaApplicationService {
       this.storage.settings.save(
         "pollingIntervalMinutes",
         settings.pollingIntervalMinutes,
+        timestamp,
+      );
+      this.storage.settings.save(
+        "taskbarProgressEnabled",
+        settings.taskbarProgressEnabled,
         timestamp,
       );
     });
@@ -409,6 +451,19 @@ export class PolyQuotaApplicationService {
       });
       this.options.publishChanged(event);
     });
+  }
+
+  private compositeRemaining(
+    accounts: readonly PublicAccount[],
+    usageByAccountId: Record<string, PublicUsage | null>,
+  ): PublicCompositeRemaining {
+    return computeCompositeRemaining(
+      accounts.map((account) => ({
+        enabled: account.enabled,
+        provider: account.provider,
+        snapshot: usageByAccountId[account.id] ?? null,
+      })),
+    );
   }
 
   private requireScheduler(): RefreshScheduler {

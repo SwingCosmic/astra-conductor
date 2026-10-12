@@ -39,7 +39,9 @@ async function invoke<T>(
     return parseServiceResult(raw, parser);
   } catch (error) {
     if (error instanceof ContractValidationError) {
-      return failure("contract-mismatch", "桌面通信契约不一致，请完整重启 PolyQuota");
+      console.error("PolyQuota contract mismatch", error.message);
+      const path = error.message.replace(/^Invalid PolyQuota contract value at /, "");
+      return failure("contract-mismatch", `桌面通信契约不一致（${path}）`);
     }
     return failure("transport", "无法连接 PolyQuota 主进程");
   }

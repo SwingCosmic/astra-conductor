@@ -83,9 +83,16 @@ describe("PolyQuota icon assets", () => {
     expect(generator).not.toContain("size <= 24 ? createSmallIconSvg");
     expect(generator).toContain("small: true");
     expect(generator).toContain("resizeIcon(brandMaster, size)");
-    expect(main).toContain('loadProductIcon("tray-24.png")');
+    expect(main).toContain("loadTrayStatusIcon");
+    expect(main).toContain("tray-24.png");
+    expect(main).toContain("tray-unknown-24.png");
     expect(main).not.toContain("tray-16.png");
     expect(main).not.toContain("tray-32.png");
+    const chrome = readFileSync(path.join(polyquotaRoot, "src", "quota-chrome.ts"), "utf8");
+    expect(chrome).toContain("tray-green-24.png");
+    expect(chrome).toContain("tray-orange-24.png");
+    expect(chrome).toContain("tray-red-24.png");
+    expect(chrome).toContain("tray-unknown-24.png");
     expect(main).not.toContain("data:image/svg+xml");
     expect(builder).toContain("icon: assets/icons/polyquota.ico");
     expect(builder).toContain("installerIcon: assets/icons/polyquota.ico");

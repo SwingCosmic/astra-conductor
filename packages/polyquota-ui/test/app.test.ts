@@ -20,7 +20,10 @@ import {
   providerPresentation,
   quotaLabel,
 } from "../src/presentation";
-import { POLYQUOTA_SCHEMA_VERSION } from "@astra-conductor/polyquota-contract";
+import {
+  POLYQUOTA_SCHEMA_VERSION,
+  emptyCompositeRemaining,
+} from "@astra-conductor/polyquota-contract";
 
 const providerCatalogFixture: PublicProviderDescriptor[] = [
   {
@@ -38,6 +41,10 @@ const providerCatalogFixture: PublicProviderDescriptor[] = [
           { method: "cli-import", interaction: "local-import", sourceLabel: "Codex CLI" },
         ],
       },
+    ],
+    plans: [
+      { id: "plus", displayName: "Plus", match: ["plus"] },
+      { id: "pro-5x", displayName: "Pro 5x", match: ["prolite", "pro 5x", "pro5x"] },
     ],
   },
   {
@@ -67,6 +74,7 @@ const providerCatalogFixture: PublicProviderDescriptor[] = [
         ],
       },
     ],
+    plans: [],
   },
   {
     provider: "grok-build",
@@ -84,6 +92,7 @@ const providerCatalogFixture: PublicProviderDescriptor[] = [
         ],
       },
     ],
+    plans: [],
   },
   {
     provider: "antigravity",
@@ -97,6 +106,7 @@ const providerCatalogFixture: PublicProviderDescriptor[] = [
         authMethods: [{ method: "browser-oauth", interaction: "browser-callback" }],
       },
     ],
+    plans: [],
   },
   {
     provider: "claude",
@@ -112,6 +122,7 @@ const providerCatalogFixture: PublicProviderDescriptor[] = [
         ],
       },
     ],
+    plans: [],
   },
   {
     provider: "opencode-go",
@@ -125,6 +136,7 @@ const providerCatalogFixture: PublicProviderDescriptor[] = [
         authMethods: [{ method: "api-key", interaction: "secret-form" }],
       },
     ],
+    plans: [],
   },
 ];
 
@@ -170,8 +182,9 @@ function snapshot(
     providers: providerCatalogFixture,
     accounts,
     usageByAccountId,
+    compositeRemaining: emptyCompositeRemaining(),
     operations: [],
-    settings: { pollingEnabled: true, pollingIntervalMinutes: 15 },
+    settings: { pollingEnabled: true, pollingIntervalMinutes: 15, taskbarProgressEnabled: true },
     scheduler: {
       status: "waiting",
       intervalMinutes: 15,
@@ -199,11 +212,48 @@ describe("desktop account UI", () => {
 
     expect(wrapper.text()).toContain("还没有接入账号");
     expect(wrapper.text()).not.toContain("桌面接口不可用");
+    expect(wrapper.get(".usage-score-rings").text()).toContain("5h");
+    expect(wrapper.get(".usage-score-rings").text()).toContain("周");
+    expect(wrapper.findAll(".usage-score-value").map((item) => item.text())).toEqual(["—", "—"]);
+    const header = wrapper.get(".content-header");
+    expect(header.find(".usage-title-row").exists()).toBe(false);
+    expect(header.find(".content-header-copy").exists()).toBe(true);
+    expect(header.find(".usage-score-rings").exists()).toBe(true);
+    expect(header.find(".outline-action").exists()).toBe(true);
+  });
+
+  it("shows session and weekly rings from the snapshot remaining scores", async () => {
+    const wrapper = mountApp(
+      serviceWithSnapshot({
+        ...snapshot([]),
+        compositeRemaining: {
+          status: "complete",
+          sessionScore: 80,
+          weeklyScore: 40.4,
+          remaining: 40.4,
+          band: "attention",
+          sessionBand: "healthy",
+          weeklyBand: "attention",
+          enabledAccountCount: 2,
+          scoredAccountCount: 2,
+        },
+      }),
+    );
+    await flushPromises();
+
+    const values = wrapper.findAll(".usage-score-value");
+    expect(values).toHaveLength(2);
+    expect(values[0]?.text()).toBe("80");
+    expect(values[1]?.text()).toBe("40");
+    expect(wrapper.find(".usage-score-fill.score-band-healthy").exists()).toBe(true);
+    expect(wrapper.find(".usage-score-fill.score-band-attention").exists()).toBe(true);
   });
 
   it("maps provider display text only in the UI presentation catalog", () => {
     expect(providerPresentation("codex").icon).toMatch(/gpt\.png$/);
-    expect(planLabel("codex", "prolite")).toBe("Pro 5x");
+    expect(planLabel("codex", "prolite")).toBe("prolite");
+    expect(planLabel("codex", "prolite", providerCatalogFixture)).toBe("Pro 5x");
+    expect(planLabel("codex", "mystery-tier", providerCatalogFixture)).toBe("mystery-tier");
     expect(
       quotaLabel("codex", {
         key: "session",
@@ -344,6 +394,7 @@ describe("desktop account UI", () => {
       props: {
         account,
         busy: false,
+        plans: providerCatalogFixture.find((item) => item.provider === "codex")?.plans,
         usage: {
           accountId: account.id,
           plan: "plus",
@@ -383,6 +434,7 @@ describe("desktop account UI", () => {
         },
       },
     });
+    expect(wrapper.get(".plan-tag").text()).toBe("Plus");
     expect(wrapper.text()).toContain("5-hour");
     expect(wrapper.text()).toContain("Weekly");
     expect(wrapper.text()).toContain("Reset credits");

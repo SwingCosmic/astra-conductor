@@ -22,3 +22,4 @@ export * from "./refresh-coordinator.js";
 export * from "./models.js";
 export * from "./ports.js";
 export * from "./public-api.js";
+export * from "./composite-remaining.js";

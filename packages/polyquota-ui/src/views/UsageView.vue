@@ -1,12 +1,20 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import QuotaCard from "../components/QuotaCard.vue";
-import type { PublicAccount, PublicUsage } from "../models";
+import UsageScoreRings from "../components/UsageScoreRings.vue";
+import type {
+  PublicAccount,
+  PublicCompositeRemaining,
+  PublicProviderDescriptor,
+  PublicUsage,
+} from "../models";
 
 const props = defineProps<{
   accounts: PublicAccount[];
   usage: Record<string, PublicUsage | null>;
   busy: boolean;
+  providers?: readonly PublicProviderDescriptor[];
+  remaining?: PublicCompositeRemaining | null;
 }>();
 defineEmits<{
   refresh: [account: PublicAccount];
@@ -43,10 +51,11 @@ onBeforeUnmount(() => mediaQuery?.removeEventListener("change", updateColumnMode
 <template>
   <section class="content-page">
     <header class="content-header">
-      <div>
+      <div class="content-header-copy">
         <h1>用量概览</h1>
         <p>查看各账号最新的订阅用量</p>
       </div>
+      <UsageScoreRings :remaining="remaining" />
       <button
         class="outline-action"
         :disabled="busy || !accounts.length"
@@ -63,6 +72,7 @@ onBeforeUnmount(() => mediaQuery?.removeEventListener("change", updateColumnMode
           :account="account"
           :usage="usage[account.id] ?? null"
           :busy="busy"
+          :plans="providers?.find((item) => item.provider === account.provider)?.plans ?? []"
           @refresh="$emit('refresh', account)"
           @toggle="$emit('toggle', account)"
           @redeem="$emit('redeem', account, $event)"

@@ -16,4 +16,28 @@ export const grokBuildDescriptor: ProviderDescriptor = {
       ],
     },
   ],
+  // subscriptionTier strings. Pro in the name → 5; Heavy inferred as top rung 20.
+  plans: [
+    {
+      id: "supergrok-pro",
+      displayName: "SuperGrok Pro",
+      match: ["supergrokpro", "supergrok pro", "grokpro"],
+      multiplier: 5,
+      source: "inferred",
+    },
+    {
+      id: "supergrok-heavy",
+      displayName: "SuperGrok Heavy",
+      match: ["supergrok heavy", "supergrokheavy"],
+      multiplier: 20,
+      source: "inferred",
+    },
+    {
+      id: "grok-build",
+      displayName: "Grok Build",
+      match: ["grok build"],
+      multiplier: 5,
+      source: "inferred",
+    },
+  ],
 };

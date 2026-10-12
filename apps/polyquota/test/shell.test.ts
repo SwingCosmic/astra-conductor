@@ -32,6 +32,10 @@ describe("PolyQuota desktop shell", () => {
 
   it("provides tray, proxy-aware networking, notifications, and recoverable data reset", () => {
     expect(mainSource).toContain("new Tray");
+    expect(mainSource).toContain("setProgressBar");
+    expect(mainSource).toContain("applyQuotaChrome");
+    expect(mainSource).not.toContain("setOverlayIcon");
+    expect(mainSource).toContain("trayIconFilename");
     expect(mainSource).toContain("net.fetch");
     expect(mainSource).toContain("configureSessionProxy");
     expect(mainSource).toContain("detectProxyStatus");
