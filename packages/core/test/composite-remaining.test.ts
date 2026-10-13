@@ -14,6 +14,19 @@ import {
 
 const fetchedAt = "2026-10-11T11:50:00.000Z";
 
+/**
+ * 套餐倍率查表键已从 provider 改为接入点：同一 provider 的各接入点目录可不同
+ * （GLM 两个接入点当前一致）。此处映射测试中每个 provider 使用的代表接入点。
+ */
+const offeringByProvider: Record<CompositeRemainingAccountInput["provider"], string> = {
+  antigravity: "antigravity",
+  claude: "claude",
+  codex: "codex",
+  "grok-build": "grok-build",
+  glm: "bigmodel-coding-plan",
+  "opencode-go": "opencode-go",
+};
+
 function quota(
   partial: Partial<CompositeRemainingQuota> & Pick<CompositeRemainingQuota, "key">,
 ): CompositeRemainingQuota {
@@ -50,6 +63,7 @@ function account(
   return {
     enabled: extra?.enabled ?? true,
     provider,
+    offeringId: offeringByProvider[provider],
     snapshot: extra?.snapshot === undefined ? usage : extra.snapshot,
   };
 }
@@ -219,7 +233,7 @@ describe("composite remaining", () => {
         quota({ key: "session", windowSeconds: 18_000, remainingPercentage: 10 }),
         quota({ key: "weekly", windowSeconds: 604_800, remainingPercentage: 10 }),
       ]),
-      { enabled: true, provider: "glm", snapshot: null },
+      { enabled: true, provider: "glm", offeringId: "bigmodel-coding-plan", snapshot: null },
     ]);
     expect(mixed.status).toBe("incomplete");
     expect(mixed.scoredAccountCount).toBe(1);

@@ -3,38 +3,57 @@ import { computed, reactive, ref } from "vue";
 import ChevronIcon from "./ChevronIcon.vue";
 import type {
   PublicAccount,
-  PublicPlanDescriptor,
+  PublicProviderDescriptor,
   PublicUsage,
+  ResetCreditRedemption,
   UsageExtra,
-  UsageExtraItem,
   UsageQuota,
   UsageQuotaGroup,
 } from "../models";
 import { publicPlanDisplayName } from "@astra-conductor/polyquota-contract";
 import {
-  extraLabel,
+  accountPresentation,
   extraItemLabel,
+  extraLabel,
   groupLabel,
-  providerPresentation,
   quotaLabel,
+  resetCreditTypeLabel,
 } from "../presentation";
 
 const props = defineProps<{
   account: PublicAccount;
   usage: PublicUsage | null;
   busy: boolean;
-  plans?: readonly PublicPlanDescriptor[];
+  providers?: readonly PublicProviderDescriptor[];
 }>();
-const emit = defineEmits<{ refresh: []; toggle: []; redeem: [selectionToken: string] }>();
+const emit = defineEmits<{
+  refresh: [];
+  toggle: [];
+  redeem: [redemption: ResetCreditRedemption];
+}>();
 
 type Tone = "unknown" | "ok" | "warning" | "danger" | "critical";
 const collapsed = reactive(new Set<string>());
 const selectedExtra = ref<UsageExtra | null>(null);
-const presentation = computed(() => providerPresentation(props.account));
+const showResetCredits = ref(false);
+const presentation = computed(() => accountPresentation(props.account, props.providers));
+const offering = computed(() =>
+  props.providers
+    ?.flatMap((descriptor) => descriptor.offerings)
+    .find((item) => item.id === props.account.offeringId),
+);
 const cardTone = computed(() => tone(props.usage?.overallRemainingPercentage ?? null));
 const planName = computed(() => {
   const raw = props.usage?.plan.trim() ?? "";
-  return raw ? publicPlanDisplayName(props.plans, raw) : null;
+  return raw ? publicPlanDisplayName(offering.value?.plans, raw) : null;
+});
+const resetCredits = computed(() => props.usage?.resetCredits ?? null);
+const resetCreditsCount = computed(() => {
+  const credits = resetCredits.value;
+  if (!credits) return null;
+  return credits.kind === "itemized"
+    ? credits.items.length
+    : credits.totals.reduce((sum, total) => sum + total.total, 0);
 });
 
 function tone(percent: number | null): Tone {
@@ -51,7 +70,7 @@ function width(quota: UsageQuota): string {
     : `${Math.min(100, Math.max(0, quota.remainingPercentage))}%`;
 }
 
-function resetLabel(value: string | null): string | null {
+function timeLabel(value: string | null): string | null {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -88,12 +107,20 @@ function toggleGroup(key: string): void {
   else collapsed.add(key);
 }
 
-function useResetCredit(item: UsageExtraItem): void {
-  if (!item.actionToken) return;
-  const label = extraItemLabel(props.account, item.kind);
+/** 分体消耗：带对应重置卡 id；兑换协议会重新校验列表。 */
+function useResetCreditItem(item: { id: string; type: string }): void {
+  const label = resetCreditTypeLabel(item.type);
   if (!window.confirm(`确定使用这张${label}吗？该操作会立即消耗一次重置机会。`)) return;
-  selectedExtra.value = null;
-  emit("redeem", item.actionToken);
+  showResetCredits.value = false;
+  emit("redeem", { kind: "item", itemId: item.id });
+}
+
+/** 聚合消耗：按类型消耗，由服务端在该类型的计数中挑选；单桶不标注类型。 */
+function useAggregateResetCredit(type: string | null): void {
+  const label = type ? resetCreditTypeLabel(type) : "重置额度";
+  if (!window.confirm(`确定使用一次${label}吗？该操作会立即消耗一次重置机会。`)) return;
+  showResetCredits.value = false;
+  emit("redeem", type ? { kind: "aggregate", type } : { kind: "aggregate" });
 }
 </script>
 
@@ -129,14 +156,14 @@ function useResetCredit(item: UsageExtraItem): void {
     <template v-if="usage">
       <section v-for="group in usage.groups" :key="group.key" class="quota-group">
         <button
-          v-if="groupLabel(account, group)"
+          v-if="groupLabel(group)"
           class="group-toggle"
           type="button"
           :aria-expanded="!collapsed.has(group.key)"
           @click="toggleGroup(group.key)"
         >
           <ChevronIcon :collapsed="collapsed.has(group.key)" />
-          <span>{{ groupLabel(account, group) }}</span>
+          <span>{{ groupLabel(group) }}</span>
           <span
             v-if="collapsed.has(group.key)"
             class="group-summary"
@@ -147,12 +174,12 @@ function useResetCredit(item: UsageExtraItem): void {
         </button>
         <div v-show="!collapsed.has(group.key)" class="quota-list">
           <div v-for="quota in group.quotas" :key="quota.key" class="quota-window">
-            <h3>{{ quotaLabel(account, quota) }}</h3>
+            <h3>{{ quotaLabel(quota) }}</h3>
             <div class="progress-row">
               <div
                 class="progress-track"
                 role="meter"
-                :aria-label="quotaLabel(account, quota)"
+                :aria-label="quotaLabel(quota)"
                 aria-valuemin="0"
                 aria-valuemax="100"
                 :aria-valuenow="quota.remainingPercentage ?? undefined"
@@ -167,12 +194,19 @@ function useResetCredit(item: UsageExtraItem): void {
                 {{ remainingLabel(quota) }}
               </strong>
             </div>
-            <p v-if="resetLabel(quota.resetAt)" class="reset-time">
-              重置时间：{{ resetLabel(quota.resetAt) }}
+            <p v-if="timeLabel(quota.resetAt)" class="reset-time">
+              重置时间：{{ timeLabel(quota.resetAt) }}
             </p>
           </div>
         </div>
       </section>
+
+      <div v-if="resetCredits" class="extra-list">
+        <button class="extra-button" type="button" @click="showResetCredits = true">
+          <span>↻&nbsp; 重置额度 {{ resetCreditsCount }}</span>
+          <span class="extra-detail">查看详情&nbsp; ›</span>
+        </button>
+      </div>
 
       <div v-if="usage.extras.length" class="extra-list">
         <button
@@ -182,7 +216,7 @@ function useResetCredit(item: UsageExtraItem): void {
           type="button"
           @click="selectedExtra = extra"
         >
-          <span>↻&nbsp; {{ extraLabel(account, extra) }} {{ extra.value }}</span>
+          <span>↻&nbsp; {{ extraLabel(extra) }} {{ extra.value }}</span>
           <span class="extra-detail">查看详情&nbsp; ›</span>
         </button>
       </div>
@@ -201,43 +235,100 @@ function useResetCredit(item: UsageExtraItem): void {
         <button :disabled="busy || !account.enabled" @click="$emit('refresh')">↻&nbsp; 刷新</button>
       </footer>
     </template>
+
     <div v-if="selectedExtra" class="modal-backdrop" @click.self="selectedExtra = null">
-      <section class="detail-modal" role="dialog" aria-modal="true" aria-label="重置额度详情">
+      <section class="detail-modal" role="dialog" aria-modal="true" aria-label="附加信息详情">
         <header>
           <div>
-            <h2>{{ extraLabel(account, selectedExtra) }}</h2>
+            <h2>{{ extraLabel(selectedExtra) }}</h2>
             <p>{{ presentation.name }}</p>
           </div>
           <button class="icon-button" aria-label="关闭" @click="selectedExtra = null">×</button>
         </header>
         <div class="credit-summary">
-          <span>当前可用次数</span><strong>{{ selectedExtra.value }}</strong>
+          <span>当前值</span><strong>{{ selectedExtra.value }}</strong>
         </div>
         <ul v-if="selectedExtra.items?.length" class="credit-items">
           <li v-for="item in selectedExtra.items" :key="item.key">
             <div class="credit-item-details">
-              <span>{{ extraItemLabel(account, item.kind) }}</span>
-              <strong>{{
-                item.expiresAt ? `有效期至 ${resetLabel(item.expiresAt)}` : "未提供有效期"
-              }}</strong>
+              <span>{{ extraItemLabel(item.kind) }}</span>
+              <strong>{{ item.expiresAt ? `有效期至 ${timeLabel(item.expiresAt)}` : "" }}</strong>
+            </div>
+          </li>
+        </ul>
+        <footer>
+          <button @click="selectedExtra = null">关闭</button>
+          <a
+            v-if="presentation.websiteUrl"
+            :href="presentation.websiteUrl"
+            target="_blank"
+            rel="noreferrer"
+            >前往官网</a
+          >
+        </footer>
+      </section>
+    </div>
+
+    <div
+      v-if="showResetCredits && resetCredits"
+      class="modal-backdrop"
+      @click.self="showResetCredits = false"
+    >
+      <section class="detail-modal" role="dialog" aria-modal="true" aria-label="重置额度详情">
+        <header>
+          <div>
+            <h2>重置额度</h2>
+            <p>{{ presentation.name }}</p>
+          </div>
+          <button class="icon-button" aria-label="关闭" @click="showResetCredits = false">×</button>
+        </header>
+        <div class="credit-summary">
+          <span>当前可用次数</span><strong>{{ resetCreditsCount }}</strong>
+        </div>
+        <ul
+          v-if="resetCredits.kind === 'itemized' && resetCredits.items.length"
+          class="credit-items"
+        >
+          <li v-for="item in resetCredits.items" :key="item.id">
+            <div class="credit-item-details">
+              <span>{{ resetCreditTypeLabel(item.type) }}</span>
+              <strong>{{ item.expiresAt ? `有效期至 ${timeLabel(item.expiresAt)}` : "" }}</strong>
             </div>
             <button
-              v-if="item.actionToken"
               class="credit-redeem-action"
               type="button"
               :disabled="busy || !account.enabled"
-              @click="useResetCredit(item)"
+              @click="useResetCreditItem(item)"
             >
               使用
             </button>
           </li>
         </ul>
-        <p v-else class="detail-note">上游未提供可展示的逐项明细。</p>
-        <p v-if="selectedExtra.items?.some((item) => item.actionToken)" class="detail-note">
-          使用后会立即更新本地剩余次数，并重新读取服务商用量。
-        </p>
+        <ul
+          v-else-if="resetCredits.kind === 'aggregate' && resetCredits.totals.length"
+          class="credit-items"
+        >
+          <li v-for="total in resetCredits.totals" :key="total.type">
+            <div class="credit-item-details">
+              <span>{{
+                resetCredits.totals.length === 1 ? "可用次数" : resetCreditTypeLabel(total.type)
+              }}</span>
+              <strong>{{ total.total }} 次</strong>
+            </div>
+            <button
+              class="credit-redeem-action"
+              type="button"
+              :disabled="busy || !account.enabled || total.total <= 0"
+              @click="useAggregateResetCredit(resetCredits.totals.length === 1 ? null : total.type)"
+            >
+              使用
+            </button>
+          </li>
+        </ul>
+        <p v-else class="detail-note">当前没有可用的重置额度。</p>
+        <p class="detail-note">使用后会重新读取服务商用量，剩余次数以上游为准。</p>
         <footer>
-          <button @click="selectedExtra = null">关闭</button>
+          <button @click="showResetCredits = false">关闭</button>
           <a
             v-if="presentation.websiteUrl"
             :href="presentation.websiteUrl"

@@ -1,76 +1,62 @@
 import { randomUUID } from "node:crypto";
 import { AppError } from "../errors.js";
-import type { Account, AuthMethod, ProviderId } from "../models.js";
-import { providerCatalog } from "../providers/index.js";
-import type { AuthStartOptions, AuthStartResult, ProviderAuthFlow } from "./types.js";
+import type { Account, AuthMethod } from "../models.js";
+import type { ProviderRegistry } from "../providers/registry.js";
+import type { AuthStartOptions, AuthStartResult } from "./types.js";
 
 interface PendingAuthSession {
   finish(): Promise<Account>;
   cancel(): void;
 }
 
-function catalogMethodsByProvider(): Map<ProviderId, Set<AuthMethod>> {
-  const methods = new Map<ProviderId, Set<AuthMethod>>();
-  for (const descriptor of providerCatalog) {
-    const providerMethods = methods.get(descriptor.provider) ?? new Set<AuthMethod>();
-    for (const offering of descriptor.offerings) {
-      for (const authMethod of offering.authMethods) {
-        providerMethods.add(authMethod.method);
-      }
-    }
-    methods.set(descriptor.provider, providerMethods);
-  }
-  return methods;
-}
-
-function validateAuthFlows(flows: readonly ProviderAuthFlow[]): void {
-  const seen = new Set<ProviderId>();
-  for (const flow of flows) {
-    if (seen.has(flow.provider)) {
-      throw new Error(`Auth coordinator declares duplicate auth flow: ${flow.provider}`);
-    }
-    seen.add(flow.provider);
-  }
-  const catalogMethods = catalogMethodsByProvider();
-  for (const flow of flows) {
-    const expected = catalogMethods.get(flow.provider);
-    if (!expected) {
-      throw new Error(`Auth coordinator declares unknown provider: ${flow.provider}`);
-    }
-    for (const method of expected) {
-      if (!flow.supportedMethods.includes(method)) {
-        throw new Error(`Auth flow ${flow.provider} is missing catalog method: ${method}`);
-      }
-    }
-    for (const method of flow.supportedMethods) {
-      if (!expected.has(method)) {
-        throw new Error(`Auth flow ${flow.provider} declares uncatalogued method: ${method}`);
-      }
-    }
-  }
-}
-
 /**
- * 认证协调器：只负责收集 flow、管理会话表和把待完成句柄投影为公开结果。
- * 不包含任何按供应商的分支；flow 与 providerCatalog 的方法对账在构造期完成。
+ * 认证协调器：只负责会话表、目录交叉验证和把待完成句柄投影为公开结果。
+ * 不包含任何按供应商的分支；flow 与目录的方法对账在构造期完成。
  */
 export class AuthCoordinator {
-  private readonly flowsByProvider: ReadonlyMap<ProviderId, ProviderAuthFlow>;
+  private readonly registry: ProviderRegistry;
   private readonly sessions = new Map<string, PendingAuthSession>();
 
-  constructor(flows: readonly ProviderAuthFlow[]) {
-    validateAuthFlows(flows);
-    this.flowsByProvider = new Map(flows.map((flow) => [flow.provider, flow]));
+  constructor(registry: ProviderRegistry) {
+    for (const { descriptor, account } of registry.contributions) {
+      if (!account) continue;
+      const catalogMethods = new Set<AuthMethod>();
+      for (const offering of descriptor.offerings) {
+        for (const authMethod of offering.authMethods) {
+          catalogMethods.add(authMethod.method);
+        }
+      }
+      for (const method of account.supportedMethods) {
+        if (!catalogMethods.has(method)) {
+          throw new Error(
+            `Auth facet ${descriptor.provider} declares uncatalogued method: ${method}`,
+          );
+        }
+      }
+      for (const method of catalogMethods) {
+        if (!account.supportedMethods.includes(method)) {
+          throw new Error(`Auth facet ${descriptor.provider} is missing catalog method: ${method}`);
+        }
+      }
+    }
+    this.registry = registry;
   }
 
   async start(
-    provider: ProviderId,
+    offeringId: string,
     method: AuthMethod,
     options: AuthStartOptions = {},
   ): Promise<AuthStartResult> {
-    const flow = this.flowsByProvider.get(provider);
-    if (!flow) throw new AppError("validation", `尚未实现服务商接入：${provider}`);
-    const result = await flow.start(method, options);
+    const found = this.registry.findOffering(offeringId);
+    if (!found) throw new AppError("validation", `未知接入点：${offeringId}`);
+    const account = this.registry.getAccount(found.provider);
+    if (!account) {
+      throw new AppError("validation", `尚未实现服务商接入：${found.provider}`);
+    }
+    if (!found.offering.authMethods.some((item) => item.method === method)) {
+      throw new AppError("validation", `接入点 ${offeringId} 不支持认证方式：${method}`);
+    }
+    const result = await account.startAuth(offeringId, method, options);
     if (result.status === "completed") {
       return { status: "completed", account: result.account };
     }

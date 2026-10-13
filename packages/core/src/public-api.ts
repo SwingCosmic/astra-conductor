@@ -1,4 +1,10 @@
-import type { Account, PublicAccountDto, PublicUsageDto, UsageSnapshot } from "./models.js";
+import type {
+  Account,
+  PublicAccountDto,
+  PublicUsageDto,
+  ResetCredits,
+  UsageSnapshot,
+} from "./models.js";
 
 export function toPublicAccount(
   account: Account,
@@ -7,6 +13,7 @@ export function toPublicAccount(
   return {
     id: account.id,
     provider: account.provider,
+    offeringId: account.offeringId,
     authMethod: account.authMethod,
     displayName: account.displayName,
     maskedIdentifier: account.maskedIdentifier,
@@ -19,12 +26,24 @@ export function toPublicAccount(
   };
 }
 
+/**
+ * 破坏性结构更新：旧结构快照（无 resetCredits 字段）不做形态适配，投影为
+ * null 即可；桌面端读到旧结构快照时会立即触发一次刷新换取新数据。
+ */
+function legacyResetCredits(
+  value: UsageSnapshot & { resetCredits?: ResetCredits | null },
+): ResetCredits | null {
+  if (value.resetCredits === undefined) return null;
+  return value.resetCredits ?? null;
+}
+
 export function toPublicUsage(snapshot: UsageSnapshot): PublicUsageDto {
   const value = structuredClone(snapshot) as UsageSnapshot & {
     quotas?: UsageSnapshot["groups"][number]["quotas"];
     resetCredits?: number;
     overallRemainingPercentage?: number | null;
   };
+  const resetCredits = legacyResetCredits(snapshot);
   if (!Array.isArray(value.groups)) {
     value.groups = [{ key: "default", displayName: null, quotas: value.quotas ?? [] }];
   }
@@ -71,7 +90,6 @@ export function toPublicUsage(snapshot: UsageSnapshot): PublicUsageDto {
             key: item.key,
             kind: item.kind,
             expiresAt: item.expiresAt ?? null,
-            ...(item.actionToken ? { actionToken: item.actionToken } : {}),
           })),
         }
       : {}),
@@ -80,6 +98,13 @@ export function toPublicUsage(snapshot: UsageSnapshot): PublicUsageDto {
     value.overallRemainingPercentage = value.groups[0]?.quotas[0]?.remainingPercentage ?? null;
   }
   delete value.quotas;
-  delete value.resetCredits;
-  return value;
+  return {
+    accountId: value.accountId,
+    plan: value.plan,
+    overallRemainingPercentage: value.overallRemainingPercentage,
+    groups: value.groups,
+    extras: value.extras,
+    resetCredits,
+    fetchedAt: value.fetchedAt,
+  };
 }

@@ -11,6 +11,7 @@ function smokeAccount(): Account {
   return {
     id: "stage3-smoke",
     provider: "codex",
+    offeringId: "codex",
     authMethod: "cli-import",
     stableIdentity: "smoke:stage3",
     displayName: "Storage smoke test",

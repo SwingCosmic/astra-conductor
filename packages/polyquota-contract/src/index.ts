@@ -1,4 +1,4 @@
-export const POLYQUOTA_SCHEMA_VERSION = 3 as const;
+export const POLYQUOTA_SCHEMA_VERSION = 4 as const;
 
 export const providerIds = [
   "codex",
@@ -9,8 +9,6 @@ export const providerIds = [
   "opencode-go",
 ] as const;
 export type ProviderId = (typeof providerIds)[number];
-export const glmRegions = ["china", "international"] as const;
-export type GlmRegion = (typeof glmRegions)[number];
 export const authMethods = ["browser-oauth", "device-code", "cli-import", "api-key"] as const;
 export type AuthMethod = (typeof authMethods)[number];
 export type CredentialState = "available" | "locked" | "missing";
@@ -20,6 +18,7 @@ export type PublicMetadata = Record<string, JsonPrimitive>;
 export interface PublicAccount {
   id: string;
   provider: ProviderId;
+  offeringId: string;
   authMethod: AuthMethod;
   displayName: string;
   maskedIdentifier: string;
@@ -41,16 +40,7 @@ export interface PublicAuthMethodDescriptor {
   method: AuthMethod;
   interaction: PublicAuthInteraction;
   sourceLabel?: string;
-}
-
-export interface PublicOfferingDescriptor {
-  id: string;
-  provider: ProviderId;
-  displayName: string;
-  description?: string;
-  websiteUrl?: string;
-  region?: GlmRegion;
-  authMethods: PublicAuthMethodDescriptor[];
+  sourcePathHint?: string;
 }
 
 export interface PublicPlanDescriptor {
@@ -59,11 +49,21 @@ export interface PublicPlanDescriptor {
   match: readonly string[];
 }
 
+export interface PublicOfferingDescriptor {
+  id: string;
+  provider: ProviderId;
+  displayName: string;
+  description?: string;
+  websiteUrl?: string;
+  iconKey?: string;
+  authMethods: PublicAuthMethodDescriptor[];
+  plans: readonly PublicPlanDescriptor[];
+}
+
 export interface PublicProviderDescriptor {
   provider: ProviderId;
   displayName: string;
   offerings: PublicOfferingDescriptor[];
-  plans: readonly PublicPlanDescriptor[];
 }
 
 export interface UsageQuota {
@@ -88,7 +88,6 @@ export interface UsageExtraItem {
   key: string;
   kind: string;
   expiresAt: string | null;
-  actionToken?: string;
 }
 
 export interface UsageExtra {
@@ -97,12 +96,41 @@ export interface UsageExtra {
   items?: UsageExtraItem[];
 }
 
+export interface ResetCreditItem {
+  /** 上游不透明标识，只回传给所属 provider 的兑换协议。 */
+  id: string;
+  /** 如 "five-hour"、"weekly"、"banked"。 */
+  type: string;
+  expiresAt: string | null;
+}
+
+/**
+ * 重置额度的一等结构（获得侧，随 `fetchUsage` 返回）：
+ * - aggregate：上游只提供计数时按类型分桶，不区分窗口的供应商声明单桶；
+ * - itemized：每张重置卡有完整类型、过期时间与 id。
+ */
+export type ResetCredits =
+  | {
+      kind: "aggregate";
+      totals: readonly { type: string; total: number }[];
+    }
+  | {
+      kind: "itemized";
+      items: readonly ResetCreditItem[];
+    };
+
+/** 重置额度消耗请求：聚合按类型（单桶可省略 type），分体带对应重置卡 id。 */
+export type ResetCreditRedemption =
+  | { kind: "aggregate"; type?: string }
+  | { kind: "item"; itemId: string };
+
 export interface PublicUsage {
   accountId: string;
   plan: string;
   overallRemainingPercentage: number | null;
   groups: UsageQuotaGroup[];
   extras: UsageExtra[];
+  resetCredits: ResetCredits | null;
   fetchedAt: string;
 }
 
@@ -152,14 +180,16 @@ export function emptyCompositeRemaining(): PublicCompositeRemaining {
   };
 }
 
-export type StartAuthRequest =
-  | { provider: "codex"; method: "browser-oauth" | "device-code" | "cli-import" }
-  | { provider: "glm"; method: "cli-import"; region: GlmRegion }
-  | { provider: "glm"; method: "api-key"; region: GlmRegion; apiKey: string }
-  | { provider: "grok-build"; method: "browser-oauth" | "device-code" | "cli-import" }
-  | { provider: "antigravity"; method: "browser-oauth" }
-  | { provider: "claude"; method: "cli-import" }
-  | { provider: "opencode-go"; method: "api-key"; apiKey: string };
+/**
+ * 认证请求以接入点为稳定入口：`offeringId` 从注册表交叉验证并决定 provider、
+ * 端点与实现；`method` 必须是该接入点声明的认证方式。secret-form 输入统一走
+ * 可选 `apiKey`，供应商实现在运行时再次校验，不信任 renderer 生成的表单。
+ */
+export interface StartAuthRequest {
+  offeringId: string;
+  method: AuthMethod;
+  apiKey?: string;
+}
 
 export type AuthStartResult =
   | { status: "completed"; account: PublicAccount }
@@ -188,7 +218,7 @@ export type CredentialRefreshOutcomeDto =
 
 export interface RedeemResetCreditRequest {
   accountId: string;
-  selectionToken: string;
+  redemption: ResetCreditRedemption;
 }
 
 export interface RedeemResetCreditOutcomeDto {
@@ -277,7 +307,7 @@ export interface IPolyQuotaService {
   refreshCredentials(accountId: string): Promise<ServiceResult<CredentialRefreshOutcomeDto>>;
   redeemResetCredit(
     accountId: string,
-    selectionToken: string,
+    redemption: ResetCreditRedemption,
   ): Promise<ServiceResult<RedeemResetCreditOutcomeDto>>;
   startAuth(request: StartAuthRequest): Promise<ServiceResult<AuthStartResult>>;
   finishAuth(sessionId: string): Promise<ServiceResult<PublicAccount>>;
@@ -420,44 +450,23 @@ export function parseSettings(value: unknown): Settings {
   };
 }
 
+const offeringIdPattern = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
 export function parseStartAuthRequest(value: unknown): StartAuthRequest {
   const record = object(value, "authRequest");
-  const provider = oneOf(record.provider, providerIds, "authRequest.provider");
-  const method = oneOf(record.method, authMethods, "authRequest.method");
-  if (provider === "codex" || provider === "grok-build") {
-    exact(record, ["provider", "method"], "authRequest");
-    if (method !== "browser-oauth" && method !== "device-code" && method !== "cli-import") {
-      return fail("authRequest.method");
-    }
-    return { provider, method };
-  }
-  if (provider === "antigravity") {
-    exact(record, ["provider", "method"], "authRequest");
-    if (method !== "browser-oauth") return fail("authRequest.method");
-    return { provider, method };
-  }
-  if (provider === "claude") {
-    exact(record, ["provider", "method"], "authRequest");
-    if (method !== "cli-import") return fail("authRequest.method");
-    return { provider, method };
-  }
-  if (provider === "opencode-go") {
-    exact(record, ["provider", "method", "apiKey"], "authRequest");
-    if (method !== "api-key") return fail("authRequest.method");
+  exact(record, ["offeringId", "method", "apiKey"], "authRequest");
+  const offeringId = string(record.offeringId, "authRequest.offeringId");
+  if (!offeringIdPattern.test(offeringId)) return fail("authRequest.offeringId");
+  const request: StartAuthRequest = {
+    offeringId,
+    method: oneOf(record.method, authMethods, "authRequest.method"),
+  };
+  if (record.apiKey !== undefined) {
     const apiKey = string(record.apiKey, "authRequest.apiKey");
     if (!apiKey.trim() || apiKey.length > 4096) return fail("authRequest.apiKey");
-    return { provider, method, apiKey };
+    request.apiKey = apiKey;
   }
-  const region = oneOf(record.region, glmRegions, "authRequest.region");
-  if (method === "cli-import") {
-    exact(record, ["provider", "method", "region"], "authRequest");
-    return { provider, method, region };
-  }
-  if (method !== "api-key") return fail("authRequest.method");
-  exact(record, ["provider", "method", "region", "apiKey"], "authRequest");
-  const apiKey = string(record.apiKey, "authRequest.apiKey");
-  if (!apiKey.trim() || apiKey.length > 4096) return fail("authRequest.apiKey");
-  return { provider, method, region, apiKey };
+  return request;
 }
 
 export function parseSetAccountEnabledRequest(value: unknown): {
@@ -472,16 +481,33 @@ export function parseSetAccountEnabledRequest(value: unknown): {
   };
 }
 
+export function parseResetCreditRedemption(value: unknown): ResetCreditRedemption {
+  const record = object(value, "redemption");
+  if (record.kind === "aggregate") {
+    exact(record, ["kind", "type"], "redemption");
+    const redemption: ResetCreditRedemption = { kind: "aggregate" };
+    if (record.type !== undefined) {
+      const type = string(record.type, "redemption.type");
+      if (!type.trim() || type.length > 64) return fail("redemption.type");
+      redemption.type = type;
+    }
+    return redemption;
+  }
+  if (record.kind === "item") {
+    exact(record, ["kind", "itemId"], "redemption");
+    const itemId = string(record.itemId, "redemption.itemId").trim();
+    if (!itemId || itemId.length > 256) return fail("redemption.itemId");
+    return { kind: "item", itemId };
+  }
+  return fail("redemption.kind");
+}
+
 export function parseRedeemResetCreditRequest(value: unknown): RedeemResetCreditRequest {
   const record = object(value, "redeemResetCredit");
-  exact(record, ["accountId", "selectionToken"], "redeemResetCredit");
-  const selectionToken = string(record.selectionToken, "redeemResetCredit.selectionToken").trim();
-  if (!selectionToken || selectionToken.length > 256) {
-    return fail("redeemResetCredit.selectionToken");
-  }
+  exact(record, ["accountId", "redemption"], "redeemResetCredit");
   return {
     accountId: parseAccountId(record.accountId),
-    selectionToken,
+    redemption: parseResetCreditRedemption(record.redemption),
   };
 }
 
@@ -528,6 +554,9 @@ function parseAuthMethodDescriptor(value: unknown): PublicAuthMethodDescriptor {
     ...(record.sourceLabel === undefined
       ? {}
       : { sourceLabel: string(record.sourceLabel, "authMethod.sourceLabel") }),
+    ...(record.sourcePathHint === undefined
+      ? {}
+      : { sourcePathHint: string(record.sourcePathHint, "authMethod.sourcePathHint") }),
   };
 }
 
@@ -543,10 +572,11 @@ function parseOfferingDescriptor(value: unknown): PublicOfferingDescriptor {
     ...(record.websiteUrl === undefined
       ? {}
       : { websiteUrl: string(record.websiteUrl, "offering.websiteUrl") }),
-    ...(record.region === undefined
+    ...(record.iconKey === undefined
       ? {}
-      : { region: oneOf(record.region, glmRegions, "offering.region") }),
+      : { iconKey: string(record.iconKey, "offering.iconKey") }),
     authMethods: array(record.authMethods, "offering.authMethods", parseAuthMethodDescriptor),
+    plans: array(record.plans, "offering.plans", parsePlanDescriptor),
   };
 }
 
@@ -594,11 +624,11 @@ export function publicPlanDisplayName(
 
 export function parseProviderDescriptor(value: unknown): PublicProviderDescriptor {
   const record = object(value, "providerDescriptor");
+  exact(record, ["provider", "displayName", "offerings"], "providerDescriptor");
   const descriptor: PublicProviderDescriptor = {
     provider: oneOf(record.provider, providerIds, "providerDescriptor.provider"),
     displayName: string(record.displayName, "providerDescriptor.displayName"),
     offerings: array(record.offerings, "providerDescriptor.offerings", parseOfferingDescriptor),
-    plans: array(record.plans, "providerDescriptor.plans", parsePlanDescriptor),
   };
   const seenOfferings = new Set<string>();
   for (const offering of descriptor.offerings) {
@@ -613,17 +643,17 @@ export function parseProviderDescriptor(value: unknown): PublicProviderDescripto
       if (seenMethods.has(method.method)) fail("authMethod.method");
       seenMethods.add(method.method);
     }
-  }
-  const seenPlanIds = new Set<string>();
-  const seenPlanMatches = new Set<string>();
-  for (const plan of descriptor.plans) {
-    if (seenPlanIds.has(plan.id)) fail("plan.id");
-    seenPlanIds.add(plan.id);
-    for (const raw of plan.match) {
-      const key = normalizePlanMatch(raw);
-      if (!key) fail("plan.match");
-      if (seenPlanMatches.has(key)) fail("plan.match");
-      seenPlanMatches.add(key);
+    const seenPlanIds = new Set<string>();
+    const seenPlanMatches = new Set<string>();
+    for (const plan of offering.plans) {
+      if (seenPlanIds.has(plan.id)) fail("plan.id");
+      seenPlanIds.add(plan.id);
+      for (const raw of plan.match) {
+        const key = normalizePlanMatch(raw);
+        if (!key) fail("plan.match");
+        if (seenPlanMatches.has(key)) fail("plan.match");
+        seenPlanMatches.add(key);
+      }
     }
   }
   return descriptor;
@@ -631,9 +661,12 @@ export function parseProviderDescriptor(value: unknown): PublicProviderDescripto
 
 export function parsePublicAccount(value: unknown): PublicAccount {
   const record = object(value, "account");
+  const offeringId = string(record.offeringId, "account.offeringId");
+  if (!offeringIdPattern.test(offeringId)) fail("account.offeringId");
   return {
     id: parseAccountId(record.id),
     provider: oneOf(record.provider, providerIds, "account.provider"),
+    offeringId,
     authMethod: oneOf(record.authMethod, authMethods, "account.authMethod"),
     displayName: string(record.displayName, "account.displayName"),
     maskedIdentifier: string(record.maskedIdentifier, "account.maskedIdentifier"),
@@ -678,9 +711,6 @@ function parseUsageExtraItem(value: unknown): UsageExtraItem {
     key: string(record.key, "extraItem.key"),
     kind: string(record.kind, "extraItem.kind"),
     expiresAt: nullableString(record.expiresAt, "extraItem.expiresAt"),
-    ...(record.actionToken === undefined
-      ? {}
-      : { actionToken: string(record.actionToken, "extraItem.actionToken") }),
   };
 }
 
@@ -693,6 +723,50 @@ function parseUsageExtra(value: unknown): UsageExtra {
       ? {}
       : { items: array(record.items, "extra.items", parseUsageExtraItem) }),
   };
+}
+
+function parseResetCreditItem(value: unknown): ResetCreditItem {
+  const record = object(value, "resetCreditItem");
+  const id = string(record.id, "resetCreditItem.id");
+  if (!id || id.length > 256) fail("resetCreditItem.id");
+  return {
+    id,
+    type: string(record.type, "resetCreditItem.type"),
+    expiresAt: nullableString(record.expiresAt, "resetCreditItem.expiresAt"),
+  };
+}
+
+function parseResetCredits(value: unknown): ResetCredits {
+  const record = object(value, "resetCredits");
+  if (record.kind === "aggregate") {
+    exact(record, ["kind", "totals"], "resetCredits");
+    const totals = array(record.totals, "resetCredits.totals", (item) => {
+      const entry = object(item, "resetCredits.total");
+      exact(entry, ["type", "total"], "resetCredits.total");
+      return {
+        type: string(entry.type, "resetCredits.total.type"),
+        total: nonnegativeInteger(entry.total, "resetCredits.total.total"),
+      };
+    });
+    if (!totals.length) fail("resetCredits.totals");
+    const seenTypes = new Set<string>();
+    for (const total of totals) {
+      if (seenTypes.has(total.type)) fail("resetCredits.total.type");
+      seenTypes.add(total.type);
+    }
+    return { kind: "aggregate", totals };
+  }
+  if (record.kind === "itemized") {
+    exact(record, ["kind", "items"], "resetCredits");
+    const items = array(record.items, "resetCredits.items", parseResetCreditItem);
+    const seenIds = new Set<string>();
+    for (const item of items) {
+      if (seenIds.has(item.id)) fail("resetCredits.items.id");
+      seenIds.add(item.id);
+    }
+    return { kind: "itemized", items };
+  }
+  return fail("resetCredits.kind");
 }
 
 export function parsePublicUsage(value: unknown): PublicUsage {
@@ -714,6 +788,10 @@ export function parsePublicUsage(value: unknown): PublicUsage {
       };
     }),
     extras: array(record.extras, "usage.extras", parseUsageExtra),
+    resetCredits:
+      record.resetCredits === undefined || record.resetCredits === null
+        ? null
+        : parseResetCredits(record.resetCredits),
     fetchedAt: isoDate(record.fetchedAt, "usage.fetchedAt"),
   };
 }

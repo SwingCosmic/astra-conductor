@@ -86,10 +86,14 @@ describe("GLM Coding Plan adapter", () => {
       return url.includes("customer-package-reset") ? resetResponse() : quotaResponse();
     };
     const adapter = new GlmAdapter(fetchImpl, { now: () => now });
-    const provisioning = await adapter.createProvisioning("china-secret-key", "china");
+    const provisioning = await adapter.createProvisioning(
+      "china-secret-key",
+      "bigmodel-coding-plan",
+    );
     const account = {
       id: "glm-china",
       provider: "glm" as const,
+      offeringId: "bigmodel-coding-plan",
       authMethod: "api-key" as const,
       stableIdentity: provisioning.stableIdentity,
       displayName: provisioning.displayName,
@@ -120,34 +124,17 @@ describe("GLM Coding Plan adapter", () => {
       { key: "session", remaining: 21_000, remainingPercentage: 75 },
       { key: "weekly", remainingPercentage: 40 },
     ]);
-    expect(snapshot.extras).toEqual([
-      {
-        key: "reset-credits",
-        value: "3",
-        items: [
-          {
-            key: "five_hour:0",
-            kind: "five-hour",
-            expiresAt: "2099-09-25 13:00:00",
-            actionToken: "1",
-          },
-          {
-            key: "five_hour:1",
-            kind: "five-hour",
-            expiresAt: "2099-09-25 15:00:00",
-            actionToken: "2",
-          },
-          {
-            key: "week:2",
-            kind: "weekly",
-            expiresAt: "2099-09-26 13:00:00",
-            actionToken: "3",
-          },
-        ],
-      },
-    ]);
+    expect(snapshot.extras).toEqual([]);
+    expect(snapshot.resetCredits).toEqual({
+      kind: "itemized",
+      items: [
+        { id: "1", type: "five-hour", expiresAt: "2099-09-25 13:00:00" },
+        { id: "2", type: "five-hour", expiresAt: "2099-09-25 15:00:00" },
+        { id: "3", type: "weekly", expiresAt: "2099-09-26 13:00:00" },
+      ],
+    });
 
-    await adapter.redeemResetCard(account, envelope, "1");
+    await adapter.redeemResetCard(account, envelope, { kind: "item", itemId: "1" });
     const redemption = requests.find((request) => request.url.endsWith("/use"));
     expect(redemption).toMatchObject({
       url: "https://open.bigmodel.cn/api/biz/customer-package-reset/use",
@@ -160,9 +147,12 @@ describe("GLM Coding Plan adapter", () => {
       recordId: 1,
       requestId: expect.any(String),
     });
-    await expect(adapter.redeemResetCard(account, envelope, "missing")).rejects.toMatchObject({
-      code: "validation",
-    });
+    await expect(
+      adapter.redeemResetCard(account, envelope, { kind: "item", itemId: "missing" }),
+    ).rejects.toMatchObject({ code: "validation" });
+    await expect(
+      adapter.redeemResetCard(account, envelope, { kind: "aggregate" }),
+    ).rejects.toMatchObject({ code: "validation" });
   });
 
   it("keeps international accounts separate and rejects invalid keys", async () => {
@@ -173,21 +163,29 @@ describe("GLM Coding Plan adapter", () => {
       if (url.includes("customer-package-reset")) return resetResponse();
       return quotaResponse();
     });
-    const china = await adapter.createProvisioning("shared-key", "china");
-    const international = await adapter.createProvisioning("shared-key", "international");
-    const imported = await adapter.createProvisioning("imported-key", "china", "cli-import");
+    const china = await adapter.createProvisioning("shared-key", "bigmodel-coding-plan");
+    const international = await adapter.createProvisioning("shared-key", "zai-coding-plan");
+    const imported = await adapter.createProvisioning(
+      "imported-key",
+      "bigmodel-coding-plan",
+      "cli-import",
+    );
     expect(china.stableIdentity).not.toBe(international.stableIdentity);
+    expect(china.offeringId).toBe("bigmodel-coding-plan");
+    expect(international.offeringId).toBe("zai-coding-plan");
     expect(imported.authMethod).toBe("cli-import");
     expect(imported.credentials.authMethod).toBe("cli-import");
-    expect(international.publicMetadata).toMatchObject({
-      region: "international",
-      presentationId: "zai-coding-plan",
-    });
+    expect(international.publicMetadata).toEqual({});
     expect(urls).toContain("https://api.z.ai/api/monitor/usage/quota/limit");
 
     const invalid = new GlmAdapter(async () => new Response("", { status: 401 }));
-    await expect(invalid.createProvisioning("bad-key", "china")).rejects.toMatchObject({
+    await expect(
+      invalid.createProvisioning("bad-key", "bigmodel-coding-plan"),
+    ).rejects.toMatchObject({
       code: "authentication",
+    });
+    await expect(adapter.createProvisioning("shared-key", "glm")).rejects.toMatchObject({
+      code: "validation",
     });
   });
 
@@ -203,7 +201,7 @@ describe("GLM Coding Plan adapter", () => {
     const adapter = new GlmAdapter(async (input) =>
       String(input).includes("customer-package-reset") ? resetResponse() : quotaResponse(),
     );
-    const input = await adapter.createProvisioning("private-key-value", "china");
+    const input = await adapter.createProvisioning("private-key-value", "bigmodel-coding-plan");
     const first = await provisioner.save(input);
     const second = await provisioner.save(input);
     expect(second.id).toBe(first.id);

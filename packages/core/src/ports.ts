@@ -3,9 +3,10 @@ import type {
   CredentialEnvelope,
   EncryptedCredential,
   NotificationState,
+  ProviderId,
+  ResetCreditRedemption,
   SettingValue,
   UsageSnapshot,
-  ProviderId,
 } from "./models.js";
 
 export interface AccountRepository {
@@ -53,14 +54,18 @@ export interface CredentialRefreshResult {
   changed: boolean;
 }
 
+/**
+ * 用量侧适配器形状（usage facet 的内部形态）。凭据刷新属于账号能力
+ * facet：没有主动刷新协议的 API Key 实现不再提供无效果刷新方法。
+ */
 export interface UsageProviderAdapter {
   readonly provider: ProviderId;
-  refreshCredentials(
+  fetchUsage(account: Account, envelope: CredentialEnvelope): Promise<UsageSnapshot>;
+  redeemResetCard?(
     account: Account,
     envelope: CredentialEnvelope,
-    force?: boolean,
-  ): Promise<CredentialRefreshResult>;
-  fetchUsage(account: Account, envelope: CredentialEnvelope): Promise<UsageSnapshot>;
+    request: ResetCreditRedemption,
+  ): Promise<void>;
 }
 
 export interface DecryptionResult {

@@ -19,6 +19,7 @@ function account(id = "account-1"): Account {
   return {
     id,
     provider: "codex",
+    offeringId: "codex",
     authMethod: "cli-import",
     stableIdentity: `workspace:${id}`,
     displayName: "Test account",
@@ -38,8 +39,56 @@ function snapshot(accountId: string, plan: string): UsageSnapshot {
     overallRemainingPercentage: null,
     groups: [],
     extras: [],
+    resetCredits: null,
     fetchedAt: "2026-09-24T01:00:00.000Z",
   };
+}
+
+function createLegacyDatabase(filename: string, appliedVersions: number): Database.Database {
+  const legacy = new Database(filename);
+  legacy.exec(`
+    CREATE TABLE schema_migrations (
+      version INTEGER PRIMARY KEY,
+      checksum TEXT NOT NULL,
+      applied_at TEXT NOT NULL
+    );
+  `);
+  for (const migration of migrations.slice(0, appliedVersions)) {
+    legacy.exec(migration.sql);
+    legacy
+      .prepare("INSERT INTO schema_migrations (version, checksum, applied_at) VALUES (?, ?, ?)")
+      .run(migration.version, migration.checksum, "2026-09-24T00:00:00.000Z");
+  }
+  return legacy;
+}
+
+function insertLegacyAccount(
+  database: Database.Database,
+  row: {
+    id: string;
+    provider: string;
+    authMethod: string;
+    publicMetadata: string;
+  },
+): void {
+  database
+    .prepare(
+      `INSERT INTO accounts (
+        id, provider, auth_method, stable_identity, display_name, masked_identifier,
+        enabled, public_metadata, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
+    )
+    .run(
+      row.id,
+      row.provider,
+      row.authMethod,
+      `${row.provider}:${row.id}`,
+      "Legacy",
+      "le***",
+      row.publicMetadata,
+      "2026-09-24T00:00:00.000Z",
+      "2026-09-24T00:00:00.000Z",
+    );
 }
 
 afterEach(() => {
@@ -51,18 +100,7 @@ afterEach(() => {
 describe("SqliteStorage", () => {
   it("creates, migrates, and reopens the database idempotently", () => {
     const filename = tempDatabase();
-    const legacy = new Database(filename);
-    legacy.exec(`
-      CREATE TABLE schema_migrations (
-        version INTEGER PRIMARY KEY,
-        checksum TEXT NOT NULL,
-        applied_at TEXT NOT NULL
-      );
-    `);
-    legacy.exec(migrations[0].sql);
-    legacy
-      .prepare("INSERT INTO schema_migrations (version, checksum, applied_at) VALUES (?, ?, ?)")
-      .run(1, migrations[0].checksum, "2026-09-24T00:00:00.000Z");
+    const legacy = createLegacyDatabase(filename, 1);
     legacy
       .prepare(
         `INSERT INTO accounts (
@@ -93,6 +131,7 @@ describe("SqliteStorage", () => {
 
     const first = new SqliteStorage(filename);
     expect(first.accounts.get("legacy")?.credentialState).toBe("available");
+    expect(first.accounts.get("legacy")?.offeringId).toBe("codex");
     expect(first.notifications.list("legacy")[0]?.deliveryConfirmed).toBe(false);
     first.close();
     const second = new SqliteStorage(filename);
@@ -104,6 +143,52 @@ describe("SqliteStorage", () => {
       count: number;
     };
     expect(count.count).toBe(currentSchemaVersion);
+    check.close();
+  });
+
+  it("backfills offering_id for pre-v4 accounts when migration 4 runs", () => {
+    const filename = tempDatabase();
+    const legacy = createLegacyDatabase(filename, 3);
+    insertLegacyAccount(legacy, {
+      id: "glm-presentation",
+      provider: "glm",
+      authMethod: "api-key",
+      publicMetadata: '{"presentationId":"bigmodel-lite"}',
+    });
+    insertLegacyAccount(legacy, {
+      id: "glm-china",
+      provider: "glm",
+      authMethod: "api-key",
+      publicMetadata: '{"region":"china"}',
+    });
+    insertLegacyAccount(legacy, {
+      id: "glm-unknown",
+      provider: "glm",
+      authMethod: "api-key",
+      publicMetadata: "{}",
+    });
+    insertLegacyAccount(legacy, {
+      id: "codex-cli",
+      provider: "codex",
+      authMethod: "cli-import",
+      publicMetadata: "{}",
+    });
+    legacy.close();
+
+    const storage = new SqliteStorage(filename);
+    expect(storage.accounts.get("glm-presentation")?.offeringId).toBe("bigmodel-lite");
+    expect(storage.accounts.get("glm-china")?.offeringId).toBe("bigmodel-coding-plan");
+    expect(storage.accounts.get("glm-unknown")?.offeringId).toBe("zai-coding-plan");
+    expect(storage.accounts.get("codex-cli")?.offeringId).toBe("codex");
+    storage.close();
+
+    const check = new Database(filename, { readonly: true });
+    const applied = check
+      .prepare("SELECT version FROM schema_migrations ORDER BY version")
+      .all() as Array<{ version: number }>;
+    expect(applied.map((row) => row.version)).toEqual(
+      migrations.map((migration) => migration.version),
+    );
     check.close();
   });
 

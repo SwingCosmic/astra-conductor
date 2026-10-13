@@ -36,7 +36,11 @@ describe("OpencodeGoAdapter", () => {
 
   it("normalizes all three official quota windows", async () => {
     const adapter = new OpencodeGoAdapter(async () => quotaResponse(), { now: () => now });
-    const account = { id: "opencode-1", provider: "opencode-go" } as Account;
+    const account = {
+      id: "opencode-1",
+      provider: "opencode-go",
+      offeringId: "opencode-go",
+    } as Account;
     const envelope = {
       provider: "opencode-go",
       secrets: { apiKey: "oc-secret-key" },

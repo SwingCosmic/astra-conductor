@@ -2,11 +2,11 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 状态 | 目标设计，供共享 Core、PolyQuota 与 GraphAgent 后续实施 |
-| 更新日期 | 2026-09-27 |
+| 状态 | 目标设计，供共享 Core、PolyQuota 与 GraphAgent 后续实施；阶段 A–D 的 PolyQuota 部分已落地（能力注册表、接入点化认证、目录与展示收敛、重置额度一等结构），进展见第 15 节各阶段记录 |
+| 更新日期 | 2026-10-13 |
 | 适用范围 | 服务商目录、认证、账号、凭据刷新、用量、模型目录、API 协议族、推理执行边界与产品服务 |
 | 暂缓细节 | 统一消息 IR 的全部字段、完整流事件表、路由算法、第三方可执行插件、共享凭据代理物理实现 |
-| 参考输入 | [OmniRoute 原始协议探索](./omniroute-exploration.md)、[当前搬运基线](./omniroute-manual-extraction-baseline.md)、[同步工具形态设计](./omniroute-sync-tool-design.md)、[ZCode](./zcode-provider-architecture-exploration.md)、[DSH](./deepseek-harness-provider-architecture-exploration.md)、[Hermes Agent](./hermes-agent-provider-architecture-exploration.md) |
+| 参考输入 | [OmniRoute 原始协议探索](./omniroute-exploration.md)、[当前搬运基线](./omniroute-manual-extraction-baseline.md)、[同步工具形态设计](./omniroute-sync-tool-design.md)、[ZCode](./zcode-provider-architecture-exploration.md)、[DSH](./deepseek-harness-provider-architecture-exploration.md)、[Hermes Agent](./hermes-agent-provider-architecture-exploration.md)、[认证服务抽取设计](../../polyquota/auth-service-extraction-design.md) |
 
 ## 1. 目标
 
@@ -14,7 +14,7 @@
 
 1. PolyQuota 通过稳定应用服务读取服务商、账号、用量和设置，并发起认证、刷新和管理操作；
 2. GraphAgent 通过共享 Core 取得模型目录、协议端点、能力、推理执行与用量事实，而不依赖 PolyQuota 的 UI 或 Electron 服务；
-3. Codex、GLM 及后续服务商共享注册、凭据和调用主干，同时保留地区、认证方式、API 协议、模型能力、配额结构和原生状态等真实差异；
+3. Codex、GLM 及后续服务商共享注册、凭据和调用主干，同时保留接入点、认证方式、API 协议、模型能力、配额结构和原生状态等真实差异；
 4. 应用根据稳定标识把账号、协议端点和模型请求绑定到唯一实现，不依赖页面分支、URL 猜测或隐式回退；
 5. 新服务商的认证、协议编解码、模型目录、用量解析和错误归一化可以在无真实网络、无产品宿主、无真实凭据的条件下完成大部分验证；
 6. 当前从 OmniRoute 搬运的协议叶子可以继续演进，并为以后抽取翻译器、Executor 或模型能力规则预留明确位置。
@@ -70,7 +70,7 @@ OmniRoute 并不存在一个包办所有职责的 `ProviderAdapter`。它的完�
 | OAuth、设备码、CLI 解析 | `ProviderAccountCapability` 内部协议叶子 | 保留原始请求语义，由 Codex contribution 组合 |
 | token refresh 与串行器 | 凭据生命周期与共享凭据服务 | 保留服务商专属旋转规则，不进入 UI 协议 |
 | Codex/GLM usage 叶子 | `ProviderUsageCapability` | 继续输出 `groups + extras`，不与推理执行耦合 |
-| `CodexAdapter` / `GlmAdapter` | 现有过渡 facade | 分阶段拆成 account、usage 等能力实现 |
+| `CodexAdapter` / `GlmAdapter` 等六家 adapter（含 Grok Build、Antigravity、Claude、OpenCode Go） | 现有过渡 facade | 分阶段拆成 account、usage 等能力实现 |
 | `RefreshCoordinator` | PolyQuota 应用协调层 | 通过 ProviderRegistry 取 usage/account 能力 |
 | 尚未搬运的 translator | `ProtocolCodecRegistry` 候选来源 | 先确定 IR 和状态保真规则，再选择性抽取 |
 | 尚未搬运的 Executor | `ProviderInferenceCapability` 候选来源 | 只抽纯协议/执行叶子，宿主策略由本项目实现 |
@@ -94,17 +94,20 @@ OmniRoute 并不存在一个包办所有职责的 `ProviderAdapter`。它的完�
 
 ## 4. 当前问题
 
-现有实现已经有良好分层，但服务商边界仍分散（下列问题部分已在阶段 A/C 与 IPC 契约改造中解决，已解决的以括号标注，其余仍为现状）：
+现有实现已经有良好分层，但服务商边界仍分散（下列问题已在阶段 A–D 与 IPC 契约改造中全部解决，仅保留两处注明"部分"的遗留）：
 
-- `ProviderId`、`AuthMethod` 在 Core 与 `polyquota-contract` 各维护一份封闭联合（UI 已改为 re-export 契约定义，重复收敛待阶段 D 第 6 条）；
-- UI 的 `presentation.ts` 同时承担目录、可用性、地区默认值和文案（已解决：接入页已改为目录驱动，`presentation.ts` 只保留文案与图标，见第 15 节阶段 A 进展记录）；
-- `AuthService.start()` 直接判断 `provider === "glm"` 或 `provider !== "codex"`（已解决：桌面 `auth-service.ts` 已按[认证服务抽取设计](../../polyquota/auth-service-extraction-design.md)拆除，认证分派由 core 各 `auth-flow.ts` 与无分支的 `AuthCoordinator` 承担）；
-- `RefreshCoordinator` 已按 `provider` 查 `UsageProviderAdapter`，但构造 `Map` 时重复实现会静默覆盖；
-- 账号公开元数据使用无命名空间的 primitive map，字段所有权和版本不明确；
-- `window.llmUsage`、preload、IPC 与 UI 类型分别维护，容易漂移（已解决：preload 全局已更名为 `window.polyQuotaElectronService`，channel 与校验由 `polyquota-contract` 单一来源提供）；
-- 账号与用量逐项读取，没有一份带修订号的一致前端快照（已解决：`getSnapshot()` 已提供带 `revision` 的单一快照与失效事件）；
-- BigModel 与 Z.ai 共享 `glm` 实现，却靠 `publicMetadata.presentationId` 和页面判断恢复展示入口。
-- 共享 Core 当前只有认证、凭据刷新和用量能力，没有模型目录、API 协议类型、推理请求与流式结果契约；
+- `ProviderId`、`AuthMethod` 在 Core 与 `polyquota-contract` 各维护一份封闭联合（已解决：封闭标识的唯一来源改为契约包，core re-export，UI 经 models 转发；GraphAgent 契约出现时应上移到共享协议层）；
+- UI 的 `presentation.ts` 同时承担目录、可用性、地区默认值和文案（已解决：收缩为图标资产与 iconKey 字符回退、内置枚举文本映射（含重置额度类型词汇）与窗口时长等纯展示计算；CLI 导入路径提示、配额/附加项标签回退、名称/描述/网站全部目录驱动，`planLabel` 删除，QuotaCard 直接使用契约包的 `publicPlanDisplayName`）；
+- `presentation.ts` 的 `providerPresentation` 在未知 offering 时最终回退到注册表第一个条目（已解决：未知 offering 显示占位行——名称为 offeringId、字符"?"，不回退）；
+- 桌面 `main.ts` 仍含约百行按供应商展开的组合代码（已解决：core `providers/<id>/bundle.ts` 组合工厂 + `createProviderContributions(ports)` 聚合，桌面组合根只注入 http/browser/callbackServer/storage/vault 端口，新增供应商零修改）；
+- GLM 的 `region` 把接入点差异压成一个地区枚举（已解决：descriptor 无 region 字段，`AuthStartOptions` 仅剩 `apiKey`，账号持久化 `offeringId`，GLM 实现内部按 offeringId 选择端点，`publicMetadata.region`/`presentationId` 与 UI 的 `accountPresentationId` 恢复逻辑全部删除）；
+- `AuthService.start()` 直接判断 `provider === "glm"`（已解决：认证分派由 core 各 `auth-flow.ts` 与无分支的 `AuthCoordinator` 承担）；
+- `RefreshCoordinator` 构造 `Map` 时重复实现会静默覆盖（已解决：`ProviderRegistry` 构造期校验唯一所有权，任一冲突使整个注册表构造失败）；
+- 账号公开元数据使用无命名空间的 primitive map（部分解决：GLM 的 region/presentationId/product 已删除；codex/grok/claude 的 workspace、组织等事实仍在 `publicMetadata`，待 §6.1 `PublicExtension` 机制落地后转换）；
+- `window.llmUsage`、preload、IPC 与 UI 类型分别维护（已解决：preload 全局为 `window.polyQuotaElectronService`，channel 与校验由 `polyquota-contract` 单一来源提供）；
+- 账号与用量逐项读取（已解决：`getSnapshot()` 提供带 `revision` 的单一快照与失效事件）；
+- BigModel 与 Z.ai 共享 `glm` 实现，却靠 `publicMetadata.presentationId` 和页面判断恢复展示入口（已解决：账号按 `offeringId` 分组与展示）。
+- 共享 Core 当前只有认证、凭据刷新、用量和套餐目录评分能力，没有模型目录、API 协议类型、推理请求与流式结果契约；
 - 先前草案中的 `ProviderRuntime` 强制所有实现提供用量方法，错误地以 PolyQuota 能力定义共享服务商边界；
 - GraphAgent 的 `ModelPolicy`、`ModelLease`、额度感知调度和模型执行尚无可绑定的共享协议；
 - 当前 OmniRoute vendor 基线与未来推理协议抽取之间没有演进位置，容易在 GraphAgent 启动时另起一套不兼容抽象（该位置已由[同步工具形态设计](./omniroute-sync-tool-design.md)确定：现有产物与未来抽取共用同一清单、闭包规则和门禁）。
@@ -118,13 +121,15 @@ OmniRoute 并不存在一个包办所有职责的 `ProviderAdapter`。它的完�
 | 标识 | 含义 | 示例 | 所有者 |
 | --- | --- | --- | --- |
 | `providerId` | 一个服务商实现与凭据所有权域 | `codex`、`glm`、`anthropic` | Core 注册表 |
-| `offeringId` | 面向用户的接入入口 | `codex`、`bigmodel-coding-plan`、`zai-coding-plan` | 服务商声明 |
+| `offeringId` | 接入点：一种完整接入形态，自带认证方式、协议端点绑定、模型目录范围与计费目录 | `codex`、`bigmodel-coding-plan`、`zai-coding-plan` | 服务商声明 |
 | `authMethodId` | 一种完整认证交互 | `browser-oauth`、`device-code`、`cli-import`、`api-key` | 服务商声明与实现 |
 | `accountId` | 已保存的具体账号 | UUID | 账号存储 |
 | `protocolRouteId` | 一个可选择的上游 API 协议端点 | `codex-responses`、`anthropic-messages` | Provider contribution |
 | `modelId` | 服务商目录中的模型标识 | `gpt-5.6-codex`、`claude-opus-4-6` | 模型目录 |
 
-`providerId` 不是品牌卡片标识，也不是 API 协议类型。一个实现可以拥有多个 offering 和多个 protocol route。BigModel 与 Z.ai 使用同一个 `glm` 实现，但 offering 分别携带地区、网站、图标键和默认认证参数；一个网关也可以同时提供 OpenAI Chat Completions 与 Anthropic Messages，而不因此成为两个服务商。
+`providerId` 不是品牌卡片标识，也不是 API 协议类型。一个实现可以拥有多个接入点和多个 protocol route。BigModel 与 Z.ai 使用同一个 `glm` 实现，但作为两个接入点各自声明端点绑定、认证参数与展示事实；一个网关也可以同时提供 OpenAI Chat Completions 与 Anthropic Messages，而不因此成为两个服务商。
+
+接入点（而不是地区枚举）才是差异的正确粒度。以 OpenAI 为例，ChatGPT Codex 订阅（OAuth、订阅配额与档位）、OpenAI 平台 API（API Key、按量计费）与 Azure OpenAI（独立端点、部署级凭据）的订阅方式、接口地址、模型目录和计费模式天差地别，应建模为同一供应商下的不同接入点；若凭据所有权域确实不同（如 Azure 部署密钥与 ChatGPT 账号），也可以实施为独立 provider——两种判定都被本机制支持，共同点是接入点级差异必须显式声明，不能靠实现内部的枚举字段暗中选择。
 
 `modelId` 只在所属 provider 或目录命名空间中唯一。GraphAgent 的持久选择使用 `{ providerId, accountId, modelId, protocolRouteId? }`，不能只保存一条可变 URL 或展示名称。
 
@@ -171,7 +176,7 @@ flowchart LR
 - ProviderRegistry 与严格绑定；
 - 账号认证、凭据刷新、用量、模型目录和推理执行能力端口；
 - API 协议标识、协议 codec/translator 注册边界和统一执行生命周期；
-- 产品无关的公开事实、错误、usage 与成本记录；
+- 产品无关的公开事实（目录、认证方式、套餐与展示提示）、错误、usage 与成本记录；
 - 从当前 OmniRoute vendor 叶子到各能力实现的适配层。
 
 PolyQuota 自己提供：
@@ -213,23 +218,25 @@ interface PublicExtension {
 
 差异化公开信息使用反向域名或项目命名空间，例如：
 
-- `io.astraconductor.polyquota.glm.region`；
 - `io.astraconductor.polyquota.codex.workspace`；
+- `io.astraconductor.polyquota.claude.organization`；
 - `io.astraconductor.polyquota.usage.reset-credits`。
 
 同一对象内命名空间唯一。未知扩展必须在服务传递过程中保持原值；UI 没有对应展示器时可以不显示，但不能把未知字段改造成共同字段。秘密、请求头、token、API Key、设备授权内部标识和 PKCE 数据禁止进入扩展。
 
-扩展只承载确实无法稳定提升为共同字段的内容。地区、认证方式、可用性和配额窗口已经有共同语义，不应重复塞入扩展。
+扩展只承载确实无法稳定提升为共同字段的内容。认证方式、可用性、套餐和配额窗口已经有共同语义，不应重复塞入扩展。
 
 ### 6.2 服务商声明
 
 ```ts
 interface ProviderDescriptor {
-  id: ProviderId;
+  provider: ProviderId;
   displayName: string;
-  capabilities: ProviderCapability[];
-  offerings: ProviderOffering[];
-  protocolRoutes: ProtocolRouteDescriptor[];
+  offerings: ProviderOfferingDescriptor[];
+  // 已落地：plans 位于接入点级，查表键为 offeringId（不同接入点计费模式可以不同）：
+  plans: readonly ProviderPlanDescriptor[];
+  capabilities: ProviderCapability[];          // 阶段 B 落地
+  protocolRoutes: ProtocolRouteDescriptor[];   // 阶段 E 落地，由接入点引用
   extensions?: PublicExtension[];
 }
 
@@ -240,52 +247,59 @@ type ProviderCapability =
   | "inference"
   | "multiple-accounts";
 
-interface ProviderOffering {
+interface ProviderOfferingDescriptor {
   id: OfferingId;
-  providerId: ProviderId;
+  provider: ProviderId;
   displayName: string;
   description?: string;
   iconKey?: string;
   websiteUrl?: string;
-  authMethods: AuthMethodDescriptor[];
-  defaults?: Record<string, JsonValue>;
+  authMethods: ProviderAuthMethodDescriptor[];
+  protocolRouteIds?: readonly ProtocolRouteId[];   // 阶段 E：接入点可用的协议端点
   extensions?: PublicExtension[];
+}
+
+interface ProviderPlanDescriptor {
+  id: string;
+  displayName: string;
+  match: readonly string[];
+  multiplier: number;
+  source: "published" | "inferred";
 }
 ```
 
-`displayName` 和 `description` 是运行时提供的安全回退文案。UI 的 presentation registry 可以按 `offeringId` 提供本地化名称、图标和更适合产品的说明，但不得改变能力或可执行状态。
+除 `protocolRoutes`、`extensions` 与接入点的 `protocolRouteIds` 外，上述形状已在 core `providers/<id>/descriptor.ts` 落地（六家：codex、glm、grok-build、antigravity、claude、opencode-go），`capabilities` 当前全部声明 `["account", "usage"]`，`plans` 已随账号持久化 `offeringId` 迁至接入点级（GLM 两个接入点各持一份相同目录，允许独立演进），offering 不再有 `region` 字段。`providers/catalog.ts` 聚合为唯一目录端点并构造期校验：未知或重复 provider、offering 归属与 id 格式、offering 内认证方式重复、iconKey 与 sourcePathHint 合法性、capability 取值、接入点内 plan 的 id/multiplier/match 合法性。快照经 `PublicProviderDescriptor` 透出 provider/displayName、offerings 全部展示字段（含 iconKey 与 sourcePathHint）与各接入点的 plans（id/displayName/match）；倍率与 `source` 属于运行期评分事实，不进公开目录。
 
-`defaults` 只能包含该实现公开声明且经 schema 校验的非秘密默认输入，例如 GLM 的 `region`。它不能携带 API Key 或内部 URL。
+`displayName` 与 `description` 是 core 持有的标准表述（语言中立或与产品 UI 语言一致，一份即可）；UI 可以按 `offeringId` 覆盖更适合产品的名称与图标，但不得改变能力或可执行状态，也不得再保存一份供应商事实副本（本地化现阶段不做，归属边界见 §6.9）。
+
+`plans` 是一次性套餐目录：运行期把上游 `usage.plan` 归一化后按 `match` 查表取 `multiplier` 参与评分，`source` 区分官方公布与一次性推断。目录只做查表，不在运行期重新猜测名称；未命中时使用统一的默认档位。`displayName` 使用上游官方、不区分语言的档位表述（如 "Plus"、"Pro 5x"、"SuperGrok Heavy"）——标准名称映射的唯一归属是 core，UI 直接展示，不另存映射，也不做本地化改写。目标为接入点级：同一服务商的不同接入点计费模式可以完全不同（订阅档位与按量付费并存），账号保存 `offeringId` 后查表键从 provider 改为接入点（阶段 C 第 3 条）。
+
+`region` 是本设计需要修正的一处：GLM 双 offering 落地时把接入点差异压成了一个地区枚举，而它在现行链路里同时承担四个职责——选择上游端点（vendor 按 `apiRegion` 区分 bigmodel 与 z.ai 的接口地址）、参与账号稳定身份（`stableIdentity` 拼接 region）、充当展示入口恢复键（`presentationId` 由 region 反推）、以及无命名空间地存进 `publicMetadata`。BigModel 与 Z.ai 实际是两个货真价实的接入点：接口地址不同，未来的模型目录与计费也可能不同。目标形态下这些差异由 offering 自身声明承载（认证方式、`protocolRouteIds`、接入点级 plans 与用量语义），地区退为 GLM 实现内部选择端点的细节，不再出现在公开 descriptor、认证输入或账号元数据中；迁移依赖账号持久化 `offeringId`（阶段 C 第 3 条），随后 `publicMetadata.region` / `presentationId`、`AuthStartOptions.region` 与 descriptor 的 `region` 字段一并退休（第 4 条）。
+
+core 不持有用量标签映射：配额与附加项的展示直接使用上游原生 `displayName`，缺失时经窗口时长等纯展示计算回退到 key 原样；本地化现阶段整体不做，未来若做也归 UI 层（§6.9）。
+
+`iconKey` 由 core 声明键、UI 持有资产映射；二进制图标资产不进入 core。缺失映射时 UI 使用自己的视觉回退，不虚构服务商。
 
 `capabilities` 表示服务商贡献提供的共享能力面，不把每种认证方式或 API 端点混入同一枚举。具体认证方式由 offering 声明，模型与协议支持由后续的 route 和 model descriptor 声明。
 
 ### 6.3 认证方法
 
-认证差异通过判别联合表达，而不是一个可选字段集合：
+认证差异通过方法、交互与来源标签表达，而不是一个可选字段集合：
 
 ```ts
-type AuthMethodDescriptor =
-  | {
-      id: "browser-oauth";
-      interaction: "browser-callback";
-      fields: readonly AuthFieldDescriptor[];
-    }
-  | {
-      id: "device-code";
-      interaction: "device-code";
-      fields: readonly AuthFieldDescriptor[];
-    }
-  | {
-      id: "cli-import";
-      interaction: "local-import";
-      sourceLabel: string;
-      fields: readonly AuthFieldDescriptor[];
-    }
-  | {
-      id: "api-key";
-      interaction: "secret-form";
-      fields: readonly AuthFieldDescriptor[];
-    };
+type AuthMethodInteraction =
+  | "browser-callback"
+  | "device-code"
+  | "local-import"
+  | "secret-form";
+
+interface ProviderAuthMethodDescriptor {
+  method: AuthMethod;
+  interaction: AuthMethodInteraction;
+  sourceLabel?: string;                      // cli-import 来源名，如 "ZCode"、"Claude Code"（已落地）
+  sourcePathHint?: string;                   // cli-import 展示用凭据路径提示（阶段 D）
+  fields?: readonly AuthFieldDescriptor[];   // 表单输入声明（阶段 C/D）
+}
 
 interface AuthFieldDescriptor {
   key: string;
@@ -296,7 +310,11 @@ interface AuthFieldDescriptor {
 }
 ```
 
-`fields` 只描述可提交输入。服务商实现必须再次执行运行时校验，不能信任 renderer 根据 descriptor 生成的表单。
+`method + interaction + sourceLabel` 已落地：`validateProviderCatalog` 校验 offering 内方法唯一，`AuthCoordinator` 构造期把各 flow 的 `supportedMethods` 与目录对账，两份支持矩阵无法静默漂移。core 不为 `AuthMethod`、`AuthMethodInteraction` 等内置枚举提供任何描述信息：它们是封闭协议类型而非供应商数据，前端自持一份与枚举值一一对应的文本映射（"浏览器 OAuth""设备码""API Key"等）即可，不存在按供应商漂移的问题；供应商差异由 `sourceLabel` 这类 descriptor 事实表达。
+
+`sourcePathHint` 是展示事实（如 `~/.codex/auth.json`、`~/.zcode/v2/credentials.json`）：真实路径解析（`CODEX_HOME`、平台差异、ZCode 凭据库定位）在 core 各 auth-flow 内部，descriptor 的提示与它同源维护，UI 不得自行拼路径。
+
+`fields` 只描述可提交输入，让 renderer 能按声明生成表单（如 GLM API Key 的区域选择）。服务商实现必须再次执行运行时校验，不能信任 renderer 根据 descriptor 生成的表单。
 
 ### 6.4 API 协议与路由声明
 
@@ -390,7 +408,7 @@ interface ProviderAccountCapability {
   readonly providerId: ProviderId;
 
   startAuth(context: ProviderContext, request: ProviderAuthRequest):
-    Promise<ProviderAuthStart>;
+    Promise<AuthFlowStart>;
 
   refreshCredentials?(
     context: ProviderContext,
@@ -408,6 +426,13 @@ interface ProviderUsageCapability {
     account: Account,
     credential: CredentialEnvelope,
   ): Promise<UsageSnapshot>;
+
+  redeemResetCard?(
+    context: ProviderContext,
+    account: Account,
+    credential: CredentialEnvelope,
+    request: ResetCreditRedemption,
+  ): Promise<void>;
 }
 
 interface ProviderModelCatalogCapability {
@@ -446,6 +471,8 @@ interface ProviderContribution {
 `ProviderContext` 只包含受控端口，例如 HTTP、时钟、日志、外部浏览器、回环监听和本地凭据导入。实现不能导入 Electron，也不能直接读取产品数据库。
 
 能力面是可选的，服务商不需要为空缺能力实现无效果方法。若声明了 `account`、`usage`、`model-catalog` 或 `inference`，对应 facet 必须存在且 `providerId` 一致；未声明能力时对应 facet 也不得伪装成可执行。`refreshCredentials` 同样只由确实有主动刷新协议的账号实现提供。API Key 是否需要轮换是账号能力内部的凭据生命周期差异，不再迫使 API Key、纯推理或纯目录实现提供无效果刷新方法。
+
+`redeemResetCard` 是用量侧用户动作（已落地为 usage facet 的可选方法）：获得侧统一随 `fetchUsage` 的 `resetCredits` 一等字段返回（§9.3），消耗侧以判别联合表达两种形态——聚合不传卡 id、按类型消耗（多桶时指定类型，由服务端挑选），分体传对应重置卡 id；glm 分体，codex 常规分体（明细端点暂不可用时如实退回聚合计数），兑换协议在 core `providers/<id>/reset-card-redemption.ts`。应用服务经 `ProviderRegistry.requireUsage(provider).redeemResetCard` 通用分派，组合根不再维护按供应商的映射（§8.1 已达成）。
 
 `prepareCall` 在一次调用开始前固定 provider、account、model、protocol route、实现代次和目录 revision；得到的 `PreparedProviderCall` 在完成或取消前不重新查注册表。GraphAgent 的 `ModelLease` 可以在此基础上增加预算、过期时间和任务归因，但不能把正在执行的流静默切换到另一实现。
 
@@ -490,23 +517,52 @@ OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 和 Gemini Gener
 
 ### 6.8 内部认证开始结果
 
+已按[认证服务抽取设计](../../polyquota/auth-service-extraction-design.md)落地为 core 的 flow 形态：
+
 ```ts
-type ProviderAuthStart =
-  | {
-      status: "completed";
-      provisioning: AccountProvisioningResult;
-    }
+type AuthFlowStart =
+  | { status: "completed"; account: Account }
   | {
       status: "pending";
-      interaction: PublicAuthInteraction;
-      finish(signal: AbortSignal): Promise<AccountProvisioningResult>;
+      interaction: "browser-callback" | "device-code";
+      finish(): Promise<Account>;
       cancel(): void;
+      // 仅 device-code 携带：
+      userCode?: string;
+      verificationUri?: string;
     };
+
+interface ProviderAuthFlow {
+  provider: ProviderId;
+  supportedMethods: readonly AuthMethod[];   // 构造期与目录对账，不参与运行期分派
+  start(method: AuthMethod, options: AuthStartOptions): Promise<AuthFlowStart>;
+}
 ```
 
-待完成结果内部携带 `finish` 和 `cancel`，由 `AuthCoordinator` 保存，绝不跨 IPC。这样一次认证会话固定绑定创建它的运行实现，即使未来注册表更新，`finishAuth(sessionId)` 也不会重新按标识查到另一代实现。
+`finish` 与 `cancel` 是闭包，携带各自的 AbortController 与回调 completion，由创建它的 flow 持有全部私有状态；`AuthCoordinator` 的会话表只存句柄，`finishAuth(sessionId)` 固定绑定创建会话的实现，即使未来注册表更新也不会按标识查到另一代实现。句柄绝不跨 IPC：公开投影 `AuthStartResult` 只含 `sessionId`、`interaction` 与设备码展示字段（用户码、验证地址），不包含上游 device auth ID、code verifier 或 token。
 
-公开交互只包含浏览器回调状态、用户码、验证地址和可安全展示的说明，不包含上游 device auth ID、code verifier 或 token。
+与完整形态的差异（该设计 §11 已列，2026-10-13 更新）：认证输入已改为 `offeringId + method`（协调器对目录交叉验证，secret-form 输入为可选 `apiKey`）；flow 已作为 account facet 并入 contribution（阶段 B 完成）。仍保留的差异：flow 内部直接调用各 provisioner 保存，尚未经 accountRepository 与 credentialService 统一收口——保存归属迁移留给后续独立实施。
+
+### 6.9 展示元数据的归属边界
+
+目录驱动改造后，UI `presentation.ts` 仍持有一批供应商事实。判定准则：**不依赖产品视觉决策、可由供应商目录推导的内容属于 descriptor；UI 只保留图标资产、内置枚举的文本映射与布局；本地化现阶段整体不做。** 逐项归属：
+
+| 元数据 | 当前位置 | 目标位置 | 说明 |
+| --- | --- | --- | --- |
+| offering 名称 / 描述 / 网站 | descriptor，`presentation.ts` 存回退副本 | descriptor，删除副本 | 快照已透出 |
+| 套餐展示名 | descriptor `plans` | 已达成 | UI `planLabel` 已目录驱动，使用官方档位表述，是本次迁移的范例 |
+| cli-import 来源标签（ZCode / Grok CLI / Claude Code） | descriptor `sourceLabel`，UI 存副本 | descriptor，删除副本 | UI 已优先 `sourceLabel` |
+| 内置枚举展示文本（认证方式 / 交互类型 / 凭据状态…） | UI 常量表 | 留 UI | 封闭协议类型的固定映射，非供应商事实；core 不为枚举提供描述（§6.3） |
+| CLI 导入路径展示（`~/.codex/auth.json` 等） | UI `cliImportPath` | descriptor `sourcePathHint` | 与 flow 内真实路径同源（§6.3） |
+| 配额 / 配额组 / 附加项标签映射 | UI 四张标签映射表 | 删除 | 回退顺序：原生 `displayName` → 窗口时长等纯展示计算 → key 原样 |
+| 图标 | UI 资产 | 留 UI，按 `iconKey` 映射 | 二进制资产不进 core |
+| 字符回退 `mark` | UI | 留 UI 视觉层 | 作为 `iconKey` 映射的回退一并维护 |
+| `available` | UI 硬编码 `true` | 删除 | 注册即可执行；账号级不可用由 `provider-unavailable` 表达 |
+| 展示入口恢复 | UI `accountPresentationId` 读 `publicMetadata` | 阶段 C 账号保存 `offeringId` 后删除 | 消除按 `presentationId`/region 猜测 |
+
+同时删除 `providerPresentation` 对 `presentationRegistry[0]` 的最终兜底：未知 offering 在展示层同样必须显式失败或显示占位，不得静默显示成第一家（对齐 §12.3）。
+
+迁移完成（2026-10-13，随阶段 D 第 4、5 条落地）：`presentation.ts` 的职责已收缩为按 `iconKey` 解析图标与视觉回退、内置枚举的文本映射（认证方式与重置额度类型词汇）、窗口时长等纯展示计算。新增供应商时 UI 侧只需在图标资产映射中补一个 `iconKey` 条目，目录与标准名称全部在 core 一处声明并通过快照到达前端；未来若做本地化，也归这一层按 offering 扩展，不进 core。
 
 ## 7. ProviderRegistry
 
@@ -547,15 +603,28 @@ type ProviderAuthStart =
 
 ## 8. 应用组合与绑定
 
-### 8.1 唯一组合根
+### 8.1 唯一组合根与供应商组合工厂
 
-Electron 主进程的启动入口负责创建平台端口和服务商贡献：
+桌面只负责创建宿主端口；供应商的组合细节（adapter、provisioner、auth-flow、用量侧动作如何用端口拼装）属于各供应商自己的知识，收在 core `providers/<id>/` 的组合工厂里：
 
 ```ts
-const providerRegistry = createProviderRegistry([
-  createCodexProvider({ http, browser, callbackServer, cliImport, clock, logger }),
-  createGlmProvider({ http, zcodeImport, clock, logger }),
-]);
+// core：每家供应商一个组合工厂，宿主端口全部经参数注入
+export interface ProviderBundle {
+  descriptor: ProviderDescriptor;
+  usage: UsageProviderAdapter;             // 阶段 B 后：ProviderUsageCapability
+  authFlow: ProviderAuthFlow;             // 阶段 B 后：account facet
+  redeemResetCard?: ResetCreditRedeemer;  // 用量侧动作（§6.6），当前仅 codex / glm
+}
+
+export function createCodexProvider(ports: ProviderPorts): ProviderBundle;
+export function createGlmProvider(ports: ProviderPorts): ProviderBundle;
+// ...其余四家同模式；ProviderPorts = http / browser / callbackServer / storage / vault / clock / logger
+
+// core：与 providerCatalog 同一收集点的聚合，桌面一行取得全部 bundle
+const bundles = createProviderBundles({ http, browser, callbackServer, storage, vault });
+
+// 阶段 B：bundle 升级为 contribution，进入严格注册表
+const providerRegistry = createProviderRegistry(bundles);
 
 const authCoordinator = new AuthCoordinator(
   providerRegistry,
@@ -573,7 +642,11 @@ const refreshCoordinator = new RefreshCoordinator(
 const modelService = new ModelService(providerRegistry, credentialService);
 ```
 
+过渡形态不需要等注册表：`new RefreshCoordinator(storage, vault, bundles.map((b) => b.usage))`、`new AuthCoordinator(bundles.map((b) => b.authFlow))`，应用服务的 `resetCreditRedeemers` 映射改为从 bundles 通用推导（过滤出带 `redeemResetCard` 的条目）。这些推导不含任何按供应商命名的分支，与现在 `main.ts` 里逐家展开的写法有本质区别——新增供应商时桌面组合根零修改，`providerCatalog` 与 bundle 聚合在 core 同一处登记。
+
 同一个 `providerRegistry` 同时交给认证、刷新、模型目录、推理准备、公共快照和诊断服务。不得为每个子系统重新构造服务商表。
+
+当前落地形态（阶段 B 完成）：六家供应商的 adapter、provisioner、auth-flow 与重置卡兑换协议全部位于 core `providers/<id>/`，各供应商的组合细节收在 `providers/<id>/bundle.ts` 组合工厂并由 `createProviderContributions(ports)` 聚合；桌面组合根只创建宿主端口（http/browser/callbackServer/storage/vault）并构造唯一 `ProviderRegistry`，无任何按供应商命名的构造与映射。`RefreshCoordinator` 与 `AuthCoordinator` 均从注册表取得对应 facet，重复 provider 或 facet 与能力声明不符在注册表构造期即失败。
 
 ### 8.2 Codex 绑定
 
@@ -589,12 +662,7 @@ Codex 贡献包含：
 
 ### 8.3 GLM 绑定
 
-GLM 贡献包含一个 `providerId: "glm"` 和两个 offering：
-
-- `bigmodel-coding-plan`，默认 `region: "china"`；
-- `zai-coding-plan`，默认 `region: "international"`。
-
-两者都支持 ZCode 导入和 API Key。认证请求把 offering 默认值与用户输入合并后交给 GLM account facet 校验。账号持久化时明确保存 `offeringId` 和公开地区事实，不再依赖 UI 从松散 `publicMetadata.presentationId` 猜测。GLM 的 OpenAI 兼容推理端点如果以后纳入 GraphAgent，应作为独立 protocol route 和 inference facet 能力声明，不能由“支持 API Key”推断出来。
+GLM 贡献包含一个 `providerId: "glm"` 和两个接入点：`bigmodel-coding-plan`（国内 bigmodel 端点）与 `zai-coding-plan`（国际 z.ai 端点）。两者共享 ZCode 导入与 API Key 认证及同一套账号/用量实现，但上游接口地址不同——它们是两个接入点，不是同一接入的地区变体。端点选择是 GLM 实现内部按 `offeringId` 的私有绑定，不再以 `region` 字段出现在 descriptor、认证输入或账号元数据中；账号持久化 `offeringId` 后，`publicMetadata.region` / `presentationId` 与 UI 的 `accountPresentationId` 恢复逻辑一并删除（阶段 C 第 3、4 条，背景见 §6.2）。GLM 的 OpenAI 兼容推理端点如果以后纳入 GraphAgent，应作为接入点引用的独立 protocol route 和 inference facet 能力声明，不能由“支持 API Key”推断出来。
 
 ### 8.4 GraphAgent 绑定
 
@@ -614,7 +682,7 @@ PolyQuota 汇总的用量与额度事实可以作为调度输入，但不能直�
 
 ### 8.5 预告但未实现的服务商
 
-Grok Build 和 Antigravity 若需要提前展示，应作为“产品候选目录”由 UI 自己维护，不伪装成已注册 ProviderDescriptor。正式进入主进程公开目录的条目必须具备可执行实现。
+Grok Build 与 Antigravity 曾按此原则停留在“预告”状态，如今连同 Claude、OpenCode Go 都已注册完整可执行实现；本节原则继续面向未来服务商。若产品需要提前展示尚未接入的服务商，应作为“产品候选目录”由 UI 自己维护，不伪装成已注册 ProviderDescriptor。正式进入主进程公开目录的条目必须具备可执行实现。
 
 如果产品确实需要主进程返回“已知但未安装”的目录，应建立独立 `ProviderCatalogEntry` 并把 `availability: "unavailable"` 作为明确状态；它不能出现在可执行注册表，也不能接受认证请求。
 
@@ -656,12 +724,52 @@ interface PolyQuotaSnapshot {
 当前 `UsageSnapshot` 的 `groups + extras` 继续作为跨服务商共同结构：
 
 - `groups[].quotas[]` 表达配额组、窗口、绝对值、剩余百分比和重置时间；
-- `extras[]` 表达无法归入配额窗口但需要展示的信息；支持用户动作的条目携带不透明动作标识，由主进程执行供应商协议；
+- `extras[]` 表达无法归入配额窗口但需要展示的信息；
 - 上游原生 `displayName` 与 `windowSeconds` 都保留；
-- UI 优先使用原生事实，再用 presentation registry 补充文案；
-- 缺失值保持 `null` 或省略，不能编造 0、无限或默认窗口。
+- 缺失值保持 `null` 或省略，不能编造 0、无限或默认窗口；
+- 套餐展示名来自快照 `plans`，使用上游官方、不区分语言的档位表述（已落地）；配额、配额组与附加项的展示回退顺序为上游原生 `displayName` → 窗口时长等纯展示计算 → key 原样，本地化现阶段不做。
 
-当 `extras` 的结构超出当前 `value/items` 能力时，应升级为带 schemaVersion 的判别联合或 `PublicExtension`，不能继续叠加互相无关的可选字段。
+重置额度（reset credits）是第一个超出通用 `extras` 能力的结构，升级为 `UsageSnapshot` 的一等字段，并按两种形态建模：
+
+```ts
+type ResetCredits =
+  | {
+      /**
+       * 聚合次数：上游只提供计数、无法逐项区分；按消耗类型分桶，
+       * 不区分窗口的供应商也声明为单桶。消耗时不传重置信息 id。
+       */
+      kind: "aggregate";
+      totals: readonly { type: string; total: number }[];
+    }
+  | {
+      /** 分体次数：每张重置卡有完整类型与过期时间；消耗时传对应 id。 */
+      kind: "itemized";
+      items: readonly ResetCreditItem[];
+    };
+
+interface ResetCreditItem {
+  id: string;              // 上游不透明标识，仅回传所属 provider 的兑换协议
+  type: string;            // 如 "five-hour"、"weekly"
+  expiresAt: string | null;
+}
+
+type ResetCreditRedemption =
+  | {
+      /** 聚合消耗：按类型消耗，由服务端在该类型的计数中挑选；单桶时可省略 type。 */
+      kind: "aggregate";
+      type?: string;
+    }
+  | { kind: "item"; itemId: string };  // 分体消耗：带对应重置卡 id
+```
+
+- **获得侧统一随 `fetchUsage` 返回**，不设独立的"查询重置次数"方法——与用量同一次请求、同一 `revision`，不产生第二份状态；**消耗侧统一为 `redeemResetCredit`**（§6.6、§10.1）。
+- 两种形态是供应商事实：glm 为分体（每张卡携带类型、过期时间与 id，消耗传对应 id）；codex 现行为聚合展示，但其官方明细端点（`rate-limit-reset-credits` GET）逐卡携带 id、类型与过期时间——目标同为分体，用量刷新合并拉取该明细端点。聚合形态服务"只开放计数"的上游：计数不区分窗口时声明单桶，区分 5 小时 / 周时按类型分桶，此时消耗必须指定类型（`type` 多桶必填、单桶可省略，由实现校验与 `totals` 一致）。
+- `request.kind` 必须与快照中 `resetCredits.kind` 一致，聚合 `type`（如给出）必须是 `totals` 中声明的类型，均由实现校验；分体 `itemId` 不跨快照持久信任——两家兑换前都重新校验列表，失效即报"所选重置卡已不可用，请刷新"。
+- UI 按 `kind` 渲染：聚合计数按类型分桶展示，每桶一个带类型的"使用"入口（单桶不标注类型）；分体逐卡展示类型与有效期，各带消耗入口。
+- 消耗成功后随刷新对账：分体按 `itemId` 从下一快照移除该项；聚合计数以服务端刷新为准，不做本地扣减。
+- 迁移动机与现状问题：现行实现把重置额度装在 extras 里（`key: "reset-credits"`），codex 以常量 `actionToken` 伪装逐项、adapter 忽略该 token，对账只按分体语义实现——聚合形态套用后，兑换后每次刷新都会把仍存在的合成项过滤掉，剩余计数被持续显示为 0，直到上游真正归零。codex 现行的"聚合成一个 + 未提供有效期"来自用量端点只暴露 `rate_limit_reset_credits.available_count` 标量，与导入 / 订阅方式无关（三种接入读同一端点，档位只决定字段是否出现）；逐卡明细在独立端点，当前仅在兑换时拉取。grok 现行同样只展示计数（grpc 帧解码已产出逐项 token 与过期时间，但无类型字段且未接入消耗协议，升级分体时另行评估）。本结构随阶段 D 第 6 条迁移修正。
+
+当 `extras` 中未来出现超出 `value/items` 能力的结构时，同样升级为判别联合或 `PublicExtension`，不能继续叠加互相无关的可选字段。
 
 ## 10. PolyQuota 前端服务契约
 
@@ -679,6 +787,10 @@ interface IPolyQuotaService {
   refreshAccount(accountId: string): Promise<ServiceResult<RefreshOutcomeDto>>;
   refreshAll(): Promise<ServiceResult<RefreshBatchOutcomeDto>>;
   refreshCredentials(accountId: string): Promise<ServiceResult<CredentialRefreshOutcomeDto>>;
+  redeemResetCredit(
+    accountId: string,
+    request: ResetCreditRedemption,   // 聚合 / 分体，见 §9.3
+  ): Promise<ServiceResult<RedeemResetCreditOutcome>>;
 
   startAuth(request: StartAuthRequest): Promise<ServiceResult<AuthStartResultDto>>;
   finishAuth(sessionId: string): Promise<ServiceResult<PublicAccountDto>>;
@@ -734,7 +846,7 @@ createApp(App).provide(polyQuotaServiceKey, service).mount("#app");
 
 - 同账号刷新继续串行并合并重复请求；
 - 不同账号可以并行；
-- 账号删除、凭据刷新和用量刷新通过同一账号操作队列协调；
+- 账号删除、凭据刷新、重置额度消耗和用量刷新通过同一账号操作队列协调；重置额度消耗成功后按 §9.3 的对账规则并入下一修订；
 - OAuth refresh token 轮换继续遵守服务商自己的跨账号串行规则；
 - `finishAuth` 和 `cancelAuth` 对同一 session 至多一个成功；
 - 应用退出时先停止新调用，再取消认证会话和刷新，最后关闭存储与注册实现；
@@ -758,6 +870,7 @@ createApp(App).provide(polyQuotaServiceKey, service).mount("#app");
 - `offeringId`、`authMethodId` 必须从注册表交叉验证；
 - `providerId`、`accountId`、`modelId` 和 `protocolRouteId` 必须作为一个 selection 交叉验证；
 - `fields` 只允许 descriptor 声明的键，并限制字符串长度；
+- 重置额度分体 `itemId` 只回传给所属 provider 的兑换协议并限制长度，不做跨 provider 解释；
 - secret 字段只在当前调用中存在，不写日志和公开操作状态；
 - 外部 URL 来自服务商声明或实现返回的已校验交互，renderer 不能让主进程打开任意协议；
 - 扩展 namespace 和 schemaVersion 必须由注册贡献声明，不能由页面任意注入；
@@ -784,7 +897,7 @@ createApp(App).provide(polyQuotaServiceKey, service).mount("#app");
 4. 声明 descriptor、offering、认证方式、能力和扩展 schema；
 5. 运行通用 Provider contract suite；
 6. 在应用组合根注册 contribution；
-7. 为 UI presentation registry 增加本地化文案、图标和扩展展示器；
+7. 为 UI 增加 `iconKey` 图标映射等前端侧物料（本地化现阶段不做）；
 8. 验证主进程公开快照与服务调用绑定到正确实现；
 9. 只有在协议与绑定通过后，才做一次可选的真实凭据烟测。
 
@@ -824,6 +937,7 @@ createApp(App).provide(polyQuotaServiceKey, service).mount("#app");
 - 不提供主动刷新方法的 API Key 账号继续使用现有凭据，不调用伪造的 refresh；
 - OAuth 在需要时刷新，认证失败只强制重试一次；
 - `fetchUsage` 只返回所属 `accountId` 的规范快照；
+- 重置额度两种形态完整：聚合计数按类型分桶且消耗带类型（单桶可省略），分体逐项含 id / 类型 / 过期时间且消耗按 id，消耗后按形态正确对账；
 - 错误转换后没有秘密；
 - AbortSignal 能终止等待和请求；
 - 上游缺字段时保持未知，不编造值。
@@ -873,37 +987,45 @@ Electron 测试只覆盖共享 schema、固定通道、订阅释放、CSP、prel
 
 这一阶段只建立可演进边界，不要求立即搬运 OmniRoute 的 translator、Executor 或完整模型表。
 
-进展记录（2026-09-30）：provider / offering / 认证方式的轻量声明与统一目录端点已落地——core 按供应商建立 `src/providers/<id>/` 目录（adapter 与 descriptor 同处一目录），`providers/catalog.ts` 聚合全部声明并在重复 provider、offering 或认证方式时构造失败；快照 `providers` 字段（`PublicProviderDescriptor[]`）经 IPC 提供给前端，schemaVersion 升至 2（其后随快照契约演进，当前 `POLYQUOTA_SCHEMA_VERSION` 为 3）；UI 接入页的结构改为目录驱动，`presentation.ts` 只保留文案与图标。protocol route、model、operation 与 capability 类型仍未落地。
+进展记录（2026-09-30）：provider / offering / 认证方式的轻量声明与统一目录端点已落地——core 按供应商建立 `src/providers/<id>/` 目录（adapter 与 descriptor 同处一目录），`providers/catalog.ts` 聚合全部声明并在重复 provider、offering 或认证方式时构造失败；快照 `providers` 字段（`PublicProviderDescriptor[]`）经 IPC 提供给前端，schemaVersion 升至 2（其后随快照契约演进，当前 `POLYQUOTA_SCHEMA_VERSION` 为 3）；UI 接入页的结构改为目录驱动。capability 类型与声明已随阶段 B 落地（当前全部为 account/usage）；protocol route、model 与 operation 类型属于阶段 E，仍未落地。
 
 ### 阶段 B：能力注册表包装现有实现
 
-1. 定义 descriptor、capability facet、contribution 和严格注册表；
-2. 用 account/usage facade 包装现有 Codex、GLM adapter 与 provisioner；
-3. 在组合根注册两个 contribution；
-4. 让 RefreshCoordinator 从注册表取得对应 facet；
-5. 增加重复注册、缺失实现和 offering 绑定测试。
+1. 各 `providers/<id>/` 提供组合工厂并聚合为 `createProviderBundles(ports)`：adapter、provisioner、auth-flow 与重置卡兑换的构造全部收进 core，桌面组合根删除按供应商展开的构造与 `resetCreditRedeemers` 映射，只注入端口（§8.1 过渡形态，可先于注册表独立落地）；
+2. 定义 descriptor、capability facet、contribution 和严格注册表；
+3. 用 account/usage facade 包装各家 adapter 与 provisioner，bundle 升级为 contribution；
+4. 在组合根注册全部 contribution；
+5. 让 RefreshCoordinator 从注册表取得对应 facet；
+6. 增加重复注册、缺失实现和 offering 绑定测试。
+
+进展记录（2026-10-13）：第 1—6 条全部落地。每家供应商的 `providers/<id>/bundle.ts` 组合工厂以 `ProviderPorts`（http/browser/callbackServer/storage/vault/clock）注入端口并产出 `ProviderContribution`，`providers/contributions.ts` 的 `createProviderContributions(ports)` 聚合六家；由于与注册表同批实施，§8.1 的 ProviderBundle 过渡形态被跳过，工厂直接产出 contribution。`providers/registry.ts` 的 `ProviderRegistry` 构造期校验 facet 与 descriptor 的 providerId 绑定、providerId 唯一、capability 声明与 facet 完整相符（声明 `model-catalog`/`inference` 即失败，防止伪装推理能力），任一错误整体失败；`AuthCoordinator` 与 `RefreshCoordinator` 改为注册表驱动，`refreshCredentials` 成为 account facet 的可选方法（glm/opencode-go 的 API Key 无效果刷新已删除）。注册表测试覆盖重复贡献、facet 错绑、能力缺声明/多声明、GLM 双接入点同一 facet、跨 provider 不互换、`createProviderContributions` 与 `providerCatalog` 聚合一致。保存归属（provisioner 统一收口到 accountRepository/credentialService）仍按 §6.8 差异清单留待后续。
 
 ### 阶段 C：认证分派收敛
 
 1. 将 Codex 与 GLM 的认证分支移入各自 account facet；
 2. AuthCoordinator 只管理 session、保存、取消和公开结果；
-3. 账号正式保存 `offeringId`；
-4. 把 GLM 地区从松散 presentation metadata 迁到明确字段或版本化扩展；
+3. 账号正式保存 `offeringId`，`plans` 随之具备迁至接入点级的条件；
+4. 退休 `region`：认证输入以 `offeringId` 取代 `AuthStartOptions.region`，GLM 实现内部按 `offeringId` 选择端点与展示事实，删除 descriptor 的 `region` 字段及 `publicMetadata.region` / `presentationId`（接入点差异由双 offering 声明承载，见 §6.2、§8.3）；
 5. 删除 UI 与 IPC 中按服务商校验具体字段的分支，改为共享 schema 与实现校验。
 
-第 1、2 条先行落地：桌面 `auth-service.ts` 的认证分支按供应商拆进 core `providers/<id>/auth-flow.ts`，回调处理逻辑（校验、超时、应答页）抽为 core 回调处理器而监听启动由桌面端口执行，CLI 凭据读取与解析全部收进 core，无分支的 `AuthCoordinator` 只管会话表并与 providerCatalog 对账——方案与边界见[认证服务抽取设计](../../polyquota/auth-service-extraction-design.md)。保存归属与 offeringId 仍留在完整阶段处理。
+第 1、2 条先行落地：桌面 `auth-service.ts` 的认证分支按供应商拆进 core `providers/<id>/auth-flow.ts`，回调处理逻辑（校验、超时、应答页）抽为 core 回调处理器而监听启动由桌面端口执行，CLI 凭据读取与解析全部收进 core，无分支的 `AuthCoordinator` 只管会话表并与 providerCatalog 对账——方案与边界见[认证服务抽取设计](../../polyquota/auth-service-extraction-design.md)。
+
+进展记录（2026-10-13）：第 3—5 条全部落地。`Account` 增加必填 `offeringId`（SQLite migration 4：`offering_id` 列，GLM 旧账号按 `presentationId`/`region` 回填两个接入点，其余回填 provider 同名接入点），全部 provisioner 结果携带接入点；`plans` 随之迁至接入点级，评分查表键改为 `matchOfferingPlan(offeringId, plan)`（`composite-remaining` 与快照投影同步）。`region` 退休：descriptor 与公开 DTO 无 region，`AuthStartOptions` 仅剩 `apiKey`，契约 `StartAuthRequest` 改为 `{ offeringId, method, apiKey? }`，GLM 实现内部经 `glmRegionForOffering` 选择端点（`zcode-credentials` 同步改按 offeringId 读凭据），`publicMetadata.region`/`presentationId`/`product` 与 UI 的 `accountPresentationId` 恢复逻辑删除。IPC 的 `parseStartAuthRequest` 不再按 provider 分支校验字段，方法与接入点合法性由 `AuthCoordinator` 对目录交叉验证、由各 flow 实现二次校验；AuthModal 的按供应商白名单分支删除，表单行为由方法 `interaction`（`secret-form` 显示 API Key 输入）驱动。
 
 ### 阶段 D：PolyQuota 应用服务、目录与展示收敛
 
 1. 实现 `IPolyQuotaService`、空白实现和类型化 Vue 注入；
 2. 将 `window.llmUsage` 重命名为 `window.polyQuotaElectronService`；
 3. 用带 revision 的 `getSnapshot()` 与状态失效通知替代分散读取；
-4. UI 从快照读取真实可执行目录，presentation registry 只负责本地化与视觉；
-5. 把 plan、quota、extra 文案映射改为 offering 或扩展展示器；
-6. 删除 Core 与 UI 重复的 `ProviderId`、`AuthMethod` 定义；
-7. 清理旧 `publicMetadata` 和逐账号读取 API。
+4. descriptor 补齐展示事实：`iconKey` 与 cli-import 的 `sourcePathHint`（清单见 §6.9）；
+5. 删除 `presentation.ts` 中的供应商事实副本：`cliImportPath`、四张标签映射表、目录缺失时的名称/描述/网站回退、硬编码 `available` 与 `presentationRegistry[0]` 兜底，只保留图标资产、视觉回退与内置枚举文本映射（plan 文案映射已随 `plans` 目录化完成；本地化现阶段不做）；
+6. 重置额度从 extras 升级为一等 `resetCredits` 判别结构（§9.3）：聚合按类型分桶、消耗请求带类型（多桶必填），分体消耗带 id；codex 迁移为分体——用量刷新合并拉取明细端点，删除伪造的常量 `actionToken` 与"未提供有效期"显示；对账按形态区分（聚合计数以服务端刷新为准），UI 消耗入口按 `kind` 渲染，schemaVersion 随之升级；
+7. 删除 Core 与 UI 重复的 `ProviderId`、`AuthMethod` 定义；
+8. 清理旧 `publicMetadata` 和逐账号读取 API。
 
-进展记录：第 1—3 条已随[运行流程与通信机制现状报告](../../polyquota/runtime-and-communication-review.md)第 7.1、7.2 节实施完成——`packages/polyquota-contract` 已建立为 UI、preload 与主进程的共同契约来源，preload 全局已更名为 `window.polyQuotaElectronService`，带 `revision` 的 `getSnapshot()` 与失效事件已替代分散读取；第 6 条部分完成（UI 侧已改为 re-export 契约定义，Core 与契约包的重复仍在）。
+进展记录：第 1—3 条已随[运行流程与通信机制现状报告](../../polyquota/runtime-and-communication-review.md)第 7.1、7.2 节实施完成——`packages/polyquota-contract` 已建立为 UI、preload 与主进程的共同契约来源，preload 全局已更名为 `window.polyQuotaElectronService`，带 `revision` 的 `getSnapshot()` 与失效事件已替代分散读取。2026-10-12 修订：第 4、5 条按 §6.9 的归属清单细化为可执行项；2026-10-13 增补第 6 条（重置额度结构升级：聚合按类型分桶、codex 迁移为分体、修正聚合形态对账错位）。
+
+进展记录（2026-10-13，第 4—8 条全部落地）：descriptor 补齐 `iconKey`（七枚：codex/bigmodel/zai/grok/antigravity/claude/opencode）与 cli-import 的 `sourcePathHint`（与各 auth-flow 的真实路径解析同源维护并透传到公开 DTO）；`presentation.ts` 收缩为图标资产映射、iconKey 字符回退、内置枚举文本映射（认证方式 + 重置额度类型词汇 `resetCreditTypeLabel`）与窗口时长等纯展示计算，四张标签映射表、目录缺失副本、硬编码 `available` 与 `presentationRegistry[0]` 兜底全部删除，配额/附加项标签回退顺序为原生 `displayName` → 窗口时长计算 → key 原样。重置额度升级为 `UsageSnapshot` 与 `PublicUsage` 的一等 `resetCredits` 判别结构（schemaVersion 4）：codex 常规路径合并拉取明细端点输出分体（逐卡 id/类型/过期时间），明细暂不可用时如实退回聚合计数（单桶 banked），消耗侧 `ResetCreditRedemption` 分体带 `itemId`（兑换协议重新校验列表）、聚合按类型且由服务端挑选，伪造的常量 `actionToken` 与 extras 内的 reset-credits 展示删除，对账按形态区分（分体按 itemId 本地移除直至上游停止报告，聚合计数不做本地扣减），UI 按 `kind` 渲染分桶/逐卡两种消耗入口，grok 的计数展示暂留 extras（升级分体另行评估）。封闭标识（providerIds/authMethods/ProviderId/AuthMethod 等）的唯一来源改为契约包，core re-export（core → contract 为新增依赖方向，GraphAgent 契约出现时应上移共享协议层）；`UsageExtraItem.actionToken` 删除。旧 `publicMetadata` 的退休键（region/presentationId/product）已清理，codex/grok/claude 的工作区与组织事实待 §6.1 PublicExtension 机制落地后转换；逐账号读取 API 此前已随快照完成。
 
 ### 阶段 E：在 GraphAgent 可运行前固定推理骨架
 
@@ -933,9 +1055,11 @@ Electron 测试只覆盖共享 schema、固定通道、订阅释放、CSP、prel
 
 - Core、Desktop 与 UI 只共享一份公共协议和 schema；
 - 前端业务代码不直接访问 `window` 或 IPC；
+- `presentation.ts` 只保留图标资产、视觉回退与内置枚举文本映射；CLI 导入路径提示与可用性来自 descriptor 或注册状态，套餐与用量展示直接使用 core 的官方表述或上游原生事实，未知 offering 不回退到第一个展示条目；
 - 应用只有一个 ProviderRegistry 实例；
+- 供应商组合由 core 组合工厂提供（含重置卡兑换等用量侧动作），桌面组合根只注入端口，不出现按供应商命名的构造与映射；
 - Codex 与 GLM 都通过 contribution 注册，AuthService 不再按服务商分支；
-- BigModel 与 Z.ai 共享 GLM 实现，但各自差异完整显示；
+- BigModel 与 Z.ai 共享 GLM 实现，但作为两个接入点各自差异完整显示，`region` 字段与按 region / presentationId 的恢复逻辑删除；
 - 重复或错误绑定在启动时失败，未知实现不会回退；
 - 单一快照和变更通知覆盖后台刷新、认证、删除与设置变化；
 - API 协议类型不再隐含在 provider 或模型名中，route 与模型能力可以独立校验；
@@ -944,6 +1068,7 @@ Electron 测试只覆盖共享 schema、固定通道、订阅释放、CSP、prel
 - 当前 OmniRoute 搬运基线与后续每批选择性搬运都有来源、范围和离线验证记录；
 - 固定 fixture 与 fake 端口可以完成新服务商全部已声明能力的大部分协议测试；
 - renderer、日志、通知和公开扩展均不包含秘密；
+- 重置额度以聚合 / 分体两种形态贯通获得、消耗与对账：聚合按类型计数、消耗带类型不带卡 id，分体逐项含 id / 类型 / 过期时间、消耗按 id；
 - 现有真实 Codex、GLM 刷新行为和 `groups + extras` 展示没有回归。
 
 ## 17. 明确不做的事情

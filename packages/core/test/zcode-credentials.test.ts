@@ -38,7 +38,7 @@ describe("ZCode credential import", () => {
     await writeFile(credentialsPath, JSON.stringify(record), "utf8");
 
     await expect(
-      readZCodeCodingPlanApiKey("china", {
+      readZCodeCodingPlanApiKey("bigmodel-coding-plan", {
         credentialsPath,
         env: { ZCODE_CREDENTIAL_SECRET: secret },
       }),
@@ -51,7 +51,7 @@ describe("ZCode credential import", () => {
     await writeFile(credentialsPath, "{}", "utf8");
 
     await expect(
-      readZCodeCodingPlanApiKey("international", { credentialsPath }),
+      readZCodeCodingPlanApiKey("zai-coding-plan", { credentialsPath }),
     ).rejects.toMatchObject({
       code: "validation",
       message: expect.stringContaining("Z.ai Coding Plan"),
@@ -71,7 +71,7 @@ describe("ZCode credential import", () => {
       "utf8",
     );
 
-    await expect(readZCodeCodingPlanApiKey("international", { credentialsPath })).resolves.toBe(
+    await expect(readZCodeCodingPlanApiKey("zai-coding-plan", { credentialsPath })).resolves.toBe(
       "legacy-zai-api-key",
     );
   });
@@ -89,7 +89,9 @@ describe("ZCode credential import", () => {
       "utf8",
     );
 
-    await expect(readZCodeCodingPlanApiKey("china", { credentialsPath })).rejects.toMatchObject({
+    await expect(
+      readZCodeCodingPlanApiKey("bigmodel-coding-plan", { credentialsPath }),
+    ).rejects.toMatchObject({
       code: "validation",
       message: expect.stringContaining("无法安全选择"),
     });

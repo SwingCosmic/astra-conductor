@@ -14,7 +14,14 @@ export function createOpencodeGoAuthFlow(deps: OpencodeGoAuthFlowDeps): Provider
   return {
     provider: "opencode-go",
     supportedMethods: SUPPORTED_METHODS,
-    async start(method: AuthMethod, options: AuthStartOptions): Promise<AuthFlowStart> {
+    async start(
+      offeringId: string,
+      method: AuthMethod,
+      options: AuthStartOptions,
+    ): Promise<AuthFlowStart> {
+      if (offeringId !== "opencode-go") {
+        throw new AppError("validation", `OpenCode Go 不提供接入点：${offeringId}`);
+      }
       if (method !== "api-key") {
         throw new AppError("validation", "OpenCode Go 仅支持 API Key 接入");
       }

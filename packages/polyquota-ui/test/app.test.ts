@@ -6,6 +6,7 @@ import QuotaCard from "../src/components/QuotaCard.vue";
 import type {
   PolyQuotaSnapshot,
   PublicAccount,
+  PublicOfferingDescriptor,
   PublicProviderDescriptor,
   PublicUsage,
 } from "../src/models";
@@ -14,16 +15,22 @@ import UsageView from "../src/views/UsageView.vue";
 import { EmptyPolyQuotaService, type IPolyQuotaService } from "../src/services/polyquota-service";
 import { polyQuotaServiceKey } from "../src/services/polyquota-service-vue";
 import {
-  accountPresentationId,
+  accountPresentation,
+  authMethodLabel,
   catalogPresentations,
-  planLabel,
-  providerPresentation,
   quotaLabel,
+  resetCreditTypeLabel,
 } from "../src/presentation";
 import {
   POLYQUOTA_SCHEMA_VERSION,
   emptyCompositeRemaining,
+  publicPlanDisplayName,
 } from "@astra-conductor/polyquota-contract";
+
+const codexPlans: PublicOfferingDescriptor["plans"] = [
+  { id: "plus", displayName: "Plus", match: ["plus"] },
+  { id: "pro-5x", displayName: "Pro 5x", match: ["prolite", "pro 5x", "pro5x"] },
+];
 
 const providerCatalogFixture: PublicProviderDescriptor[] = [
   {
@@ -35,16 +42,19 @@ const providerCatalogFixture: PublicProviderDescriptor[] = [
         provider: "codex",
         displayName: "OpenAI Codex",
         description: "查看 ChatGPT 订阅中的 Codex 用量。",
+        iconKey: "codex",
         authMethods: [
           { method: "browser-oauth", interaction: "browser-callback" },
           { method: "device-code", interaction: "device-code" },
-          { method: "cli-import", interaction: "local-import", sourceLabel: "Codex CLI" },
+          {
+            method: "cli-import",
+            interaction: "local-import",
+            sourceLabel: "Codex CLI",
+            sourcePathHint: "~/.codex/auth.json",
+          },
         ],
+        plans: codexPlans,
       },
-    ],
-    plans: [
-      { id: "plus", displayName: "Plus", match: ["plus"] },
-      { id: "pro-5x", displayName: "Pro 5x", match: ["prolite", "pro 5x", "pro5x"] },
     ],
   },
   {
@@ -56,25 +66,36 @@ const providerCatalogFixture: PublicProviderDescriptor[] = [
         provider: "glm",
         displayName: "BigModel Coding Plan",
         description: "智谱国内 Coding Plan，查看 5 小时、周配额和重置卡。",
-        region: "china",
+        iconKey: "bigmodel",
         authMethods: [
-          { method: "cli-import", interaction: "local-import", sourceLabel: "ZCode" },
+          {
+            method: "cli-import",
+            interaction: "local-import",
+            sourceLabel: "ZCode",
+            sourcePathHint: "~/.zcode/v2/credentials.json",
+          },
           { method: "api-key", interaction: "secret-form" },
         ],
+        plans: [],
       },
       {
         id: "zai-coding-plan",
         provider: "glm",
         displayName: "Z.ai Coding Plan",
         description: "智谱国际版 Coding Plan，查看 5 小时、周配额和重置卡。",
-        region: "international",
+        iconKey: "zai",
         authMethods: [
-          { method: "cli-import", interaction: "local-import", sourceLabel: "ZCode" },
+          {
+            method: "cli-import",
+            interaction: "local-import",
+            sourceLabel: "ZCode",
+            sourcePathHint: "~/.zcode/v2/credentials.json",
+          },
           { method: "api-key", interaction: "secret-form" },
         ],
+        plans: [],
       },
     ],
-    plans: [],
   },
   {
     provider: "grok-build",
@@ -85,14 +106,20 @@ const providerCatalogFixture: PublicProviderDescriptor[] = [
         provider: "grok-build",
         displayName: "Grok Build",
         description: "查看 Grok Build 订阅用量。",
+        iconKey: "grok",
         authMethods: [
           { method: "device-code", interaction: "device-code" },
           { method: "browser-oauth", interaction: "browser-callback" },
-          { method: "cli-import", interaction: "local-import", sourceLabel: "Grok CLI" },
+          {
+            method: "cli-import",
+            interaction: "local-import",
+            sourceLabel: "Grok CLI",
+            sourcePathHint: "~/.grok/auth.json",
+          },
         ],
+        plans: [],
       },
     ],
-    plans: [],
   },
   {
     provider: "antigravity",
@@ -103,10 +130,11 @@ const providerCatalogFixture: PublicProviderDescriptor[] = [
         provider: "antigravity",
         displayName: "Antigravity",
         description: "查看 Antigravity 订阅用量。",
+        iconKey: "antigravity",
         authMethods: [{ method: "browser-oauth", interaction: "browser-callback" }],
+        plans: [],
       },
     ],
-    plans: [],
   },
   {
     provider: "claude",
@@ -117,12 +145,18 @@ const providerCatalogFixture: PublicProviderDescriptor[] = [
         provider: "claude",
         displayName: "Claude Code",
         description: "读取 Claude Code OAuth 凭据并查看订阅用量。",
+        iconKey: "claude",
         authMethods: [
-          { method: "cli-import", interaction: "local-import", sourceLabel: "Claude Code" },
+          {
+            method: "cli-import",
+            interaction: "local-import",
+            sourceLabel: "Claude Code",
+            sourcePathHint: "~/.claude/.credentials.json",
+          },
         ],
+        plans: [],
       },
     ],
-    plans: [],
   },
   {
     provider: "opencode-go",
@@ -133,16 +167,18 @@ const providerCatalogFixture: PublicProviderDescriptor[] = [
         provider: "opencode-go",
         displayName: "OpenCode Go",
         description: "查看 OpenCode Go 的 5 小时、周和月用量。",
+        iconKey: "opencode",
         authMethods: [{ method: "api-key", interaction: "secret-form" }],
+        plans: [],
       },
     ],
-    plans: [],
   },
 ];
 
 const account: PublicAccount = {
   id: "account-1",
   provider: "codex",
+  offeringId: "codex",
   authMethod: "cli-import",
   displayName: "test@example.test",
   maskedIdentifier: "te***@example.test",
@@ -205,6 +241,12 @@ function serviceWithSnapshot(
   return Object.assign(service, overrides);
 }
 
+function catalogRow(offeringId: string) {
+  const row = catalogPresentations(providerCatalogFixture).find((item) => item.id === offeringId);
+  if (!row) throw new Error(`missing presentation: ${offeringId}`);
+  return row;
+}
+
 describe("desktop account UI", () => {
   it("keeps the ordinary browser preview runnable with the empty service", async () => {
     const wrapper = mountApp(emptyService);
@@ -249,13 +291,38 @@ describe("desktop account UI", () => {
     expect(wrapper.find(".usage-score-fill.score-band-attention").exists()).toBe(true);
   });
 
-  it("maps provider display text only in the UI presentation catalog", () => {
-    expect(providerPresentation("codex").icon).toMatch(/gpt\.png$/);
-    expect(planLabel("codex", "prolite")).toBe("prolite");
-    expect(planLabel("codex", "prolite", providerCatalogFixture)).toBe("Pro 5x");
-    expect(planLabel("codex", "mystery-tier", providerCatalogFixture)).toBe("mystery-tier");
+  it("derives presentation rows purely from the catalog", () => {
+    const codex = catalogRow("codex");
+    expect(codex.provider).toBe("codex");
+    expect(codex.name).toBe("OpenAI Codex");
+    expect(codex.description).toBe("查看 ChatGPT 订阅中的 Codex 用量。");
+    // 占位字符统一取展示名首字符大写，只在无图标资产时渲染。
+    expect(codex.mark).toBe("O");
+    expect(codex.icon).toMatch(/gpt\.png$/);
+    expect(codex.cliImportPath).toBe("~/.codex/auth.json");
+    expect(codex.authMethods.map((method) => method.label)).toEqual([
+      "浏览器 OAuth",
+      "设备码",
+      "Codex CLI",
+    ]);
+    // 套餐档位来自接入点目录，未知档位不猜名。
+    expect(publicPlanDisplayName(codex.plans, "prolite")).toBe("Pro 5x");
+    expect(publicPlanDisplayName(codex.plans, "mystery-tier")).toBe("mystery-tier");
+    expect(publicPlanDisplayName(codex.plans, "plus")).toBe("Plus");
+    // 占位符跟随名称首字符；未知 offering 不回退到第一行。
+    expect(catalogRow("grok-build").mark).toBe("G");
+    const unknown = accountPresentation(
+      { ...account, offeringId: "unknown-offering" },
+      providerCatalogFixture,
+    );
+    expect(unknown.name).toBe("unknown-offering");
+    expect(unknown.mark).toBe("U");
+    expect(unknown.plans).toEqual([]);
+  });
+
+  it("maps quota labels through native names and window durations only", () => {
     expect(
-      quotaLabel("codex", {
+      quotaLabel({
         key: "session",
         displayName: null,
         windowSeconds: 18_000,
@@ -268,7 +335,7 @@ describe("desktop account UI", () => {
       }),
     ).toBe("5-hour");
     expect(
-      quotaLabel("codex", {
+      quotaLabel({
         key: "session",
         displayName: "Weekly",
         windowSeconds: 604_800,
@@ -281,7 +348,7 @@ describe("desktop account UI", () => {
       }),
     ).toBe("Weekly");
     expect(
-      quotaLabel("codex", {
+      quotaLabel({
         key: "weekly",
         displayName: "Session",
         windowSeconds: 18_000,
@@ -293,25 +360,44 @@ describe("desktop account UI", () => {
         unlimited: false,
       }),
     ).toBe("5-hour");
+    expect(
+      quotaLabel({
+        key: "code_review",
+        displayName: null,
+        windowSeconds: null,
+        used: 0,
+        total: 0,
+        remaining: null,
+        remainingPercentage: null,
+        resetAt: null,
+        unlimited: false,
+      }),
+    ).toBe("code review");
+    expect(resetCreditTypeLabel("five-hour")).toBe("5 小时周期");
+    expect(resetCreditTypeLabel("weekly")).toBe("每周周期");
+    expect(resetCreditTypeLabel("banked")).toBe("结转额度");
+    expect(resetCreditTypeLabel("future-kind")).toBe("future kind");
+    expect(authMethodLabel("cli-import")).toBe("CLI 导入");
   });
 
   it("exposes the Grok Build and Antigravity authentication methods", async () => {
-    const grok = providerPresentation("grok-build");
-    const antigravity = providerPresentation("antigravity");
-    expect(grok.available).toBe(true);
+    const grok = catalogRow("grok-build");
+    const antigravity = catalogRow("antigravity");
     expect(grok.icon).toMatch(/grok\.svg$/);
     expect(grok.authMethods.map((method) => method.id)).toEqual([
       "device-code",
       "browser-oauth",
       "cli-import",
     ]);
-    expect(antigravity.available).toBe(true);
     expect(antigravity.icon).toMatch(/antigravity\.png$/);
     expect(antigravity.authMethods.map((method) => method.id)).toEqual(["browser-oauth"]);
 
     const startAuth = vi.fn().mockResolvedValue({
       ok: true,
-      value: { status: "completed", account: { ...account, provider: "grok-build" } },
+      value: {
+        status: "completed",
+        account: { ...account, provider: "grok-build", offeringId: "grok-build" },
+      },
     });
     const service = Object.assign(new EmptyPolyQuotaService(), { startAuth });
     const wrapper = mount(AuthModal, {
@@ -324,16 +410,13 @@ describe("desktop account UI", () => {
     expect(wrapper.text()).toContain("Grok CLI");
     await wrapper.get("footer .primary-action").trigger("click");
     await flushPromises();
-    expect(startAuth).toHaveBeenCalledWith({ provider: "grok-build", method: "device-code" });
+    expect(startAuth).toHaveBeenCalledWith({ offeringId: "grok-build", method: "device-code" });
   });
 
-  it("renders the CLI import hint from presentation data", async () => {
-    const codex = providerPresentation("codex");
-    expect(codex.cliImportPath).toBe("~/.codex/auth.json");
-    const catalogCodex = catalogPresentations(providerCatalogFixture).find(
-      (item) => item.id === "codex",
-    );
-    expect(catalogCodex?.cliImportPath).toBe("~/.codex/auth.json");
+  it("renders the CLI import hint from the catalog source path", async () => {
+    const catalogCodex = catalogRow("codex");
+    expect(catalogCodex.cliImportPath).toBe("~/.codex/auth.json");
+    expect(catalogRow("bigmodel-coding-plan").cliImportPath).toBe("~/.zcode/v2/credentials.json");
 
     const service = Object.assign(new EmptyPolyQuotaService(), {
       startAuth: vi.fn().mockResolvedValue({
@@ -342,7 +425,7 @@ describe("desktop account UI", () => {
       }),
     });
     const wrapper = mount(AuthModal, {
-      props: { provider: catalogCodex! },
+      props: { provider: catalogCodex },
       global: { provide: { [polyQuotaServiceKey as symbol]: service } },
     });
     const cliTab = wrapper
@@ -355,9 +438,8 @@ describe("desktop account UI", () => {
   });
 
   it("starts Claude import and OpenCode Go API key auth from catalog data", async () => {
-    const presentations = catalogPresentations(providerCatalogFixture);
-    const claude = presentations.find((item) => item.id === "claude")!;
-    const opencode = presentations.find((item) => item.id === "opencode-go")!;
+    const claude = catalogRow("claude");
+    const opencode = catalogRow("opencode-go");
     expect(claude.cliImportPath).toBe("~/.claude/.credentials.json");
     expect(claude.authMethods.map((method) => method.label)).toEqual(["Claude Code"]);
     expect(opencode.authMethods.map((method) => method.id)).toEqual(["api-key"]);
@@ -373,7 +455,7 @@ describe("desktop account UI", () => {
     });
     await claudeWrapper.get("footer .primary-action").trigger("click");
     await flushPromises();
-    expect(startAuth).toHaveBeenCalledWith({ provider: "claude", method: "cli-import" });
+    expect(startAuth).toHaveBeenCalledWith({ offeringId: "claude", method: "cli-import" });
 
     const opencodeWrapper = mount(AuthModal, {
       props: { provider: opencode },
@@ -383,7 +465,7 @@ describe("desktop account UI", () => {
     await opencodeWrapper.get("footer .primary-action").trigger("click");
     await flushPromises();
     expect(startAuth).toHaveBeenCalledWith({
-      provider: "opencode-go",
+      offeringId: "opencode-go",
       method: "api-key",
       apiKey: "oc-key",
     });
@@ -394,7 +476,7 @@ describe("desktop account UI", () => {
       props: {
         account,
         busy: false,
-        plans: providerCatalogFixture.find((item) => item.provider === "codex")?.plans,
+        providers: providerCatalogFixture,
         usage: {
           accountId: account.id,
           plan: "plus",
@@ -429,7 +511,8 @@ describe("desktop account UI", () => {
               ],
             },
           ],
-          extras: [{ key: "reset-credits", value: "1" }],
+          extras: [{ key: "extra-credits", value: "$5.00" }],
+          resetCredits: null,
           fetchedAt: "2026-09-24T00:00:00.000Z",
         },
       },
@@ -437,17 +520,17 @@ describe("desktop account UI", () => {
     expect(wrapper.get(".plan-tag").text()).toBe("Plus");
     expect(wrapper.text()).toContain("5-hour");
     expect(wrapper.text()).toContain("Weekly");
-    expect(wrapper.text()).toContain("Reset credits");
+    expect(wrapper.text()).toContain("extra credits $5.00");
     expect(wrapper.find(".switch-field").exists()).toBe(true);
     await wrapper.get(".extra-button").trigger("click");
-    expect(wrapper.text()).toContain("上游未提供可展示的逐项明细");
-    expect(wrapper.text()).not.toContain("只读");
+    expect(wrapper.text()).toContain("当前值");
+    expect(wrapper.text()).toContain("$5.00");
     expect(wrapper.find(".credit-redeem-action").exists()).toBe(false);
   });
 
   it("keeps refresh available before the first usage snapshot", async () => {
     const wrapper = mount(QuotaCard, {
-      props: { account, busy: false, usage: null },
+      props: { account, busy: false, usage: null, providers: providerCatalogFixture },
     });
     expect(wrapper.text()).toContain("尚无用量数据");
     const refresh = wrapper.findAll("button").find((button) => button.text().includes("刷新"));
@@ -456,30 +539,36 @@ describe("desktop account UI", () => {
     expect(wrapper.emitted("refresh")).toHaveLength(1);
   });
 
-  it("keeps BigModel and Z.ai as separate UI services", () => {
-    const bigmodel = {
-      ...account,
-      provider: "glm" as const,
-      publicMetadata: { region: "china", presentationId: "bigmodel-coding-plan" },
-    };
+  it("keeps BigModel and Z.ai as separate UI services by offering id", () => {
+    const bigmodel = { ...account, provider: "glm" as const, offeringId: "bigmodel-coding-plan" };
     const zai = {
       ...account,
       id: "account-2",
       provider: "glm" as const,
-      publicMetadata: { region: "international", presentationId: "zai-coding-plan" },
+      offeringId: "zai-coding-plan",
     };
-    expect(accountPresentationId(bigmodel)).toBe("bigmodel-coding-plan");
-    expect(accountPresentationId(zai)).toBe("zai-coding-plan");
-    expect(providerPresentation(bigmodel).name).toBe("BigModel Coding Plan");
-    expect(providerPresentation(zai).name).toBe("Z.ai Coding Plan");
-    expect(providerPresentation(bigmodel).icon).toMatch(/bigmodel\.svg$/);
-    expect(providerPresentation(zai).icon).toMatch(/zai\.svg$/);
-    expect(providerPresentation(bigmodel).icon).not.toBe(providerPresentation(zai).icon);
+    expect(accountPresentation(bigmodel, providerCatalogFixture).name).toBe("BigModel Coding Plan");
+    expect(accountPresentation(zai, providerCatalogFixture).name).toBe("Z.ai Coding Plan");
+    expect(accountPresentation(bigmodel, providerCatalogFixture).icon).toMatch(/bigmodel\.svg$/);
+    expect(accountPresentation(zai, providerCatalogFixture).icon).toMatch(/zai\.svg$/);
+    expect(accountPresentation(bigmodel, providerCatalogFixture).icon).not.toBe(
+      accountPresentation(zai, providerCatalogFixture).icon,
+    );
   });
 
   it("wires the Claude and OpenCode Go provider icons", () => {
-    expect(providerPresentation("claude").icon).toMatch(/claude\.svg$/);
-    expect(providerPresentation("opencode-go").icon).toMatch(/opencode\.png$/);
+    const claude = accountPresentation(
+      { ...account, provider: "claude", offeringId: "claude" },
+      providerCatalogFixture,
+    );
+    const opencode = accountPresentation(
+      { ...account, provider: "opencode-go", offeringId: "opencode-go" },
+      providerCatalogFixture,
+    );
+    expect(claude.mark).toBe("C");
+    expect(claude.icon).toMatch(/claude\.svg$/);
+    expect(opencode.mark).toBe("O");
+    expect(opencode.icon).toMatch(/opencode\.png$/);
   });
 
   it("keeps only the method-specific explanation in the account modal", async () => {
@@ -494,6 +583,12 @@ describe("desktop account UI", () => {
     const zaiRow = wrapper
       .findAll(".provider-row")
       .find((row) => row.text().includes("Z.ai Coding Plan"));
+    // 名称与状态占第一行，描述独立第二行，不再挤进同一行。
+    const heading = zaiRow!.get(".provider-heading");
+    expect(heading.get(".provider-name-row h2").text()).toBe("Z.ai Coding Plan");
+    expect(heading.get(".provider-name-row .provider-status").text()).toContain("尚未接入");
+    expect(heading.get(".provider-description").text()).toContain("智谱国际版 Coding Plan");
+    expect(heading.findAll(".provider-name-row .provider-description")).toHaveLength(0);
     const addButton = zaiRow?.findAll("button").find((button) => button.text() === "添加账号");
 
     await addButton!.trigger("click");
@@ -527,45 +622,36 @@ describe("desktop account UI", () => {
     const glmAccount: PublicAccount = {
       ...account,
       provider: "glm",
-      publicMetadata: { region: "china", presentationId: "bigmodel-coding-plan" },
+      offeringId: "bigmodel-coding-plan",
     };
     const wrapper = mount(QuotaCard, {
       props: {
         account: glmAccount,
         busy: false,
+        providers: providerCatalogFixture,
         usage: {
           accountId: glmAccount.id,
           plan: "Pro",
           overallRemainingPercentage: 75,
           groups: [],
-          extras: [
-            {
-              key: "reset-credits",
-              value: "2",
-              items: [
-                {
-                  key: "1",
-                  kind: "five-hour",
-                  expiresAt: "2099-09-25T13:00:00.000Z",
-                  actionToken: "record-1",
-                },
-                {
-                  key: "2",
-                  kind: "weekly",
-                  expiresAt: "2099-09-26T13:00:00.000Z",
-                  actionToken: "record-2",
-                },
-              ],
-            },
-          ],
+          extras: [],
+          resetCredits: {
+            kind: "itemized",
+            items: [
+              { id: "record-1", type: "five-hour", expiresAt: "2099-09-25T13:00:00.000Z" },
+              { id: "record-2", type: "weekly", expiresAt: "2099-09-26T13:00:00.000Z" },
+            ],
+          },
           fetchedAt: "2026-09-25T12:00:00.000Z",
         },
       },
     });
     expect(wrapper.text()).toContain("BigModel Coding Plan");
+    expect(wrapper.text()).toContain("重置额度 2");
     await wrapper.get(".extra-button").trigger("click");
-    expect(wrapper.text()).toContain("5 小时使用周期");
-    expect(wrapper.text()).toContain("每周使用周期");
+    expect(wrapper.text()).toContain("5 小时周期");
+    expect(wrapper.text()).toContain("每周周期");
+    expect(wrapper.text()).toContain("有效期至");
     expect(wrapper.findAll(".credit-items li")).toHaveLength(2);
     expect(wrapper.findAll(".credit-redeem-action")).toHaveLength(2);
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
@@ -574,35 +660,63 @@ describe("desktop account UI", () => {
     confirm.mockReturnValue(true);
     await wrapper.get(".credit-redeem-action").trigger("click");
     expect(confirm).toHaveBeenCalledTimes(2);
-    expect(wrapper.emitted("redeem")?.[0]).toEqual(["record-1"]);
+    expect(wrapper.emitted("redeem")?.[0]).toEqual([{ kind: "item", itemId: "record-1" }]);
+  });
+
+  it("renders aggregate reset credits as per-type buckets", async () => {
+    const codexAccount: PublicAccount = { ...account };
+    const wrapper = mount(QuotaCard, {
+      props: {
+        account: codexAccount,
+        busy: false,
+        providers: providerCatalogFixture,
+        usage: {
+          accountId: codexAccount.id,
+          plan: "plus",
+          overallRemainingPercentage: 80,
+          groups: [],
+          extras: [],
+          resetCredits: {
+            kind: "aggregate",
+            totals: [
+              { type: "banked", total: 2 },
+              { type: "five-hour", total: 1 },
+            ],
+          },
+          fetchedAt: "2026-09-25T12:00:00.000Z",
+        },
+      },
+    });
+    expect(wrapper.text()).toContain("重置额度 3");
+    await wrapper.get(".extra-button").trigger("click");
+    const rows = wrapper.findAll(".credit-items li");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.text()).toContain("结转额度");
+    expect(rows[0]?.text()).toContain("2 次");
+    expect(rows[1]?.text()).toContain("5 小时周期");
+    expect(rows[1]?.text()).toContain("1 次");
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    await rows[1]!.get(".credit-redeem-action").trigger("click");
+    expect(wrapper.emitted("redeem")?.[0]).toEqual([{ kind: "aggregate", type: "five-hour" }]);
   });
 
   it("shows a persistent success notice after using a reset credit", async () => {
     const glmAccount: PublicAccount = {
       ...account,
       provider: "glm",
+      offeringId: "bigmodel-coding-plan",
       authMethod: "api-key",
-      publicMetadata: { region: "china", presentationId: "bigmodel-coding-plan" },
     };
     const usage: PublicUsage = {
       accountId: glmAccount.id,
       plan: "Pro",
       overallRemainingPercentage: 75,
       groups: [],
-      extras: [
-        {
-          key: "reset-credits",
-          value: "1",
-          items: [
-            {
-              key: "five-hour:0",
-              kind: "five-hour",
-              expiresAt: null,
-              actionToken: "record-1",
-            },
-          ],
-        },
-      ],
+      extras: [],
+      resetCredits: {
+        kind: "itemized",
+        items: [{ id: "record-1", type: "five-hour", expiresAt: null }],
+      },
       fetchedAt: "2026-09-27T00:00:00.000Z",
     };
     const redeemResetCredit = vi.fn().mockResolvedValue({
@@ -624,7 +738,10 @@ describe("desktop account UI", () => {
     await wrapper.get(".extra-button").trigger("click");
     await wrapper.get(".credit-redeem-action").trigger("click");
     await vi.waitFor(() =>
-      expect(redeemResetCredit).toHaveBeenCalledWith(glmAccount.id, "record-1"),
+      expect(redeemResetCredit).toHaveBeenCalledWith(glmAccount.id, {
+        kind: "item",
+        itemId: "record-1",
+      }),
     );
     await vi.waitFor(() =>
       expect(wrapper.get(".global-message").text()).toBe("重置额度使用成功，剩余 0 次"),
@@ -635,8 +752,9 @@ describe("desktop account UI", () => {
   it("renders provider-independent quota groups", async () => {
     const wrapper = mount(QuotaCard, {
       props: {
-        account: { ...account, provider: "antigravity" },
+        account: { ...account, provider: "antigravity", offeringId: "antigravity" },
         busy: false,
+        providers: providerCatalogFixture,
         usage: {
           accountId: account.id,
           plan: "Starter",
@@ -661,6 +779,7 @@ describe("desktop account UI", () => {
             },
           ],
           extras: [],
+          resetCredits: null,
           fetchedAt: "2026-09-24T00:00:00.000Z",
         },
       },
@@ -681,13 +800,13 @@ describe("desktop account UI", () => {
         ...account,
         id: "account-2",
         provider: "glm",
-        publicMetadata: { region: "china" },
+        offeringId: "bigmodel-coding-plan",
       },
-      { ...account, id: "account-3", provider: "grok-build" },
-      { ...account, id: "account-4", provider: "antigravity" },
+      { ...account, id: "account-3", provider: "grok-build", offeringId: "grok-build" },
+      { ...account, id: "account-4", provider: "antigravity", offeringId: "antigravity" },
     ];
     const wrapper = mount(UsageView, {
-      props: { accounts, usage: {}, busy: false },
+      props: { accounts, usage: {}, busy: false, providers: providerCatalogFixture },
     });
     const columns = wrapper.findAll(".quota-column");
 
@@ -770,6 +889,7 @@ describe("desktop account UI", () => {
           overallRemainingPercentage: 100,
           groups: [],
           extras: [],
+          resetCredits: null,
           fetchedAt: "2026-09-27T00:00:00.000Z",
         },
       },
@@ -841,6 +961,7 @@ describe("desktop account UI", () => {
             overallRemainingPercentage: 100,
             groups: [],
             extras: [],
+            resetCredits: null,
             fetchedAt: "2026-09-27T00:00:00.000Z",
           },
         },

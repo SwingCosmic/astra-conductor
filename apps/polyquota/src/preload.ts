@@ -72,10 +72,10 @@ const service: IPolyQuotaService = {
   refreshAll: () => invoke(polyQuotaIpcChannels.refreshAll, parseRefreshBatchOutcome),
   refreshCredentials: (accountId) =>
     invoke(polyQuotaIpcChannels.refreshCredentials, parseCredentialRefreshOutcome, accountId),
-  redeemResetCredit: (accountId, selectionToken) =>
+  redeemResetCredit: (accountId, redemption) =>
     invoke(polyQuotaIpcChannels.redeemResetCredit, parseRedeemResetCreditOutcome, {
       accountId,
-      selectionToken,
+      redemption,
     }),
   startAuth: (request) => invoke(polyQuotaIpcChannels.startAuth, parseAuthStartResult, request),
   finishAuth: (sessionId) => invoke(polyQuotaIpcChannels.finishAuth, parsePublicAccount, sessionId),

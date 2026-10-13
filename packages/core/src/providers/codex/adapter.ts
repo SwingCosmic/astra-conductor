@@ -6,6 +6,9 @@ import type {
   CredentialEnvelope,
   PublicMetadata,
   ProviderId,
+  ResetCreditRedemption,
+  ResetCreditItem,
+  ResetCredits,
   UsageQuota,
   UsageSnapshot,
 } from "../../models.js";
@@ -35,6 +38,7 @@ interface JsonRecord {
 
 export interface CodexProvisioningResult {
   authMethod: Exclude<AuthMethod, "api-key">;
+  offeringId: string;
   stableIdentity: string;
   displayName: string;
   maskedIdentifier: string;
@@ -105,6 +109,22 @@ function resetCreditKind(resetType: string | undefined): string {
   if (resetType === "WEEK") return "weekly";
   if (resetType === "FIVE_HOUR") return "five-hour";
   return "banked";
+}
+
+function toResetCreditItem(credit: {
+  id: string;
+  resetType?: string;
+  expiresAt?: string | null;
+}): ResetCreditItem {
+  return {
+    id: credit.id,
+    type: resetCreditKind(credit.resetType),
+    expiresAt: credit.expiresAt ?? null,
+  };
+}
+
+function aggregateResetCredits(bankedCount: number): ResetCredits {
+  return { kind: "aggregate", totals: [{ type: "banked", total: bankedCount }] };
 }
 
 export class CodexAdapter implements UsageProviderAdapter {
@@ -180,6 +200,7 @@ export class CodexAdapter implements UsageProviderAdapter {
       if (parsed.userId) publicMetadata.userId = parsed.userId;
       return {
         authMethod: "cli-import",
+        offeringId: "codex",
         stableIdentity: buildStableIdentity(parsed.accountId, parsed.userId, email),
         displayName: email,
         maskedIdentifier: maskIdentifier(email),
@@ -264,24 +285,26 @@ export class CodexAdapter implements UsageProviderAdapter {
       plan: result.plan,
       overallRemainingPercentage: quotas[0]?.remainingPercentage ?? null,
       groups: [{ key: "default", displayName: null, quotas }],
-      extras: await this.resetCreditsExtras(account, envelope, result.bankedResetCredits),
+      extras: [],
+      resetCredits: await this.fetchResetCredits(account, envelope, result.bankedResetCredits),
       fetchedAt: this.clock.now().toISOString(),
     };
   }
 
   /**
-   * 重置卡逐项展示：用量端点只有计数，明细（id、类型、过期时间）来自独立的
-   * 列表端点；列表失败时退回计数展示，不影响用量主数据。
+   * 重置额度目标为分体形态：用量刷新合并拉取明细端点（逐卡 id、类型、过期
+   * 时间）。明细端点暂时不可用时退回计数，以聚合形态如实展示——不虚构逐项
+   * 明细，也不编造有效期。
    */
-  private async resetCreditsExtras(
+  private async fetchResetCredits(
     account: Account,
     envelope: CredentialEnvelope,
     bankedCount: number | undefined,
-  ): Promise<UsageSnapshot["extras"]> {
-    if (typeof bankedCount !== "number") return [];
-    if (bankedCount <= 0) return [{ key: "reset-credits", value: "0" }];
+  ): Promise<ResetCredits | null> {
+    if (typeof bankedCount !== "number") return null;
+    if (bankedCount <= 0) return { kind: "itemized", items: [] };
     const accessToken = envelope.secrets.accessToken;
-    if (!accessToken) return [{ key: "reset-credits", value: String(bankedCount) }];
+    if (!accessToken) return aggregateResetCredits(bankedCount);
     try {
       const credits = await listAvailableCodexResetCredits({
         accessToken,
@@ -291,48 +314,52 @@ export class CodexAdapter implements UsageProviderAdapter {
             : undefined,
         fetchImpl: this.fetchImpl,
       });
-      return [
-        {
-          key: "reset-credits",
-          value: String(credits.length),
-          ...(credits.length
-            ? {
-                items: credits.map((credit, index) => {
-                  const kind = resetCreditKind(credit.resetType);
-                  return {
-                    key: `${kind}:${index}`,
-                    kind,
-                    expiresAt: credit.expiresAt ?? null,
-                    actionToken: credit.id,
-                  };
-                }),
-              }
-            : {}),
-        },
-      ];
+      return { kind: "itemized", items: credits.map(toResetCreditItem) };
     } catch {
-      return [{ key: "reset-credits", value: String(bankedCount) }];
+      return aggregateResetCredits(bankedCount);
     }
   }
 
+  /**
+   * Codex 的重置额度当前只有 banked 计数兜底与逐卡消耗两种输入：分体请求
+   * 携带对应重置卡 id（兑换协议会重新校验列表），聚合请求由服务端挑选
+   * 最先过期的一张。
+   */
   async redeemResetCard(
     account: Account,
     envelope: CredentialEnvelope,
-    selectionToken: string,
+    request: ResetCreditRedemption,
   ): Promise<void> {
     if (account.provider !== "codex" || envelope.provider !== "codex") {
       throw new AppError("validation", "只有 Codex 账号支持使用重置额度");
     }
     const accessToken = envelope.secrets.accessToken;
     if (!accessToken) throw new AppError("authentication", "Codex 访问令牌不可用");
-    const creditId = selectionToken.trim();
+    if (request.kind === "item") {
+      const creditId = request.itemId.trim();
+      if (!creditId || creditId.length > 256) {
+        throw new AppError("validation", "Codex 重置额度选择标识无效");
+      }
+      await redeemCodexResetCredit({
+        accessToken,
+        workspaceId:
+          typeof account.publicMetadata.workspaceId === "string"
+            ? account.publicMetadata.workspaceId
+            : undefined,
+        creditId,
+        fetchImpl: this.fetchImpl,
+      });
+      return;
+    }
+    if (request.type !== undefined && request.type !== "banked") {
+      throw new AppError("validation", `Codex 不存在该类型的重置额度：${request.type}`);
+    }
     await redeemCodexResetCredit({
       accessToken,
       workspaceId:
         typeof account.publicMetadata.workspaceId === "string"
           ? account.publicMetadata.workspaceId
           : undefined,
-      ...(creditId ? { creditId } : {}),
       fetchImpl: this.fetchImpl,
     });
   }
@@ -354,6 +381,7 @@ export class CodexAdapter implements UsageProviderAdapter {
     if (userId) publicMetadata.userId = userId;
     return {
       authMethod,
+      offeringId: "codex",
       stableIdentity: buildStableIdentity(workspaceId, userId, email),
       displayName: email,
       maskedIdentifier: maskIdentifier(email),
@@ -390,6 +418,7 @@ export class CodexAccountProvisioner {
     const account: Account = {
       id: existing?.id ?? this.createId(),
       provider: "codex",
+      offeringId: input.offeringId,
       authMethod: input.authMethod,
       stableIdentity: input.stableIdentity,
       displayName: input.displayName,

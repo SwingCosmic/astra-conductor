@@ -59,7 +59,7 @@ export function registerIpcHandlers(service: PolyQuotaApplicationService): void 
   ipcMain.handle(polyQuotaIpcChannels.redeemResetCredit, (_event, input: unknown) =>
     response(() => {
       const request = parseRedeemResetCreditRequest(input);
-      return service.redeemResetCredit(request.accountId, request.selectionToken);
+      return service.redeemResetCredit(request.accountId, request.redemption);
     }),
   );
   ipcMain.handle(polyQuotaIpcChannels.startAuth, (_event, input: unknown) =>

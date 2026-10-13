@@ -108,6 +108,7 @@ describe("Antigravity protocol", () => {
     const account: Account = {
       id: "agy-1",
       provider: "antigravity",
+      offeringId: "antigravity",
       authMethod: "browser-oauth",
       stableIdentity: "project-1:user",
       displayName: "user@example.test",

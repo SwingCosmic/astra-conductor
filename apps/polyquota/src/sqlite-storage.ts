@@ -15,6 +15,7 @@ import { migrations } from "./migrations.js";
 interface AccountRow {
   id: string;
   provider: Account["provider"];
+  offering_id: string;
   auth_method: Account["authMethod"];
   stable_identity: string;
   display_name: string;
@@ -62,6 +63,7 @@ function toAccount(row: AccountRow): Account {
   return {
     id: row.id,
     provider: row.provider,
+    offeringId: row.offering_id,
     authMethod: row.auth_method,
     stableIdentity: row.stable_identity,
     displayName: row.display_name,
@@ -124,14 +126,15 @@ export class SqliteStorage implements StoragePort {
       this.database
         .prepare(
           `INSERT INTO accounts (
-             id, provider, auth_method, stable_identity, display_name, masked_identifier,
-             enabled, credential_state, public_metadata, created_at, updated_at
+             id, provider, offering_id, auth_method, stable_identity, display_name,
+             masked_identifier, enabled, credential_state, public_metadata, created_at, updated_at
            ) VALUES (
-             @id, @provider, @authMethod, @stableIdentity, @displayName, @maskedIdentifier,
-             @enabled, @credentialState, @publicMetadata, @createdAt, @updatedAt
+             @id, @provider, @offeringId, @authMethod, @stableIdentity, @displayName,
+             @maskedIdentifier, @enabled, @credentialState, @publicMetadata, @createdAt, @updatedAt
            )
            ON CONFLICT(id) DO UPDATE SET
              provider = excluded.provider,
+             offering_id = excluded.offering_id,
              auth_method = excluded.auth_method,
              stable_identity = excluded.stable_identity,
              display_name = excluded.display_name,

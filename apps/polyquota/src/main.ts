@@ -16,28 +16,11 @@ import { rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  AntigravityAccountProvisioner,
-  AntigravityAdapter,
   AuthCoordinator,
-  ClaudeAccountProvisioner,
-  ClaudeAdapter,
-  CodexAccountProvisioner,
-  CodexAdapter,
   CredentialVault,
-  GlmAccountProvisioner,
-  GlmAdapter,
-  GrokBuildAccountProvisioner,
-  GrokBuildAdapter,
-  OpencodeGoAccountProvisioner,
-  OpencodeGoAdapter,
+  ProviderRegistry,
   RefreshCoordinator,
-  createAntigravityAuthFlow,
-  createClaudeAuthFlow,
-  createCodexAuthFlow,
-  createGlmAuthFlow,
-  createGrokBuildAuthFlow,
-  createOpencodeGoAuthFlow,
-  providerCatalog,
+  createProviderContributions,
 } from "@astra-conductor/core/internal";
 import { startOAuthCallbackServer } from "./auth/callback-server.js";
 import { registerIpcHandlers, unregisterIpcHandlers, waitForIpcHandlersToDrain } from "./ipc.js";
@@ -412,52 +395,19 @@ if (hasSingleInstanceLock) {
       const vault = new CredentialVault(storage, new ElectronSafeStorageCipher());
       const fetchImpl: typeof fetch = (input, init) =>
         net.fetch(input instanceof URL ? input.toString() : input, init);
-      const adapter = new CodexAdapter(fetchImpl);
-      const glmAdapter = new GlmAdapter(fetchImpl);
-      const grokAdapter = new GrokBuildAdapter(fetchImpl);
-      const antigravityAdapter = new AntigravityAdapter(fetchImpl);
-      const claudeAdapter = new ClaudeAdapter(fetchImpl);
-      const opencodeGoAdapter = new OpencodeGoAdapter(fetchImpl);
-      const coordinator = new RefreshCoordinator(storage, vault, [
-        adapter,
-        glmAdapter,
-        grokAdapter,
-        antigravityAdapter,
-        claudeAdapter,
-        opencodeGoAdapter,
-      ]);
-      const provisioner = new CodexAccountProvisioner(storage, vault);
-      const glmProvisioner = new GlmAccountProvisioner(storage, vault);
-      const grokProvisioner = new GrokBuildAccountProvisioner(storage, vault);
-      const antigravityProvisioner = new AntigravityAccountProvisioner(storage, vault);
-      const claudeProvisioner = new ClaudeAccountProvisioner(storage, vault);
-      const opencodeGoProvisioner = new OpencodeGoAccountProvisioner(storage, vault);
-      auth = new AuthCoordinator([
-        createCodexAuthFlow({
-          adapter,
-          provisioner,
-          openExternal: (url) => shell.openExternal(url),
-          startCallbackServer: startOAuthCallbackServer,
+      // 组合根只创建宿主端口：供应商的组合细节全部收在 core 组合工厂，新增
+      // 供应商时这里零修改（阶段 B，§8.1）。
+      const providerRegistry = new ProviderRegistry(
+        createProviderContributions({
+          http: { fetch: fetchImpl },
+          browser: { openExternal: (url) => shell.openExternal(url) },
+          callbackServer: { start: startOAuthCallbackServer },
+          storage,
+          vault,
         }),
-        createGlmAuthFlow({ adapter: glmAdapter, provisioner: glmProvisioner }),
-        createGrokBuildAuthFlow({
-          adapter: grokAdapter,
-          provisioner: grokProvisioner,
-          openExternal: (url) => shell.openExternal(url),
-          startCallbackServer: startOAuthCallbackServer,
-        }),
-        createAntigravityAuthFlow({
-          adapter: antigravityAdapter,
-          provisioner: antigravityProvisioner,
-          openExternal: (url) => shell.openExternal(url),
-          startCallbackServer: startOAuthCallbackServer,
-        }),
-        createClaudeAuthFlow({ adapter: claudeAdapter, provisioner: claudeProvisioner }),
-        createOpencodeGoAuthFlow({
-          adapter: opencodeGoAdapter,
-          provisioner: opencodeGoProvisioner,
-        }),
-      ]);
+      );
+      const coordinator = new RefreshCoordinator(storage, vault, providerRegistry);
+      auth = new AuthCoordinator(providerRegistry);
       polling = new PollingService(storage, coordinator);
       if (codexCliSmoke) {
         const authResult = await auth.start("codex", "cli-import");
@@ -475,13 +425,7 @@ if (hasSingleInstanceLock) {
         return;
       }
       polyQuotaService = new PolyQuotaApplicationService(storage, vault, polling, auth, {
-        providerCatalog,
-        resetCreditRedeemers: {
-          codex: (account, envelope, selectionToken) =>
-            adapter.redeemResetCard(account, envelope, selectionToken),
-          glm: (account, envelope, selectionToken) =>
-            glmAdapter.redeemResetCard(account, envelope, selectionToken),
-        },
+        registry: providerRegistry,
         detectProxyStatus: () => detectProxyStatus(),
         publishChanged: (event) => {
           if (quitting) return;

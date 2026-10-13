@@ -14,6 +14,9 @@ interface ClaudeAuthFlowDeps {
 
 const SUPPORTED_METHODS: readonly AuthMethod[] = ["cli-import"];
 
+/** 展示用默认路径提示，与 claudeAuthPath 的真实解析同源维护。 */
+export const CLAUDE_CLI_IMPORT_PATH_HINT = "~/.claude/.credentials.json";
+
 function claudeAuthPath(): string {
   return path.join(homedir(), ".claude", ".credentials.json");
 }
@@ -23,7 +26,14 @@ export function createClaudeAuthFlow(deps: ClaudeAuthFlowDeps): ProviderAuthFlow
   return {
     provider: "claude",
     supportedMethods: SUPPORTED_METHODS,
-    async start(method: AuthMethod, _options: AuthStartOptions): Promise<AuthFlowStart> {
+    async start(
+      offeringId: string,
+      method: AuthMethod,
+      _options: AuthStartOptions,
+    ): Promise<AuthFlowStart> {
+      if (offeringId !== "claude") {
+        throw new AppError("validation", `Claude Code 不提供接入点：${offeringId}`);
+      }
       if (method !== "cli-import") {
         throw new AppError("validation", "Claude Code 当前仅支持本地凭据导入");
       }

@@ -48,6 +48,7 @@ export interface GrokDeviceAuthorization {
 
 export interface GrokProvisioningResult {
   authMethod: "browser-oauth" | "device-code" | "cli-import";
+  offeringId: string;
   stableIdentity: string;
   displayName: string;
   maskedIdentifier: string;
@@ -254,6 +255,9 @@ export class GrokBuildAdapter implements UsageProviderAdapter {
         : null,
       groups: [{ key: "default", displayName: null, quotas }],
       extras,
+      // grok 的重置额度暂以计数展示在 extras；grpc 帧已能解出逐项 token 与
+      // 过期时间但无类型字段且未接入消耗协议，升级分体时另行评估。
+      resetCredits: null,
       fetchedAt: this.clock.now().toISOString(),
     };
   }
@@ -278,6 +282,7 @@ export class GrokBuildAdapter implements UsageProviderAdapter {
     const label = tokens.name ?? email ?? userId ?? "Grok Build account";
     return {
       authMethod,
+      offeringId: "grok-build",
       stableIdentity,
       displayName: label,
       maskedIdentifier: maskIdentifier(email ?? identity),
@@ -311,6 +316,7 @@ export class GrokBuildAccountProvisioner {
     const account: Account = {
       id: existing?.id ?? this.createId(),
       provider: "grok-build",
+      offeringId: input.offeringId,
       authMethod: input.authMethod,
       stableIdentity: input.stableIdentity,
       displayName: input.displayName,

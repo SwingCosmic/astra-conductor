@@ -5,12 +5,12 @@ import gptIcon from "./assets/icon/gpt.png";
 import grokIcon from "./assets/icon/grok.svg";
 import opencodeIcon from "./assets/icon/opencode.png";
 import zaiIcon from "./assets/icon/zai.svg";
-import { publicPlanDisplayName } from "@astra-conductor/polyquota-contract";
 import type {
   AuthMethod,
-  GlmRegion,
-  ProviderId,
   PublicAccount,
+  PublicAuthInteraction,
+  PublicOfferingDescriptor,
+  PublicPlanDescriptor,
   PublicProviderDescriptor,
   PublicSystemStatus,
   UsageExtra,
@@ -18,198 +18,99 @@ import type {
   UsageQuotaGroup,
 } from "./models";
 
+/**
+ * 本地视觉与枚举文案层。目录、标准名称、CLI 导入路径提示、套餐档位全部
+ * 来自主进程快照中的 provider 目录（core 单一来源）；这里只保留图标资产、
+ * 图标缺失时的首字符占位、封闭枚举的文本映射和窗口时长等纯展示计算。
+ */
+
+/** 图标资产映射：core 声明 iconKey，UI 持有资产；缺失映射时用首字符占位。 */
+const iconAssets: Record<string, string> = {
+  codex: gptIcon,
+  bigmodel: bigmodelIcon,
+  zai: zaiIcon,
+  grok: grokIcon,
+  antigravity: antigravityIcon,
+  claude: claudeIcon,
+  opencode: opencodeIcon,
+};
+
+/** 无图标时的占位字符：取展示名的第一个字符大写，不维护逐供应商清单。 */
+function fallbackMark(name: string): string {
+  return name.charAt(0).toUpperCase() || "?";
+}
+
+/** 封闭协议类型的固定文本映射，不是供应商事实；差异由 sourceLabel 等目录事实表达。 */
+const authMethodTexts: Record<AuthMethod, string> = {
+  "browser-oauth": "浏览器 OAuth",
+  "device-code": "设备码",
+  "cli-import": "CLI 导入",
+  "api-key": "API Key",
+};
+
+/** core 归一化后的重置额度类型词汇；未知类型回退为 key 原样。 */
+const resetCreditTypeTexts: Record<string, string> = {
+  "five-hour": "5 小时周期",
+  weekly: "每周周期",
+  banked: "结转额度",
+};
+
+export function authMethodLabel(method: AuthMethod): string {
+  return authMethodTexts[method];
+}
+
+export function resetCreditTypeLabel(type: string): string {
+  return resetCreditTypeTexts[type] ?? type.replaceAll("-", " ");
+}
+
 export interface AuthMethodPresentation {
   id: AuthMethod;
   label: string;
+  interaction: PublicAuthInteraction;
 }
 
 export interface ProviderPresentation {
+  /** offering id：展示行与账号分组的稳定键。 */
   id: string;
-  provider: ProviderId;
-  region?: GlmRegion;
+  provider: string;
   name: string;
   description: string;
   mark: string;
   icon?: string;
   websiteUrl?: string;
-  available: boolean;
   authMethods: AuthMethodPresentation[];
   cliImportPath?: string;
-  quotaLabels: Record<string, string>;
-  groupLabels: Record<string, string>;
-  extraLabels: Record<string, string>;
-  extraItemLabels: Record<string, string>;
+  plans: readonly PublicPlanDescriptor[];
 }
 
-const authMethods: Record<AuthMethod, AuthMethodPresentation> = {
-  "browser-oauth": {
-    id: "browser-oauth",
-    label: "浏览器 OAuth",
-  },
-  "device-code": {
-    id: "device-code",
-    label: "设备码",
-  },
-  "cli-import": {
-    id: "cli-import",
-    label: "Codex CLI",
-  },
-  "api-key": {
-    id: "api-key",
-    label: "API Key",
-  },
-};
-
-const zcodeImport: AuthMethodPresentation = {
-  id: "cli-import",
-  label: "ZCode",
-};
-
-const grokCliImport: AuthMethodPresentation = {
-  id: "cli-import",
-  label: "Grok CLI",
-};
-
-const claudeCliImport: AuthMethodPresentation = {
-  id: "cli-import",
-  label: "Claude Code",
-};
+function toPresentation(
+  offering: PublicOfferingDescriptor,
+  providerName: string,
+): ProviderPresentation {
+  const icon = offering.iconKey ? iconAssets[offering.iconKey] : undefined;
+  const name = offering.displayName || providerName;
+  return {
+    id: offering.id,
+    provider: offering.provider,
+    name,
+    description: offering.description ?? "",
+    mark: fallbackMark(name),
+    icon,
+    websiteUrl: offering.websiteUrl,
+    authMethods: offering.authMethods.map((method) => ({
+      id: method.method,
+      label: method.sourceLabel ?? authMethodTexts[method.method],
+      interaction: method.interaction,
+    })),
+    cliImportPath: offering.authMethods.find((method) => method.method === "cli-import")
+      ?.sourcePathHint,
+    plans: offering.plans,
+  };
+}
 
 /**
- * 本地文案与视觉注册表，按 offering id 索引。接入哪些服务商、每家提供哪些
- * 认证方式由主进程快照中的 provider 目录决定；这里只补充图标、配额/附加项
- * 标签和目录缺失时的展示回退。套餐展示名来自目录里的 `plans`，不在此映射。
- */
-const presentationRegistry: ProviderPresentation[] = [
-  {
-    id: "codex",
-    provider: "codex",
-    name: "OpenAI Codex",
-    description: "查看 ChatGPT 订阅中的 Codex 用量。",
-    mark: "◎",
-    icon: gptIcon,
-    available: true,
-    authMethods: [
-      authMethods["browser-oauth"],
-      authMethods["device-code"],
-      authMethods["cli-import"],
-    ],
-    cliImportPath: "~/.codex/auth.json",
-    quotaLabels: {
-      session: "5-hour",
-      weekly: "Weekly",
-      code_review: "Code review · 5-hour",
-      code_review_weekly: "Code review · Weekly",
-    },
-    groupLabels: {},
-    extraLabels: { "reset-credits": "Reset credits" },
-    extraItemLabels: { banked: "Banked reset credit", "five-hour": "5-hour", weekly: "Weekly" },
-  },
-  {
-    id: "bigmodel-coding-plan",
-    provider: "glm",
-    region: "china",
-    name: "BigModel Coding Plan",
-    description: "智谱国内 Coding Plan，查看 5 小时、周配额和重置卡。",
-    mark: "",
-    icon: bigmodelIcon,
-    websiteUrl: "https://bigmodel.cn/coding-plan/personal/overview",
-    available: true,
-    authMethods: [zcodeImport, authMethods["api-key"]],
-    cliImportPath: "~/.zcode/v2/credentials.json",
-    quotaLabels: { session: "5 Hours Quota", weekly: "Weekly Quota", mcp_monthly: "Monthly" },
-    groupLabels: {},
-    extraLabels: { "reset-credits": "重置卡" },
-    extraItemLabels: { "five-hour": "5 小时使用周期", weekly: "每周使用周期" },
-  },
-  {
-    id: "zai-coding-plan",
-    provider: "glm",
-    region: "international",
-    name: "Z.ai Coding Plan",
-    description: "智谱国际版 Coding Plan，查看 5 小时、周配额和重置卡。",
-    mark: "",
-    icon: zaiIcon,
-    websiteUrl: "https://z.ai/manage-apikey/apikey-list",
-    available: true,
-    authMethods: [zcodeImport, authMethods["api-key"]],
-    cliImportPath: "~/.zcode/v2/credentials.json",
-    quotaLabels: { session: "5 Hours Quota", weekly: "Weekly Quota", mcp_monthly: "Monthly" },
-    groupLabels: {},
-    extraLabels: { "reset-credits": "重置卡" },
-    extraItemLabels: { "five-hour": "5 小时使用周期", weekly: "每周使用周期" },
-  },
-  {
-    id: "grok-build",
-    provider: "grok-build",
-    name: "Grok Build",
-    description: "查看 Grok Build 订阅用量。",
-    mark: "",
-    icon: grokIcon,
-    available: true,
-    authMethods: [authMethods["device-code"], authMethods["browser-oauth"], grokCliImport],
-    cliImportPath: "~/.grok/auth.json",
-    quotaLabels: { weekly: "Weekly" },
-    groupLabels: {},
-    extraLabels: {
-      "reset-credits": "Reset credits",
-      "extra-credits": "额外使用积分",
-      "auto-top-up": "自动充值",
-    },
-    extraItemLabels: {},
-  },
-  {
-    id: "antigravity",
-    provider: "antigravity",
-    name: "Antigravity",
-    description: "查看 Antigravity 订阅用量。",
-    mark: "",
-    icon: antigravityIcon,
-    available: true,
-    authMethods: [authMethods["browser-oauth"]],
-    quotaLabels: {},
-    groupLabels: {},
-    extraLabels: {},
-    extraItemLabels: {},
-  },
-  {
-    id: "claude",
-    provider: "claude",
-    name: "Claude Code",
-    description: "读取 Claude Code OAuth 凭据并查看订阅用量。",
-    mark: "C",
-    icon: claudeIcon,
-    websiteUrl: "https://claude.ai/settings/usage",
-    available: true,
-    authMethods: [claudeCliImport],
-    cliImportPath: "~/.claude/.credentials.json",
-    quotaLabels: { session: "5-hour", weekly: "Weekly" },
-    groupLabels: { "model-limits": "Model limits" },
-    extraLabels: {},
-    extraItemLabels: {},
-  },
-  {
-    id: "opencode-go",
-    provider: "opencode-go",
-    name: "OpenCode Go",
-    description: "查看 OpenCode Go 的 5 小时、周和月用量。",
-    mark: "O",
-    icon: opencodeIcon,
-    websiteUrl: "https://opencode.ai/zen",
-    available: true,
-    authMethods: [authMethods["api-key"]],
-    quotaLabels: { session: "$12 / 5-hour", weekly: "$30 / week", monthly: "$60 / month" },
-    groupLabels: {},
-    extraLabels: {},
-    extraItemLabels: {},
-  },
-];
-
-const registryById = new Map(presentationRegistry.map((item) => [item.id, item]));
-
-/**
- * 把主进程提供的 provider 目录投影为接入页的展示行。目录决定结构与顺序，
- * 文案注册表补充图标和标签；目录为空（例如浏览器预览）时不虚构任何服务商。
+ * 把主进程提供的 provider 目录投影为接入页的展示行。目录决定结构与全部
+ * 供应商事实；目录为空（例如浏览器预览）时不虚构任何服务商。
  */
 export function catalogPresentations(
   catalog: readonly PublicProviderDescriptor[] | null | undefined,
@@ -218,54 +119,32 @@ export function catalogPresentations(
   const rows: ProviderPresentation[] = [];
   for (const descriptor of catalog) {
     for (const offering of descriptor.offerings) {
-      const fallback =
-        registryById.get(offering.id) ??
-        presentationRegistry.find((item) => item.provider === descriptor.provider);
-      rows.push({
-        id: offering.id,
-        provider: descriptor.provider,
-        region: offering.region,
-        name: offering.displayName || fallback?.name || descriptor.displayName,
-        description: offering.description ?? fallback?.description ?? "",
-        mark: fallback?.mark ?? "",
-        icon: fallback?.icon,
-        websiteUrl: offering.websiteUrl ?? fallback?.websiteUrl,
-        available: true,
-        cliImportPath: fallback?.cliImportPath,
-        authMethods: offering.authMethods.map((method) => ({
-          id: method.method,
-          label: method.sourceLabel ?? authMethods[method.method].label,
-        })),
-        quotaLabels: fallback?.quotaLabels ?? {},
-        groupLabels: fallback?.groupLabels ?? {},
-        extraLabels: fallback?.extraLabels ?? {},
-        extraItemLabels: fallback?.extraItemLabels ?? {},
-      });
+      rows.push(toPresentation(offering, descriptor.displayName));
     }
   }
   return rows;
 }
 
-export function accountPresentationId(account: PublicAccount): string {
-  if (account.provider !== "glm") return account.provider;
-  if (typeof account.publicMetadata.presentationId === "string") {
-    return account.publicMetadata.presentationId;
-  }
-  return account.publicMetadata.region === "china" ? "bigmodel-coding-plan" : "zai-coding-plan";
-}
+/** 未知 offering 在展示层显式显示占位，不回退到第一个展示条目（§12.3）。 */
+const unknownPresentation = (offeringId: string, provider: string): ProviderPresentation => ({
+  id: offeringId,
+  provider,
+  name: offeringId,
+  description: "",
+  mark: fallbackMark(offeringId),
+  authMethods: [],
+  plans: [],
+});
 
-export function providerPresentation(
-  providerOrAccount: ProviderId | PublicAccount,
+export function accountPresentation(
+  account: PublicAccount,
+  catalog: readonly PublicProviderDescriptor[] | null | undefined,
 ): ProviderPresentation {
-  const id =
-    typeof providerOrAccount === "string"
-      ? providerOrAccount
-      : accountPresentationId(providerOrAccount);
-  return (
-    registryById.get(id) ??
-    presentationRegistry.find((item) => item.provider === id) ??
-    presentationRegistry[0]!
-  );
+  for (const descriptor of catalog ?? []) {
+    const offering = descriptor.offerings.find((item) => item.id === account.offeringId);
+    if (offering) return toPresentation(offering, descriptor.displayName);
+  }
+  return unknownPresentation(account.offeringId, account.provider);
 }
 
 function windowLabel(seconds: number | null): string | null {
@@ -278,52 +157,29 @@ function windowLabel(seconds: number | null): string | null {
   return null;
 }
 
-export function planLabel(
-  provider: ProviderId | PublicAccount,
-  plan: string,
-  catalog?: readonly PublicProviderDescriptor[] | null,
-): string {
-  const providerId = typeof provider === "string" ? provider : provider.provider;
-  const plans = catalog?.find((item) => item.provider === providerId)?.plans;
-  return publicPlanDisplayName(plans, plan);
-}
-
-export function quotaLabel(provider: ProviderId | PublicAccount, quota: UsageQuota): string {
-  const presentation = providerPresentation(provider);
+/** 回退顺序：上游原生 displayName → 窗口时长等纯展示计算 → key 原样。 */
+export function quotaLabel(quota: UsageQuota): string {
   const duration = windowLabel(quota.windowSeconds);
   const nativeName = quota.displayName?.trim();
   if (nativeName && duration && /^(session|weekly|monthly)$/i.test(nativeName)) {
     return duration;
   }
-  const mapped = presentation.quotaLabels[quota.key];
-  if (mapped) return mapped;
   if (nativeName && duration && !nativeName.toLowerCase().includes(duration.toLowerCase())) {
     return `${nativeName} · ${duration}`;
   }
   return nativeName || duration || quota.key.replaceAll("_", " ");
 }
 
-export function groupLabel(
-  provider: ProviderId | PublicAccount,
-  group: UsageQuotaGroup,
-): string | null {
-  return group.displayName ?? providerPresentation(provider).groupLabels[group.key] ?? null;
+export function groupLabel(group: UsageQuotaGroup): string | null {
+  return group.displayName ?? null;
 }
 
-export function extraLabel(provider: ProviderId | PublicAccount, extra: UsageExtra): string {
-  return providerPresentation(provider).extraLabels[extra.key] ?? extra.key.replaceAll("-", " ");
+export function extraLabel(extra: UsageExtra): string {
+  return extra.key.replaceAll("-", " ");
 }
 
-export function extraItemLabel(provider: ProviderId | PublicAccount, kind: string): string {
-  return providerPresentation(provider).extraItemLabels[kind] ?? kind.replaceAll("-", " ");
-}
-
-export function authMethodLabel(method: AuthMethod, provider?: ProviderId): string {
-  if (method !== "cli-import" || !provider) return authMethods[method].label;
-  return (
-    providerPresentation(provider).authMethods.find((item) => item.id === "cli-import")?.label ??
-    authMethods["cli-import"].label
-  );
+export function extraItemLabel(kind: string): string {
+  return kind.replaceAll("-", " ");
 }
 
 export function systemProxyLabel(status: PublicSystemStatus): string {

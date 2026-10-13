@@ -16,6 +16,7 @@ import {
 const account: Account = {
   id: "flow-account-1",
   provider: "codex",
+  offeringId: "codex",
   authMethod: "browser-oauth",
   stableIdentity: "personal:user-1",
   displayName: "user@example.test",
@@ -62,7 +63,7 @@ describe("codex auth flow", () => {
       startCallbackServer: callbackRecorder(),
     });
 
-    const result = await flow.start("cli-import", {});
+    const result = await flow.start("codex", "cli-import", {});
 
     expect(result.status).toBe("completed");
     expect(fromCliAuth).toHaveBeenCalledWith({ tokens: "fixture" });
@@ -83,7 +84,7 @@ describe("codex auth flow", () => {
       startCallbackServer: callbackRecorder(),
     });
 
-    await expect(flow.start("cli-import", {})).rejects.toThrow(
+    await expect(flow.start("codex", "cli-import", {})).rejects.toThrow(
       "无法读取 Codex CLI 凭据，请先运行 codex login",
     );
   });
@@ -105,7 +106,7 @@ describe("codex auth flow", () => {
       startCallbackServer,
     });
 
-    const result = await flow.start("browser-oauth", {});
+    const result = await flow.start("codex", "browser-oauth", {});
 
     expect(result.status).toBe("pending");
     expect(createBrowserAuthorization).toHaveBeenCalledWith("http://localhost:1455/auth/callback");
@@ -139,7 +140,9 @@ describe("codex auth flow", () => {
       startCallbackServer,
     });
 
-    await expect(flow.start("browser-oauth", {})).rejects.toThrow("无法监听 codex 授权回调端口");
+    await expect(flow.start("codex", "browser-oauth", {})).rejects.toThrow(
+      "无法监听 codex 授权回调端口",
+    );
   });
 
   it("shows the plain verification uri and finishes through the device flow", async () => {
@@ -160,7 +163,7 @@ describe("codex auth flow", () => {
       startCallbackServer: callbackRecorder(),
     });
 
-    const result = await flow.start("device-code", {});
+    const result = await flow.start("codex", "device-code", {});
 
     expect(openExternal).toHaveBeenCalledWith("https://example.test/device");
     expect(result).toMatchObject({
@@ -184,12 +187,16 @@ describe("codex auth flow", () => {
       startCallbackServer: callbackRecorder(),
     });
 
-    await expect(flow.start("api-key", {})).rejects.toThrow("Codex 不支持接入方式：api-key");
+    await expect(flow.start("codex", "api-key", {})).rejects.toThrow(
+      "Codex 不支持接入方式：api-key",
+    );
   });
 });
 
 describe("glm auth flow", () => {
-  function glmFlow(overrides: { readZCodeCredentials?: (region: string) => Promise<string> } = {}) {
+  function glmFlow(
+    overrides: { readZCodeCredentials?: (offeringId: string) => Promise<string> } = {},
+  ) {
     const createProvisioning = vi.fn().mockResolvedValue({ marker: "glm-provisioning" });
     const provisioner = provisionerFake();
     const flow = createGlmAuthFlow({
@@ -200,12 +207,12 @@ describe("glm auth flow", () => {
     return { flow, createProvisioning, provisioner };
   }
 
-  it("provisions with the entered api key for the chosen region", async () => {
+  it("provisions with the entered api key for the chosen offering", async () => {
     const { flow, createProvisioning } = glmFlow();
 
-    const result = await flow.start("api-key", { apiKey: "sk-1", region: "china" });
+    const result = await flow.start("bigmodel-coding-plan", "api-key", { apiKey: "sk-1" });
 
-    expect(createProvisioning).toHaveBeenCalledWith("sk-1", "china", "api-key");
+    expect(createProvisioning).toHaveBeenCalledWith("sk-1", "bigmodel-coding-plan", "api-key");
     expect(result.status).toBe("completed");
   });
 
@@ -213,28 +220,25 @@ describe("glm auth flow", () => {
     const readZCodeCredentials = vi.fn().mockResolvedValue("zk-key");
     const { flow, createProvisioning } = glmFlow({ readZCodeCredentials });
 
-    const result = await flow.start("cli-import", { region: "international" });
+    const result = await flow.start("zai-coding-plan", "cli-import", {});
 
-    expect(readZCodeCredentials).toHaveBeenCalledWith("international");
-    expect(createProvisioning).toHaveBeenCalledWith("zk-key", "international", "cli-import");
+    expect(readZCodeCredentials).toHaveBeenCalledWith("zai-coding-plan");
+    expect(createProvisioning).toHaveBeenCalledWith("zk-key", "zai-coding-plan", "cli-import");
     expect(result.status).toBe("completed");
   });
 
-  it("rejects a missing or invalid region", async () => {
+  it("rejects offerings outside the two GLM access points", async () => {
     const { flow } = glmFlow();
 
-    await expect(flow.start("api-key", { apiKey: "sk-1" })).rejects.toThrow(
-      "请选择有效的 GLM 服务区域",
+    await expect(flow.start("glm", "api-key", { apiKey: "sk-1" })).rejects.toThrow(
+      "GLM 不提供接入点：glm",
     );
-    await expect(
-      flow.start("api-key", { apiKey: "sk-1", region: "mars" as never }),
-    ).rejects.toThrow("请选择有效的 GLM 服务区域");
   });
 
   it("rejects unsupported methods", async () => {
     const { flow } = glmFlow();
 
-    await expect(flow.start("device-code", {})).rejects.toThrow(
+    await expect(flow.start("bigmodel-coding-plan", "device-code", {})).rejects.toThrow(
       "GLM Coding Plan 仅支持 ZCode 导入或 API Key 接入",
     );
   });
@@ -253,7 +257,7 @@ describe("grok build auth flow", () => {
       readFile,
     });
 
-    const result = await flow.start("cli-import", {});
+    const result = await flow.start("grok-build", "cli-import", {});
 
     expect(readFile).toHaveBeenCalledWith(expect.stringMatching(/[/\\]\.grok[/\\]auth\.json$/));
     expect(result.status).toBe("completed");
@@ -277,7 +281,7 @@ describe("grok build auth flow", () => {
       startCallbackServer: callbackRecorder(),
     });
 
-    const result = await flow.start("device-code", {});
+    const result = await flow.start("grok-build", "device-code", {});
 
     expect(openExternal).toHaveBeenCalledWith("https://example.test/device?user_code=GROK-1234");
     expect(result).toMatchObject({
@@ -298,7 +302,7 @@ describe("grok build auth flow", () => {
       startCallbackServer,
     });
 
-    const result = await flow.start("browser-oauth", {});
+    const result = await flow.start("grok-build", "browser-oauth", {});
 
     expect(createBrowserAuthorization).toHaveBeenCalledWith("http://127.0.0.1:56122/callback");
     expect(result.status).toBe("pending");
@@ -322,7 +326,7 @@ describe("antigravity auth flow", () => {
       startCallbackServer,
     });
 
-    const result = await flow.start("browser-oauth", {});
+    const result = await flow.start("antigravity", "browser-oauth", {});
 
     expect(startCallbackServer).toHaveBeenCalledWith(
       expect.objectContaining({ host: "127.0.0.1", port: 0 }),
@@ -351,7 +355,7 @@ describe("antigravity auth flow", () => {
       startCallbackServer: callbackRecorder(),
     });
 
-    await expect(flow.start("cli-import", {})).rejects.toThrow(
+    await expect(flow.start("antigravity", "cli-import", {})).rejects.toThrow(
       "Antigravity 仅支持 Google 浏览器授权",
     );
   });
@@ -370,7 +374,7 @@ describe("claude auth flow", () => {
       readFile,
     });
 
-    const result = await flow.start("cli-import", {});
+    const result = await flow.start("claude", "cli-import", {});
 
     expect(readFile).toHaveBeenCalledWith(
       expect.stringMatching(/[/\\]\.claude[/\\]\.credentials\.json$/),
@@ -389,7 +393,7 @@ describe("opencode go auth flow", () => {
       provisioner,
     });
 
-    const result = await flow.start("api-key", { apiKey: "oc-key" });
+    const result = await flow.start("opencode-go", "api-key", { apiKey: "oc-key" });
 
     expect(createProvisioning).toHaveBeenCalledWith("oc-key");
     expect(result.status).toBe("completed");

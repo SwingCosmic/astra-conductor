@@ -1,9 +1,9 @@
-import type { Account, AuthMethod, GlmRegion, ProviderId } from "../models.js";
+import type { Account, AuthMethod, ProviderId } from "../models.js";
 import type { OAuthCallbackHandler } from "./callback-handler.js";
 
+/** 可提交输入；接入点、端点与实现由 offeringId 决定，不再携带供应商私有字段。 */
 export interface AuthStartOptions {
   apiKey?: string;
-  region?: GlmRegion;
 }
 
 export type AuthStartResult =
@@ -37,7 +37,7 @@ export type AuthFlowStart =
 export interface ProviderAuthFlow {
   provider: ProviderId;
   supportedMethods: readonly AuthMethod[];
-  start(method: AuthMethod, options: AuthStartOptions): Promise<AuthFlowStart>;
+  start(offeringId: string, method: AuthMethod, options: AuthStartOptions): Promise<AuthFlowStart>;
 }
 
 /**

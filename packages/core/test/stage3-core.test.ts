@@ -5,13 +5,16 @@ import {
   CodexAdapter,
   CredentialVault,
   MemoryStorage,
+  ProviderRegistry,
   RefreshCoordinator,
+  providerCatalog,
   toPublicAccount,
   toPublicUsage,
   type Account,
   type AuthMethod,
   type CredentialCipherPort,
   type CredentialEnvelope,
+  type ProviderContribution,
 } from "../src/internal.js";
 
 const now = new Date("2026-09-24T00:00:00.000Z");
@@ -55,10 +58,37 @@ class FakeCipher implements CredentialCipherPort {
   }
 }
 
+function catalogDescriptor(provider: string): ProviderContribution["descriptor"] {
+  const descriptor = providerCatalog.find((item) => item.provider === provider);
+  if (!descriptor) throw new Error(`missing catalog descriptor: ${provider}`);
+  return descriptor;
+}
+
+/** 用本地构造的 CodexAdapter 拼出一份与真实目录一致的 contribution。 */
+function codexContribution(adapter: CodexAdapter): ProviderContribution {
+  return {
+    descriptor: catalogDescriptor("codex"),
+    account: {
+      providerId: "codex",
+      supportedMethods: ["browser-oauth", "device-code", "cli-import"],
+      startAuth: async () => {
+        throw new Error("not used in this test");
+      },
+      refreshCredentials: (account, envelope, options) =>
+        adapter.refreshCredentials(account, envelope, options.force),
+    },
+    usage: {
+      providerId: "codex",
+      fetchUsage: (account, envelope) => adapter.fetchUsage(account, envelope),
+    },
+  };
+}
+
 function account(id: string, enabled = true, authMethod: AuthMethod = "cli-import"): Account {
   return {
     id,
     provider: "codex",
+    offeringId: "codex",
     authMethod,
     stableIdentity: `workspace:${id}`,
     displayName: `${id}@example.test`,
@@ -229,7 +259,7 @@ describe("stage 3 core boundaries", () => {
     const coordinator = new RefreshCoordinator(
       storage,
       vault,
-      [adapter],
+      new ProviderRegistry([codexContribution(adapter)]),
       { now: () => now },
       {
         info: (message, context) => logs.push({ message, context }),
@@ -290,7 +320,12 @@ describe("stage 3 core boundaries", () => {
       },
       { now: () => now },
     );
-    const coordinator = new RefreshCoordinator(storage, vault, [adapter], { now: () => now });
+    const coordinator = new RefreshCoordinator(
+      storage,
+      vault,
+      new ProviderRegistry([codexContribution(adapter)]),
+      { now: () => now },
+    );
 
     await expect(coordinator.refresh(oauthAccount.id)).resolves.toMatchObject({
       status: "updated",
@@ -335,7 +370,12 @@ describe("stage 3 core boundaries", () => {
       },
       { now: () => now },
     );
-    const coordinator = new RefreshCoordinator(storage, vault, [adapter], { now: () => now });
+    const coordinator = new RefreshCoordinator(
+      storage,
+      vault,
+      new ProviderRegistry([codexContribution(adapter)]),
+      { now: () => now },
+    );
 
     await expect(coordinator.refresh(oauthAccount.id)).resolves.toMatchObject({
       status: "updated",
@@ -360,7 +400,12 @@ describe("stage 3 core boundaries", () => {
       }),
     );
     const adapter = new CodexAdapter(fetchMock, { now: () => now });
-    const coordinator = new RefreshCoordinator(storage, vault, [adapter], { now: () => now });
+    const coordinator = new RefreshCoordinator(
+      storage,
+      vault,
+      new ProviderRegistry([codexContribution(adapter)]),
+      { now: () => now },
+    );
 
     await expect(coordinator.refreshCredentials(oauthAccount.id)).resolves.toEqual({
       status: "updated",
@@ -398,13 +443,14 @@ describe("stage 3 core boundaries", () => {
     ]);
   });
 
-  it("dispatches refresh through the registered provider adapter", async () => {
+  it("dispatches refresh through the registered provider facets", async () => {
     const storage = new MemoryStorage();
     const cipher = new FakeCipher();
     const vault = new CredentialVault(storage, cipher, () => now);
     const glmAccount: Account = {
       ...account("glm-account"),
       provider: "glm",
+      offeringId: "bigmodel-coding-plan",
       authMethod: "api-key",
     };
     const glmEnvelope: CredentialEnvelope = {
@@ -416,26 +462,42 @@ describe("stage 3 core boundaries", () => {
     storage.accounts.save(glmAccount);
     await vault.save(glmAccount, glmEnvelope);
     const calls: string[] = [];
-    const coordinator = new RefreshCoordinator(storage, vault, [
-      {
-        provider: "glm",
-        refreshCredentials: async (_account, current) => {
-          calls.push("credentials");
-          return { envelope: current, changed: false };
+    const coordinator = new RefreshCoordinator(
+      storage,
+      vault,
+      new ProviderRegistry([
+        {
+          descriptor: catalogDescriptor("glm"),
+          account: {
+            providerId: "glm",
+            supportedMethods: ["cli-import", "api-key"],
+            startAuth: async () => {
+              throw new Error("not used in this test");
+            },
+            refreshCredentials: async (_account, current) => {
+              calls.push("credentials");
+              return { envelope: current, changed: false };
+            },
+          },
+          usage: {
+            providerId: "glm",
+            fetchUsage: async (current) => {
+              calls.push("usage");
+              return {
+                accountId: current.id,
+                plan: "pro",
+                overallRemainingPercentage: 80,
+                groups: [],
+                extras: [],
+                resetCredits: null,
+                fetchedAt: now.toISOString(),
+              };
+            },
+          },
         },
-        fetchUsage: async (current) => {
-          calls.push("usage");
-          return {
-            accountId: current.id,
-            plan: "pro",
-            overallRemainingPercentage: 80,
-            groups: [],
-            extras: [],
-            fetchedAt: now.toISOString(),
-          };
-        },
-      },
-    ]);
+      ]),
+      { now: () => now },
+    );
 
     await expect(coordinator.refresh(glmAccount.id)).resolves.toMatchObject({ status: "updated" });
     expect(calls).toEqual(["credentials", "usage"]);
@@ -453,6 +515,41 @@ describe("stage 3 core boundaries", () => {
       overallRemainingPercentage: null,
       groups: [{ key: "default", displayName: null, quotas: [] }],
       extras: [{ key: "reset-credits", value: "2" }],
+    });
+  });
+
+  it("projects pre-upgrade itemized reset-credit extras without adaptation", () => {
+    const legacy = {
+      accountId: "legacy",
+      plan: "plus",
+      overallRemainingPercentage: 80,
+      groups: [],
+      extras: [
+        {
+          key: "reset-credits",
+          value: "2",
+          items: [
+            { key: "weekly:0", kind: "weekly", expiresAt: null, actionToken: "c-1" },
+            { key: "five-hour:1", kind: "five-hour", expiresAt: null, actionToken: "c-2" },
+          ],
+        },
+      ],
+      fetchedAt: now.toISOString(),
+    } as unknown as Parameters<typeof toPublicUsage>[0];
+    // 破坏性结构更新：旧形态不做折算，resetCredits 为 null；旧结构由桌面端
+    // 检测后触发刷新换取新数据，而不是在投影层适配。
+    expect(toPublicUsage(legacy)).toMatchObject({
+      resetCredits: null,
+      extras: [
+        {
+          key: "reset-credits",
+          value: "2",
+          items: [
+            { key: "weekly:0", kind: "weekly", expiresAt: null },
+            { key: "five-hour:1", kind: "five-hour", expiresAt: null },
+          ],
+        },
+      ],
     });
   });
 

@@ -1,4 +1,4 @@
-import type { AuthMethod, GlmRegion, ProviderId } from "../models.js";
+import type { AuthMethod, ProviderId } from "../models.js";
 
 export type AuthMethodInteraction =
   | "browser-callback"
@@ -6,10 +6,24 @@ export type AuthMethodInteraction =
   | "local-import"
   | "secret-form";
 
+/**
+ * 服务商贡献提供的共享能力面。`account`、`usage`、`model-catalog` 与
+ * `inference` 必须有对应 facet（ProviderRegistry 构造期校验）；其余是行为
+ * 声明。模型与推理能力尚未落地，当前不得声明。
+ */
+export type ProviderCapability =
+  | "account"
+  | "usage"
+  | "model-catalog"
+  | "inference"
+  | "multiple-accounts";
+
 export interface ProviderAuthMethodDescriptor {
   method: AuthMethod;
   interaction: AuthMethodInteraction;
   sourceLabel?: string;
+  /** cli-import 展示用凭据路径提示；真实路径解析在各 auth-flow 内部，两者同源维护。 */
+  sourcePathHint?: string;
 }
 
 export interface ProviderOfferingDescriptor {
@@ -18,8 +32,11 @@ export interface ProviderOfferingDescriptor {
   displayName: string;
   description?: string;
   websiteUrl?: string;
-  region?: GlmRegion;
+  /** core 声明键、UI 持有资产映射；缺失映射时 UI 使用自己的视觉回退。 */
+  iconKey?: string;
   authMethods: ProviderAuthMethodDescriptor[];
+  /** 接入点级套餐目录：同一服务商的不同接入点计费模式可以完全不同。 */
+  plans: readonly ProviderPlanDescriptor[];
 }
 
 /**
@@ -46,5 +63,5 @@ export interface ProviderDescriptor {
   provider: ProviderId;
   displayName: string;
   offerings: ProviderOfferingDescriptor[];
-  plans: readonly ProviderPlanDescriptor[];
+  capabilities: readonly ProviderCapability[];
 }

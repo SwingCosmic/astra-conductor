@@ -7,6 +7,7 @@ import type {
   PublicCompositeRemaining,
   PublicProviderDescriptor,
   PublicUsage,
+  ResetCreditRedemption,
 } from "../models";
 
 const props = defineProps<{
@@ -19,7 +20,7 @@ const props = defineProps<{
 defineEmits<{
   refresh: [account: PublicAccount];
   toggle: [account: PublicAccount];
-  redeem: [account: PublicAccount, selectionToken: string];
+  redeem: [account: PublicAccount, redemption: ResetCreditRedemption];
   refreshAll: [];
 }>();
 
@@ -72,7 +73,7 @@ onBeforeUnmount(() => mediaQuery?.removeEventListener("change", updateColumnMode
           :account="account"
           :usage="usage[account.id] ?? null"
           :busy="busy"
-          :plans="providers?.find((item) => item.provider === account.provider)?.plans ?? []"
+          :providers="providers"
           @refresh="$emit('refresh', account)"
           @toggle="$emit('toggle', account)"
           @redeem="$emit('redeem', account, $event)"

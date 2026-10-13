@@ -12,6 +12,7 @@ function inDays(days: number): string {
 const account: Account = {
   id: "codex-1",
   provider: "codex",
+  offeringId: "codex",
   authMethod: "browser-oauth",
   stableIdentity: "personal:user-1",
   displayName: "user@example.test",
@@ -75,7 +76,7 @@ describe("codex reset credit redemption", () => {
     });
 
     await expect(
-      adapterWith(fetchImpl).redeemResetCard(account, envelope, ""),
+      adapterWith(fetchImpl).redeemResetCard(account, envelope, { kind: "aggregate" }),
     ).resolves.toBeUndefined();
 
     const consume = calls.find((call) => call.url.endsWith("/consume"));
@@ -99,7 +100,10 @@ describe("codex reset credit redemption", () => {
     });
 
     await expect(
-      adapterWith(fetchImpl).redeemResetCard(account, envelope, "c-later"),
+      adapterWith(fetchImpl).redeemResetCard(account, envelope, {
+        kind: "item",
+        itemId: "c-later",
+      }),
     ).resolves.toBeUndefined();
 
     const body = JSON.parse(
@@ -115,7 +119,7 @@ describe("codex reset credit redemption", () => {
     });
 
     await expect(
-      adapterWith(fetchImpl).redeemResetCard(account, envelope, ""),
+      adapterWith(fetchImpl).redeemResetCard(account, envelope, { kind: "aggregate" }),
     ).resolves.toBeUndefined();
   });
 
@@ -130,7 +134,7 @@ describe("codex reset credit redemption", () => {
       },
     });
 
-    await adapterWith(fetchImpl).redeemResetCard(account, envelope, "");
+    await adapterWith(fetchImpl).redeemResetCard(account, envelope, { kind: "aggregate" });
 
     const body = JSON.parse(
       String(calls.find((call) => call.url.endsWith("/consume"))!.init?.body),
@@ -171,9 +175,9 @@ describe("codex reset credit redemption", () => {
   it("rejects when no credits are available", async () => {
     const { fetchImpl } = resetCreditFetch({ credits: { credits: [] } });
 
-    await expect(adapterWith(fetchImpl).redeemResetCard(account, envelope, "")).rejects.toThrow(
-      "没有可用的 Codex 重置额度",
-    );
+    await expect(
+      adapterWith(fetchImpl).redeemResetCard(account, envelope, { kind: "aggregate" }),
+    ).rejects.toThrow("没有可用的 Codex 重置额度");
   });
 
   it("maps nothing_to_reset to a validation error", async () => {
@@ -182,9 +186,9 @@ describe("codex reset credit redemption", () => {
       consumePayload: { outcome: "nothing_to_reset" },
     });
 
-    await expect(adapterWith(fetchImpl).redeemResetCard(account, envelope, "")).rejects.toThrow(
-      "当前没有已耗尽、可重置的 Codex 限额",
-    );
+    await expect(
+      adapterWith(fetchImpl).redeemResetCard(account, envelope, { kind: "aggregate" }),
+    ).rejects.toThrow("当前没有已耗尽、可重置的 Codex 限额");
   });
 
   it("maps consume auth failures", async () => {
@@ -194,21 +198,21 @@ describe("codex reset credit redemption", () => {
       consumePayload: {},
     });
 
-    await expect(adapterWith(fetchImpl).redeemResetCard(account, envelope, "")).rejects.toThrow(
-      "Codex 重置额度接口拒绝了当前令牌",
-    );
+    await expect(
+      adapterWith(fetchImpl).redeemResetCard(account, envelope, { kind: "aggregate" }),
+    ).rejects.toThrow("Codex 重置额度接口拒绝了当前令牌");
   });
 
   it("requires a codex account and access token", async () => {
     const { fetchImpl } = resetCreditFetch({});
     const foreign = { ...account, provider: "glm" as const };
-    await expect(adapterWith(fetchImpl).redeemResetCard(foreign, envelope, "x")).rejects.toThrow(
-      "只有 Codex 账号支持使用重置额度",
-    );
+    await expect(
+      adapterWith(fetchImpl).redeemResetCard(foreign, envelope, { kind: "item", itemId: "x" }),
+    ).rejects.toThrow("只有 Codex 账号支持使用重置额度");
     const secretless = { ...envelope, secrets: {} };
-    await expect(adapterWith(fetchImpl).redeemResetCard(account, secretless, "x")).rejects.toThrow(
-      "Codex 访问令牌不可用",
-    );
+    await expect(
+      adapterWith(fetchImpl).redeemResetCard(account, secretless, { kind: "item", itemId: "x" }),
+    ).rejects.toThrow("Codex 访问令牌不可用");
   });
 
   it("exposes itemized reset credits with per-card type and expiry", async () => {
@@ -237,27 +241,17 @@ describe("codex reset credit redemption", () => {
 
     const snapshot = await adapterWith(fetchImpl).fetchUsage(account, envelope);
 
-    expect(snapshot.extras).toHaveLength(1);
-    const extra = snapshot.extras[0]!;
-    expect(extra.key).toBe("reset-credits");
-    expect(extra.value).toBe("2");
-    expect(extra.items).toEqual([
-      {
-        key: "five-hour:0",
-        kind: "five-hour",
-        expiresAt: fiveHourExpiry,
-        actionToken: "c-5h",
-      },
-      {
-        key: "weekly:1",
-        kind: "weekly",
-        expiresAt: weeklyExpiry,
-        actionToken: "c-week",
-      },
-    ]);
+    expect(snapshot.extras).toEqual([]);
+    expect(snapshot.resetCredits).toEqual({
+      kind: "itemized",
+      items: [
+        { id: "c-5h", type: "five-hour", expiresAt: fiveHourExpiry },
+        { id: "c-week", type: "weekly", expiresAt: weeklyExpiry },
+      ],
+    });
   });
 
-  it("falls back to the usage count when the list endpoint fails", async () => {
+  it("falls back to the aggregate count when the list endpoint fails", async () => {
     const fetchImpl = (async (input: unknown) => {
       const url = String(input);
       if (!url.includes("/wham/usage")) return new Response(null, { status: 500 });
@@ -272,11 +266,13 @@ describe("codex reset credit redemption", () => {
 
     const snapshot = await adapterWith(fetchImpl).fetchUsage(account, envelope);
 
-    expect(snapshot.extras[0]?.value).toBe("3");
-    expect(snapshot.extras[0]?.items).toBeUndefined();
+    expect(snapshot.resetCredits).toEqual({
+      kind: "aggregate",
+      totals: [{ type: "banked", total: 3 }],
+    });
   });
 
-  it("keeps extras empty of items when no credits are banked", async () => {
+  it("reports an empty itemized list when no credits are banked", async () => {
     const urls: string[] = [];
     const fetchImpl = (async (input: unknown) => {
       const url = String(input);
@@ -293,8 +289,18 @@ describe("codex reset credit redemption", () => {
 
     const snapshot = await adapterWith(fetchImpl).fetchUsage(account, envelope);
 
-    expect(snapshot.extras[0]?.value).toBe("0");
-    expect(snapshot.extras[0]?.items).toBeUndefined();
+    expect(snapshot.resetCredits).toEqual({ kind: "itemized", items: [] });
     expect(urls.some((url) => url.endsWith("/rate-limit-reset-credits"))).toBe(false);
+  });
+
+  it("rejects aggregate redemptions for unknown credit types", async () => {
+    const { fetchImpl } = resetCreditFetch({ credits: { credits: [{ credit_id: "c-1" }] } });
+
+    await expect(
+      adapterWith(fetchImpl).redeemResetCard(account, envelope, {
+        kind: "aggregate",
+        type: "weekly",
+      }),
+    ).rejects.toThrow("Codex 不存在该类型的重置额度：weekly");
   });
 });

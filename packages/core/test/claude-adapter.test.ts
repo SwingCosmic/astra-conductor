@@ -81,6 +81,7 @@ describe("ClaudeAdapter", () => {
     const account = {
       id: "claude-1",
       provider: "claude",
+      offeringId: "claude",
       publicMetadata: {},
     } as Account;
     const envelope = {
@@ -113,7 +114,7 @@ describe("ClaudeAdapter", () => {
       });
     });
     const adapter = new ClaudeAdapter(fetchImpl, { now: () => now });
-    const account = { provider: "claude", publicMetadata: {} } as Account;
+    const account = { provider: "claude", offeringId: "claude", publicMetadata: {} } as Account;
     const envelope = {
       provider: "claude",
       expiresAt: now.toISOString(),

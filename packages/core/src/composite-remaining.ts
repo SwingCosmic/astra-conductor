@@ -1,6 +1,5 @@
 import type { ProviderId } from "./models.js";
 import { planMultiplier } from "./providers/catalog.js";
-
 export const SESSION_MAX_SECONDS = 24 * 3600;
 export const WEEKLY_MAX_SECONDS = 14 * 24 * 3600;
 export const WEEK_TO_SESSION_RATIO = 5;
@@ -32,6 +31,7 @@ export interface CompositeRemainingSnapshot {
 export interface CompositeRemainingAccountInput {
   enabled: boolean;
   provider: ProviderId;
+  offeringId: string;
   snapshot: CompositeRemainingSnapshot | null;
 }
 
@@ -107,7 +107,7 @@ export function computeCompositeRemaining(
     const rates = accountWindowRates(account.snapshot);
     if (rates.session === null && rates.weekly === null) continue;
     scored.push({
-      weight: planMultiplier(account.provider, account.snapshot.plan),
+      weight: planMultiplier(account.offeringId, account.snapshot.plan),
       session: rates.session,
       weekly: rates.weekly,
     });

@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  AntigravityAccountProvisioner,
-  AntigravityAdapter,
   AuthCoordinator,
   CredentialVault,
   MemoryStorage,
-  createAntigravityAuthFlow,
+  ProviderRegistry,
+  createProviderContributions,
   type CredentialCipherPort,
   type StartOAuthCallbackServer,
 } from "@astra-conductor/core/internal";
@@ -14,9 +13,9 @@ import { startOAuthCallbackServer } from "../src/auth/callback-server.js";
 const now = new Date("2026-09-30T08:00:00.000Z");
 
 /**
- * 与 main.ts 相同的组装方式：真实 adapter / provisioner / vault / storage /
- * 回调处理器 / 回调监听端口 / 协调器。只有两个替身：令牌端点 fetch 走脚本，
- * openExternal 记录授权 URL 而不是打开浏览器。
+ * 与 main.ts 相同的组装方式：注册表 + 全量 provider contribution / vault /
+ * storage / 回调监听端口 / 协调器。只有三个替身：令牌端点 fetch 走脚本，
+ * openExternal 记录授权 URL 而不是打开浏览器，clock 固定不变。
  */
 describe("browser auth roundtrip (antigravity chain)", () => {
   it("completes a full browser authorization from callback to a saved account", async () => {
@@ -30,36 +29,6 @@ describe("browser auth roundtrip (antigravity chain)", () => {
       }),
     };
     const vault = new CredentialVault(storage, cipher);
-    const adapter = new AntigravityAdapter(
-      async (input, init) => {
-        const url = String(input);
-        if (url.includes("oauth2.googleapis.com/token")) {
-          return Response.json({
-            access_token: "access",
-            refresh_token: "refresh",
-            expires_in: 3600,
-          });
-        }
-        if (url.includes("userinfo")) {
-          return Response.json({ email: "user@example.test" });
-        }
-        if (url.includes("loadCodeAssist")) {
-          void init;
-          return Response.json({
-            cloudaicompanionProject: { id: "project-1" },
-            currentTier: { id: "PRO", name: "Pro" },
-          });
-        }
-        return new Response(null, { status: 404 });
-      },
-      { now: () => now },
-    );
-    const provisioner = new AntigravityAccountProvisioner(
-      storage,
-      vault,
-      () => now,
-      () => "agy-account-1",
-    );
     const openedUrls: string[] = [];
     let callbackPort = 0;
     const recordingListener: StartOAuthCallbackServer = async (options) => {
@@ -67,16 +36,44 @@ describe("browser auth roundtrip (antigravity chain)", () => {
       callbackPort = listener.port;
       return listener;
     };
-    const coordinator = new AuthCoordinator([
-      createAntigravityAuthFlow({
-        adapter,
-        provisioner,
-        openExternal: async (url) => {
-          openedUrls.push(url);
-        },
-        startCallbackServer: recordingListener,
-      }),
-    ]);
+    const coordinator = new AuthCoordinator(
+      new ProviderRegistry(
+        createProviderContributions({
+          http: {
+            fetch: async (input, init) => {
+              const url = String(input);
+              if (url.includes("oauth2.googleapis.com/token")) {
+                return Response.json({
+                  access_token: "access",
+                  refresh_token: "refresh",
+                  expires_in: 3600,
+                });
+              }
+              if (url.includes("userinfo")) {
+                return Response.json({ email: "user@example.test" });
+              }
+              if (url.includes("loadCodeAssist")) {
+                void init;
+                return Response.json({
+                  cloudaicompanionProject: { id: "project-1" },
+                  currentTier: { id: "PRO", name: "Pro" },
+                });
+              }
+              return new Response(null, { status: 404 });
+            },
+          },
+          browser: {
+            openExternal: async (url) => {
+              openedUrls.push(url);
+            },
+          },
+          callbackServer: { start: recordingListener },
+          storage,
+          vault,
+          clock: { now: () => now },
+        }),
+      ),
+    );
 
     const result = await coordinator.start("antigravity", "browser-oauth");
     if (result.status !== "pending") throw new Error("expected pending session");
@@ -94,14 +91,14 @@ describe("browser auth roundtrip (antigravity chain)", () => {
 
     const account = await coordinator.finish(result.sessionId);
     expect(account).toMatchObject({
-      id: "agy-account-1",
       provider: "antigravity",
+      offeringId: "antigravity",
       authMethod: "browser-oauth",
       displayName: "user@example.test",
       publicMetadata: { projectId: "project-1", clientProfile: "ide" },
     });
     expect(storage.accounts.findByStableIdentity("antigravity", account.stableIdentity)).toEqual(
-      expect.objectContaining({ id: "agy-account-1" }),
+      expect.objectContaining({ id: account.id }),
     );
     await expect(coordinator.finish(result.sessionId)).rejects.toThrow("授权会话不存在");
   });

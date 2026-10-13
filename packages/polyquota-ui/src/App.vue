@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import AppSidebar, { type PageId } from "./components/AppSidebar.vue";
-import type { IpcResult, PolyQuotaSnapshot, PublicAccount } from "./models";
+import type { IpcResult, PolyQuotaSnapshot, PublicAccount, ResetCreditRedemption } from "./models";
 import { catalogPresentations } from "./presentation";
 import { usePolyQuotaService } from "./services/polyquota-service-vue";
 import ProvidersView from "./views/ProvidersView.vue";
@@ -119,9 +119,9 @@ function refreshCredentials(account: PublicAccount): void {
   });
 }
 
-function useResetCredit(account: PublicAccount, selectionToken: string): void {
+function useResetCredit(account: PublicAccount, redemption: ResetCreditRedemption): void {
   void run(`redeem:${account.id}`, async () => {
-    const outcome = unwrap(await service.redeemResetCredit(account.id, selectionToken));
+    const outcome = unwrap(await service.redeemResetCredit(account.id, redemption));
     await reloadSnapshot();
     messageTone.value = "success";
     const remaining =

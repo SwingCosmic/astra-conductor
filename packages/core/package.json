@@ -25,6 +25,7 @@
     "vitest": "catalog:"
   },
   "dependencies": {
+    "@astra-conductor/polyquota-contract": "workspace:*",
     "zod": "4.5.4"
   }
 }

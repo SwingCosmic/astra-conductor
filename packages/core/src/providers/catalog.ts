@@ -1,5 +1,6 @@
 import { providerIds, type ProviderId } from "../models.js";
 import type {
+  ProviderCapability,
   ProviderDescriptor,
   ProviderOfferingDescriptor,
   ProviderPlanDescriptor,
@@ -14,11 +15,60 @@ import { opencodeGoDescriptor } from "./opencode-go/descriptor.js";
 /** Unmatched or unpublished plans use the mid 5x rung. */
 export const DEFAULT_PLAN_MULTIPLIER = 5;
 
+const capabilityIds: readonly ProviderCapability[] = [
+  "account",
+  "usage",
+  "model-catalog",
+  "inference",
+  "multiple-accounts",
+];
+
+const identifierPattern = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
 export function normalizePlanMatch(value: string): string {
   return value
     .trim()
     .toLowerCase()
     .replace(/[\s_-]+/g, " ");
+}
+
+function validatePlans(
+  offering: ProviderOfferingDescriptor,
+  plans: readonly ProviderPlanDescriptor[],
+): void {
+  const seenPlanIds = new Set<string>();
+  const seenPlanMatches = new Set<string>();
+  for (const plan of plans) {
+    if (!identifierPattern.test(plan.id)) {
+      throw new Error(`Provider catalog has invalid plan id: ${offering.id}/${plan.id}`);
+    }
+    if (seenPlanIds.has(plan.id)) {
+      throw new Error(`Provider catalog declares duplicate plan: ${offering.id}/${plan.id}`);
+    }
+    seenPlanIds.add(plan.id);
+    if (!plan.displayName.trim()) {
+      throw new Error(`Provider catalog has empty plan name: ${offering.id}/${plan.id}`);
+    }
+    if (!Number.isFinite(plan.multiplier) || plan.multiplier <= 0) {
+      throw new Error(`Provider catalog has invalid plan multiplier: ${offering.id}/${plan.id}`);
+    }
+    if (plan.source !== "published" && plan.source !== "inferred") {
+      throw new Error(`Provider catalog has invalid plan source: ${offering.id}/${plan.id}`);
+    }
+    if (!plan.match.length) {
+      throw new Error(`Provider catalog plan has no match keys: ${offering.id}/${plan.id}`);
+    }
+    for (const raw of plan.match) {
+      const key = normalizePlanMatch(raw);
+      if (!key) {
+        throw new Error(`Provider catalog plan has empty match key: ${offering.id}/${plan.id}`);
+      }
+      if (seenPlanMatches.has(key)) {
+        throw new Error(`Provider catalog declares duplicate plan match: ${offering.id}/${key}`);
+      }
+      seenPlanMatches.add(key);
+    }
+  }
 }
 
 /**
@@ -40,71 +90,43 @@ export function validateProviderCatalog(descriptors: readonly ProviderDescriptor
     if (!descriptor.offerings.length) {
       throw new Error(`Provider catalog has no offerings: ${descriptor.provider}`);
     }
+    for (const capability of descriptor.capabilities) {
+      if (!capabilityIds.includes(capability)) {
+        throw new Error(`Provider catalog declares unknown capability: ${capability}`);
+      }
+    }
     for (const offering of descriptor.offerings) {
       if (offering.provider !== descriptor.provider) {
         throw new Error(
           `Offering ${offering.id} is owned by ${offering.provider}, not ${descriptor.provider}`,
         );
       }
-      if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(offering.id)) {
+      if (!identifierPattern.test(offering.id)) {
         throw new Error(`Provider catalog has invalid offering id: ${offering.id}`);
       }
       if (seenOfferings.has(offering.id)) {
         throw new Error(`Provider catalog declares duplicate offering: ${offering.id}`);
       }
       seenOfferings.add(offering.id);
+      if (offering.iconKey !== undefined && !identifierPattern.test(offering.iconKey)) {
+        throw new Error(
+          `Provider catalog has invalid icon key: ${offering.id}/${offering.iconKey}`,
+        );
+      }
       const seenMethods = new Set<string>();
       for (const method of offering.authMethods) {
         if (seenMethods.has(method.method)) {
           throw new Error(`Offering ${offering.id} declares duplicate method: ${method.method}`);
         }
         seenMethods.add(method.method);
-      }
-    }
-    const seenPlanIds = new Set<string>();
-    const seenPlanMatches = new Set<string>();
-    for (const plan of descriptor.plans) {
-      if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(plan.id)) {
-        throw new Error(`Provider catalog has invalid plan id: ${descriptor.provider}/${plan.id}`);
-      }
-      if (seenPlanIds.has(plan.id)) {
-        throw new Error(
-          `Provider catalog declares duplicate plan: ${descriptor.provider}/${plan.id}`,
-        );
-      }
-      seenPlanIds.add(plan.id);
-      if (!plan.displayName.trim()) {
-        throw new Error(`Provider catalog has empty plan name: ${descriptor.provider}/${plan.id}`);
-      }
-      if (!Number.isFinite(plan.multiplier) || plan.multiplier <= 0) {
-        throw new Error(
-          `Provider catalog has invalid plan multiplier: ${descriptor.provider}/${plan.id}`,
-        );
-      }
-      if (plan.source !== "published" && plan.source !== "inferred") {
-        throw new Error(
-          `Provider catalog has invalid plan source: ${descriptor.provider}/${plan.id}`,
-        );
-      }
-      if (!plan.match.length) {
-        throw new Error(
-          `Provider catalog plan has no match keys: ${descriptor.provider}/${plan.id}`,
-        );
-      }
-      for (const raw of plan.match) {
-        const key = normalizePlanMatch(raw);
-        if (!key) {
-          throw new Error(
-            `Provider catalog plan has empty match key: ${descriptor.provider}/${plan.id}`,
-          );
+        if (
+          method.sourcePathHint !== undefined &&
+          (typeof method.sourcePathHint !== "string" || !method.sourcePathHint.trim())
+        ) {
+          throw new Error(`Offering ${offering.id} has invalid source path hint`);
         }
-        if (seenPlanMatches.has(key)) {
-          throw new Error(
-            `Provider catalog declares duplicate plan match: ${descriptor.provider}/${key}`,
-          );
-        }
-        seenPlanMatches.add(key);
       }
+      validatePlans(offering, offering.plans);
     }
   }
 }
@@ -138,19 +160,22 @@ export function findOffering(
   return null;
 }
 
-export function matchProviderPlan(
-  provider: ProviderId,
+/** 套餐查表键是接入点：同一服务商的不同接入点计费目录可以不同。 */
+export function matchOfferingPlan(
+  offeringId: string,
   plan: string | null | undefined,
 ): ProviderPlanDescriptor | null {
   if (typeof plan !== "string") return null;
+  const found = findOffering(offeringId);
+  if (!found) return null;
   const key = normalizePlanMatch(plan);
   if (!key) return null;
-  for (const item of getProviderDescriptor(provider).plans) {
+  for (const item of found.offering.plans) {
     if (item.match.some((candidate) => normalizePlanMatch(candidate) === key)) return item;
   }
   return null;
 }
 
-export function planMultiplier(provider: ProviderId, plan: string | null | undefined): number {
-  return matchProviderPlan(provider, plan)?.multiplier ?? DEFAULT_PLAN_MULTIPLIER;
+export function planMultiplier(offeringId: string, plan: string | null | undefined): number {
+  return matchOfferingPlan(offeringId, plan)?.multiplier ?? DEFAULT_PLAN_MULTIPLIER;
 }

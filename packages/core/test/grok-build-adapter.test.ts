@@ -78,6 +78,7 @@ describe("Grok Build protocol", () => {
     const account: Account = {
       id: "grok-1",
       provider: "grok-build",
+      offeringId: "grok-build",
       authMethod: "cli-import",
       stableIdentity: provisioning.stableIdentity,
       displayName: provisioning.displayName,
@@ -132,6 +133,7 @@ describe("Grok Build protocol", () => {
     const account: Account = {
       id: "grok-1",
       provider: "grok-build",
+      offeringId: "grok-build",
       authMethod: "browser-oauth",
       stableIdentity: "user:user-1",
       displayName: "Grok",

@@ -1,27 +1,38 @@
-export const providerIds = [
-  "codex",
-  "glm",
-  "grok-build",
-  "antigravity",
-  "claude",
-  "opencode-go",
-] as const;
-export type ProviderId = (typeof providerIds)[number];
+/**
+ * 封闭协议标识的唯一来源是 `@astra-conductor/polyquota-contract`（renderer、
+ * preload 与主进程共用的轻量契约包）；core 在此 re-export，禁止再建副本。
+ * 未来 GraphAgent 契约出现时，这一组标识应上移到共享协议层。
+ */
+import {
+  authMethods,
+  providerIds,
+  type AuthMethod,
+  type CredentialState,
+  type JsonPrimitive,
+  type ProviderId,
+  type PublicMetadata,
+  type ResetCreditItem,
+  type ResetCreditRedemption,
+  type ResetCredits,
+} from "@astra-conductor/polyquota-contract";
 
-export const glmRegions = ["china", "international"] as const;
-export type GlmRegion = (typeof glmRegions)[number];
-
-export const authMethods = ["browser-oauth", "device-code", "cli-import", "api-key"] as const;
-export type AuthMethod = (typeof authMethods)[number];
-
-export type JsonPrimitive = string | number | boolean | null;
-export type PublicMetadata = Record<string, JsonPrimitive>;
-
-export type CredentialState = "available" | "locked" | "missing";
+export { authMethods, providerIds };
+export type {
+  AuthMethod,
+  CredentialState,
+  JsonPrimitive,
+  ProviderId,
+  PublicMetadata,
+  ResetCreditItem,
+  ResetCreditRedemption,
+  ResetCredits,
+};
 
 export interface Account {
   id: string;
   provider: ProviderId;
+  /** 接入点：账号的展示事实、计费目录查表键与 GLM 端点选择都由它决定。 */
+  offeringId: string;
   authMethod: AuthMethod;
   stableIdentity: string;
   displayName: string;
@@ -74,17 +85,16 @@ export interface UsageQuotaGroup {
   quotas: UsageQuota[];
 }
 
-export interface UsageExtra {
-  key: string;
-  value: string;
-  items?: UsageExtraItem[];
-}
-
 export interface UsageExtraItem {
   key: string;
   kind: string;
   expiresAt: string | null;
-  actionToken?: string;
+}
+
+export interface UsageExtra {
+  key: string;
+  value: string;
+  items?: UsageExtraItem[];
 }
 
 export interface UsageSnapshot {
@@ -93,6 +103,8 @@ export interface UsageSnapshot {
   overallRemainingPercentage: number | null;
   groups: UsageQuotaGroup[];
   extras: UsageExtra[];
+  /** 重置额度一等结构（§9.3）：聚合按类型分桶，分体逐项含 id / 类型 / 过期时间。 */
+  resetCredits: ResetCredits | null;
   fetchedAt: string;
 }
 
@@ -112,6 +124,7 @@ export type SettingValue = JsonPrimitive | JsonPrimitive[] | PublicMetadata;
 export interface PublicAccountDto {
   id: string;
   provider: ProviderId;
+  offeringId: string;
   authMethod: AuthMethod;
   displayName: string;
   maskedIdentifier: string;

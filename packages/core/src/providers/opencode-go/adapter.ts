@@ -7,12 +7,7 @@ import type {
   UsageQuota,
   UsageSnapshot,
 } from "../../models.js";
-import type {
-  ClockPort,
-  CredentialRefreshResult,
-  StoragePort,
-  UsageProviderAdapter,
-} from "../../ports.js";
+import type { ClockPort, StoragePort, UsageProviderAdapter } from "../../ports.js";
 import { CredentialVault } from "../../credential-vault.js";
 import {
   getOpencodeUsage,
@@ -21,6 +16,7 @@ import {
 
 export interface OpencodeGoProvisioningResult {
   authMethod: "api-key";
+  offeringId: string;
   stableIdentity: string;
   displayName: string;
   maskedIdentifier: string;
@@ -77,6 +73,7 @@ export class OpencodeGoAdapter implements UsageProviderAdapter {
     const fingerprint = createHash("sha256").update(apiKey).digest("hex").slice(0, 32);
     return {
       authMethod: "api-key",
+      offeringId: "opencode-go",
       stableIdentity: `opencode-go:${fingerprint}`,
       displayName: "OpenCode Go",
       maskedIdentifier: maskApiKey(apiKey),
@@ -89,16 +86,6 @@ export class OpencodeGoAdapter implements UsageProviderAdapter {
         secrets: { apiKey },
       },
     };
-  }
-
-  async refreshCredentials(
-    _account: Account,
-    envelope: CredentialEnvelope,
-  ): Promise<CredentialRefreshResult> {
-    if (!envelope.secrets.apiKey) {
-      throw new AppError("authentication", "OpenCode Go API Key 不可用");
-    }
-    return { envelope, changed: false };
   }
 
   async fetchUsage(account: Account, envelope: CredentialEnvelope): Promise<UsageSnapshot> {
@@ -118,6 +105,7 @@ export class OpencodeGoAdapter implements UsageProviderAdapter {
       ),
       groups: [{ key: "default", displayName: null, quotas }],
       extras: [],
+      resetCredits: null,
       fetchedAt: this.clock.now().toISOString(),
     };
   }
@@ -151,6 +139,7 @@ export class OpencodeGoAccountProvisioner {
     const account: Account = {
       id: existing?.id ?? this.createId(),
       provider: "opencode-go",
+      offeringId: input.offeringId,
       authMethod: input.authMethod,
       stableIdentity: input.stableIdentity,
       displayName: input.displayName,

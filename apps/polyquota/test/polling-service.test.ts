@@ -10,6 +10,7 @@ import { PollingService, type SystemNotificationPort } from "../src/polling-serv
 const account: Account = {
   id: "account-1",
   provider: "glm",
+  offeringId: "bigmodel-coding-plan",
   authMethod: "api-key",
   stableIdentity: "glm:account-1",
   displayName: "BigModel Coding Plan",
@@ -30,6 +31,7 @@ const outcome: RefreshOutcome = {
     overallRemainingPercentage: 0,
     groups: [],
     extras: [],
+    resetCredits: null,
     fetchedAt: "2026-09-25T12:00:00.000Z",
   },
   notifications: [

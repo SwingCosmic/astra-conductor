@@ -77,6 +77,27 @@ export const migrations: readonly Migration[] = [
           CHECK (delivery_confirmed IN (0, 1));
     `,
   ),
+  migration(
+    4,
+    `
+      ALTER TABLE accounts ADD COLUMN offering_id TEXT;
+
+      -- 旧账号按现有事实回填：GLM 优先 presentationId、其次 region 推导；
+      -- 单接入点服务商的 offering id 与 provider 相同。
+      UPDATE accounts SET offering_id = CASE
+        WHEN provider = 'glm' THEN COALESCE(
+          json_extract(public_metadata, '$.presentationId'),
+          CASE json_extract(public_metadata, '$.region')
+            WHEN 'china' THEN 'bigmodel-coding-plan'
+            ELSE 'zai-coding-plan'
+          END
+        )
+        ELSE provider
+      END;
+
+      ALTER TABLE accounts ALTER COLUMN offering_id SET NOT NULL;
+    `,
+  ),
 ];
 
 export const currentSchemaVersion = migrations.at(-1)?.version ?? 0;

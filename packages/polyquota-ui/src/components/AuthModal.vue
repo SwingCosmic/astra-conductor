@@ -17,6 +17,10 @@ const pending = ref<Extract<AuthStartResult, { status: "pending" }> | null>(null
 const busy = ref(false);
 const message = ref("");
 const apiKey = ref("");
+const selectedMethod = computed(() =>
+  props.provider.authMethods.find((method) => method.id === selected.value),
+);
+const secretForm = computed(() => selectedMethod.value?.interaction === "secret-form");
 const cliImportSourceLabel = computed(
   () => props.provider.authMethods.find((method) => method.id === "cli-import")?.label ?? "CLI",
 );
@@ -44,44 +48,13 @@ async function begin(): Promise<void> {
   busy.value = true;
   message.value = "";
   try {
-    let request: StartAuthRequest;
-    if (props.provider.provider === "codex") {
-      if (
-        selected.value !== "browser-oauth" &&
-        selected.value !== "device-code" &&
-        selected.value !== "cli-import"
-      ) {
-        throw new Error("Codex 不支持当前接入方式");
-      }
-      request = { provider: "codex", method: selected.value };
-    } else if (props.provider.provider === "glm" && props.provider.region) {
-      request =
-        selected.value === "api-key"
-          ? {
-              provider: "glm",
-              method: "api-key",
-              region: props.provider.region,
-              apiKey: apiKey.value,
-            }
-          : { provider: "glm", method: "cli-import", region: props.provider.region };
-    } else if (props.provider.provider === "grok-build") {
-      if (
-        selected.value !== "browser-oauth" &&
-        selected.value !== "device-code" &&
-        selected.value !== "cli-import"
-      ) {
-        throw new Error("Grok Build 不支持当前接入方式");
-      }
-      request = { provider: "grok-build", method: selected.value };
-    } else if (props.provider.provider === "antigravity" && selected.value === "browser-oauth") {
-      request = { provider: "antigravity", method: "browser-oauth" };
-    } else if (props.provider.provider === "claude" && selected.value === "cli-import") {
-      request = { provider: "claude", method: "cli-import" };
-    } else if (props.provider.provider === "opencode-go" && selected.value === "api-key") {
-      request = { provider: "opencode-go", method: "api-key", apiKey: apiKey.value };
-    } else {
-      throw new Error("当前服务商尚未开放接入");
-    }
+    // 接入点与认证方式由目录声明；主进程对 offeringId 交叉验证，secret-form
+    // 输入由供应商实现再次校验，UI 不维护按供应商的白名单分支。
+    const request: StartAuthRequest = {
+      offeringId: props.provider.id,
+      method: selected.value,
+      ...(secretForm.value ? { apiKey: apiKey.value } : {}),
+    };
     const result = unwrap(await service.startAuth(request));
     if (result.status === "completed") {
       emit("connected", result.account);
@@ -200,7 +173,7 @@ onBeforeUnmount(cancelPending);
         <p>只读取现有凭据并保存应用自己的加密副本，不修改 CLI 文件。</p>
       </div>
 
-      <div v-else-if="selected === 'api-key'" class="api-key-panel">
+      <div v-else-if="secretForm" class="api-key-panel">
         <label for="provider-api-key">{{ provider.name }} API Key</label>
         <input
           id="provider-api-key"
@@ -231,11 +204,11 @@ onBeforeUnmount(cancelPending);
         <button
           v-else
           class="primary-action"
-          :disabled="busy || Boolean(pending) || (selected === 'api-key' && !apiKey.trim())"
+          :disabled="busy || Boolean(pending) || (secretForm && !apiKey.trim())"
           @click="begin"
         >
           {{
-            selected === "api-key"
+            secretForm
               ? "验证并添加"
               : selected === "cli-import"
                 ? "检测并导入"

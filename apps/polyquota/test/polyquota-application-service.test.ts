@@ -1,18 +1,20 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, type Mock } from "vitest";
 import {
   CredentialVault,
   MemoryStorage,
+  ProviderRegistry,
   computeCompositeRemaining,
   providerCatalog,
   type Account,
   type CredentialCipherPort,
+  type ProviderContribution,
   type RefreshOutcome,
+  type UsageSnapshot,
 } from "@astra-conductor/core/internal";
 import {
   parseSnapshot,
   type PolyQuotaChangedEvent,
   type PolyQuotaSnapshot,
-  type PublicProviderDescriptor,
 } from "@astra-conductor/polyquota-contract";
 import type { AuthCoordinator } from "@astra-conductor/core/internal";
 import { PolyQuotaApplicationService } from "../src/polyquota-application-service.js";
@@ -22,6 +24,7 @@ import { RefreshScheduler } from "../src/refresh-scheduler.js";
 const account: Account = {
   id: "account-1",
   provider: "codex",
+  offeringId: "codex",
   authMethod: "cli-import",
   stableIdentity: "codex:test",
   displayName: "Test account",
@@ -42,15 +45,45 @@ const refreshOutcome: Extract<RefreshOutcome, { status: "updated" }> = {
     overallRemainingPercentage: 80,
     groups: [],
     extras: [],
+    resetCredits: null,
     fetchedAt: "2026-09-27T00:01:00.000Z",
   },
   notifications: [],
 };
 
-function createService(
-  savedAccount: Account = account,
-  catalog: readonly PublicProviderDescriptor[] = [],
-) {
+/** 从真实目录派生的测试注册表：用量/账号 facet 为桩，glm 可注入兑换桩。 */
+function testRegistry(redeemResetCredit?: Mock): ProviderRegistry {
+  const contributions = providerCatalog.map(
+    (descriptor): ProviderContribution => ({
+      descriptor,
+      account: {
+        providerId: descriptor.provider,
+        supportedMethods: [
+          ...new Set(
+            descriptor.offerings.flatMap((offering) =>
+              offering.authMethods.map((method) => method.method),
+            ),
+          ),
+        ],
+        startAuth: async () => {
+          throw new Error("not used in this test");
+        },
+      },
+      usage: {
+        providerId: descriptor.provider,
+        fetchUsage: async () => {
+          throw new Error("not used in this test");
+        },
+        ...(descriptor.provider === "glm" && redeemResetCredit
+          ? { redeemResetCard: redeemResetCredit }
+          : {}),
+      },
+    }),
+  );
+  return new ProviderRegistry(contributions);
+}
+
+function createService(savedAccount: Account = account, redeemResetCredit?: Mock) {
   const storage = new MemoryStorage();
   storage.accounts.save(savedAccount);
   storage.snapshots.save(refreshOutcome.snapshot);
@@ -76,8 +109,6 @@ function createService(
     updatedAt: savedAccount.updatedAt,
   });
   const events: PolyQuotaChangedEvent[] = [];
-  const redeemResetCredit = vi.fn().mockResolvedValue(undefined);
-  const resetCreditRedeemers = { glm: redeemResetCredit };
   const polling = {
     refresh: vi.fn().mockResolvedValue(refreshOutcome),
     refreshAll: vi.fn().mockResolvedValue([refreshOutcome]),
@@ -92,8 +123,7 @@ function createService(
     auth,
     {
       publishChanged: (event) => events.push(event),
-      providerCatalog: catalog,
-      resetCreditRedeemers,
+      registry: testRegistry(redeemResetCredit),
       detectProxyStatus,
       now: () => new Date("2026-09-27T00:02:00.000Z"),
     },
@@ -114,6 +144,7 @@ function remainingFromVisibleUsage(snapshot: PolyQuotaSnapshot) {
     snapshot.accounts.map((item) => ({
       enabled: item.enabled,
       provider: item.provider,
+      offeringId: item.offeringId,
       snapshot: snapshot.usageByAccountId[item.id] ?? null,
     })),
   );
@@ -139,8 +170,42 @@ describe("PolyQuotaApplicationService", () => {
     });
   });
 
+  it("refreshes stored snapshots that predate the reset-credits schema exactly once", async () => {
+    const legacySnapshot = {
+      accountId: account.id,
+      plan: "plus",
+      overallRemainingPercentage: 80,
+      groups: [],
+      extras: [
+        {
+          key: "reset-credits",
+          value: "2",
+          items: [{ key: "weekly:0", kind: "weekly", expiresAt: null, actionToken: "c-1" }],
+        },
+      ],
+      fetchedAt: "2026-09-26T00:00:00.000Z",
+    } as unknown as UsageSnapshot;
+    const { service, storage, polling, events } = createService();
+    storage.snapshots.save(legacySnapshot);
+    const baselineEvents = events.length;
+
+    // 破坏性结构更新：旧结构快照不做投影适配，照常展示并立即触发一次刷新。
+    const first = await service.getSnapshot();
+    expect(first.usageByAccountId[account.id]?.resetCredits).toBeNull();
+    expect(first.usageByAccountId[account.id]?.extras[0]?.key).toBe("reset-credits");
+    expect(polling.refresh).toHaveBeenCalledTimes(1);
+    expect(polling.refresh).toHaveBeenCalledWith(account.id);
+
+    await service.getSnapshot();
+    expect(polling.refresh).toHaveBeenCalledTimes(1);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(events.slice(baselineEvents).some((event) => event.reasons.includes("usage"))).toBe(
+      true,
+    );
+  });
+
   it("emits a snapshot the desktop preload parser accepts, including the live provider catalog", async () => {
-    const { service, storage } = createService(account, providerCatalog);
+    const { service, storage } = createService(account);
     storage.snapshots.save({
       ...refreshOutcome.snapshot,
       groups: [
@@ -251,6 +316,7 @@ describe("PolyQuotaApplicationService", () => {
       overallRemainingPercentage: Math.min(session, weekly),
       fetchedAt,
       extras: [],
+      resetCredits: null,
       groups: [
         {
           key: "default",
@@ -354,6 +420,7 @@ describe("PolyQuotaApplicationService", () => {
       plan: "plus",
       overallRemainingPercentage: 20,
       extras: [],
+      resetCredits: null,
       fetchedAt: "2026-09-26T00:00:00.000Z",
       groups: [
         {
@@ -454,46 +521,36 @@ describe("PolyQuotaApplicationService", () => {
     );
   });
 
-  it("uses a selected reset credit and reconciles a stale provider refresh", async () => {
+  it("uses an itemized reset credit and reconciles a stale provider refresh", async () => {
     const glmAccount: Account = {
       ...account,
       provider: "glm",
+      offeringId: "bigmodel-coding-plan",
       authMethod: "api-key",
       stableIdentity: "coding-plan:china:test",
-      publicMetadata: { region: "china" },
     };
-    const { service, storage, polling, redeemResetCredit } = createService(glmAccount);
+    const redeemResetCredit = vi.fn().mockResolvedValue(undefined);
+    const { service, storage, polling } = createService(glmAccount, redeemResetCredit);
     const staleSnapshot: Extract<RefreshOutcome, { status: "updated" }> = {
       ...refreshOutcome,
       accountId: glmAccount.id,
       snapshot: {
         ...refreshOutcome.snapshot,
         accountId: glmAccount.id,
-        extras: [
-          {
-            key: "reset-credits",
-            value: "2",
-            items: [
-              {
-                key: "five-hour:0",
-                kind: "five-hour",
-                expiresAt: null,
-                actionToken: "record-1",
-              },
-              {
-                key: "weekly:1",
-                kind: "weekly",
-                expiresAt: null,
-                actionToken: "record-2",
-              },
-            ],
-          },
-        ],
+        resetCredits: {
+          kind: "itemized",
+          items: [
+            { id: "record-1", type: "five-hour", expiresAt: null },
+            { id: "record-2", type: "weekly", expiresAt: null },
+          ],
+        },
       },
     };
     vi.mocked(polling.refresh).mockResolvedValueOnce(staleSnapshot);
 
-    await expect(service.redeemResetCredit(glmAccount.id, "record-1")).resolves.toEqual({
+    await expect(
+      service.redeemResetCredit(glmAccount.id, { kind: "item", itemId: "record-1" }),
+    ).resolves.toEqual({
       status: "redeemed",
       accountId: glmAccount.id,
       refreshStatus: "updated",
@@ -502,31 +559,72 @@ describe("PolyQuotaApplicationService", () => {
     expect(redeemResetCredit).toHaveBeenCalledWith(
       glmAccount,
       expect.objectContaining({ secrets: { apiKey: "private-key" } }),
-      "record-1",
+      { kind: "item", itemId: "record-1" },
     );
     expect(polling.refresh).toHaveBeenCalledWith(glmAccount.id);
-    expect(storage.snapshots.get(glmAccount.id)?.extras).toEqual([
-      {
-        key: "reset-credits",
-        value: "1",
-        items: [
-          {
-            key: "weekly:1",
-            kind: "weekly",
-            expiresAt: null,
-            actionToken: "record-2",
-          },
-        ],
-      },
-    ]);
+    expect(storage.snapshots.get(glmAccount.id)?.resetCredits).toEqual({
+      kind: "itemized",
+      items: [{ id: "record-2", type: "weekly", expiresAt: null }],
+    });
 
     vi.mocked(polling.refresh).mockResolvedValueOnce(staleSnapshot);
     const laterRefresh = await service.refreshAccount(glmAccount.id);
     expect(laterRefresh.status).toBe("updated");
     if (laterRefresh.status !== "updated") throw new Error("Expected updated refresh");
-    expect(laterRefresh.snapshot.extras[0]?.value).toBe("1");
-    expect(laterRefresh.snapshot.extras[0]?.items?.map((item) => item.actionToken)).toEqual([
-      "record-2",
-    ]);
+    expect(laterRefresh.snapshot.resetCredits).toEqual({
+      kind: "itemized",
+      items: [{ id: "record-2", type: "weekly", expiresAt: null }],
+    });
+  });
+
+  it("treats aggregate redemption as server-authoritative without local deduction", async () => {
+    const glmAccount: Account = {
+      ...account,
+      provider: "glm",
+      offeringId: "bigmodel-coding-plan",
+      authMethod: "api-key",
+      stableIdentity: "coding-plan:china:aggregate",
+    };
+    const redeemResetCredit = vi.fn().mockResolvedValue(undefined);
+    const { service, storage, polling } = createService(glmAccount, redeemResetCredit);
+    const aggregateSnapshot: Extract<RefreshOutcome, { status: "updated" }> = {
+      ...refreshOutcome,
+      accountId: glmAccount.id,
+      snapshot: {
+        ...refreshOutcome.snapshot,
+        accountId: glmAccount.id,
+        resetCredits: { kind: "aggregate", totals: [{ type: "banked", total: 3 }] },
+      },
+    };
+    vi.mocked(polling.refresh).mockImplementationOnce(async () => {
+      // 模拟真实 PollingService：服务端刷新结果落库后再返回。
+      storage.snapshots.save(aggregateSnapshot.snapshot);
+      return aggregateSnapshot;
+    });
+
+    await expect(service.redeemResetCredit(glmAccount.id, { kind: "aggregate" })).resolves.toEqual({
+      status: "redeemed",
+      accountId: glmAccount.id,
+      refreshStatus: "updated",
+      remainingResetCredits: null,
+    });
+    expect(redeemResetCredit).toHaveBeenCalledWith(
+      glmAccount,
+      expect.objectContaining({ secrets: { apiKey: "private-key" } }),
+      { kind: "aggregate" },
+    );
+    // 聚合计数以服务端刷新为准：不本地扣减、不过滤。
+    expect(storage.snapshots.get(glmAccount.id)?.resetCredits).toEqual({
+      kind: "aggregate",
+      totals: [{ type: "banked", total: 3 }],
+    });
+  });
+
+  it("rejects redemption for providers without a redemption protocol", async () => {
+    const { service } = createService(account);
+
+    await expect(
+      service.redeemResetCredit(account.id, { kind: "aggregate" }),
+    ).rejects.toMatchObject({ code: "validation" });
   });
 });

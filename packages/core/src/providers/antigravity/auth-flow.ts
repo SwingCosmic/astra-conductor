@@ -77,7 +77,14 @@ export function createAntigravityAuthFlow(deps: AntigravityAuthFlowDeps): Provid
   return {
     provider: "antigravity",
     supportedMethods: SUPPORTED_METHODS,
-    async start(method: AuthMethod, _options: AuthStartOptions): Promise<AuthFlowStart> {
+    async start(
+      offeringId: string,
+      method: AuthMethod,
+      _options: AuthStartOptions,
+    ): Promise<AuthFlowStart> {
+      if (offeringId !== "antigravity") {
+        throw new AppError("validation", `Antigravity 不提供接入点：${offeringId}`);
+      }
       if (method === "browser-oauth") return startBrowserLogin();
       throw new AppError("validation", "Antigravity 仅支持 Google 浏览器授权");
     },

@@ -41,6 +41,9 @@ const CALLBACK = {
 
 const SUPPORTED_METHODS: readonly AuthMethod[] = ["browser-oauth", "device-code", "cli-import"];
 
+/** 展示用默认路径提示，与 codexAuthPath 的真实解析同源维护（CODEX_HOME 优先）。 */
+export const CODEX_CLI_IMPORT_PATH_HINT = "~/.codex/auth.json";
+
 function codexAuthPath(): string {
   const root = process.env.CODEX_HOME?.trim() || path.join(homedir(), ".codex");
   return path.join(root, "auth.json");
@@ -132,7 +135,14 @@ export function createCodexAuthFlow(deps: CodexAuthFlowDeps): ProviderAuthFlow {
   return {
     provider: "codex",
     supportedMethods: SUPPORTED_METHODS,
-    async start(method: AuthMethod, _options: AuthStartOptions): Promise<AuthFlowStart> {
+    async start(
+      offeringId: string,
+      method: AuthMethod,
+      _options: AuthStartOptions,
+    ): Promise<AuthFlowStart> {
+      if (offeringId !== "codex") {
+        throw new AppError("validation", `Codex 不提供接入点：${offeringId}`);
+      }
       switch (method) {
         case "browser-oauth":
           return startBrowserLogin();

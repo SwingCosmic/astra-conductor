@@ -11,12 +11,12 @@ import {
   type PublicCompositeRemaining,
   type PublicOperationKind,
   type PublicOperationState,
-  type PublicProviderDescriptor,
   type PublicSystemStatus,
   type PublicUsage,
   type RedeemResetCreditOutcomeDto,
   type RefreshBatchOutcomeDto,
   type RefreshOutcomeDto,
+  type ResetCreditRedemption,
   type Settings,
   type StartAuthRequest,
 } from "@astra-conductor/polyquota-contract";
@@ -27,10 +27,10 @@ import {
   toPublicAccount,
   toPublicUsage,
   type Account,
-  type CredentialEnvelope,
   type AuthCoordinator,
+  type CredentialEnvelope,
   type CredentialRefreshOutcome,
-  type ProviderId,
+  type ProviderRegistry,
   type RefreshOutcome,
   type StoragePort,
   type UsageSnapshot,
@@ -38,40 +38,33 @@ import {
 import type { PollingService } from "./polling-service.js";
 import type { RefreshScheduler, RefreshSource } from "./refresh-scheduler.js";
 
-export type ResetCreditRedeemer = (
-  account: Account,
-  envelope: CredentialEnvelope,
-  selectionToken: string,
-) => Promise<void>;
-
 export interface PolyQuotaApplicationServiceOptions {
   publishChanged: (event: PolyQuotaChangedEvent) => void;
   detectProxyStatus: () => Promise<PublicSystemStatus>;
-  providerCatalog: readonly PublicProviderDescriptor[];
-  resetCreditRedeemers: Partial<Record<ProviderId, ResetCreditRedeemer>>;
+  /** 唯一的供应商注册表：目录投影、认证与重置额度分派全部经它解析。 */
+  registry: ProviderRegistry;
   now?: () => Date;
 }
 
-function reconcileRedeemedResetCredit(
+/**
+ * 分体形态的对账：已消耗的 itemId 在上游仍报告时从下一快照本地移除；
+ * 聚合计数以服务端刷新为准，不做本地扣减（§9.3）。
+ */
+function reconcileRedeemedResetItems(
   snapshot: UsageSnapshot,
-  selectionToken: string,
+  redeemedIds: ReadonlySet<string>,
 ): { snapshot: UsageSnapshot; remainingResetCredits: number | null } {
-  let changed = false;
-  let remainingResetCredits: number | null = null;
-  const extras = snapshot.extras.map((extra) => {
-    if (extra.key !== "reset-credits" || !extra.items) return extra;
-    const items = extra.items.filter((item) => item.actionToken !== selectionToken);
-    changed ||= items.length !== extra.items.length;
-    remainingResetCredits = items.length;
-    return {
-      ...extra,
-      value: String(items.length),
-      items,
-    };
-  });
+  const credits = snapshot.resetCredits;
+  if (!credits || credits.kind !== "itemized") {
+    return { snapshot, remainingResetCredits: null };
+  }
+  const items = credits.items.filter((item) => !redeemedIds.has(item.id));
   return {
-    snapshot: changed ? { ...snapshot, extras } : snapshot,
-    remainingResetCredits,
+    snapshot:
+      items.length === credits.items.length
+        ? snapshot
+        : { ...snapshot, resetCredits: { kind: "itemized", items } },
+    remainingResetCredits: items.length,
   };
 }
 
@@ -80,6 +73,7 @@ export class PolyQuotaApplicationService {
   private readonly operations = new Map<string, PublicOperationState>();
   private readonly pendingResetCreditUses = new Map<string, Set<string>>();
   private readonly pendingReasons = new Set<PolyQuotaChangeReason>();
+  private readonly legacySnapshotRefreshes = new Set<string>();
   private publishQueued = false;
   private scheduler: RefreshScheduler | null = null;
   private readonly now: () => Date;
@@ -124,6 +118,7 @@ export class PolyQuotaApplicationService {
       const usageByAccountId = Object.fromEntries(
         accounts.map((account) => {
           const snapshot = this.storage.snapshots.get(account.id);
+          if (snapshot) this.refreshLegacySnapshot(account.id, snapshot);
           return [account.id, snapshot ? toPublicUsage(snapshot) : null];
         }),
       );
@@ -142,7 +137,7 @@ export class PolyQuotaApplicationService {
           schemaVersion: POLYQUOTA_SCHEMA_VERSION,
           revision,
           generatedAt: this.now().toISOString(),
-          providers: this.options.providerCatalog.map((descriptor) => ({
+          providers: this.options.registry.descriptors.map((descriptor) => ({
             provider: descriptor.provider,
             displayName: descriptor.displayName,
             offerings: descriptor.offerings.map((offering) => ({
@@ -151,17 +146,18 @@ export class PolyQuotaApplicationService {
               displayName: offering.displayName,
               ...(offering.description ? { description: offering.description } : {}),
               ...(offering.websiteUrl ? { websiteUrl: offering.websiteUrl } : {}),
-              ...(offering.region ? { region: offering.region } : {}),
+              ...(offering.iconKey ? { iconKey: offering.iconKey } : {}),
               authMethods: offering.authMethods.map((method) => ({
                 method: method.method,
                 interaction: method.interaction,
                 ...(method.sourceLabel ? { sourceLabel: method.sourceLabel } : {}),
+                ...(method.sourcePathHint ? { sourcePathHint: method.sourcePathHint } : {}),
               })),
-            })),
-            plans: descriptor.plans.map((plan) => ({
-              id: plan.id,
-              displayName: plan.displayName,
-              match: [...plan.match],
+              plans: offering.plans.map((plan) => ({
+                id: plan.id,
+                displayName: plan.displayName,
+                match: [...plan.match],
+              })),
             })),
           })),
           accounts: publicAccounts,
@@ -192,6 +188,7 @@ export class PolyQuotaApplicationService {
     }
     this.storage.transaction(() => this.storage.accounts.delete(accountId));
     this.pendingResetCreditUses.delete(accountId);
+    this.legacySnapshotRefreshes.delete(accountId);
     for (const [id, operation] of this.operations) {
       if (operation.accountId === accountId) this.operations.delete(id);
     }
@@ -243,7 +240,7 @@ export class PolyQuotaApplicationService {
 
   redeemResetCredit(
     accountId: string,
-    selectionToken: string,
+    redemption: ResetCreditRedemption,
   ): Promise<RedeemResetCreditOutcomeDto> {
     return this.runOperation(
       "use-reset-credit",
@@ -254,30 +251,42 @@ export class PolyQuotaApplicationService {
         if (!account) throw new AppError("validation", "Account does not exist");
         if (!account.enabled) throw new AppError("permission", "请先启用该账号再使用重置额度");
         const envelope = await this.vault.load(accountId);
-        const redeem = this.options.resetCreditRedeemers[account.provider];
-        if (!redeem) {
+        const usage = this.options.registry.requireUsage(account.provider);
+        if (!usage.redeemResetCard) {
           throw new AppError("validation", "该服务商的重置额度使用协议尚未接入");
         }
-        await redeem(account, envelope, selectionToken);
-        const pending = this.pendingResetCreditUses.get(accountId) ?? new Set<string>();
-        pending.add(selectionToken);
-        this.pendingResetCreditUses.set(accountId, pending);
+        // 消耗请求与快照形态的一致性、聚合 type 与分体 itemId 的有效性由实现校验。
+        await usage.redeemResetCard(account, envelope, redemption);
+        if (redemption.kind === "item") {
+          const pending = this.pendingResetCreditUses.get(accountId) ?? new Set<string>();
+          pending.add(redemption.itemId);
+          this.pendingResetCreditUses.set(accountId, pending);
+        }
         const refreshed = this.reconcilePendingResetCreditUses(
           await this.polling.refresh(accountId),
         );
-        const currentSnapshot =
-          refreshed.status === "updated"
-            ? refreshed.snapshot
-            : this.storage.snapshots.get(accountId);
-        const reconciled = currentSnapshot
-          ? reconcileRedeemedResetCredit(currentSnapshot, selectionToken)
-          : null;
-        if (reconciled) this.storage.snapshots.save(reconciled.snapshot);
+        let remainingResetCredits: number | null = null;
+        if (redemption.kind === "item") {
+          const currentSnapshot =
+            refreshed.status === "updated"
+              ? refreshed.snapshot
+              : this.storage.snapshots.get(accountId);
+          const reconciled = currentSnapshot
+            ? reconcileRedeemedResetItems(
+                currentSnapshot,
+                this.pendingResetCreditUses.get(accountId) ?? new Set<string>(),
+              )
+            : null;
+          if (reconciled && reconciled.snapshot !== currentSnapshot) {
+            this.storage.snapshots.save(reconciled.snapshot);
+          }
+          remainingResetCredits = reconciled?.remainingResetCredits ?? null;
+        }
         return {
           status: "redeemed",
           accountId,
           refreshStatus: refreshed.status,
-          remainingResetCredits: reconciled?.remainingResetCredits ?? null,
+          remainingResetCredits,
         };
       },
       ["accounts", "usage"],
@@ -287,11 +296,8 @@ export class PolyQuotaApplicationService {
   async startAuth(request: StartAuthRequest): Promise<AuthStartResult> {
     const operationId = this.startOperation("auth", null, null);
     try {
-      const options = {
-        ...("region" in request ? { region: request.region } : {}),
-        ...("apiKey" in request ? { apiKey: request.apiKey } : {}),
-      };
-      const result = await this.auth.start(request.provider, request.method, options);
+      const options = request.apiKey === undefined ? {} : { apiKey: request.apiKey };
+      const result = await this.auth.start(request.offeringId, request.method, options);
       this.operations.delete(operationId);
       if (result.status === "completed") {
         const account = await this.toPublicAccount(result.account);
@@ -461,6 +467,7 @@ export class PolyQuotaApplicationService {
       accounts.map((account) => ({
         enabled: account.enabled,
         provider: account.provider,
+        offeringId: account.offeringId,
         snapshot: usageByAccountId[account.id] ?? null,
       })),
     );
@@ -471,26 +478,44 @@ export class PolyQuotaApplicationService {
     return this.scheduler;
   }
 
+  /**
+   * 破坏性结构更新：resetCredits 已是一等必填字段，旧结构快照（extras 形态、
+   * 缺该字段）不做投影适配——读到即静默触发一次该账号的刷新换取新数据。
+   * 每账号每进程只触发一次，失败也不重试（停用账号刷新会被跳过，同理不重试）。
+   */
+  private refreshLegacySnapshot(accountId: string, snapshot: UsageSnapshot): void {
+    if ("resetCredits" in snapshot) return;
+    if (this.legacySnapshotRefreshes.has(accountId)) return;
+    this.legacySnapshotRefreshes.add(accountId);
+    void this.polling
+      .refresh(accountId)
+      .then((outcome) => this.reconcilePendingResetCreditUses(outcome))
+      .then((outcome) => {
+        if (outcome.status !== "skipped") this.commit(["accounts", "usage"]);
+      })
+      .catch(() => undefined);
+  }
+
   private reconcilePendingResetCreditUses(outcome: RefreshOutcome): RefreshOutcome {
     if (outcome.status !== "updated") return outcome;
     const pending = this.pendingResetCreditUses.get(outcome.accountId);
     if (!pending?.size) return outcome;
+    const credits = outcome.snapshot.resetCredits;
+    if (!credits || credits.kind !== "itemized") return outcome;
 
-    let snapshot = outcome.snapshot;
-    for (const selectionToken of [...pending]) {
-      const stillReported = snapshot.extras.some((extra) =>
-        extra.items?.some((item) => item.actionToken === selectionToken),
-      );
-      if (!stillReported) {
-        pending.delete(selectionToken);
-        continue;
+    for (const itemId of [...pending]) {
+      if (!credits.items.some((item) => item.id === itemId)) {
+        pending.delete(itemId);
       }
-      snapshot = reconcileRedeemedResetCredit(snapshot, selectionToken).snapshot;
     }
-    if (!pending.size) this.pendingResetCreditUses.delete(outcome.accountId);
-    if (snapshot === outcome.snapshot) return outcome;
-    this.storage.snapshots.save(snapshot);
-    return { ...outcome, snapshot };
+    if (!pending.size) {
+      this.pendingResetCreditUses.delete(outcome.accountId);
+      return outcome;
+    }
+    const reconciled = reconcileRedeemedResetItems(outcome.snapshot, pending);
+    if (reconciled.snapshot === outcome.snapshot) return outcome;
+    this.storage.snapshots.save(reconciled.snapshot);
+    return { ...outcome, snapshot: reconciled.snapshot };
   }
 }
 

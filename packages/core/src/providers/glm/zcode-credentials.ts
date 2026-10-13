@@ -3,16 +3,35 @@ import { readFile } from "node:fs/promises";
 import { homedir, platform, userInfo } from "node:os";
 import path from "node:path";
 import { AppError } from "../../errors.js";
-import type { GlmRegion } from "../../models.js";
 
 const encryptedValuePrefix = "enc:v1:";
 const credentialSecretEnvKey = "ZCODE_CREDENTIAL_SECRET";
 const dataBaseDirEnvKey = "ZCODE_DATA_BASE_DIR";
 
+/**
+ * 地区是 GLM 实现内部选择上游端点的细节：BigModel 与 Z.ai 是两个接入点，
+ * 差异由 offering 声明承载，region 不出现在 descriptor、认证输入或账号元数据。
+ */
+export type GlmRegion = "china" | "international";
+
+const offeringRegions: Record<string, GlmRegion> = {
+  "bigmodel-coding-plan": "china",
+  "zai-coding-plan": "international",
+};
+
+export function glmRegionForOffering(offeringId: string): GlmRegion {
+  const region = offeringRegions[offeringId];
+  if (!region) throw new AppError("validation", `GLM 不提供接入点：${offeringId}`);
+  return region;
+}
+
 const codingPlanProviderIds: Record<GlmRegion, string> = {
   china: "account:bigmodel-individual-coding-plan",
   international: "account:zai-individual-coding-plan",
 };
+
+/** 展示用默认路径提示，与 resolveZCodeCredentialsPath 的真实解析同源维护。 */
+export const ZCODE_CREDENTIALS_PATH_HINT = "~/.zcode/v2/credentials.json";
 
 interface ZCodeCredentialImportOptions {
   credentialsPath?: string;
@@ -132,9 +151,10 @@ function findApiKeyCredentialKey(
 }
 
 export async function readZCodeCodingPlanApiKey(
-  region: GlmRegion,
+  offeringId: string,
   options: ZCodeCredentialImportOptions = {},
 ): Promise<string> {
+  const region = glmRegionForOffering(offeringId);
   const credentialsPath = resolveZCodeCredentialsPath(options);
   let record: Record<string, string>;
   try {

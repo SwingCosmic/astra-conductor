@@ -1,6 +1,7 @@
 export type {
   AuthMethodInteraction,
   ProviderAuthMethodDescriptor,
+  ProviderCapability,
   ProviderDescriptor,
   ProviderOfferingDescriptor,
   ProviderPlanDescriptor,
@@ -11,8 +12,16 @@ export {
   providerCatalog,
   getProviderDescriptor,
   findOffering,
-  matchProviderPlan,
+  matchOfferingPlan,
   normalizePlanMatch,
   planMultiplier,
   validateProviderCatalog,
 } from "./catalog.js";
+export type {
+  ProviderAccountCapability,
+  ProviderContribution,
+  ProviderUsageCapability,
+} from "./registry.js";
+export { ProviderRegistry } from "./registry.js";
+export type { ProviderPorts } from "./ports.js";
+export { createProviderContributions } from "./contributions.js";

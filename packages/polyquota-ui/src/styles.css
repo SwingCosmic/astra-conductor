@@ -555,23 +555,38 @@ button:disabled {
   background: white;
 }
 .provider-summary {
+  /* 名称列用 1fr（自动最小宽 = 不换行名称的完整宽度），轨道不会被压缩到
+     名称以下，描述在标题块内换行到第二行。 */
   display: grid;
-  grid-template-columns: auto minmax(190px, 1fr) minmax(220px, 1fr) auto auto;
+  grid-template-columns: auto 1fr minmax(220px, 1fr) auto auto;
   gap: 14px;
   align-items: center;
   padding: 15px 18px;
 }
-.provider-title h2 {
+.provider-name-row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.provider-name-row h2 {
   margin: 0;
   font-size: 16px;
+  white-space: nowrap;
 }
-.provider-title p {
-  margin: 4px 0 0;
+.provider-name-row .provider-status {
+  display: flex;
+  gap: 0;
+  align-items: center;
+  margin: 0;
   color: #64748b;
   font-size: 12px;
 }
-.provider-title .provider-description {
-  max-width: 420px;
+.provider-heading .provider-description {
+  margin: 4px 0 0;
+  max-width: 520px;
+  color: #64748b;
+  font-size: 12px;
   line-height: 1.45;
 }
 .status-dot {
@@ -1060,11 +1075,14 @@ button:disabled {
     gap: 10px;
     padding: 14px;
   }
-  .provider-title {
+  .provider-heading {
     min-width: 0;
   }
-  .provider-title h2,
-  .provider-title p {
+  .provider-name-row h2 {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .provider-heading .provider-description {
     overflow-wrap: anywhere;
   }
   .method-chips {

@@ -3,9 +3,11 @@ import { AppError } from "../../errors.js";
 import type {
   Account,
   CredentialEnvelope,
-  GlmRegion,
   ProviderId,
   PublicMetadata,
+  ResetCreditRedemption,
+  ResetCreditItem,
+  ResetCredits,
   UsageQuota,
   UsageSnapshot,
 } from "../../models.js";
@@ -17,6 +19,7 @@ import type {
 } from "../../ports.js";
 import { CredentialVault } from "../../credential-vault.js";
 import { redeemGlmResetCard } from "./reset-card-redemption.js";
+import { glmRegionForOffering, type GlmRegion } from "./zcode-credentials.js";
 import { getGlmUsage } from "@omniroute/open-sse/services/usage/glm.ts";
 
 interface VendorQuota {
@@ -31,19 +34,12 @@ interface VendorQuota {
 
 export interface GlmProvisioningResult {
   authMethod: "api-key" | "cli-import";
+  offeringId: string;
   stableIdentity: string;
   displayName: string;
   maskedIdentifier: string;
   publicMetadata: PublicMetadata;
   credentials: Omit<CredentialEnvelope, "accountId">;
-}
-
-function metadataRegion(account: Account): GlmRegion {
-  return account.publicMetadata.region === "china" ? "china" : "international";
-}
-
-function presentationId(region: GlmRegion): string {
-  return region === "china" ? "bigmodel-coding-plan" : "zai-coding-plan";
 }
 
 function serviceName(region: GlmRegion): string {
@@ -81,6 +77,16 @@ function normalizeQuotas(value: Record<string, VendorQuota>): UsageQuota[] {
   }));
 }
 
+function normalizeResetCredits(
+  cards: readonly { id: string; resetType: string; expiresAt: string | null }[],
+): ResetCreditItem[] {
+  return cards.map((card) => ({
+    id: card.id,
+    type: card.resetType === "FIVE_HOUR" ? "five-hour" : "weekly",
+    expiresAt: card.expiresAt,
+  }));
+}
+
 export class GlmAdapter implements UsageProviderAdapter {
   readonly provider: ProviderId = "glm";
 
@@ -91,23 +97,21 @@ export class GlmAdapter implements UsageProviderAdapter {
 
   async createProvisioning(
     apiKeyInput: string,
-    region: GlmRegion,
+    offeringId: string,
     authMethod: "api-key" | "cli-import" = "api-key",
   ): Promise<GlmProvisioningResult> {
+    const region = glmRegionForOffering(offeringId);
     const apiKey = apiKeyInput.trim();
     if (!apiKey) throw new AppError("validation", "请输入 Coding Plan API Key");
     if (apiKey.length > 4096) throw new AppError("validation", "API Key 长度不正确");
     await this.requestUsage(apiKey, region);
     return {
       authMethod,
+      offeringId,
       stableIdentity: stableIdentity(apiKey, region),
       displayName: serviceName(region),
       maskedIdentifier: maskApiKey(apiKey),
-      publicMetadata: {
-        region,
-        product: "coding-plan",
-        presentationId: presentationId(region),
-      },
+      publicMetadata: {},
       credentials: {
         version: 1,
         provider: "glm",
@@ -118,65 +122,54 @@ export class GlmAdapter implements UsageProviderAdapter {
     };
   }
 
-  async refreshCredentials(
-    _account: Account,
-    envelope: CredentialEnvelope,
-  ): Promise<CredentialRefreshResult> {
-    if (!envelope.secrets.apiKey) {
-      throw new AppError("authentication", "GLM Coding Plan API Key 不可用");
-    }
-    return { envelope, changed: false };
-  }
-
   async fetchUsage(account: Account, envelope: CredentialEnvelope): Promise<UsageSnapshot> {
     const apiKey = envelope.secrets.apiKey;
     if (!apiKey) throw new AppError("authentication", "GLM Coding Plan API Key 不可用");
-    const result = await this.requestUsage(apiKey, metadataRegion(account));
+    const region = glmRegionForOffering(account.offeringId);
+    const result = await this.requestUsage(apiKey, region);
     const quotas = normalizeQuotas(result.quotas);
     const percentages = quotas
       .map((quota) => quota.remainingPercentage)
       .filter((value): value is number => value !== null);
+    const resetCredits: ResetCredits | null = result.resetCards
+      ? { kind: "itemized", items: normalizeResetCredits(result.resetCards.cards) }
+      : null;
     return {
       accountId: account.id,
       plan: result.plan,
       overallRemainingPercentage: percentages.length ? Math.min(...percentages) : null,
       groups: [{ key: "default", displayName: null, quotas }],
-      extras: result.resetCards
-        ? [
-            {
-              key: "reset-credits",
-              value: String(result.resetCards.availableCount),
-              items: result.resetCards.cards.map((card, index) => ({
-                key: `${card.resetType.toLowerCase()}:${index}`,
-                kind: card.resetType === "FIVE_HOUR" ? "five-hour" : "weekly",
-                expiresAt: card.expiresAt,
-                actionToken: card.id,
-              })),
-            },
-          ]
-        : [],
+      extras: [],
+      resetCredits,
       fetchedAt: this.clock.now().toISOString(),
     };
   }
 
+  /**
+   * GLM 的重置额度是分体形态：快照 `resetCredits.kind === "itemized"`，消耗
+   * 必须携带对应重置卡 id；兑换前重新校验列表，失效即报“请刷新”。
+   */
   async redeemResetCard(
     account: Account,
     envelope: CredentialEnvelope,
-    selectionToken: string,
+    request: ResetCreditRedemption,
   ): Promise<void> {
+    if (request.kind !== "item") {
+      throw new AppError("validation", "GLM 重置卡为逐张使用，请选择具体重置卡");
+    }
     if (account.provider !== "glm" || envelope.provider !== "glm") {
       throw new AppError("validation", "只有 GLM Coding Plan 账号支持使用重置卡");
     }
     const apiKey = envelope.secrets.apiKey;
     if (!apiKey) throw new AppError("authentication", "GLM Coding Plan API Key 不可用");
-    const token = selectionToken.trim();
-    if (!token || token.length > 256) {
+    const itemId = request.itemId.trim();
+    if (!itemId || itemId.length > 256) {
       throw new AppError("validation", "GLM 重置卡选择标识无效");
     }
     await redeemGlmResetCard(
       apiKey,
-      { ...account.publicMetadata, apiRegion: metadataRegion(account) },
-      token,
+      { apiRegion: glmRegionForOffering(account.offeringId) },
+      itemId,
       this.fetchImpl,
     );
   }
@@ -215,6 +208,7 @@ export class GlmAccountProvisioner {
     const account: Account = {
       id: existing?.id ?? this.createId(),
       provider: "glm",
+      offeringId: input.offeringId,
       authMethod: input.authMethod,
       stableIdentity: input.stableIdentity,
       displayName: input.displayName,

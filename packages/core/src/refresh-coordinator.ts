@@ -6,7 +6,7 @@ import type {
   UsageSnapshot,
 } from "./models.js";
 import type { ClockPort, LoggerPort, StoragePort } from "./ports.js";
-import type { UsageProviderAdapter } from "./ports.js";
+import type { ProviderRegistry } from "./providers/registry.js";
 import { CredentialVault } from "./credential-vault.js";
 import { silentLogger } from "./logger.js";
 
@@ -51,17 +51,14 @@ function notificationCandidates(snapshot: UsageSnapshot): NotificationCandidate[
 export class RefreshCoordinator {
   private readonly inFlight = new Map<string, Promise<RefreshOutcome>>();
   private readonly operationTails = new Map<string, Promise<void>>();
-  private readonly adapters: ReadonlyMap<Account["provider"], UsageProviderAdapter>;
 
   constructor(
     private readonly storage: StoragePort,
     private readonly vault: CredentialVault,
-    adapters: Iterable<UsageProviderAdapter>,
+    private readonly registry: ProviderRegistry,
     private readonly clock: ClockPort = { now: () => new Date() },
     private readonly logger: LoggerPort = silentLogger,
-  ) {
-    this.adapters = new Map(Array.from(adapters, (adapter) => [adapter.provider, adapter]));
-  }
+  ) {}
 
   refresh(accountId: string): Promise<RefreshOutcome> {
     const running = this.inFlight.get(accountId);
@@ -105,12 +102,12 @@ export class RefreshCoordinator {
       };
     }
     try {
-      const adapter = this.adapters.get(account.provider);
-      if (!adapter) {
-        throw new AppError("validation", `Provider adapter is unavailable: ${account.provider}`);
+      const refresh = this.registry.getAccount(account.provider)?.refreshCredentials;
+      if (!refresh) {
+        throw new AppError("validation", `该账号类型没有主动刷新协议：${account.provider}`);
       }
       const current = await this.vault.load(account.id);
-      const refreshed = await adapter.refreshCredentials(account, current, true);
+      const refreshed = await refresh(account, current, { force: true });
       if (refreshed.changed) await this.persistCredentials(account, refreshed.envelope);
       return {
         status: refreshed.changed ? "updated" : "unchanged",
@@ -141,24 +138,26 @@ export class RefreshCoordinator {
     }
     if (!account.enabled) return { status: "skipped", accountId };
     try {
-      const adapter = this.adapters.get(account.provider);
-      if (!adapter) {
-        throw new AppError("validation", `Provider adapter is unavailable: ${account.provider}`);
-      }
+      const usage = this.registry.requireUsage(account.provider);
+      const refresh = this.registry.getAccount(account.provider)?.refreshCredentials;
       let envelope = await this.vault.load(account.id);
-      const refreshed = await adapter.refreshCredentials(account, envelope);
-      envelope = refreshed.envelope;
-      if (refreshed.changed) await this.persistCredentials(account, envelope);
+      if (refresh) {
+        const refreshed = await refresh(account, envelope, { force: false });
+        envelope = refreshed.envelope;
+        if (refreshed.changed) await this.persistCredentials(account, envelope);
+      }
 
       let snapshot: UsageSnapshot;
       try {
-        snapshot = await adapter.fetchUsage(account, envelope);
+        snapshot = await usage.fetchUsage(account, envelope);
       } catch (error) {
-        if (!(error instanceof AppError) || error.code !== "authentication") throw error;
-        const forced = await adapter.refreshCredentials(account, envelope, true);
+        if (!refresh || !(error instanceof AppError) || error.code !== "authentication") {
+          throw error;
+        }
+        const forced = await refresh(account, envelope, { force: true });
         envelope = forced.envelope;
         if (forced.changed) await this.persistCredentials(account, envelope);
-        snapshot = await adapter.fetchUsage(account, envelope);
+        snapshot = await usage.fetchUsage(account, envelope);
       }
       this.storage.transaction(() => {
         this.storage.snapshots.save(snapshot);

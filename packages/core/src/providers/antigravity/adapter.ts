@@ -32,6 +32,7 @@ export interface AntigravityBrowserAuthorization {
 
 export interface AntigravityProvisioningResult {
   authMethod: "browser-oauth";
+  offeringId: string;
   stableIdentity: string;
   displayName: string;
   maskedIdentifier: string;
@@ -82,6 +83,7 @@ export class AntigravityAdapter implements UsageProviderAdapter {
     const email = discovered.email ?? discovered.projectId;
     return {
       authMethod: "browser-oauth",
+      offeringId: "antigravity",
       stableIdentity: `${discovered.projectId}:${email.toLowerCase()}`,
       displayName: email,
       maskedIdentifier: maskIdentifier(email),
@@ -167,6 +169,7 @@ export class AntigravityAdapter implements UsageProviderAdapter {
       overallRemainingPercentage: percentages.length ? Math.min(...percentages) : null,
       groups: result.groups,
       extras: [],
+      resetCredits: null,
       fetchedAt: this.clock.now().toISOString(),
     };
   }
@@ -189,6 +192,7 @@ export class AntigravityAccountProvisioner {
     const account: Account = {
       id: existing?.id ?? this.createId(),
       provider: "antigravity",
+      offeringId: input.offeringId,
       authMethod: input.authMethod,
       stableIdentity: input.stableIdentity,
       displayName: input.displayName,

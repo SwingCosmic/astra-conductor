@@ -105,6 +105,9 @@ importers:
 
   packages/core:
     dependencies:
+      '@astra-conductor/polyquota-contract':
+        specifier: workspace:*
+        version: link:../polyquota-contract
       zod:
         specifier: 4.5.4
         version: 4.5.4

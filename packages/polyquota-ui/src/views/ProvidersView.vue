@@ -3,7 +3,7 @@ import { computed, ref } from "vue";
 import AuthModal from "../components/AuthModal.vue";
 import ChevronIcon from "../components/ChevronIcon.vue";
 import type { PublicAccount } from "../models";
-import { accountPresentationId, authMethodLabel, type ProviderPresentation } from "../presentation";
+import { authMethodLabel, type ProviderPresentation } from "../presentation";
 
 const props = defineProps<{
   accounts: PublicAccount[];
@@ -20,7 +20,14 @@ const modalProvider = ref<ProviderPresentation | null>(null);
 const expanded = ref(new Set<string>(["codex"]));
 
 function providerAccounts(provider: ProviderPresentation): PublicAccount[] {
-  return props.accounts.filter((account) => accountPresentationId(account) === provider.id);
+  return props.accounts.filter((account) => account.offeringId === provider.id);
+}
+
+function accountMethodLabel(provider: ProviderPresentation, account: PublicAccount): string {
+  return (
+    provider.authMethods.find((method) => method.id === account.authMethod)?.label ??
+    authMethodLabel(account.authMethod)
+  );
 }
 
 function toggleExpanded(provider: ProviderPresentation): void {
@@ -50,7 +57,9 @@ function isTokenExpired(value: string | null): boolean {
   return Number.isFinite(timestamp) && timestamp <= Date.now();
 }
 
-const connectedCount = computed(() => new Set(props.accounts.map(accountPresentationId)).size);
+const connectedCount = computed(
+  () => new Set(props.accounts.map((account) => account.offeringId)).size,
+);
 </script>
 
 <template>
@@ -58,7 +67,7 @@ const connectedCount = computed(() => new Set(props.accounts.map(accountPresenta
     <header class="content-header">
       <div>
         <h1>服务商接入</h1>
-        <p>管理服务商与账号接入方式 · 已接入 {{ connectedCount }} 个服务商</p>
+        <p>管理服务商与账号接入方式 · 已接入 {{ connectedCount }} 个服务</p>
       </div>
     </header>
     <div class="provider-list">
@@ -68,30 +77,26 @@ const connectedCount = computed(() => new Set(props.accounts.map(accountPresenta
             <img v-if="provider.icon" :src="provider.icon" alt="" />
             <template v-else>{{ provider.mark }}</template>
           </span>
-          <div class="provider-title">
-            <h2>{{ provider.name }}</h2>
-            <p>
-              <span
-                class="status-dot"
-                :class="{ connected: providerAccounts(provider).length }"
-              />{{
-                providerAccounts(provider).length
-                  ? `已接入 · ${providerAccounts(provider).length} 个账号`
-                  : provider.available
-                    ? "尚未接入"
-                    : "即将支持"
-              }}
-            </p>
+          <div class="provider-heading">
+            <div class="provider-name-row">
+              <h2>{{ provider.name }}</h2>
+              <p class="provider-status">
+                <span
+                  class="status-dot"
+                  :class="{ connected: providerAccounts(provider).length }"
+                />{{
+                  providerAccounts(provider).length
+                    ? `已接入 · ${providerAccounts(provider).length} 个账号`
+                    : "尚未接入"
+                }}
+              </p>
+            </div>
             <p class="provider-description">{{ provider.description }}</p>
           </div>
           <div class="method-chips">
             <span v-for="method in provider.authMethods" :key="method.id">{{ method.label }}</span>
           </div>
-          <button
-            class="primary-action"
-            :disabled="busy || !provider.available"
-            @click="modalProvider = provider"
-          >
+          <button class="primary-action" :disabled="busy" @click="modalProvider = provider">
             添加账号
           </button>
           <button
@@ -124,9 +129,7 @@ const connectedCount = computed(() => new Set(props.accounts.map(accountPresenta
                 }}{{ isTokenExpired(account.tokenExpiresAt) ? "（已过期）" : "" }}
               </span>
             </div>
-            <span class="method-chip">{{
-              authMethodLabel(account.authMethod, account.provider)
-            }}</span
+            <span class="method-chip">{{ accountMethodLabel(provider, account) }}</span
             ><span class="account-state"
               ><i :class="{ off: !account.enabled }" />{{
                 account.enabled ? "已启用" : "已停用"

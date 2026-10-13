@@ -26,6 +26,7 @@ import {
 
 export interface ClaudeProvisioningResult {
   authMethod: "cli-import";
+  offeringId: string;
   stableIdentity: string;
   displayName: string;
   maskedIdentifier: string;
@@ -118,6 +119,7 @@ export class ClaudeAdapter implements UsageProviderAdapter {
 
     return {
       authMethod: "cli-import",
+      offeringId: "claude",
       stableIdentity: identity,
       displayName: label,
       maskedIdentifier: maskIdentifier(usage.bootstrap?.accountEmail ?? identity),
@@ -188,6 +190,7 @@ export class ClaudeAdapter implements UsageProviderAdapter {
           : []),
       ],
       extras: [],
+      resetCredits: null,
       fetchedAt: this.clock.now().toISOString(),
     };
   }
@@ -247,6 +250,7 @@ export class ClaudeAccountProvisioner {
     const account: Account = {
       id: existing?.id ?? this.createId(),
       provider: "claude",
+      offeringId: input.offeringId,
       authMethod: input.authMethod,
       stableIdentity: input.stableIdentity,
       displayName: input.displayName,

@@ -41,6 +41,9 @@ const CALLBACK = {
 
 const SUPPORTED_METHODS: readonly AuthMethod[] = ["device-code", "browser-oauth", "cli-import"];
 
+/** 展示用默认路径提示，与 grokAuthPath 的真实解析同源维护。 */
+export const GROK_CLI_IMPORT_PATH_HINT = "~/.grok/auth.json";
+
 function grokAuthPath(): string {
   return path.join(homedir(), ".grok", "auth.json");
 }
@@ -129,7 +132,14 @@ export function createGrokBuildAuthFlow(deps: GrokBuildAuthFlowDeps): ProviderAu
   return {
     provider: "grok-build",
     supportedMethods: SUPPORTED_METHODS,
-    async start(method: AuthMethod, _options: AuthStartOptions): Promise<AuthFlowStart> {
+    async start(
+      offeringId: string,
+      method: AuthMethod,
+      _options: AuthStartOptions,
+    ): Promise<AuthFlowStart> {
+      if (offeringId !== "grok-build") {
+        throw new AppError("validation", `Grok Build 不提供接入点：${offeringId}`);
+      }
       switch (method) {
         case "browser-oauth":
           return startBrowserLogin();
