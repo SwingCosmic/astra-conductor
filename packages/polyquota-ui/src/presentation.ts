@@ -1,6 +1,7 @@
 import antigravityIcon from "./assets/icon/antigravity.png";
 import bigmodelIcon from "./assets/icon/bigmodel.svg";
 import claudeIcon from "./assets/icon/claude.svg";
+import copilotIcon from "./assets/icon/copilot.svg";
 import gptIcon from "./assets/icon/gpt.png";
 import grokIcon from "./assets/icon/grok.svg";
 import opencodeIcon from "./assets/icon/opencode.png";
@@ -33,6 +34,7 @@ const iconAssets: Record<string, string> = {
   antigravity: antigravityIcon,
   claude: claudeIcon,
   opencode: opencodeIcon,
+  copilot: copilotIcon,
 };
 
 /** 无图标时的占位字符：取展示名的第一个字符大写，不维护逐供应商清单。 */

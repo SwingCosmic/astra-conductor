@@ -11,6 +11,7 @@ import { grokBuildDescriptor } from "./grok-build/descriptor.js";
 import { antigravityDescriptor } from "./antigravity/descriptor.js";
 import { claudeDescriptor } from "./claude/descriptor.js";
 import { opencodeGoDescriptor } from "./opencode-go/descriptor.js";
+import { githubCopilotDescriptor } from "./github-copilot/descriptor.js";
 
 /** Unmatched or unpublished plans use the mid 5x rung. */
 export const DEFAULT_PLAN_MULTIPLIER = 5;
@@ -138,6 +139,7 @@ const descriptors: readonly ProviderDescriptor[] = [
   antigravityDescriptor,
   claudeDescriptor,
   opencodeGoDescriptor,
+  githubCopilotDescriptor,
 ];
 
 validateProviderCatalog(descriptors);

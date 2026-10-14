@@ -18,6 +18,7 @@ import type {
   StoragePort,
   UsageProviderAdapter,
 } from "../../ports.js";
+import { includedQuotas } from "../quota-inclusion.js";
 import { CredentialVault } from "../../credential-vault.js";
 import { listAvailableCodexResetCredits, redeemCodexResetCredit } from "./reset-card-redemption.js";
 import { getCodexUsage } from "@omniroute/open-sse/services/usage/codex.ts";
@@ -284,7 +285,7 @@ export class CodexAdapter implements UsageProviderAdapter {
       accountId: account.id,
       plan: result.plan,
       overallRemainingPercentage: quotas[0]?.remainingPercentage ?? null,
-      groups: [{ key: "default", displayName: null, quotas }],
+      groups: [{ key: "default", displayName: null, quotas: includedQuotas(quotas) }],
       extras: [],
       resetCredits: await this.fetchResetCredits(account, envelope, result.bankedResetCredits),
       fetchedAt: this.clock.now().toISOString(),

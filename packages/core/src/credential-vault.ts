@@ -1,8 +1,13 @@
 import { AppError } from "./errors.js";
-import type { Account, CredentialEnvelope, EncryptedCredential } from "./models.js";
+import {
+  credentialSecretKeys,
+  type Account,
+  type CredentialEnvelope,
+  type EncryptedCredential,
+} from "./models.js";
 import type { CredentialCipherPort, StoragePort } from "./ports.js";
 
-const secretKeys = new Set(["accessToken", "refreshToken", "idToken", "apiKey"]);
+const secretKeys = new Set<string>(credentialSecretKeys);
 
 function validateEnvelope(account: Account, envelope: CredentialEnvelope): void {
   if (
@@ -14,8 +19,10 @@ function validateEnvelope(account: Account, envelope: CredentialEnvelope): void 
     throw new AppError("secure-storage", "Credential ownership mismatch");
   }
   const keys = Object.keys(envelope.secrets);
-  if (keys.length === 0 || keys.some((key) => !secretKeys.has(key))) {
-    throw new AppError("validation", "Credential envelope contains invalid fields");
+  const invalid = keys.filter((key) => !secretKeys.has(key));
+  if (keys.length === 0 || invalid.length) {
+    const detail = invalid.length ? `: ${invalid.join(", ")}` : "";
+    throw new AppError("validation", `Credential envelope contains invalid fields${detail}`);
   }
   for (const value of Object.values(envelope.secrets)) {
     if (value !== undefined && (typeof value !== "string" || value.length === 0)) {

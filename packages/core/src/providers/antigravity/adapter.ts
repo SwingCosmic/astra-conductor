@@ -13,6 +13,7 @@ import type {
   StoragePort,
   UsageProviderAdapter,
 } from "../../ports.js";
+import { includedQuotas } from "../quota-inclusion.js";
 import { CredentialVault } from "../../credential-vault.js";
 import { generateState } from "@omniroute/src/lib/oauth/utils/pkce.ts";
 import {
@@ -159,7 +160,11 @@ export class AntigravityAdapter implements UsageProviderAdapter {
     if ("message" in result) {
       throw new AppError("upstream", result.message ?? "Antigravity 用量请求失败", true);
     }
-    const percentages = result.groups
+    const groups = result.groups.map((group) => ({
+      ...group,
+      quotas: includedQuotas(group.quotas),
+    }));
+    const percentages = groups
       .flatMap((group) => group.quotas)
       .map((quota) => quota.remainingPercentage)
       .filter((value): value is number => value !== null);
@@ -167,7 +172,7 @@ export class AntigravityAdapter implements UsageProviderAdapter {
       accountId: account.id,
       plan: result.plan,
       overallRemainingPercentage: percentages.length ? Math.min(...percentages) : null,
-      groups: result.groups,
+      groups,
       extras: [],
       resetCredits: null,
       fetchedAt: this.clock.now().toISOString(),

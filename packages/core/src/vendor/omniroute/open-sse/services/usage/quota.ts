@@ -23,6 +23,14 @@ export type UsageQuota = {
    * NOT a confirmed-exhausted state. Antigravity-specific.
    */
   fractionReported?: boolean;
+  /**
+   * [astra] addition (not upstream): true when used/total come from
+   * provider-reported raw counts (credits/tokens/requests) rather than the
+   * percentage-synthesis fallbacks some leaves apply (total = 100 / 1000
+   * scales). Consumers use it to decide whether the raw amounts are worth
+   * displaying.
+   */
+  rawAmounts?: boolean;
   quotaSource?: "retrieveUserQuota" | "fetchAvailableModels" | "localUsageHistory";
   displayName?: string;
   details?: Array<{

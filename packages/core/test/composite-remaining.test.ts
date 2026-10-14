@@ -25,6 +25,7 @@ const offeringByProvider: Record<CompositeRemainingAccountInput["provider"], str
   "grok-build": "grok-build",
   glm: "bigmodel-coding-plan",
   "opencode-go": "opencode-go",
+  "github-copilot": "github-copilot",
 };
 
 function quota(

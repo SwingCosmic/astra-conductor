@@ -21,6 +21,7 @@ import {
   ProviderRegistry,
   RefreshCoordinator,
   createProviderContributions,
+  type LoggerPort,
 } from "@astra-conductor/core/internal";
 import { startOAuthCallbackServer } from "./auth/callback-server.js";
 import { registerIpcHandlers, unregisterIpcHandlers, waitForIpcHandlersToDrain } from "./ipc.js";
@@ -81,6 +82,12 @@ if (!hasSingleInstanceLock) {
 function appDir(): string {
   return path.dirname(fileURLToPath(import.meta.url));
 }
+
+/** 主进程统一控制台日志：协调器的失败原因在此可见，便于真实账号排查。 */
+const mainLogger: LoggerPort = {
+  info: (message, context) => console.info("PolyQuota", message, context ?? {}),
+  error: (message, context) => console.error("PolyQuota", message, context ?? {}),
+};
 
 function sqliteNativeBindingPath(): string {
   const root = app.isPackaged ? process.resourcesPath : app.getAppPath();
@@ -406,8 +413,14 @@ if (hasSingleInstanceLock) {
           vault,
         }),
       );
-      const coordinator = new RefreshCoordinator(storage, vault, providerRegistry);
-      auth = new AuthCoordinator(providerRegistry);
+      const coordinator = new RefreshCoordinator(
+        storage,
+        vault,
+        providerRegistry,
+        undefined,
+        mainLogger,
+      );
+      auth = new AuthCoordinator(providerRegistry, mainLogger);
       polling = new PollingService(storage, coordinator);
       if (codexCliSmoke) {
         const authResult = await auth.start("codex", "cli-import");

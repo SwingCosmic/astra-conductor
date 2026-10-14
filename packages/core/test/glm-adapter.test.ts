@@ -120,9 +120,10 @@ describe("GLM Coding Plan adapter", () => {
       true,
     );
     expect(snapshot.plan).toBe("Glm Coding Pro");
+    // CREDIT_LIMIT 带 usage 计数是真实原始量；TOKENS_LIMIT 仅百分比，合成刻度不标 rawAmounts。
     expect(snapshot.groups[0]?.quotas).toMatchObject([
-      { key: "session", remaining: 21_000, remainingPercentage: 75 },
-      { key: "weekly", remainingPercentage: 40 },
+      { key: "session", remaining: 21_000, remainingPercentage: 75, rawAmounts: true },
+      { key: "weekly", remainingPercentage: 40, rawAmounts: false },
     ]);
     expect(snapshot.extras).toEqual([]);
     expect(snapshot.resetCredits).toEqual({
@@ -153,6 +154,68 @@ describe("GLM Coding Plan adapter", () => {
     await expect(
       adapter.redeemResetCard(account, envelope, { kind: "aggregate" }),
     ).rejects.toMatchObject({ code: "validation" });
+  });
+
+  it("drops the MCP monthly meter when the plan reports no allotment for it", async () => {
+    // 计划未包含 MCP 月度窗口时 TIME_LIMIT 无 usage/total，剩余按 0 计——
+    // 无额度却带百分比读数的表不进快照，避免 0% 误报。
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("customer-package-reset")) return resetResponse();
+      return Response.json({
+        success: true,
+        code: 200,
+        data: {
+          planName: "GLM Coding Lite Plan",
+          limits: [
+            {
+              type: "CREDIT_LIMIT",
+              unit: 3,
+              number: 5,
+              percentage: 25,
+              usage: 28_000,
+              currentValue: 7_000,
+              remaining: 21_000,
+              nextResetTime: Date.parse("2026-09-25T15:00:00.000Z"),
+            },
+            {
+              type: "TOKENS_LIMIT",
+              unit: 6,
+              number: 1,
+              percentage: 60,
+              nextResetTime: Date.parse("2026-09-30T00:00:00.000Z"),
+            },
+            { type: "TIME_LIMIT", percentage: 100 },
+          ],
+        },
+      });
+    };
+    const adapter = new GlmAdapter(fetchImpl, { now: () => now });
+    const provisioning = await adapter.createProvisioning(
+      "china-secret-key",
+      "bigmodel-coding-plan",
+    );
+    const account = {
+      id: "glm-lite",
+      provider: "glm" as const,
+      offeringId: "bigmodel-coding-plan",
+      authMethod: "api-key" as const,
+      stableIdentity: provisioning.stableIdentity,
+      displayName: provisioning.displayName,
+      maskedIdentifier: provisioning.maskedIdentifier,
+      enabled: true,
+      credentialState: "available" as const,
+      publicMetadata: provisioning.publicMetadata,
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
+    };
+    const snapshot = await adapter.fetchUsage(account, {
+      ...provisioning.credentials,
+      accountId: account.id,
+    });
+
+    expect(snapshot.groups[0]?.quotas.map((quota) => quota.key)).toEqual(["session", "weekly"]);
+    expect(snapshot.groups[0]?.quotas.every((quota) => quota.total > 0)).toBe(true);
   });
 
   it("keeps international accounts separate and rejects invalid keys", async () => {

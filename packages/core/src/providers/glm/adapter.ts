@@ -17,6 +17,7 @@ import type {
   StoragePort,
   UsageProviderAdapter,
 } from "../../ports.js";
+import { includedQuotas } from "../quota-inclusion.js";
 import { CredentialVault } from "../../credential-vault.js";
 import { redeemGlmResetCard } from "./reset-card-redemption.js";
 import { glmRegionForOffering, type GlmRegion } from "./zcode-credentials.js";
@@ -30,6 +31,7 @@ interface VendorQuota {
   resetAt: string | null;
   unlimited: boolean;
   displayName?: string;
+  rawAmounts?: boolean;
 }
 
 export interface GlmProvisioningResult {
@@ -74,6 +76,7 @@ function normalizeQuotas(value: Record<string, VendorQuota>): UsageQuota[] {
       typeof quota.remainingPercentage === "number" ? quota.remainingPercentage : null,
     resetAt: quota.resetAt,
     unlimited: quota.unlimited,
+    rawAmounts: quota.rawAmounts === true,
   }));
 }
 
@@ -138,7 +141,7 @@ export class GlmAdapter implements UsageProviderAdapter {
       accountId: account.id,
       plan: result.plan,
       overallRemainingPercentage: percentages.length ? Math.min(...percentages) : null,
-      groups: [{ key: "default", displayName: null, quotas }],
+      groups: [{ key: "default", displayName: null, quotas: includedQuotas(quotas) }],
       extras: [],
       resetCredits,
       fetchedAt: this.clock.now().toISOString(),

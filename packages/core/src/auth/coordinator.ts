@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { AppError } from "../errors.js";
+import { AppError, toPublicError } from "../errors.js";
 import type { Account, AuthMethod } from "../models.js";
+import type { LoggerPort } from "../ports.js";
 import type { ProviderRegistry } from "../providers/registry.js";
+import { silentLogger } from "../logger.js";
 import type { AuthStartOptions, AuthStartResult } from "./types.js";
 
 interface PendingAuthSession {
@@ -17,7 +19,10 @@ export class AuthCoordinator {
   private readonly registry: ProviderRegistry;
   private readonly sessions = new Map<string, PendingAuthSession>();
 
-  constructor(registry: ProviderRegistry) {
+  constructor(
+    registry: ProviderRegistry,
+    private readonly logger: LoggerPort = silentLogger,
+  ) {
     for (const { descriptor, account } of registry.contributions) {
       if (!account) continue;
       const catalogMethods = new Set<AuthMethod>();
@@ -56,8 +61,23 @@ export class AuthCoordinator {
     if (!found.offering.authMethods.some((item) => item.method === method)) {
       throw new AppError("validation", `接入点 ${offeringId} 不支持认证方式：${method}`);
     }
-    const result = await account.startAuth(offeringId, method, options);
+    let result: Awaited<ReturnType<typeof account.startAuth>>;
+    try {
+      result = await account.startAuth(offeringId, method, options);
+    } catch (error) {
+      this.logger.error("Provider auth start failed", {
+        offering: offeringId,
+        method,
+        code: toPublicError(error).code,
+      });
+      throw error;
+    }
     if (result.status === "completed") {
+      this.logger.info("Provider auth completed", {
+        offering: offeringId,
+        method,
+        account: result.account.maskedIdentifier,
+      });
       return { status: "completed", account: result.account };
     }
     const sessionId = randomUUID();
@@ -78,7 +98,18 @@ export class AuthCoordinator {
     const pending = this.sessions.get(sessionId);
     if (!pending) throw new AppError("validation", "授权会话不存在或已经结束");
     try {
-      return await pending.finish();
+      const account = await pending.finish();
+      this.logger.info("Provider auth session finished", {
+        account: account.maskedIdentifier,
+        provider: account.provider,
+      });
+      return account;
+    } catch (error) {
+      this.logger.error("Provider auth session failed", {
+        sessionId,
+        code: toPublicError(error).code,
+      });
+      throw error;
     } finally {
       this.sessions.delete(sessionId);
     }

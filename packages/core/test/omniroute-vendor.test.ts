@@ -11,8 +11,18 @@
  *
  * Only assertions for the manually selected, side-effect-free vendor files are
  * retained. These tests are project-owned and are not synchronization output.
+ *
+ * services/usage/github.ts was vendored verbatim from the same commit for the
+ * GitHub Copilot provider (astra-only strict-ts cast annotated inline); the
+ * describe block below pins its paid/free quota parsing, including the
+ * #2876 limited-user remaining-count semantics.
+ *
+ * [astra] deviation family "rawAmounts": glm.ts and github.ts annotate each
+ * quota with whether used/total are provider-reported raw counts versus the
+ * percentage-synthesis fallback scales (total = 100). The github describe
+ * block pins both sides of that annotation.
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CODEX_SPARK_DISPLAY_NAME,
   CODEX_SPARK_QUOTA_SESSION,
@@ -26,6 +36,7 @@ import {
   createQuotaFromUsage,
   parseResetTime,
 } from "../src/vendor/omniroute/open-sse/services/usage/quota.ts";
+import { getGitHubUsage } from "../src/vendor/omniroute/open-sse/services/usage/github.ts";
 import {
   decodePublicCred,
   encodePublicCred,
@@ -198,6 +209,105 @@ describe("vendored Codex quota normalization", () => {
   });
 });
 
+describe("vendored github usage leaf", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("infers plan names and drops unlimited quota snapshots", async () => {
+    vi.stubGlobal("fetch", (async () =>
+      Response.json({
+        copilot_plan: "copilot_pro_plus",
+        quota_reset_date: "2026-11-01T00:00:00Z",
+        quota_snapshots: {
+          chat: { entitlement: 0, remaining: 0, unlimited: true },
+          premium_interactions: { entitlement: 1500, remaining: 300, unlimited: false },
+        },
+      })) as typeof fetch);
+
+    const result = await getGitHubUsage("gho_token");
+    if ("message" in result) throw new Error(result.message ?? "unexpected");
+    expect(result.plan).toBe("Copilot Pro+");
+    expect(Object.keys(result.quotas)).toEqual(["premium_interactions"]);
+    expect(result.quotas.premium_interactions).toMatchObject({
+      used: 1200,
+      total: 1500,
+      remainingPercentage: 20,
+      // [astra] 偏差特征：entitlement 计数是真实原始量。
+      rawAmounts: true,
+    });
+  });
+
+  it("marks percent-only snapshots as synthesized, not raw amounts", async () => {
+    // [astra] 偏差特征：仅有 percent_remaining 的表会合成 total=100 刻度，
+    // rawAmounts 必须为 false，UI 不得把它当作 使用量/总量 展示。
+    vi.stubGlobal("fetch", (async () =>
+      Response.json({
+        access_type_sku: "free_limited",
+        quota_reset_date: "2026-11-01T00:00:00Z",
+        quota_snapshots: {
+          chat: { entitlement: 0, remaining: 0, unlimited: false, percent_remaining: 45 },
+        },
+      })) as typeof fetch);
+
+    const result = await getGitHubUsage("gho_token");
+    if ("message" in result) throw new Error(result.message ?? "unexpected");
+    expect(result.quotas.chat).toMatchObject({
+      total: 100,
+      used: 55,
+      remainingPercentage: 45,
+      rawAmounts: false,
+    });
+  });
+
+  it("counts limited_user_quotas downward as remaining, not used (#2876)", async () => {
+    vi.stubGlobal("fetch", (async () =>
+      Response.json({
+        access_type_sku: "free_limited",
+        monthly_quotas: { chat: 50 },
+        limited_user_quotas: { chat: 10 },
+        limited_user_reset_date: "2026-11-01T00:00:00Z",
+      })) as typeof fetch);
+
+    const result = await getGitHubUsage("gho_token");
+    if ("message" in result) throw new Error(result.message ?? "unexpected");
+    expect(result.plan).toBe("Copilot Free");
+    expect(result.quotas.chat).toMatchObject({
+      used: 40,
+      total: 50,
+      remaining: 10,
+      remainingPercentage: 20,
+      // [astra] 偏差特征：monthly/limited 计数是真实请求量。
+      rawAmounts: true,
+    });
+  });
+
+  it("drops meters the subscription does not include (entitlement 0, percent 0)", async () => {
+    // 真实免费账号形态：quota_snapshots 中 premium 只有 percent_remaining 0、
+    // 无正额度；百分比合成不得把它渲染成"100 中剩余 0"。
+    vi.stubGlobal("fetch", (async () =>
+      Response.json({
+        access_type_sku: "free_limited",
+        quota_reset_date: "2026-11-01T00:00:00Z",
+        quota_snapshots: {
+          premium_interactions: {
+            entitlement: 0,
+            remaining: 0,
+            unlimited: false,
+            percent_remaining: 0,
+          },
+          chat: { entitlement: 200, remaining: 200, unlimited: false },
+        },
+      })) as typeof fetch);
+
+    const result = await getGitHubUsage("gho_token");
+    if ("message" in result) throw new Error(result.message ?? "unexpected");
+    expect(Object.keys(result.quotas)).toEqual(["chat"]);
+    expect(result.quotas.chat).toMatchObject({ total: 200, remainingPercentage: 100 });
+    expect(result.plan).toBe("Copilot Free");
+  });
+});
+
 describe("vendored public credential helpers", () => {
   const envName = "OMNIROUTE_TEST_PUBLIC_CRED";
   const original = process.env[envName];
@@ -214,6 +324,7 @@ describe("vendored public credential helpers", () => {
       "grok_id",
       "antigravity_id",
       "antigravity_alt",
+      "github_copilot_id",
     ] satisfies EmbeddedDefaultKey[];
 
     for (const key of keys) expect(resolvePublicCred(key).length).toBeGreaterThan(0);

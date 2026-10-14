@@ -14,6 +14,7 @@ import type {
   StoragePort,
   UsageProviderAdapter,
 } from "../../ports.js";
+import { includedQuotas } from "../quota-inclusion.js";
 import { CredentialVault } from "../../credential-vault.js";
 import { generatePKCE } from "@omniroute/src/lib/oauth/utils/pkce.ts";
 import {
@@ -253,7 +254,7 @@ export class GrokBuildAdapter implements UsageProviderAdapter {
       overallRemainingPercentage: quotas.length
         ? Math.min(...quotas.map((quota) => quota.remainingPercentage ?? 100))
         : null,
-      groups: [{ key: "default", displayName: null, quotas }],
+      groups: [{ key: "default", displayName: null, quotas: includedQuotas(quotas) }],
       extras,
       // grok 的重置额度暂以计数展示在 extras；grpc 帧已能解出逐项 token 与
       // 过期时间但无类型字段且未接入消耗协议，升级分体时另行评估。

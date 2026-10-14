@@ -44,12 +44,22 @@ export interface Account {
   updatedAt: string;
 }
 
-export interface CredentialSecrets {
-  accessToken?: string;
-  refreshToken?: string;
-  idToken?: string;
-  apiKey?: string;
-}
+/**
+ * 凭据密钥的封闭词表——类型与运行时校验共用的唯一来源。新增密钥形态
+ * （如 copilotToken：GitHub OAuth 令牌之外短期会过期的 Copilot 会话令牌）
+ * 只改这一处；CredentialSecrets 与 credential-vault 的校验集都由它派生。
+ */
+export const credentialSecretKeys = [
+  "accessToken",
+  "refreshToken",
+  "idToken",
+  "apiKey",
+  "copilotToken",
+] as const;
+
+export type CredentialSecretKey = (typeof credentialSecretKeys)[number];
+
+export interface CredentialSecrets extends Partial<Record<CredentialSecretKey, string>> {}
 
 export interface CredentialEnvelope {
   version: 1;
@@ -77,6 +87,11 @@ export interface UsageQuota {
   remainingPercentage: number | null;
   resetAt: string | null;
   unlimited: boolean;
+  /**
+   * 上游真实上报了 used/total 原始量（credit/token/请求数等）时为 true；
+   * 由百分比合成的刻度（total=100/1000）不算。缺省视为 false，旧快照因此不展示原始量。
+   */
+  rawAmounts?: boolean;
 }
 
 export interface UsageQuotaGroup {

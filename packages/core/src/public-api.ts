@@ -71,6 +71,7 @@ export function toPublicUsage(snapshot: UsageSnapshot): PublicUsageDto {
               : null,
           resetAt: quota.resetAt ?? null,
           unlimited: quota.unlimited === true,
+          rawAmounts: quota.rawAmounts === true,
         };
       }),
     };

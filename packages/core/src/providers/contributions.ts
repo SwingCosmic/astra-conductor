@@ -6,6 +6,7 @@ import { createGrokBuildProvider } from "./grok-build/bundle.js";
 import { createAntigravityProvider } from "./antigravity/bundle.js";
 import { createClaudeProvider } from "./claude/bundle.js";
 import { createOpencodeGoProvider } from "./opencode-go/bundle.js";
+import { createGithubCopilotProvider } from "./github-copilot/bundle.js";
 
 /**
  * 与 providerCatalog 同一收集点的聚合：新增供应商时在 `providers/<id>/`
@@ -20,5 +21,6 @@ export function createProviderContributions(ports: ProviderPorts): ProviderContr
     createAntigravityProvider(ports),
     createClaudeProvider(ports),
     createOpencodeGoProvider(ports),
+    createGithubCopilotProvider(ports),
   ];
 }

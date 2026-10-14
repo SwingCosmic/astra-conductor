@@ -7,6 +7,7 @@ export const providerIds = [
   "antigravity",
   "claude",
   "opencode-go",
+  "github-copilot",
 ] as const;
 export type ProviderId = (typeof providerIds)[number];
 export const authMethods = ["browser-oauth", "device-code", "cli-import", "api-key"] as const;
@@ -76,6 +77,8 @@ export interface UsageQuota {
   remainingPercentage: number | null;
   resetAt: string | null;
   unlimited: boolean;
+  /** 上游真实上报 used/total 原始量时为 true；百分比合成的刻度不算。缺省 false。 */
+  rawAmounts?: boolean;
 }
 
 export interface UsageQuotaGroup {
@@ -702,6 +705,8 @@ function parseUsageQuota(value: unknown): UsageQuota {
     resetAt: nullableString(record.resetAt, "quota.resetAt"),
     unlimited:
       record.unlimited === undefined ? false : boolean(record.unlimited, "quota.unlimited"),
+    rawAmounts:
+      record.rawAmounts === undefined ? false : boolean(record.rawAmounts, "quota.rawAmounts"),
   };
 }
 

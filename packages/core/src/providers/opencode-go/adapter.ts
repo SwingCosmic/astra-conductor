@@ -8,6 +8,7 @@ import type {
   UsageSnapshot,
 } from "../../models.js";
 import type { ClockPort, StoragePort, UsageProviderAdapter } from "../../ports.js";
+import { includedQuotas } from "../quota-inclusion.js";
 import { CredentialVault } from "../../credential-vault.js";
 import {
   getOpencodeUsage,
@@ -103,7 +104,7 @@ export class OpencodeGoAdapter implements UsageProviderAdapter {
       overallRemainingPercentage: Math.min(
         ...quotas.map((item) => item.remainingPercentage ?? 100),
       ),
-      groups: [{ key: "default", displayName: null, quotas }],
+      groups: [{ key: "default", displayName: null, quotas: includedQuotas(quotas) }],
       extras: [],
       resetCredits: null,
       fetchedAt: this.clock.now().toISOString(),

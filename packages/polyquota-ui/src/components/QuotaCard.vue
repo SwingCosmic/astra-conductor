@@ -90,6 +90,12 @@ function remainingLabel(quota: UsageQuota): string {
   return `${quota.remainingPercentage.toFixed(0)}% 剩余`;
 }
 
+/** 原始量展示：仅当上游真实上报了 used/total（credit/token/请求数），百分比合成刻度不展示。 */
+function amountLabel(quota: UsageQuota): string | null {
+  if (quota.unlimited || !quota.rawAmounts || quota.total <= 0) return null;
+  return `${quota.used.toLocaleString("zh-CN")} / ${quota.total.toLocaleString("zh-CN")}`;
+}
+
 function groupRemainingPercentage(group: UsageQuotaGroup): number | null {
   const percentages = group.quotas.flatMap((quota) =>
     quota.remainingPercentage === null ? [] : [quota.remainingPercentage],
@@ -194,8 +200,11 @@ function useAggregateResetCredit(type: string | null): void {
                 {{ remainingLabel(quota) }}
               </strong>
             </div>
-            <p v-if="timeLabel(quota.resetAt)" class="reset-time">
-              重置时间：{{ timeLabel(quota.resetAt) }}
+            <p v-if="timeLabel(quota.resetAt) || amountLabel(quota)" class="reset-time">
+              <span v-if="timeLabel(quota.resetAt)">重置时间：{{ timeLabel(quota.resetAt) }}</span>
+              <span v-if="amountLabel(quota)" class="quota-amounts">
+                {{ amountLabel(quota) }}
+              </span>
             </p>
           </div>
         </div>

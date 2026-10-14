@@ -443,6 +443,87 @@ describe("stage 3 core boundaries", () => {
     ]);
   });
 
+  it("skips low-quota alerts for unlimited meters", async () => {
+    const storage = new MemoryStorage();
+    const vault = new CredentialVault(storage, new FakeCipher(), () => now);
+    const glmAccount: Account = {
+      ...account("glm-unlimited"),
+      provider: "glm",
+      offeringId: "bigmodel-coding-plan",
+      authMethod: "api-key",
+    };
+    storage.accounts.save(glmAccount);
+    await vault.save(glmAccount, {
+      ...envelope(glmAccount.id),
+      provider: "glm",
+      authMethod: "api-key",
+      secrets: { apiKey: "glm-key" },
+    });
+    const coordinator = new RefreshCoordinator(
+      storage,
+      vault,
+      new ProviderRegistry([
+        {
+          descriptor: catalogDescriptor("glm"),
+          account: {
+            providerId: "glm",
+            supportedMethods: ["cli-import", "api-key"],
+            startAuth: async () => {
+              throw new Error("not used in this test");
+            },
+          },
+          usage: {
+            providerId: "glm",
+            fetchUsage: async (current) => ({
+              accountId: current.id,
+              plan: "lite",
+              overallRemainingPercentage: null,
+              groups: [
+                {
+                  key: "default",
+                  displayName: null,
+                  quotas: [
+                    {
+                      key: "models",
+                      displayName: null,
+                      windowSeconds: null,
+                      used: 0,
+                      total: 0,
+                      remaining: 0,
+                      remainingPercentage: 0,
+                      resetAt: null,
+                      unlimited: true,
+                    },
+                    {
+                      key: "session",
+                      displayName: null,
+                      windowSeconds: 18_000,
+                      used: 10,
+                      total: 100,
+                      remaining: 90,
+                      remainingPercentage: 90,
+                      resetAt: null,
+                      unlimited: false,
+                    },
+                  ],
+                },
+              ],
+              extras: [],
+              resetCredits: null,
+              fetchedAt: now.toISOString(),
+            }),
+          },
+        },
+      ]),
+      { now: () => now },
+    );
+
+    const outcome = await coordinator.refresh(glmAccount.id);
+    expect(outcome.status).toBe("updated");
+    if (outcome.status !== "updated") return;
+    expect(outcome.notifications).toEqual([]);
+  });
+
   it("dispatches refresh through the registered provider facets", async () => {
     const storage = new MemoryStorage();
     const cipher = new FakeCipher();
@@ -562,5 +643,59 @@ describe("stage 3 core boundaries", () => {
       }),
     ).toThrow("rollback");
     expect(storage.accounts.get("rolled-back")).toBeNull();
+  });
+});
+
+describe("credential vault secret vocabulary", () => {
+  const copilotAccount: Account = {
+    id: "copilot-1",
+    provider: "github-copilot",
+    offeringId: "github-copilot",
+    authMethod: "device-code",
+    stableIdentity: "github:1",
+    displayName: "octocat",
+    maskedIdentifier: "oc***at",
+    enabled: true,
+    credentialState: "available",
+    publicMetadata: {},
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+  };
+
+  function vaultWith(): { vault: CredentialVault; storage: MemoryStorage } {
+    const storage = new MemoryStorage();
+    storage.accounts.save(copilotAccount);
+    return { vault: new CredentialVault(storage, new FakeCipher(), () => now), storage };
+  }
+
+  it("seals every documented secret field including the copilot session token", async () => {
+    const { vault } = vaultWith();
+    const envelope: CredentialEnvelope = {
+      version: 1,
+      accountId: copilotAccount.id,
+      provider: "github-copilot",
+      authMethod: "device-code",
+      expiresAt: now.toISOString(),
+      secrets: { accessToken: "gho_oauth", copilotToken: "tid_copilot" },
+    };
+    await expect(vault.save(copilotAccount, envelope)).resolves.toBeUndefined();
+    await expect(vault.load(copilotAccount.id)).resolves.toMatchObject({
+      secrets: { accessToken: "gho_oauth", copilotToken: "tid_copilot" },
+    });
+  });
+
+  it("names the offending field when an undocumented secret is rejected", async () => {
+    const { vault } = vaultWith();
+    const rogue = {
+      version: 1,
+      accountId: copilotAccount.id,
+      provider: "github-copilot",
+      authMethod: "device-code",
+      expiresAt: null,
+      secrets: { accessToken: "gho", sessionBlob: "x" },
+    } as unknown as CredentialEnvelope;
+    await expect(vault.save(copilotAccount, rogue)).rejects.toThrow(
+      "Credential envelope contains invalid fields: sessionBlob",
+    );
   });
 });

@@ -173,6 +173,24 @@ const providerCatalogFixture: PublicProviderDescriptor[] = [
       },
     ],
   },
+  {
+    provider: "github-copilot",
+    displayName: "GitHub Copilot",
+    offerings: [
+      {
+        id: "github-copilot",
+        provider: "github-copilot",
+        displayName: "GitHub Copilot",
+        description: "通过 GitHub 设备码授权查看 Copilot 的月度请求配额。",
+        iconKey: "copilot",
+        authMethods: [{ method: "device-code", interaction: "device-code" }],
+        plans: [
+          { id: "copilot-pro", displayName: "Copilot Pro", match: ["copilot pro"] },
+          { id: "copilot-pro-plus", displayName: "Copilot Pro+", match: ["copilot pro+"] },
+        ],
+      },
+    ],
+  },
 ];
 
 const account: PublicAccount = {
@@ -490,12 +508,13 @@ describe("desktop account UI", () => {
                   key: "session",
                   displayName: null,
                   windowSeconds: 18_000,
-                  used: 20,
-                  total: 100,
-                  remaining: 80,
-                  remainingPercentage: 80,
-                  resetAt: null,
+                  used: 7_000,
+                  total: 28_000,
+                  remaining: 21_000,
+                  remainingPercentage: 75,
+                  resetAt: "2026-09-25T15:00:00.000Z",
                   unlimited: false,
+                  rawAmounts: true,
                 },
                 {
                   key: "weekly",
@@ -522,6 +541,11 @@ describe("desktop account UI", () => {
     expect(wrapper.text()).toContain("Weekly");
     expect(wrapper.text()).toContain("extra credits $5.00");
     expect(wrapper.find(".switch-field").exists()).toBe(true);
+    // 真实原始量的配额在重置时间行右对齐展示 使用量/总量；百分比合成刻度不展示。
+    const resetRows = wrapper.findAll(".reset-time");
+    expect(resetRows).toHaveLength(1);
+    expect(resetRows[0]!.text()).toContain("重置时间：");
+    expect(resetRows[0]!.get(".quota-amounts").text()).toBe("7,000 / 28,000");
     await wrapper.get(".extra-button").trigger("click");
     expect(wrapper.text()).toContain("当前值");
     expect(wrapper.text()).toContain("$5.00");
@@ -565,10 +589,17 @@ describe("desktop account UI", () => {
       { ...account, provider: "opencode-go", offeringId: "opencode-go" },
       providerCatalogFixture,
     );
+    const copilot = accountPresentation(
+      { ...account, provider: "github-copilot", offeringId: "github-copilot" },
+      providerCatalogFixture,
+    );
     expect(claude.mark).toBe("C");
     expect(claude.icon).toMatch(/claude\.svg$/);
     expect(opencode.mark).toBe("O");
     expect(opencode.icon).toMatch(/opencode\.png$/);
+    expect(copilot.mark).toBe("G");
+    expect(copilot.icon).toMatch(/copilot\.svg$/);
+    expect(copilot.authMethods.map((method) => method.label)).toEqual(["设备码"]);
   });
 
   it("keeps only the method-specific explanation in the account modal", async () => {

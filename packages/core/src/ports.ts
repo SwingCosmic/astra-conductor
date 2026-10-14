@@ -112,6 +112,9 @@ export type LogContext = Partial<{
   durationMs: number;
   status: number;
   code: string;
+  offering: string;
+  method: string;
+  sessionId: string;
 }>;
 
 export interface LoggerPort {

@@ -498,9 +498,16 @@ button:disabled {
   color: #64748b;
 }
 .reset-time {
+  display: flex;
+  gap: 12px;
   margin: 5px 0 0;
   color: #8794aa;
   font-size: 11px;
+}
+.quota-amounts {
+  margin-left: auto;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 .extra-list {
   margin: 15px 18px 0;

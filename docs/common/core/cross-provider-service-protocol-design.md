@@ -1049,6 +1049,12 @@ Electron 测试只覆盖共享 schema、固定通道、订阅释放、CSP、prel
 
 选择一个同时具有账号/用量和至少一种推理 route 的服务商，用固定夹具完成其声明能力的协议与绑定测试，再进行最小真实烟测。只有它无需修改通用协调器、PolyQuota IPC 分派、GraphAgent provider 基础类型和已有页面组件时，才认为共享服务商平台成立。
 
+进展记录（2026-10-14，账号/用量侧提前演练）：以 GitHub Copilot 手工接入验证阶段 B–D 模式的表达能力——`providers/github-copilot/` 四件套（descriptor/adapter/auth-flow/bundle）+ contributions/catalog/UI 图标各登记一行，桌面组合根零修改；认证为 GitHub 设备码流（`read:user`），凭据形态是"长期 OAuth 令牌 + 短期 Copilot 会话令牌"，信封 `expiresAt` 跟踪会话令牌、`refreshCredentials` 只轮换会话令牌；用量走 vendor 叶子 `open-sse/services/usage/github.ts`（同源 commit 3ee283b，含 #2876 免费档"剩余计数"语义固化测试），付费/免费两种形态映射为月度窗口配额，档位（Pro/Pro+/Business/Enterprise/Student/Free）进 offering plans 目录。发现的模式限制仅一处：`CredentialSecrets` 是封闭的可选字段集合，新密钥形态（`copilotToken`）需要改共享 models 一行——与 providerIds 的封闭枚举同级、可接受（后续已把运行时校验词表与类型统一为单一来源 `credentialSecretKeys`）；其余（新 providerId、plan 目录、设备码交互、图标键、可选 redeem/refresh facet）均在既有模式内表达，无需触碰协调器、IPC 分派与页面组件。
+
+进展记录（2026-10-14，用量包含性统一）：真实免费 Copilot 账号暴露"订阅未包含的表被渲染为 0% 耗尽并触发告警"问题（上游只带 `percent_remaining: 0` 的高级请求表被 vendor 百分比合成放大）。对齐 OmniRoute 的展示闸门后统一为 `includedQuotas`（`providers/quota-inclusion.ts`）：无正额度、非 unlimited、却带百分比读数的表不进快照；unlimited 表保留（UI 显示"无限"、按 100% 计、`notificationCandidates` 跳过）；百分比未上报的零总额哨兵（如 antigravity 的 fractionReported=false，显示"未提供"）保留。全部七个 adapter 在组装 groups 前过闸；codex/claude 的窗口"缺席即不产出"、grok/opencode 的固定总额结构本就不会产生该形态，GLM 的 `mcp_monthly`（TIME_LIMIT 无额度）与 Copilot 免费档为真实修复点。
+
+进展记录（2026-10-14，原始量展示标记）：`UsageQuota` 新增可选 `rawAmounts`，区分"上游真实上报的 used/total 原始量（credit/token/请求数）"与"百分比合成刻度（total=100/1000）"；UI 在重置时间行右对齐展示 `使用量 / 总量`，仅对 `rawAmounts` 为真的配额生效。全量审计结论：真实原始量只存在于 GLM 的 CREDIT_LIMIT/TIME_LIMIT 计数、Copilot 付费档 entitlement 与免费档 monthly/limited 计数；claude/codex/grok/opencode 全部为百分比合成（total=100），antigravity 为分数合成（total=1000），grok 的美元余额走 extras 通道而非配额表。vendor 叶子 `glm.ts`/`github.ts` 以 `[astra]` 注释在合成分支处标注（偏差族记入 omniroute-vendor 基线测试头注）；其余 provider 不设该字段，缺省视为 false，旧快照因此不展示原始量，刷新后自然带出，无需适配逻辑。
+
 ## 16. 完成标准
 
 满足以下条件后，本设计可以进入完成状态：

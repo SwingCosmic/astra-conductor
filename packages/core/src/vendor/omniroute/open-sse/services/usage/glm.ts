@@ -77,6 +77,9 @@ export async function getGlmUsage(
         resetAt,
         unlimited: false,
         displayName: quotaDisplayName(key),
+        // [astra] deviation: mark whether used/total are real credit counts or
+        // the 100-scale fallback so consumers can skip displaying raw amounts.
+        rawAmounts: totalCredits > 0,
       };
     } else if (type === "TIME_LIMIT") {
       const total = toNumber(limit.usage, toNumber(limit.total, 0));
@@ -93,6 +96,8 @@ export async function getGlmUsage(
         resetAt,
         unlimited: false,
         displayName: "Monthly",
+        // [astra] deviation: see the TOKENS/CREDIT branch above.
+        rawAmounts: total > 0,
       };
     }
   }

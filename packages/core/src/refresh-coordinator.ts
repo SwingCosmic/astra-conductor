@@ -32,7 +32,8 @@ function notificationCandidates(snapshot: UsageSnapshot): NotificationCandidate[
   return snapshot.groups.flatMap((group) =>
     group.quotas.flatMap((quota) => {
       const remaining = quota.remainingPercentage;
-      if (remaining === null || remaining > 20) return [];
+      // unlimited 表按 100% 计（对齐 OmniRoute 展示口径），不参与低额告警。
+      if (quota.unlimited || remaining === null || remaining > 20) return [];
       return [
         {
           accountId: snapshot.accountId,

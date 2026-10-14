@@ -35,6 +35,7 @@ describe("provider catalog", () => {
       "antigravity",
       "claude",
       "opencode-go",
+      "github-copilot",
     ]);
     expect(getProviderDescriptor("glm").offerings.map((offering) => offering.id)).toEqual([
       "bigmodel-coding-plan",
@@ -225,6 +226,10 @@ describe("provider plan catalog", () => {
     expect(planMultiplier("grok-build", "SuperGrok Pro")).toBe(5);
     expect(planMultiplier("grok-build", "SuperGrok Heavy")).toBe(20);
     expect(planMultiplier("opencode-go", "OpenCode Go")).toBe(5);
+    expect(planMultiplier("github-copilot", "Copilot Pro+")).toBe(5);
+    expect(planMultiplier("github-copilot", "copilot_pro_plus")).toBe(5);
+    expect(planMultiplier("github-copilot", "Copilot Business")).toBe(1);
+    expect(planMultiplier("github-copilot", "Copilot Free")).toBe(0.1);
     expect(planMultiplier("bigmodel-coding-plan", "")).toBe(DEFAULT_PLAN_MULTIPLIER);
     // 未知接入点不查表、不回退到相似 provider 的目录。
     expect(planMultiplier("unknown-offering", "plus")).toBe(DEFAULT_PLAN_MULTIPLIER);

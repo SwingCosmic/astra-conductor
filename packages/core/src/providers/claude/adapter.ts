@@ -14,6 +14,7 @@ import type {
   StoragePort,
   UsageProviderAdapter,
 } from "../../ports.js";
+import { includedQuotas } from "../quota-inclusion.js";
 import { CredentialVault } from "../../credential-vault.js";
 import { parseAndValidateClaudeAuth } from "@omniroute/src/lib/oauth/utils/claudeAuthImport.ts";
 import { refreshClaudeOAuthToken } from "@omniroute/open-sse/services/tokenRefresh/providers/claude.ts";
@@ -169,9 +170,11 @@ export class ClaudeAdapter implements UsageProviderAdapter {
     if (!accessToken) throw new AppError("authentication", "Claude access token 不可用");
     const result = await this.requestUsage(accessToken);
     if ("message" in result) throw this.usageError(result.message, result.status);
-    const quotas = Object.entries(result.quotas).map(([key, value]) => normalizeQuota(key, value));
-    const modelQuotas = Object.entries(result.modelQuotas).map(([key, value]) =>
-      normalizeQuota(key, value),
+    const quotas = includedQuotas(
+      Object.entries(result.quotas).map(([key, value]) => normalizeQuota(key, value)),
+    );
+    const modelQuotas = includedQuotas(
+      Object.entries(result.modelQuotas).map(([key, value]) => normalizeQuota(key, value)),
     );
     return {
       accountId: account.id,
