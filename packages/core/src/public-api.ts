@@ -48,6 +48,10 @@ export function toPublicUsage(snapshot: UsageSnapshot, offeringId: string): Publ
   const resetCredits = legacyResetCredits(snapshot);
   const plan = typeof value.plan === "string" ? value.plan : "";
   const matched = matchOfferingPlan(offeringId, plan);
+  const rawPlanLabel =
+    typeof value.rawPlanLabel === "string" && value.rawPlanLabel.trim()
+      ? value.rawPlanLabel.trim()
+      : null;
   if (!Array.isArray(value.groups)) {
     value.groups = [{ key: "default", displayName: null, quotas: value.quotas ?? [] }];
   }
@@ -107,7 +111,7 @@ export function toPublicUsage(snapshot: UsageSnapshot, offeringId: string): Publ
     accountId: value.accountId,
     plan,
     planId: matched?.id ?? null,
-    planLabel: matched?.displayName ?? (plan.trim() || null),
+    planLabel: matched?.displayName ?? rawPlanLabel ?? (plan.trim() || null),
     overallRemainingPercentage: value.overallRemainingPercentage,
     groups: value.groups,
     extras: value.extras,

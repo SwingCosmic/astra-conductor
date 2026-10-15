@@ -81,6 +81,61 @@ describe("Antigravity protocol", () => {
     });
   });
 
+  it("passes tier names through verbatim instead of folding them into coarse labels", async () => {
+    // [astra] 偏差特征：叶子停止关键词折叠（ULTRA→Ultra 等）后，长 tier 名
+    // （`Antigravity Starter Quota`）与 Ultra 5x / 20x 的区分由原始 tier 名
+    // 承载，目录侧用精确键 + 正则接住（见 providers-catalog 测试）。
+    const cases: Array<[string, string]> = [
+      ["Antigravity Starter Quota", "Antigravity Starter Quota"],
+      ["Ultra 5x", "Ultra 5x"],
+      ["Ultra 20x", "Ultra 20x"],
+      ["Pro (Restricted)", "Pro"],
+    ];
+    for (const [tier, expected] of cases) {
+      const adapter = new AntigravityAdapter(
+        async (input) => {
+          const url = String(input);
+          if (url.includes("loadCodeAssist")) return json({ currentTier: { name: tier } });
+          if (url.includes("retrieveUserQuotaSummary")) {
+            return json({
+              groups: [
+                {
+                  displayName: "Gemini Models",
+                  buckets: [{ displayName: "Weekly Quota", remainingFraction: 0.5 }],
+                },
+              ],
+            });
+          }
+          return new Response(null, { status: 404 });
+        },
+        { now: () => now },
+      );
+      const account: Account = {
+        id: "agy-tier",
+        provider: "antigravity",
+        offeringId: "antigravity",
+        authMethod: "browser-oauth",
+        stableIdentity: "project-1:user",
+        displayName: "user@example.test",
+        maskedIdentifier: "us***@example.test",
+        enabled: true,
+        credentialState: "available",
+        publicMetadata: { projectId: "project-1" },
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString(),
+      };
+      const snapshot = await adapter.fetchUsage(account, {
+        version: 1,
+        accountId: account.id,
+        provider: "antigravity",
+        authMethod: "browser-oauth",
+        expiresAt: null,
+        secrets: { accessToken: "access", refreshToken: "refresh" },
+      });
+      expect(snapshot.plan, tier).toBe(expected);
+    }
+  });
+
   it("uses a 15-minute refresh lead and normalizes live groups", async () => {
     const adapter = new AntigravityAdapter(
       async (input, init) => {

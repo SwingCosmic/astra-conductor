@@ -110,21 +110,17 @@ export function parseAntigravityQuotaGroups(value: unknown): AntigravityQuotaGro
   });
 }
 
+// [astra] deviation from upstream: stop folding tier names into coarse labels
+// (ULTRA → "Ultra", PRO/PREMIUM → "Pro", …). The fold collapsed Ultra 5x /
+// Ultra 20x into one value and overwrote every keyword-matching tier with a
+// synthesized label, so the raw upstream identifier never reached the snapshot.
+// The tier name now passes through verbatim as the data-layer identifier; tier
+// distinction and display resolution live in the core plan catalog. Only the
+// locally synthesized "(Restricted)" marker (added by
+// extractCodeAssistSubscriptionTier for ineligible default tiers) is stripped.
 function planLabel(subscription: unknown, fallbackTier: string | null): string {
   const source = extractCodeAssistSubscriptionTier(subscription) ?? fallbackTier ?? "Free";
-  const upper = source.toUpperCase();
-  if (upper.includes("ULTRA")) return "Ultra";
-  if (upper.includes("PRO") || upper.includes("PREMIUM") || upper.includes("GOOGLE ONE")) {
-    return "Pro";
-  }
-  if (upper.includes("ENTERPRISE")) return "Enterprise";
-  if (upper.includes("STANDARD") || upper.includes("BUSINESS")) return "Business";
-  if (upper.includes("PLUS")) return "Plus";
-  if (upper.includes("LITE")) return "Lite";
-  if (upper.includes("INDIVIDUAL") || upper.includes("FREE") || upper.includes("LEGACY")) {
-    return "Free";
-  }
-  return source.replace(/\s*\(Restricted\)\s*$/i, "").trim();
+  return source.replace(/\s*\(Restricted\)\s*$/i, "").trim() || "Free";
 }
 
 async function subscriptionInfo(accessToken: string, fetchImpl: typeof fetch): Promise<unknown> {

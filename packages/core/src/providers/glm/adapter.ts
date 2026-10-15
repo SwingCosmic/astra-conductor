@@ -139,7 +139,10 @@ export class GlmAdapter implements UsageProviderAdapter {
       : null;
     return {
       accountId: account.id,
+      // plan 是目录匹配用的归一化标识；上游原始 planName（TitleCase 改写前）
+      // 附带为 rawPlanLabel，仅在目录未命中时作展示回退。
       plan: result.plan,
+      rawPlanLabel: result.planLabel ?? null,
       overallRemainingPercentage: percentages.length ? Math.min(...percentages) : null,
       groups: [{ key: "default", displayName: null, quotas: includedQuotas(quotas) }],
       extras: [],

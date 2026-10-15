@@ -170,13 +170,19 @@ export function isUnrecognizedPlan(usage: PublicUsage | null): boolean {
 }
 
 function windowLabel(seconds: number | null): string | null {
-  if (seconds === 18_000) return "5-hour";
+  if (seconds === 18_000) return "5 Hours";
   if (seconds === 604_800) return "Weekly";
   if (seconds !== null && seconds >= 20 * 86_400) return "Monthly";
   if (seconds !== null && seconds > 0 && seconds % 3_600 === 0) {
-    return `${seconds / 3_600}-hour`;
+    return `${seconds / 3_600} Hours`;
   }
   return null;
+}
+
+/** 比较前折叠分隔符与大小写："5 Hours Quota" 与 "5-hour" 视为同一信息。 */
+function labelCarriesDuration(name: string, duration: string): boolean {
+  const fold = (value: string) => value.toLowerCase().replace(/[\s_-]+/g, "");
+  return fold(name).includes(fold(duration));
 }
 
 /** 回退顺序：上游原生 displayName → 窗口时长等纯展示计算 → key 原样。 */
@@ -186,7 +192,7 @@ export function quotaLabel(quota: UsageQuota): string {
   if (nativeName && duration && /^(session|weekly|monthly)$/i.test(nativeName)) {
     return duration;
   }
-  if (nativeName && duration && !nativeName.toLowerCase().includes(duration.toLowerCase())) {
+  if (nativeName && duration && !labelCarriesDuration(nativeName, duration)) {
     return `${nativeName} · ${duration}`;
   }
   return nativeName || duration || quota.key.replaceAll("_", " ");

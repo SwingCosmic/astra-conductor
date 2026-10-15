@@ -8,7 +8,11 @@ export const GROK_BUILD_OAUTH_ISSUER = "https://auth.x.ai";
 export const GROK_BUILD_DEVICE_CODE_URL = `${GROK_BUILD_OAUTH_ISSUER}/oauth2/device/code`;
 export const GROK_BUILD_TOKEN_URL = `${GROK_BUILD_OAUTH_ISSUER}/oauth2/token`;
 
-export const GROK_BUILD_DEFAULT_CLIENT_VERSION = "0.2.106";
+// [astra] deviation from upstream pin 3ee283b (0.2.106): synced to the value
+// on upstream origin/main (open-sse/config/grokBuild.ts, 1.0.41). The client
+// version rides request headers and may factor into server-side acceptance;
+// after Grok's 2026-06 plan revamp the pinned value risks rejection.
+export const GROK_BUILD_DEFAULT_CLIENT_VERSION = "1.0.41";
 export const GROK_BUILD_DEFAULT_CONTEXT_WINDOW = 256_000;
 export const GROK_BUILD_DEFAULT_REASONING_EFFORT = "high";
 export const GROK_BUILD_SUPPORTED_REASONING_EFFORTS = Object.freeze(["low", "medium", "high"]);

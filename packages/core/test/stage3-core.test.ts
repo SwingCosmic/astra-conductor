@@ -601,6 +601,36 @@ describe("stage 3 core boundaries", () => {
     });
   });
 
+  it("resolves plan labels through the catalog → raw label → raw identifier chain", () => {
+    const base = {
+      accountId: "chain",
+      overallRemainingPercentage: null,
+      groups: [],
+      extras: [],
+      resetCredits: null,
+      fetchedAt: now.toISOString(),
+    };
+    // 目录命中：displayName 优先，rawPlanLabel 不参与。
+    expect(
+      toPublicUsage({ ...base, plan: "prolite", rawPlanLabel: "Pro Lite (legacy)" }, "codex"),
+    ).toMatchObject({ planId: "pro-5x", planLabel: "Pro 5x" });
+    // 未命中但叶子上游提供了原始展示名：回退到 rawPlanLabel，planId 显式 null。
+    expect(
+      toPublicUsage(
+        { ...base, plan: "mystery_tier", rawPlanLabel: "Mystery Tier (Beta)" },
+        "codex",
+      ),
+    ).toMatchObject({ planId: null, planLabel: "Mystery Tier (Beta)" });
+    // 未命中且无原始展示名：回退到原始标识串；空白 rawPlanLabel 视为缺失。
+    expect(toPublicUsage({ ...base, plan: "mystery_tier", rawPlanLabel: "  " }, "codex")).toEqual(
+      expect.objectContaining({ planId: null, planLabel: "mystery_tier" }),
+    );
+    // 既未命中也无标识：planLabel 为 null（UI 走"未识别档位"可见提示）。
+    expect(toPublicUsage({ ...base, plan: "" }, "codex")).toEqual(
+      expect.objectContaining({ planId: null, planLabel: null }),
+    );
+  });
+
   it("projects pre-upgrade itemized reset-credit extras without adaptation", () => {
     const legacy = {
       accountId: "legacy",

@@ -2,7 +2,7 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 状态 | 第一批（结构侧）已于 2026-10-15 实施并通过 typecheck/build（未运行测试）；第二批（数据侧）未实施 |
+| 状态 | 第一批（结构侧）已于 2026-10-15 实施并通过 typecheck/build（当时未运行测试，后续批次已补跑全量）；第二批（数据侧·订阅目录与 vendor 叶子）已于 2026-10-15 实施并通过全量测试 / typecheck / build / format；真实账号抽查与样本回填留待统一验收 |
 | 更新日期 | 2026-10-15 |
 | 排查范围 | `packages/core` 计划目录与倍率消费点、`packages/core/src/vendor/omniroute` 上游与叶子归一化、core → 契约包 → UI 的套餐展示名称链路、`packages/polyquota-contract` 能力边界与工程健康度 |
 
@@ -26,7 +26,7 @@
 **先改结构，再改订阅信息，最后统一验收。**
 
 1. **第一批：结构侧**（[core 与 contract 包的代码组织结构问题](./core-contract-structure.md)§5）：解析点上移、契约瘦身、校验归属迁移、词表去硬编码、单文件拆分先行落地。快照 / 契约字段演进（`planId` / `planLabel`、`schemaVersion`）归本批次所有；数据侧 §8.1.4 的同名条目以本批次实施为准。**（已完成 2026-10-15；快照演进落点为公开 DTO `PublicUsage.planId` / `planLabel`，主进程投影 `toPublicUsage` 时解析，存储层快照不固化解析结果——目录刷新后旧快照立即受益。）**
-2. **第二批：数据侧**（[供应商订阅/额度变动与展示名称漂移](./provider-subscription-drift.md)§8 + [目标订阅套餐目录](./plan-catalog-target.md)）：结构侧 §5.1 完成后，落地 match 字符串/正则扩展、legacy 字段、目录数据刷新与 vendor 叶子修复。正则键必须晚于第一批（RegExp 过不了 IPC，此前为硬前置）。
+2. **第二批：数据侧**（[供应商订阅/额度变动与展示名称漂移](./provider-subscription-drift.md)§8 + [目标订阅套餐目录](./plan-catalog-target.md)）：结构侧 §5.1 完成后，落地 match 字符串/正则扩展、legacy 字段、目录数据刷新与 vendor 叶子修复。正则键必须晚于第一批（RegExp 过不了 IPC，此前为硬前置）。**（已完成 2026-10-15：match 扩展为字符串/正则并先精确后正则求值；`legacy` / `legacyUntil` / `sourceUrl` / `verifiedAt` 字段与校验落地，published 条目已回填出处；四家目录数据按目标表刷新；vendor 四处叶子修复随 `.diff` 与基线文档同步（`github.ts` 的 `.diff` 补建）；`UsageSnapshot.rawPlanLabel` 补全"目录 displayName → 上游原始展示名 → 原始标识串"回退链。与目标表的两处偏离：`copilot-free` 增补实测 `free limited` 键、inferred 条目的 `sourceUrl` / `verifiedAt` 留待样本回填。）**
 3. **统一验收**：两批完成后一次性按三处口径验收——结构侧 §5.7（契约包 350–450 行、新增供应商桩零契约改动、前端唯一运行期检查是 `schemaVersion`、core 匹配实现唯一）；数据侧 §8.4（core / UI 测试断言、真实账号抽查）；目标目录表逐行核对，并按其 §9 登记待校准项的样本回填情况。
 
 ## 文档

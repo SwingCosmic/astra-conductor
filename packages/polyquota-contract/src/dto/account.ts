@@ -3,7 +3,6 @@ export type PublicMetadata = Record<string, JsonPrimitive>;
 
 export type CredentialState = "available" | "locked" | "missing";
 
-
 export interface PublicAccount {
   id: string;
   provider: string;

@@ -57,9 +57,11 @@ export interface Account {
 }
 
 /**
- * 凭据密钥的封闭词表——类型与运行时校验共用的唯一来源。新增密钥形态
- * （如 copilotToken：GitHub OAuth 令牌之外短期会过期的 Copilot 会话令牌）
- * 只改这一处；CredentialSecrets 与 credential-vault 的校验集都由它派生。
+ * 凭据密钥的封闭词表——类型与运行时校验共用的唯一来源。新增密钥形态只改
+ * 这一处；CredentialSecrets 与 credential-vault 的校验集都由它派生。
+ * `copilotToken` 是历史形态：v2/token 会话令牌层退役后不再写入，保留在词表
+ * 内是让存量加密信封继续可读（迁移在 copilot 适配器的 refreshCredentials 里
+ * 随首次刷新完成）。
  */
 export const credentialSecretKeys = [
   "accessToken",
@@ -96,7 +98,14 @@ export interface EncryptedCredential {
  */
 export interface UsageSnapshot {
   accountId: string;
+  /** 上游原始标识（数据层标识符）：目录匹配的输入，也是展示的最后回退。 */
   plan: string;
+  /**
+   * 上游原始展示名（若原始接口包含）：目录未命中、拿不到定义 displayName
+   * 时的展示回退（回退顺序 目录 displayName → 本字段 → `plan` 原始串）。
+   * 叶子层归一化改写（glm TitleCase）或合成标签（copilot 推断名）之前形态。
+   */
+  rawPlanLabel?: string | null;
   overallRemainingPercentage: number | null;
   groups: UsageQuotaGroup[];
   extras: UsageExtra[];

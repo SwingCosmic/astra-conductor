@@ -367,7 +367,7 @@ describe("desktop account UI", () => {
         resetAt: null,
         unlimited: false,
       }),
-    ).toBe("5-hour");
+    ).toBe("5 Hours");
     expect(
       quotaLabel({
         key: "session",
@@ -393,7 +393,49 @@ describe("desktop account UI", () => {
         resetAt: null,
         unlimited: false,
       }),
-    ).toBe("5-hour");
+    ).toBe("5 Hours");
+    // 原生名已携带窗口信息时不再追加时长后缀（分隔符/复数差异不算新信息）：
+    // GLM 的 "5 Hours Quota" 不再展示成 "5 Hours Quota · 5-hour"。
+    expect(
+      quotaLabel({
+        key: "session",
+        displayName: "5 Hours Quota",
+        windowSeconds: 18_000,
+        used: 10,
+        total: 100,
+        remaining: 90,
+        remainingPercentage: 90,
+        resetAt: null,
+        unlimited: false,
+      }),
+    ).toBe("5 Hours Quota");
+    expect(
+      quotaLabel({
+        key: "weekly",
+        displayName: "Weekly Quota",
+        windowSeconds: 604_800,
+        used: 10,
+        total: 100,
+        remaining: 90,
+        remainingPercentage: 90,
+        resetAt: null,
+        unlimited: false,
+      }),
+    ).toBe("Weekly Quota");
+    // 原生名不含窗口信息时后缀仍有增益。
+    expect(
+      quotaLabel({
+        key: "premium",
+        displayName: "Premium",
+        windowSeconds: 18_000,
+        used: 10,
+        total: 100,
+        remaining: 90,
+        remainingPercentage: 90,
+        resetAt: null,
+        unlimited: false,
+      }),
+    ).toBe("Premium · 5 Hours");
     expect(
       quotaLabel({
         key: "code_review",
@@ -555,7 +597,7 @@ describe("desktop account UI", () => {
       },
     });
     expect(wrapper.get(".plan-tag").text()).toBe("Plus");
-    expect(wrapper.text()).toContain("5-hour");
+    expect(wrapper.text()).toContain("5 Hours");
     expect(wrapper.text()).toContain("Weekly");
     expect(wrapper.text()).toContain("extra credits $5.00");
     expect(wrapper.find(".switch-field").exists()).toBe(true);

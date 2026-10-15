@@ -27,7 +27,7 @@ const COPILOT_CONFIG = {
   clientId: resolvePublicCred("github_copilot_id", "GITHUB_OAUTH_CLIENT_ID"),
   deviceCodeUrl: "https://github.com/login/device/code",
   tokenUrl: "https://github.com/login/oauth/access_token",
-  sessionTokenUrl: "https://api.github.com/copilot_internal/v2/token",
+  copilotUserUrl: "https://api.github.com/copilot_internal/user",
   scopes: "read:user",
 } as const;
 
@@ -83,13 +83,6 @@ const quotaDisplayNames: Record<string, string> = {
   chat: "对话补全",
   completions: "代码补全",
 };
-
-interface CopilotSessionToken {
-  token: string;
-  expiresAt: string;
-  /** v2/token 响应 annotations 里的用户 id（防御性读取，可缺省）。 */
-  userId: string | null;
-}
 
 interface GitHubUserInfo {
   id: number;
@@ -179,31 +172,20 @@ export class CopilotAdapter implements UsageProviderAdapter {
   }
 
   /**
-   * GitHub 设备流的 OAuth 令牌长期有效且无刷新令牌；真正会过期的是
-   * copilot 会话令牌（约 30 分钟）。信封 expiry 跟踪会话令牌，凭据刷新
-   * 只重取会话令牌，不触碰 OAuth 令牌。
+   * GitHub 设备流的 OAuth 令牌长期有效且无刷新令牌。`copilot_internal/v2/token`
+   * 会话令牌交换已被 GitHub 收紧拒斥（openclaw 已同步弃用，"The retired
+   * `/v2/token` exchange"），现行 CLI/SDK 口径是用原始 OAuth 令牌直接访问
+   * `/user`。接入时以一次 `/user` 探测确认令牌可访问 Copilot，不再铸造会话
+   * 令牌；凭据形态因此无过期跟踪（信封 `expiresAt` 为 null）。
    */
-  private async fetchSessionToken(accessToken: string): Promise<CopilotSessionToken> {
-    const response = await this.fetchImpl(COPILOT_CONFIG.sessionTokenUrl, {
+  private async validateCopilotAccess(accessToken: string): Promise<void> {
+    const response = await this.fetchImpl(COPILOT_CONFIG.copilotUserUrl, {
       headers: getGitHubCopilotInternalUserHeaders(`Bearer ${accessToken}`),
     });
     if (response.status === 401 || response.status === 403) {
       throw new AppError("authentication", "GitHub 授权已失效，请重新接入");
     }
-    if (!response.ok) throw new AppError("upstream", "Copilot 会话令牌获取失败", true);
-    const data = (await response.json()) as {
-      token?: string;
-      expires_at?: number;
-      annotations?: Record<string, unknown>;
-    };
-    if (!data.token || typeof data.expires_at !== "number") {
-      throw new AppError("upstream", "Copilot 会话令牌响应不完整", true);
-    }
-    return {
-      token: data.token,
-      expiresAt: new Date(data.expires_at * 1000).toISOString(),
-      userId: stringMetadata(data.annotations?.["copilotinc/github/user_id"]),
-    };
+    if (!response.ok) throw new AppError("upstream", "Copilot 访问校验失败", true);
   }
 
   /**
@@ -224,11 +206,7 @@ export class CopilotAdapter implements UsageProviderAdapter {
     return user && typeof user.login === "string" ? user : null;
   }
 
-  private provision(
-    accessToken: string,
-    session: CopilotSessionToken,
-    user: GitHubUserInfo | null,
-  ): CopilotProvisioningResult {
+  private provision(accessToken: string, user: GitHubUserInfo | null): CopilotProvisioningResult {
     const metadata: PublicMetadata = {};
     if (user) {
       metadata.githubLogin = user.login;
@@ -241,12 +219,10 @@ export class CopilotAdapter implements UsageProviderAdapter {
     const identity =
       user && typeof user.id === "number"
         ? `github:${user.id}`
-        : session.userId
-          ? `github:${session.userId}`
-          : `github-token:${createHash("sha256").update(accessToken).digest("hex").slice(0, 24)}`;
+        : `github-token:${createHash("sha256").update(accessToken).digest("hex").slice(0, 24)}`;
     const name = stringMetadata(user?.name);
     const email = stringMetadata(user?.email);
-    const fallbackLabel = session.userId ? `GitHub #${session.userId}` : "GitHub Copilot 账号";
+    const fallbackLabel = "GitHub Copilot 账号";
     return {
       authMethod: "device-code",
       offeringId: "github-copilot",
@@ -258,43 +234,40 @@ export class CopilotAdapter implements UsageProviderAdapter {
         version: 1,
         provider: "github-copilot",
         authMethod: "device-code",
-        expiresAt: session.expiresAt,
+        expiresAt: null,
         secrets: {
           accessToken,
-          copilotToken: session.token,
         },
       },
     };
   }
 
   private async authorize(accessToken: string): Promise<CopilotProvisioningResult> {
-    const session = await this.fetchSessionToken(accessToken);
-    return this.provision(accessToken, session, await this.fetchUserInfo(accessToken));
+    await this.validateCopilotAccess(accessToken);
+    return this.provision(accessToken, await this.fetchUserInfo(accessToken));
   }
 
+  /**
+   * GitHub 设备流的 OAuth 令牌长期有效且无刷新令牌；v2/token 会话令牌层退役
+   * 后没有可轮换的凭据。此方法只负责把历史信封（`expiresAt` 跟踪会话令牌
+   * 过期 + `copilotToken` 密钥）迁移为无过期形态，之后是幂等 no-op，不发
+   * 网络请求。令牌真的失效时由用量刷新的 401/403 报"请重新接入"。
+   */
   async refreshCredentials(
     account: Account,
     envelope: CredentialEnvelope,
-    force = false,
+    _force = false,
   ): Promise<CredentialRefreshResult> {
     if (account.provider !== "github-copilot") {
       throw new AppError("validation", "只有 GitHub Copilot 账号走该刷新协议");
     }
-    const expiry = envelope.expiresAt ? Date.parse(envelope.expiresAt) : Number.NaN;
-    if (!force && Number.isFinite(expiry) && expiry - this.clock.now().getTime() > 300_000) {
+    if (envelope.expiresAt === null && envelope.secrets.copilotToken === undefined) {
       return { envelope, changed: false };
     }
-    const accessToken = envelope.secrets.accessToken;
-    if (!accessToken) throw new AppError("authentication", "GitHub 访问令牌不可用");
-    const session = await this.fetchSessionToken(accessToken);
+    const { copilotToken: _legacySessionToken, ...secrets } = envelope.secrets;
     return {
-      changed:
-        session.token !== envelope.secrets.copilotToken || session.expiresAt !== envelope.expiresAt,
-      envelope: {
-        ...envelope,
-        expiresAt: session.expiresAt,
-        secrets: { ...envelope.secrets, copilotToken: session.token },
-      },
+      changed: true,
+      envelope: { ...envelope, expiresAt: null, secrets },
     };
   }
 
@@ -325,7 +298,10 @@ export class CopilotAdapter implements UsageProviderAdapter {
     }));
     return {
       accountId: account.id,
+      // plan 是叶子上游原始标识（copilot_plan / access_type_sku 透传），目录
+      // 匹配按它进行；推断合成的展示名只作未命中回退（rawPlanLabel）。
       plan: result.plan,
+      rawPlanLabel: result.planLabel?.trim() || null,
       overallRemainingPercentage: quotas.length
         ? Math.min(...quotas.map((quota) => quota.remainingPercentage ?? 100))
         : null,

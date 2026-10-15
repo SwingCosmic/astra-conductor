@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Account, CredentialEnvelope } from "../src/internal.js";
+import { toPublicUsage } from "../src/public-api.js";
+import { planMultiplier } from "../src/providers/catalog.js";
 import { CopilotAdapter } from "../src/providers/github-copilot/adapter.js";
 import { createCopilotAuthFlow } from "../src/providers/github-copilot/auth-flow.js";
 import { githubCopilotDescriptor } from "../src/providers/github-copilot/descriptor.js";
@@ -50,7 +52,7 @@ afterEach(() => {
 });
 
 describe("github copilot device flow", () => {
-  it("provisions from the device code flow with session token and user info", async () => {
+  it("provisions from the device code flow by validating copilot access on /user", async () => {
     const calls: RecordedCall[] = [];
     let polls = 0;
     const fetchImpl = (async (input: unknown, init?: RequestInit) => {
@@ -73,8 +75,9 @@ describe("github copilot device flow", () => {
           ? jsonResponse({ error: "authorization_pending" })
           : jsonResponse({ access_token: "gho_oauth", token_type: "bearer", scope: "read:user" });
       }
-      if (url.endsWith("/copilot_internal/v2/token")) {
-        return jsonResponse({ token: "tid_copilot", expires_at: sessionExpiryMs / 1000 });
+      if (url.includes("copilot_internal/user")) {
+        // v2/token 会话令牌交换已被 GitHub 拒斥；接入校验改走 /user。
+        return jsonResponse({ copilot_plan: "free" });
       }
       if (url.endsWith("/user")) {
         return jsonResponse({
@@ -105,28 +108,59 @@ describe("github copilot device flow", () => {
         githubName: "The Octocat",
         githubEmail: "octocat@example.test",
       },
+      // OAuth 令牌长期有效：无过期跟踪、无会话令牌密钥。
       credentials: {
         provider: "github-copilot",
-        expiresAt: new Date(sessionExpiryMs).toISOString(),
-        secrets: { accessToken: "gho_oauth", copilotToken: "tid_copilot" },
+        expiresAt: null,
+        secrets: { accessToken: "gho_oauth" },
       },
     });
 
     const tokenPoll = calls.find((call) => call.url.endsWith("/login/oauth/access_token"))!;
     const body = new URLSearchParams(String(tokenPoll.init?.body));
     expect(body.get("grant_type")).toBe("urn:ietf:params:oauth:grant-type:device_code");
-    const sessionHeaders = calls.find((call) => call.url.endsWith("/copilot_internal/v2/token"))!
-      .init?.headers as Record<string, string>;
-    expect(sessionHeaders.Authorization).toBe("Bearer gho_oauth");
-    expect(sessionHeaders["Editor-Version"]).toMatch(/^copilot\//);
+    const validationHeaders = calls.find((call) => call.url.includes("copilot_internal/user"))!.init
+      ?.headers as Record<string, string>;
+    expect(validationHeaders.Authorization).toBe("Bearer gho_oauth");
+    expect(validationHeaders["Editor-Version"]).toMatch(/^copilot\//);
     // /user 是公共 REST 端点，不带 copilot 编辑器指纹头（真实账号曾因这套头被拒）。
-    const userHeaders = calls.find((call) => call.url.endsWith("/user"))!.init?.headers as Record<
-      string,
-      string
-    >;
+    const userHeaders = calls.find((call) => call.url.endsWith("api.github.com/user"))!.init
+      ?.headers as Record<string, string>;
     expect(userHeaders.Authorization).toBe("Bearer gho_oauth");
     expect(userHeaders["X-GitHub-Api-Version"]).toBeUndefined();
     expect(userHeaders["Editor-Version"]).toBeUndefined();
+  });
+
+  it("rejects provisioning when the copilot user endpoint refuses the token", async () => {
+    const fetchImpl = (async (input: unknown) => {
+      const url = String(input);
+      if (url.endsWith("/login/device/code")) {
+        return jsonResponse({
+          device_code: "device-1",
+          user_code: "ABCD-1234",
+          verification_uri: "https://github.com/login/device",
+          expires_in: 900,
+          interval: 0,
+        });
+      }
+      if (url.endsWith("/login/oauth/access_token")) {
+        return jsonResponse({ access_token: "gho_oauth" });
+      }
+      if (url.includes("copilot_internal/user")) return new Response(null, { status: 403 });
+      return new Response(null, { status: 404 });
+    }) as typeof fetch;
+    const adapter = new CopilotAdapter(fetchImpl, clock);
+
+    await expect(
+      adapter.finishDeviceAuthorization({
+        deviceCode: "device-1",
+        userCode: "ABCD-1234",
+        verificationUri: "https://github.com/login/device",
+        verificationUriComplete: "https://github.com/login/device",
+        intervalSec: 0,
+        expiresAtMs: now.getTime() + 60_000,
+      }),
+    ).rejects.toThrow("GitHub 授权已失效，请重新接入");
   });
 
   it("still provisions when the public /user endpoint rejects the token", async () => {
@@ -144,12 +178,8 @@ describe("github copilot device flow", () => {
       if (url.endsWith("/login/oauth/access_token")) {
         return jsonResponse({ access_token: "gho_oauth" });
       }
-      if (url.endsWith("/copilot_internal/v2/token")) {
-        return jsonResponse({
-          token: "tid_copilot",
-          expires_at: sessionExpiryMs / 1000,
-          annotations: { "copilotinc/github/user_id": "12345" },
-        });
+      if (url.includes("copilot_internal/user")) {
+        return jsonResponse({ copilot_plan: "free" });
       }
       if (url.endsWith("/user")) return new Response(null, { status: 403 });
       return new Response(null, { status: 404 });
@@ -164,8 +194,9 @@ describe("github copilot device flow", () => {
       intervalSec: 0,
       expiresAtMs: now.getTime() + 60_000,
     });
-    expect(provisioning.stableIdentity).toBe("github:12345");
-    expect(provisioning.displayName).toBe("GitHub #12345");
+    const fingerprint = createHash("sha256").update("gho_oauth").digest("hex").slice(0, 24);
+    expect(provisioning.stableIdentity).toBe(`github-token:${fingerprint}`);
+    expect(provisioning.displayName).toBe("GitHub Copilot 账号");
     expect(provisioning.publicMetadata).toEqual({});
   });
 
@@ -175,8 +206,8 @@ describe("github copilot device flow", () => {
       if (url.endsWith("/login/oauth/access_token")) {
         return jsonResponse({ access_token: "gho_oauth" });
       }
-      if (url.endsWith("/copilot_internal/v2/token")) {
-        return jsonResponse({ token: "tid_copilot", expires_at: sessionExpiryMs / 1000 });
+      if (url.includes("copilot_internal/user")) {
+        return jsonResponse({ copilot_plan: "free" });
       }
       if (url.endsWith("/user")) return new Response(null, { status: 400 });
       return new Response(null, { status: 404 });
@@ -215,43 +246,41 @@ describe("github copilot device flow", () => {
   });
 });
 
-describe("github copilot session refresh", () => {
-  it("keeps a valid session token unless forced", async () => {
+describe("github copilot credential migration", () => {
+  it("is a no-op without network access once the envelope is migrated", async () => {
     const fetchImpl = vi.fn() as unknown as typeof fetch;
     const adapter = new CopilotAdapter(fetchImpl, clock);
-    const result = await adapter.refreshCredentials(account, envelope, false);
-    expect(result).toEqual({ envelope, changed: false });
+    const migrated = {
+      ...envelope,
+      expiresAt: null,
+      secrets: { accessToken: "gho_oauth" },
+    };
+    const result = await adapter.refreshCredentials(account, migrated, false);
+    expect(result).toEqual({ envelope: migrated, changed: false });
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it("rotates only the copilot session token on refresh", async () => {
-    const nextExpiry = (sessionExpiryMs + 60_000) / 1000;
-    const fetchImpl = (async (input: unknown) =>
-      String(input).endsWith("/copilot_internal/v2/token")
-        ? jsonResponse({ token: "tid_rotated", expires_at: nextExpiry })
-        : new Response(null, { status: 404 })) as typeof fetch;
+  it("migrates legacy envelopes by dropping the session-token expiry and secret", async () => {
+    // v2/token 会话令牌层退役：存量信封（expiresAt 跟踪会话过期 + copilotToken
+    // 密钥）随首次刷新迁移为无过期形态，迁移不发网络请求。
+    const fetchImpl = vi.fn() as unknown as typeof fetch;
     const adapter = new CopilotAdapter(fetchImpl, clock);
-    const nearExpiry = {
+    const legacy = {
       ...envelope,
-      expiresAt: new Date(now.getTime() + 60_000).toISOString(),
+      expiresAt: new Date(now.getTime() - 1000).toISOString(),
     };
 
-    const refreshed = await adapter.refreshCredentials(account, nearExpiry, false);
+    const refreshed = await adapter.refreshCredentials(account, legacy, false);
     expect(refreshed.changed).toBe(true);
     expect(refreshed.envelope).toEqual({
-      ...nearExpiry,
-      expiresAt: new Date(nextExpiry * 1000).toISOString(),
-      secrets: { accessToken: "gho_oauth", copilotToken: "tid_rotated" },
+      ...legacy,
+      expiresAt: null,
+      secrets: { accessToken: "gho_oauth" },
     });
-  });
+    expect(fetchImpl).not.toHaveBeenCalled();
 
-  it("surfaces an authentication error when GitHub rejects the OAuth token", async () => {
-    const fetchImpl = (async () => new Response(null, { status: 401 })) as typeof fetch;
-    const adapter = new CopilotAdapter(fetchImpl, clock);
-    const expired = { ...envelope, expiresAt: new Date(now.getTime() - 1000).toISOString() };
-    await expect(adapter.refreshCredentials(account, expired, false)).rejects.toThrow(
-      "GitHub 授权已失效，请重新接入",
-    );
+    const again = await adapter.refreshCredentials(account, refreshed.envelope, true);
+    expect(again).toEqual({ envelope: refreshed.envelope, changed: false });
   });
 });
 
@@ -259,7 +288,7 @@ describe("github copilot usage", () => {
   it("projects paid plan quota snapshots into monthly windows", async () => {
     vi.stubGlobal("fetch", (async () =>
       jsonResponse({
-        copilot_plan: "copilot_pro_plus",
+        copilot_plan: "PRO_PLUS",
         quota_reset_date: "2026-11-01T00:00:00Z",
         quota_snapshots: {
           chat: { entitlement: 0, remaining: 0, unlimited: true },
@@ -276,7 +305,11 @@ describe("github copilot usage", () => {
 
     const snapshot = await adapter.fetchUsage(account, envelope);
 
-    expect(snapshot.plan).toBe("Copilot Pro+");
+    // 原始 copilot_plan（实测短词形态）透传为数据层标识，推断合成名降级为
+    // 未命中回退；目录按规范化后的 "pro plus" 精确键解析出 copilot-pro-plus。
+    expect(snapshot.plan).toBe("PRO_PLUS");
+    expect(snapshot.rawPlanLabel).toBe("Copilot Pro+");
+    expect(planMultiplier("github-copilot", snapshot.plan)).toBe(4.6);
     // 无限额度的 chat/completions 不展示，只保留计数的 premium 请求；
     // entitlement 计数是真实原始量，rawAmounts 置真供 UI 展示 使用量/总量。
     expect(snapshot.groups[0]!.quotas).toEqual([
@@ -313,7 +346,8 @@ describe("github copilot usage", () => {
 
     const snapshot = await adapter.fetchUsage(account, envelope);
 
-    expect(snapshot.plan).toBe("Copilot Free");
+    expect(snapshot.plan).toBe("free_limited");
+    expect(snapshot.rawPlanLabel).toBe("Copilot Free");
     const chat = snapshot.groups[0]!.quotas.find((quota) => quota.key === "chat")!;
     expect(chat.used).toBe(0);
     expect(chat.remainingPercentage).toBe(100);
@@ -352,9 +386,38 @@ describe("github copilot usage", () => {
 
     const snapshot = await adapter.fetchUsage(account, envelope);
 
-    expect(snapshot.plan).toBe("Copilot Free");
+    expect(snapshot.plan).toBe("free_limited");
+    expect(snapshot.rawPlanLabel).toBe("Copilot Free");
     expect(snapshot.groups[0]!.quotas.map((quota) => quota.key)).toEqual(["chat", "completions"]);
     expect(snapshot.overallRemainingPercentage).toBe(100);
+  });
+
+  it("recognizes the Max tier and resolves it through the catalog", async () => {
+    vi.stubGlobal("fetch", (async () =>
+      jsonResponse({
+        copilot_plan: "max",
+        quota_reset_date: "2026-11-01T00:00:00Z",
+        quota_snapshots: {
+          premium_interactions: { entitlement: 20_000, remaining: 18_000, unlimited: false },
+        },
+      })) as typeof fetch);
+    const adapter = new CopilotAdapter(
+      (async () => {
+        throw new Error("unused");
+      }) as typeof fetch,
+      clock,
+    );
+
+    const snapshot = await adapter.fetchUsage(account, envelope);
+
+    // Max 档（AI Credits 时代新增）：原始值透传，推断名走 MAX 分支，
+    // 目录按 `max` 短词键解析出 copilot-max（13.3x）。
+    expect(snapshot.plan).toBe("max");
+    expect(snapshot.rawPlanLabel).toBe("Copilot Max");
+    const resolved = toPublicUsage(snapshot, "github-copilot");
+    expect(resolved.planId).toBe("copilot-max");
+    expect(resolved.planLabel).toBe("Copilot Max");
+    expect(planMultiplier("github-copilot", snapshot.plan)).toBe(13.3);
   });
 
   it("maps upstream auth failures to re-authentication errors", async () => {

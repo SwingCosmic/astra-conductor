@@ -214,10 +214,12 @@ describe("vendored github usage leaf", () => {
     vi.unstubAllGlobals();
   });
 
-  it("infers plan names and drops unlimited quota snapshots", async () => {
+  it("passes raw plan identifiers through and demotes inference to a fallback label", async () => {
+    // [astra] 偏差特征：原始 copilot_plan 值透传为 plan（实测短词形态），
+    // inferGitHubPlanName 的合成标签降级为 planLabel（目录未命中时的展示回退）。
     vi.stubGlobal("fetch", (async () =>
       Response.json({
-        copilot_plan: "copilot_pro_plus",
+        copilot_plan: "PRO_PLUS",
         quota_reset_date: "2026-11-01T00:00:00Z",
         quota_snapshots: {
           chat: { entitlement: 0, remaining: 0, unlimited: true },
@@ -227,7 +229,8 @@ describe("vendored github usage leaf", () => {
 
     const result = await getGitHubUsage("gho_token");
     if ("message" in result) throw new Error(result.message ?? "unexpected");
-    expect(result.plan).toBe("Copilot Pro+");
+    expect(result.plan).toBe("PRO_PLUS");
+    expect(result.planLabel).toBe("Copilot Pro+");
     expect(Object.keys(result.quotas)).toEqual(["premium_interactions"]);
     expect(result.quotas.premium_interactions).toMatchObject({
       used: 1200,
@@ -236,6 +239,61 @@ describe("vendored github usage leaf", () => {
       // [astra] 偏差特征：entitlement 计数是真实原始量。
       rawAmounts: true,
     });
+  });
+
+  it("infers the Max tier label for max plan identifiers", async () => {
+    // [astra] 偏差特征：AI Credits 时代新增 Max 档，上游推断梯无该分支。
+    vi.stubGlobal("fetch", (async () =>
+      Response.json({
+        copilot_plan: "max",
+        quota_snapshots: {
+          premium_interactions: { entitlement: 20_000, remaining: 18_000, unlimited: false },
+        },
+      })) as typeof fetch);
+
+    const result = await getGitHubUsage("gho_token");
+    if ("message" in result) throw new Error(result.message ?? "unexpected");
+    expect(result.plan).toBe("max");
+    expect(result.planLabel).toBe("Copilot Max");
+  });
+
+  it("passes the free-tier copilot_plan word through with a Copilot Free label", async () => {
+    // 实测免费账号形态（openclaw / omniroute 上游夹具同观测）：
+    // copilot_plan 为短词 "free"，无 access_type_sku。
+    vi.stubGlobal("fetch", (async () =>
+      Response.json({
+        copilot_plan: "free",
+        monthly_quotas: { chat: 50 },
+        limited_user_quotas: { chat: 10 },
+        limited_user_reset_date: "2026-11-01T00:00:00Z",
+      })) as typeof fetch);
+
+    const result = await getGitHubUsage("gho_token");
+    if ("message" in result) throw new Error(result.message ?? "unexpected");
+    expect(result.plan).toBe("free");
+    expect(result.planLabel).toBe("Copilot Free");
+  });
+
+  it("keeps the individual plan word raw while inferring a free fallback label", async () => {
+    // 实测真实免费账号（2026-10-15）：copilot_plan "individual"、无 sku，
+    // premium 表仅剩百分比读数（credits 时代形态），chat/completions 为
+    // 免费档月度计数。标签经阈值分支产出 Copilot Free，标识原文透传，
+    // 目录按 individual 键归入 copilot-free（倍率 0.1）。
+    vi.stubGlobal("fetch", (async () =>
+      Response.json({
+        copilot_plan: "individual",
+        quota_reset_date: "2026-11-01T00:00:00Z",
+        quota_snapshots: {
+          premium_interactions: { entitlement: 0, percent_remaining: 100, unlimited: false },
+          chat: { entitlement: 200, remaining: 200, unlimited: false },
+          completions: { entitlement: 2000, remaining: 2000, unlimited: false },
+        },
+      })) as typeof fetch);
+
+    const result = await getGitHubUsage("gho_token");
+    if ("message" in result) throw new Error(result.message ?? "unexpected");
+    expect(result.plan).toBe("individual");
+    expect(result.planLabel).toBe("Copilot Free");
   });
 
   it("marks percent-only snapshots as synthesized, not raw amounts", async () => {
@@ -271,7 +329,8 @@ describe("vendored github usage leaf", () => {
 
     const result = await getGitHubUsage("gho_token");
     if ("message" in result) throw new Error(result.message ?? "unexpected");
-    expect(result.plan).toBe("Copilot Free");
+    expect(result.plan).toBe("free_limited");
+    expect(result.planLabel).toBe("Copilot Free");
     expect(result.quotas.chat).toMatchObject({
       used: 40,
       total: 50,
@@ -304,7 +363,8 @@ describe("vendored github usage leaf", () => {
     if ("message" in result) throw new Error(result.message ?? "unexpected");
     expect(Object.keys(result.quotas)).toEqual(["chat"]);
     expect(result.quotas.chat).toMatchObject({ total: 200, remainingPercentage: 100 });
-    expect(result.plan).toBe("Copilot Free");
+    expect(result.plan).toBe("free_limited");
+    expect(result.planLabel).toBe("Copilot Free");
   });
 });
 

@@ -75,7 +75,8 @@ export async function getGitHubUsage(accessToken?: string, providerSpecificData?
       }
 
       return {
-        plan: inferGitHubPlanName(dataRecord, premiumQuota),
+        plan: rawGitHubPlanIdentifier(dataRecord),
+        planLabel: inferGitHubPlanName(dataRecord, premiumQuota),
         resetDate: getFieldValue(dataRecord, "quota_reset_date", "quotaResetDate"),
         quotas,
       };
@@ -123,7 +124,8 @@ export async function getGitHubUsage(accessToken?: string, providerSpecificData?
       addLimitedQuota("completions");
 
       return {
-        plan: inferGitHubPlanName(dataRecord, premiumQuota),
+        plan: rawGitHubPlanIdentifier(dataRecord),
+        planLabel: inferGitHubPlanName(dataRecord, premiumQuota),
         resetDate,
         quotas,
       };
@@ -208,6 +210,28 @@ export function formatGitHubQuotaSnapshot(
   };
 }
 
+/**
+ * [astra] deviation from upstream: the raw `copilot_plan` / `access_type_sku`
+ * value passes through as the data-layer identifier (`plan`) so the consumer's
+ * plan catalog can match it directly; the synthesized label from
+ * inferGitHubPlanName is demoted to a display fallback and returned separately
+ * as `planLabel`. Upstream consumed both raw fields and then discarded them,
+ * replacing the identifier with an inferred label (threshold branches can even
+ * mislabel same-name accounts). Preference mirrors upstream's own fetcher
+ * (`src/lib/usage/fetcher.ts`: `copilot_plan || access_type_sku`): observed
+ * `copilot_plan` values are short words ("free" / "pro" / "PRO_PLUS" /
+ * "business" …), while `access_type_sku` carries the "copilot_pro_plus" /
+ * "copilot_business_seat" shaped forms. Also adds the Max branch missing
+ * upstream (AI Credits era tier).
+ */
+function rawGitHubPlanIdentifier(data: JsonRecord): string {
+  const rawPlan = getFieldValue(data, "copilot_plan", "copilotPlan");
+  const rawSku = getFieldValue(data, "access_type_sku", "accessTypeSku");
+  const planText = typeof rawPlan === "string" ? rawPlan.trim() : "";
+  const skuText = typeof rawSku === "string" ? rawSku.trim() : "";
+  return planText || skuText;
+}
+
 export function inferGitHubPlanName(data: JsonRecord, premiumQuota: UsageQuota | null): string {
   const rawPlan = getFieldValue(data, "copilot_plan", "copilotPlan");
   const rawSku = getFieldValue(data, "access_type_sku", "accessTypeSku");
@@ -223,6 +247,9 @@ export function inferGitHubPlanName(data: JsonRecord, premiumQuota: UsageQuota |
   if (combined.includes("PRO+") || combined.includes("PRO_PLUS") || combined.includes("PROPLUS")) {
     return "Copilot Pro+";
   }
+  // [astra] deviation from upstream: AI Credits era added a Max tier; upstream
+  // inference has no branch for it and would fall through to Pro.
+  if (combined.includes("MAX")) return "Copilot Max";
   if (combined.includes("ENTERPRISE")) return "Copilot Enterprise";
   if (combined.includes("BUSINESS")) return "Copilot Business";
   if (combined.includes("STUDENT")) return "Copilot Student";

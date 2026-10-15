@@ -101,19 +101,23 @@ export async function getGlmUsage(
       };
     }
   }
-  const rawPlan =
-    typeof data.planName === "string"
-      ? data.planName
-      : typeof data.level === "string"
-        ? data.level
-        : "unknown";
+  // [astra] deviation from upstream: the normalized identifier (TitleCase +
+  // trailing "Plan" stripped) stays the data-layer key, but the untouched
+  // upstream value is also attached as `planLabel` — the rewrite is lossy
+  // ("GLM" → "Glm"), so without it the raw display name is lost and the
+  // catalog-miss fallback has nothing but the rewritten string to show.
+  const planSource =
+    (typeof data.planName === "string" && data.planName.trim()) ||
+    (typeof data.level === "string" && data.level.trim()) ||
+    "unknown";
   const result = orderedQuotas(quotas);
   const resetCards =
     result.session || result.weekly
       ? await fetchGlmResetCardList(apiKey, providerSpecificData, fetchImpl)
       : { cards: [], availableCount: 0 };
   return {
-    plan: toTitleCase(rawPlan.replace(/\s*plan$/i, "")),
+    plan: toTitleCase(planSource.replace(/\s*plan$/i, "")),
+    ...(planSource !== "unknown" ? { planLabel: planSource } : {}),
     quotas: result,
     ...(resetCards ? { resetCards } : {}),
   };

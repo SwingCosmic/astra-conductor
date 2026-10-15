@@ -83,7 +83,7 @@ git -c core.safecrlf=false diff --no-index --ignore-space-at-eol --no-ext-diff -
 | 上游相对路径                                        | 处理方式           | 当前保留内容                                               |
 | --------------------------------------------------- | ------------------ | ---------------------------------------------------------- |
 | `open-sse/config/glmProvider.ts`                    | 整文件复制、别名改写 | 全部 GLM 配置：区域端点、共享模型表、anthropic 传输端点、团队计划请求头 |
-| `open-sse/services/usage/glm.ts`                    | 声明裁剪、传输注入 | Coding Plan 配额请求及 `CREDIT_LIMIT`、Token、时间窗口解析 |
+| `open-sse/services/usage/glm.ts`                    | 声明裁剪、传输注入、原始 plan 名附带 | Coding Plan 配额请求及 `CREDIT_LIMIT`、Token、时间窗口解析；`planName` 归一化标识之外附带原始值（`planLabel`），供目录未命中时的展示回退 |
 | `open-sse/services/usage/glmResetCards.ts`          | 声明裁剪、传输注入 | 重置卡列表、信封校验、过期过滤和排序                       |
 
 GLM 的 vendor 产物只保留 Coding Plan 的用量读取链路（按量 API 的推理执行不在范围）。国内与国际共用实现，通过 `apiRegion` 选择 `open.bigmodel.cn` 或 `api.z.ai`。整文件恢复后的 `glmProvider.ts` 含上游统一的 `buildGlmResetCardFetch(action)`（含 `/use` 的 URL 构造），vendor 重置卡服务只调用 `"list"` 动作，不保留使用请求体；用户确认后的 `/use` 调用仍由项目自有的 `providers/glm/reset-card-redemption.ts` 实现。真实账号已验证卡片可以使用，ZCode 的剩余次数可能延迟刷新。
@@ -92,7 +92,7 @@ GLM 的 vendor 产物只保留 Coding Plan 的用量读取链路（按量 API �
 
 | 上游相对路径                                  | 处理方式           | 当前保留内容                                             |
 | --------------------------------------------- | ------------------ | -------------------------------------------------------- |
-| `open-sse/config/grokBuild.ts`                | 整文件复制         | 全部 Grok Build 端点、客户端版本、会话头和授权配置       |
+| `open-sse/config/grokBuild.ts`                | 最小补丁（版本同步） | 全部 Grok Build 端点、客户端版本、会话头和授权配置；`GROK_BUILD_DEFAULT_CLIENT_VERSION` 0.2.106 → 1.0.41（随上游 origin/main，2026-06 改版后旧版本号有被拒风险） |
 | `src/lib/oauth/providers/grok-cli.ts`         | 宿主解耦、传输注入 | 设备码、浏览器 PKCE、换票、JWT 身份和凭证映射            |
 | `src/lib/oauth/utils/grokCliAuthJson.ts`      | 声明裁剪           | 完整 CLI `auth.json` 解析与刷新能力校验                  |
 | `open-sse/executors/grok-cli.ts`              | 宿主解耦、传输注入 | 输出为 `tokenRefresh/providers/grok.ts` 的主体化令牌刷新 |
@@ -112,7 +112,7 @@ Grok Build 同时保留设备码、浏览器 OAuth PKCE 和完整 CLI 导入。�
 | `open-sse/services/codeAssistSubscription.ts`        | 声明裁剪、传输注入 | 套餐查询及套餐 ID 提取                         |
 | `open-sse/services/tokenRefresh/providers/google.ts` | 宿主解耦、传输注入 | Google refresh token 换票                      |
 | `src/lib/oauth/providers/antigravity.ts`             | 宿主解耦、传输注入 | Google 授权码换票、身份读取和 Cloud Code 项目发现 |
-| `open-sse/services/usage/antigravity.ts`             | 宿主解耦、传输注入 | 按模型族分组的 5 小时与周配额                 |
+| `open-sse/services/usage/antigravity.ts`             | 宿主解耦、传输注入、档位名透传 | 按模型族分组的 5 小时与周配额；套餐 tier 名停止关键词折叠、原文透传（Ultra 5x / 20x 的区分上移到 core 目录正则） |
 
 Antigravity 不复制上游数据库、连接记录和版本探测网络请求。`antigravityHeaders.ts` 恢复上游签名（含 `AntigravityClientProfile` 参数，默认 `"ide"`），唯一补丁是用固定回退版本（IDE `2.1.1`、CLI `1.1.5`，即上游缓存模块自身的回退值）替换在线版本缓存依赖。项目标识、OAuth 客户端选择与套餐信息由适配器保存为公开元数据，刷新凭证仍只进入加密信封；无法发现项目时明确拒绝接入，不用伪造项目 ID 继续请求。
 
@@ -132,7 +132,7 @@ Claude Code 当前只开放官方 CLI OAuth 凭据只读导入，不增加与现
 按最小修改原则，以下纯上游模块为支持整文件复制而扩入 vendor，全部零外部依赖：
 
 | 上游相对路径                                        | 引入原因                                                       |
-| --------------------------------------------------- | -------------------------------------------------------------- |
+| ---------------------------------------------------- | -------------------------------------------------------------- |
 | `open-sse/config/providerHeaderProfiles.ts`         | `oauth.ts` 与 `grokBuild.ts` 整文件复制的头部指纹来源          |
 | `open-sse/config/anthropicHeaders.ts`               | `glmProvider.ts` 整文件复制的 Anthropic 版本头与 beta 头来源  |
 | `open-sse/config/context1m.ts`                      | `anthropicHeaders.ts` 的 1M 上下文 beta 判定                  |
@@ -140,6 +140,14 @@ Claude Code 当前只开放官方 CLI OAuth 凭据只读导入，不增加与现
 | `src/shared/constants/antigravityClientProfile.ts`  | `antigravityHeaders.ts` 的 profile 类型                       |
 | `open-sse/utils/cursorAgentCliVersionPin.ts`        | `oauth.ts` 的 Cursor 版本固定值                                |
 | `src/lib/oauth/gitlab.ts`                           | `oauth.ts` 的 GitLab OAuth 端点构造                            |
+
+### 3.8 GitHub Copilot
+
+| 上游相对路径                            | 处理方式           | 当前保留内容                                       |
+| --------------------------------------- | ------------------ | -------------------------------------------------- |
+| `open-sse/services/usage/github.ts`     | 传输注入、原始 plan 值透传 | `copilot_internal/user` 付费/免费两形态配额解析（含 #2876 免费档剩余计数语义）；原始 `copilot_plan` / `access_type_sku` 透传为数据层标识，推断合成标签降级为未命中回退（`planLabel`），并补 AI Credits 时代的 Max 分支 |
+
+该叶子随 2026-10-14 的 Copilot 接入加入闭包但当时遗漏了 `.diff`，于 2026-10-15 数据侧批次补建（含 `rawAmounts` 标注、严格 TS 收窄与 plan 透传三族偏差）。
 
 ## 4. 手工改动明细
 
@@ -278,8 +286,8 @@ Claude Code 当前只开放官方 CLI OAuth 凭据只读导入，不增加与现
 
 当前手工输出满足以下条件，后续迁移或同步方式至少需要保持同等约束：
 
-- vendor 共有 49 个协议与许可证产物（含第 3.7 节的 7 个闭包扩展模块），另有 49 个可追溯到上游来源的 `.diff`；
-- 其中 20 个为零 diff 整文件复制；按当前 49 份差异文件重新统计，非空差异合计为 -4687 / +1314 行；
+- vendor 共有 49 个 TypeScript 协议产物与一份 LICENSE（含第 3.7 节的 7 个闭包扩展模块与第 3.8 节的 GitHub Copilot 用量叶子），另有 51 份可追溯到上游来源的 `.diff`（50 份产物 diff 与 LICENSE.diff；`github.ts` 的 diff 于 2026-10-15 数据侧批次补建，此前接入时遗漏）；
+- 其中 19 个为零 diff 整文件复制（`grokBuild.ts` 随版本同步转为带补丁偏差）；非空差异合计为 -4327 / +1363 行（2026-10-15 数据侧批次后重算）；
 - 49 个产物当前全部手工维护；阶段 6 的目标是按[同步工具形态设计](./omniroute-sync-tool-design.md)把它们全部纳入清单，工具实现落地前清单完备门禁不生效；
 - 不存在 `references/omniroute` 运行时导入、单个 `@/*` 或外部 `@omniroute/*` 依赖；vendor 的外部依赖只有 Node 内置模块与 `zod`；
 - 浏览器 OAuth、设备授权、CLI 导入、换票、刷新和用量均有无网络特征测试；

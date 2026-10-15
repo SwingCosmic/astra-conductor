@@ -120,6 +120,9 @@ describe("GLM Coding Plan adapter", () => {
       true,
     );
     expect(snapshot.plan).toBe("Glm Coding Pro");
+    // [astra] 偏差特征：归一化标识（TitleCase 改写 + 去 "Plan" 后缀）之外的
+    // 上游原始 planName 附带为 rawPlanLabel，仅目录未命中时作展示回退。
+    expect(snapshot.rawPlanLabel).toBe("GLM Coding Pro Plan");
     // CREDIT_LIMIT 带 usage 计数是真实原始量；TOKENS_LIMIT 仅百分比，合成刻度不标 rawAmounts。
     expect(snapshot.groups[0]?.quotas).toMatchObject([
       { key: "session", remaining: 21_000, remainingPercentage: 75, rawAmounts: true },

@@ -33,6 +33,34 @@ export function normalizePlanMatch(value: string): string {
     .replace(/[\s_-]+/g, " ");
 }
 
+const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
+
+function isIsoDate(value: string): boolean {
+  if (!isoDatePattern.test(value)) return false;
+  // V8 会把 2026-02-30 这类越界日期滚动成 3 月，必须按往返一致判合法性。
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    return new URL(value).protocol === "https:" || new URL(value).protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 目录正则的防御探测串：一条同时命中全部探测串（外加空串）的正则等价于
+ * "吞掉一切未识别档位"的全匹配模式（如 `/^/`、`/./`），目录校验直接拒绝。
+ */
+const regexProbeStrings = ["a", "ab", "0", "x y"] as const;
+
+function isMatchAllRegex(pattern: RegExp): boolean {
+  if (pattern.test("")) return true;
+  return regexProbeStrings.every((probe) => pattern.test(probe));
+}
+
 function validatePlans(
   offering: ProviderOfferingDescriptor,
   plans: readonly ProviderPlanDescriptor[],
@@ -56,10 +84,40 @@ function validatePlans(
     if (plan.source !== "published" && plan.source !== "inferred") {
       throw new Error(`Provider catalog has invalid plan source: ${offering.id}/${plan.id}`);
     }
+    if (plan.legacyUntil !== undefined) {
+      if (plan.legacy !== true) {
+        throw new Error(
+          `Provider catalog plan sets legacyUntil without legacy: ${offering.id}/${plan.id}`,
+        );
+      }
+      if (!isIsoDate(plan.legacyUntil)) {
+        throw new Error(
+          `Provider catalog plan has invalid legacyUntil date: ${offering.id}/${plan.id}`,
+        );
+      }
+    }
+    if (plan.sourceUrl !== undefined && !isHttpUrl(plan.sourceUrl)) {
+      throw new Error(`Provider catalog plan has invalid sourceUrl: ${offering.id}/${plan.id}`);
+    }
+    if (plan.verifiedAt !== undefined && !isIsoDate(plan.verifiedAt)) {
+      throw new Error(
+        `Provider catalog plan has invalid verifiedAt date: ${offering.id}/${plan.id}`,
+      );
+    }
     if (!plan.match.length) {
       throw new Error(`Provider catalog plan has no match keys: ${offering.id}/${plan.id}`);
     }
     for (const raw of plan.match) {
+      if (raw instanceof RegExp) {
+        // 正则之间的重叠无法静态判定，靠求值顺序（先精确后正则）与用例约束；
+        // 这里只拒绝会吞掉一切的兜底模式。
+        if (isMatchAllRegex(raw)) {
+          throw new Error(
+            `Provider catalog plan has a match-all regex key: ${offering.id}/${plan.id}`,
+          );
+        }
+        continue;
+      }
       const key = normalizePlanMatch(raw);
       if (!key) {
         throw new Error(`Provider catalog plan has empty match key: ${offering.id}/${plan.id}`);
@@ -186,7 +244,12 @@ export function findOffering(
   return null;
 }
 
-/** 套餐查表键是接入点：同一服务商的不同接入点计费目录可以不同。 */
+/**
+ * 套餐查表键是接入点：同一服务商的不同接入点计费目录可以不同。求值顺序
+ * 先精确后正则：先按声明顺序扫全部条目的字符串键做全词精确匹配（与历史
+ * 行为逐位一致），全部未中再按条目声明顺序试正则（作用于规范化小写串，
+ * 纯兜底能力——宽泛模式抢不走精确命中）。
+ */
 export function matchOfferingPlan(
   offeringId: string,
   plan: string | null | undefined,
@@ -197,7 +260,14 @@ export function matchOfferingPlan(
   const key = normalizePlanMatch(plan);
   if (!key) return null;
   for (const item of found.offering.plans) {
-    if (item.match.some((candidate) => normalizePlanMatch(candidate) === key)) return item;
+    for (const candidate of item.match) {
+      if (typeof candidate === "string" && normalizePlanMatch(candidate) === key) return item;
+    }
+  }
+  for (const item of found.offering.plans) {
+    for (const candidate of item.match) {
+      if (candidate instanceof RegExp && candidate.test(key)) return item;
+    }
   }
   return null;
 }

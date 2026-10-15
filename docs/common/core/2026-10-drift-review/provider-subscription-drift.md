@@ -2,8 +2,8 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 状态 | 调研结论与已确认的数据侧处理策略，未改动任何代码 |
-| 更新日期 | 2026-10-14 |
+| 状态 | 数据侧实施方案已于 2026-10-15 实施（§8.1–§8.3 全部落地，§8.4 的 core / UI 测试断言随批补齐并通过；真实账号抽查、样本回填与 grok 防御性正则收敛留待统一验收） |
+| 更新日期 | 2026-10-15 |
 | 排查范围 | `packages/core` 计划目录（descriptor / catalog / 倍率消费点）、`references/omniroute` 上游增量与叶子名称归一化、core → 契约包 → UI 的套餐展示名称链路、各供应商官方定价与档位公告、社区项目的档位字符串观测 |
 | 上游基线 | `references/omniroute` @ `3ee283bb944d6d62cc219f74317d5186942e1780`（上游 `origin/main` 领先 15 个提交，§2） |
 | 关联 | 结构侧问题与前置（解析点上移、契约瘦身、校验归属）见同目录 [core 与 contract 包的代码组织结构问题](./core-contract-structure.md) |
@@ -185,15 +185,17 @@
 - **`displayName` 是给前端的简化展示标签**——解析结果直接进快照，前端不做任何匹配。
 - **上游原始展示名**（若原始 API 接口本身包含展示名称）随快照一并提供，但**只在目录未命中、拿不到定义的 displayName 时回退使用**。回退顺序：目录 `displayName` → 上游原始展示名 → 原始标识串。这要求叶子层保留原始标识（§6 审计）。
 
-## 8. 数据侧实施方案（未实施）
+## 8. 数据侧实施方案（已于 2026-10-15 实施）
+
+实施落点备忘：求值顺序（先精确后正则）、空匹配/全匹配正则拒绝、legacy 配对与 ISO 日期校验、`sourceUrl` / `verifiedAt` 格式校验均在 `providers/catalog.ts`；目录数据按[目标目录表](./plan-catalog-target.md)逐条落在各 descriptor；vendor 四处叶子修复随 `.diff` 重新生成并同步基线文档（`github.ts` 的 `.diff` 系接入时遗漏，本次补建）；inferred 条目的 `sourceUrl` / `verifiedAt` 暂空（无出处可引，随 §8.4 样本回填）。**2026-10-15 真实账号回填（实施当日复核）**：copilot 免费账号实测上报 `copilot_plan` 短词——本机账号观测 `"individual"`（免费档配额形态：chat 200 / completions 2000、无 premium 额度表，阈值推断 Copilot Free），openclaw 与 omniroute 上游夹具另观测 `free` / `pro` / `PRO_PLUS` / `business` / `student`；初版只收了 `access_type_sku` 形态键导致免费档 `Copilot Free?` 未命中——已为全部档位补 copilot_plan 短词键（含 `individual`，旧"付费个人档同名"语义经真实样本确认不再成立）、叶子标识选取对齐上游 fetcher 语义（`copilot_plan || access_type_sku`，初版误以 sku 优先）。另观测 grok 存量账号 `subscriptionTier: "GrokPro"`（命中 legacy `grokpro` 键）与 antigravity 长 tier 名 `Antigravity Starter Quota`（命中 `/starter/` 正则），均按预期解析。同日 UI 修复：配额标签去重判断改为分隔符无关比较，GLM 的 `5 Hours Quota` 不再追加冗余 `· 5-hour` 后缀（codex 侧 `5-hour` 为上游无 displayName 时的窗口推导回退，设计内行为）。
 
 ### 8.1 前置：匹配能力与 legacy 字段
 
 1. **match 支持字符串或正则**。`ProviderPlanDescriptor.match` 扩展为 `readonly (string | RegExp)[]`，正则用字面量。**前置依赖结构侧的"解析点上移"**（见[结构侧文档](./core-contract-structure.md)§5.1）：match 不过 IPC 后 RegExp 字面量才可用，否则序列化即丢失、契约解析也会拒绝。正则作用于规范化后的串（已小写、分隔符折叠为空格），模式按小写书写即可；求值顺序定为**先精确、后正则**——先按声明顺序扫全部条目的字符串键做全词精确匹配（与现行为逐位一致，已有命中不受影响），全部未中再按声明顺序试正则。正则因此是纯兜底能力，宽泛模式（如 `/pro/`）抢不走 `prolite` 的精确命中；条目内部同样"具体在前、宽泛在后"。
 2. **校验与约束**：RegExp 用字面量后语法错误在装载期即暴露；重复键检测仍只覆盖字符串键（正则之间的重叠无法静态判定，靠求值顺序 + 用例约束）。目录校验另加一条防御：拒绝匹配空串/全匹配的正则（如 `/^/`、`/./`），避免兜底条目吞掉一切未识别档位。
 3. **legacy 字段落地**（§7 规则 1）：校验——`legacyUntil` 出现时必须同时有 `legacy: true` 且为合法 ISO 日期（`YYYY-MM-DD`）。
-4. **快照演进**：`UsageSnapshot` 保留 `plan`（原始标识，供审计与最后回退）并新增解析结果（如 `planId` + `planLabel`）；上游原始展示名的附带由 §8.3 的叶子改造提供。未识别态（`planId: null`）的字段语义与 UI 提示随结构侧批次定义（见[结构侧文档](./core-contract-structure.md)§5.1.2），本批次补齐对应测试与验收。**（2026-10-15 结构侧批次已落地：`planId` / `planLabel` 位于公开 DTO `PublicUsage`，主进程投影时解析固化；存储层 `UsageSnapshot` 不固化解析结果。本条剩余工作仅为 §8.3 叶子附带原始展示名后的回退链补全。）**
-5. **条目来源元数据**：`ProviderPlanDescriptor` 增加可选 `sourceUrl?: string`（官方定价 / 公告页链接）与 `verifiedAt?: string`（ISO 日期，核实时间）；目录校验增加 URL 与日期格式检查。与 `multiplier` 的 `source` 一样属于**核心内部事实，不进公开目录快照**（沿用协议设计"倍率与 source 不进公开目录"的既有口径）。[目标目录表](./plan-catalog-target.md)备注列的 source 信息实施时回填为这两个字段——"这条倍率是何时按哪个官方页面核实的"自此可审计、过期可检测（本次漂移的直接教训：多数条目 `source: inferred` 且无出处）。
+4. **快照演进**：`UsageSnapshot` 保留 `plan`（原始标识，供审计与最后回退）并新增解析结果（如 `planId` + `planLabel`）；上游原始展示名的附带由 §8.3 的叶子改造提供。未识别态（`planId: null`）的字段语义与 UI 提示随结构侧批次定义（见[结构侧文档](./core-contract-structure.md)§5.1.2），本批次补齐对应测试与验收。**（2026-10-15 结构侧批次已落地：`planId` / `planLabel` 位于公开 DTO `PublicUsage`，主进程投影时解析固化；存储层 `UsageSnapshot` 不固化解析结果。数据侧批次补全剩余工作：`UsageSnapshot.rawPlanLabel` 携带叶子上游原始展示名，`toPublicUsage` 回退顺序为 目录 `displayName` → `rawPlanLabel` → 原始标识串。）**
+5. **条目来源元数据**：`ProviderPlanDescriptor` 增加可选 `sourceUrl?: string`（官方定价 / 公告页链接）与 `verifiedAt?: string`（ISO 日期，核实时间）；目录校验增加 URL 与日期格式检查。与 `multiplier` 的 `source` 一样属于**核心内部事实，不进公开目录快照**（沿用协议设计"倍率与 source 不进公开目录"的既有口径）。[目标目录表](./plan-catalog-target.md)备注列的 source 信息实施时回填为这两个字段——"这条倍率是何时按哪个官方页面核实的"自此可审计、过期可检测（本次漂移的直接教训：多数条目 `source: inferred` 且无出处）。**（2026-10-15 已落地：字段与校验进 `catalog.ts`；published 条目已回填出处与核实日 2026-10-14，inferred 条目无出处可引暂空，随真实样本回填补齐——"目录条目全部带来源元数据"的验收项留待统一验收。）**
 
 ### 8.2 目录数据刷新清单
 
@@ -214,20 +216,20 @@
 
 两条规则没有覆盖的情况按原判断处理：Copilot business/enterprise 这类"有变化但无公开新数值"的键维持现状；Claude/GLM/OpenCode Go 无漂移。
 
-### 8.3 vendor 叶子修复（`.diff` 与基线测试同步更新）
+### 8.3 vendor 叶子修复（已于 2026-10-15 实施；`.diff` 与基线测试同步更新）
 
 方向统一为"叶子保留数据层标识，归一化上移到目录匹配层"（§6 的审计结论）：
 
-1. antigravity `planLabel`：**停止关键词折叠**，tier 名原文透传作为数据层标识（Ultra 5x / 20x 的区分由原始 tier 名承载，目录正则接住）；Google 若同时返回 tier 展示名则一并附带。改动进 `.diff` 并更新 `omniroute-manual-extraction-baseline.md`。
-2. copilot `inferGitHubPlanName`：合成标签降级为"目录未命中时的回退"，原始 `copilot_plan` / `access_type_sku` 值透传进快照；同时补 MAX 分支（依赖真实样本确认 Max 取值，§3.2）。
-3. glm：`planName` 原始值随快照附带（归一化形态可继续作主标识，符合 §7 "允许 omniroute 预归一化标识"）。
+1. antigravity `planLabel`：**停止关键词折叠**，tier 名原文透传作为数据层标识（Ultra 5x / 20x 的区分由原始 tier 名承载，目录正则接住）；Google 若同时返回 tier 展示名则一并附带。改动进 `.diff` 并更新 `omniroute-manual-extraction-baseline.md`。**实施备注：tier 记录本身只有 name/id 两字段且 name 优先作标识，无独立展示名通道；叶子自合成的 `(Restricted)` 标记（ineligible 兜底路径）不属于上游数据，透传前剥离。**
+2. copilot `inferGitHubPlanName`：合成标签降级为"目录未命中时的回退"，原始 `copilot_plan` / `access_type_sku` 值透传进快照；同时补 MAX 分支（依赖真实样本确认 Max 取值，§3.2）。**实施备注：原始标识优先取 `access_type_sku`（`copilot_pro_plus` 形态与目录键同源），缺省退 `copilot_plan`；合成标签以 `planLabel` 随快照附带、进 `rawPlanLabel` 回退位；MAX 分支落在 PRO+ 之后；实测免费档 `free_limited` 形态由目录精确键接住（§8.2 偏离备注）。**
+3. glm：`planName` 原始值随快照附带（归一化形态可继续作主标识，符合 §7 "允许 omniroute 预归一化标识"）。**实施备注：原始值经 `planLabel` 附带；`planName` / `level` 均缺失时不附带（叶子的 `unknown` 兜底是合成值，不作展示回退）。**
 4. `grokBuild.ts` 客户端版本 0.2.106 → 1.0.41 同步（§2，与档位无直接关系但同批走）。
 
-### 8.4 测试与验收
+### 8.4 测试与验收（core / UI 断言已于 2026-10-15 随批补齐，真实账号项留待统一验收）
 
-- core：`matchOfferingPlan` 新语义用例（先精确后正则、正则只作用于规范化小写串、legacy 校验、空匹配正则拒绝、`sourceUrl` / `verifiedAt` 格式校验）；各 adapter 测试补 plan 解析断言（重点：antigravity 长 tier 名、codex `promax` 与 `self_serve_business_prolite`、grok 新档位、快照新字段的回退顺序、未识别 plan 字符串产出 `planId: null` 且倍率走默认 5）。
-- UI：plan-tag 展示断言（消费主进程解析结果；未命中路径展示回退名，未识别态带可见提示）。
-- 验收口径：真实账号抽查卡片套餐标签与目录 `displayName` 一致；`Antigravity Starter Quota` 场景复验；grok 新档位样本回填后把防御性正则收敛为精确键；目录条目全部带 `sourceUrl` / `verifiedAt` 来源元数据。
+- core：`matchOfferingPlan` 新语义用例（先精确后正则、正则只作用于规范化小写串、legacy 校验、空匹配正则拒绝、`sourceUrl` / `verifiedAt` 格式校验）；各 adapter 测试补 plan 解析断言（重点：antigravity 长 tier 名、codex `promax` 与 `self_serve_business_prolite`、grok 新档位、快照新字段的回退顺序、未识别 plan 字符串产出 `planId: null` 且倍率走默认 5）。**（已落在 `providers-catalog` / `stage3-core` / 各 adapter 与 `omniroute-vendor` 测试；全量套件通过。）**
+- UI：plan-tag 展示断言（消费主进程解析结果；未命中路径展示回退名，未识别态带可见提示）。**（结构侧批次已随 `planLabel` / `isUnrecognizedPlan` 落在 `app.test.ts`。）**
+- 验收口径：真实账号抽查卡片套餐标签与目录 `displayName` 一致；`Antigravity Starter Quota` 场景复验；grok 新档位样本回填后把防御性正则收敛为精确键；目录条目全部带 `sourceUrl` / `verifiedAt` 来源元数据。**（此项依赖真实账号，留待统一验收；inferred 条目的来源元数据随样本回填补齐。）**
 
 ### 8.5 组标题的目录化（独立决策，不阻塞本次）
 
