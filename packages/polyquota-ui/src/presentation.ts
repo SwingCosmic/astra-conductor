@@ -7,22 +7,22 @@ import grokIcon from "./assets/icon/grok.svg";
 import opencodeIcon from "./assets/icon/opencode.png";
 import zaiIcon from "./assets/icon/zai.svg";
 import type {
-  AuthMethod,
   PublicAccount,
   PublicAuthInteraction,
   PublicOfferingDescriptor,
-  PublicPlanDescriptor,
   PublicProviderDescriptor,
   PublicSystemStatus,
+  PublicUsage,
   UsageExtra,
   UsageQuota,
   UsageQuotaGroup,
 } from "./models";
 
 /**
- * 本地视觉与枚举文案层。目录、标准名称、CLI 导入路径提示、套餐档位全部
- * 来自主进程快照中的 provider 目录（core 单一来源）；这里只保留图标资产、
- * 图标缺失时的首字符占位、封闭枚举的文本映射和窗口时长等纯展示计算。
+ * 本地视觉与枚举文案层。目录、标准名称、CLI 导入路径提示全部来自主进程
+ * 快照中的 provider 目录（core 单一来源）；这里只保留图标资产、图标缺失时
+ * 的首字符占位、封闭枚举的文本映射和窗口时长等纯展示计算。套餐档位的
+ * 匹配发生在主进程（解析结果随快照下发），前端不做任何匹配。
  */
 
 /** 图标资产映射：core 声明 iconKey，UI 持有资产；缺失映射时用首字符占位。 */
@@ -42,8 +42,12 @@ function fallbackMark(name: string): string {
   return name.charAt(0).toUpperCase() || "?";
 }
 
-/** 封闭协议类型的固定文本映射，不是供应商事实；差异由 sourceLabel 等目录事实表达。 */
-const authMethodTexts: Record<AuthMethod, string> = {
+/**
+ * 常见认证方式的固定文本映射，不是供应商事实。认证方式是随目录扩张的
+ * 动态集合（无封闭词表）：目录 `sourceLabel` 优先，未知 id 回退为连字符
+ * 转空格的原文。
+ */
+const authMethodTexts: Record<string, string> = {
   "browser-oauth": "浏览器 OAuth",
   "device-code": "设备码",
   "cli-import": "CLI 导入",
@@ -57,8 +61,8 @@ const resetCreditTypeTexts: Record<string, string> = {
   banked: "结转额度",
 };
 
-export function authMethodLabel(method: AuthMethod): string {
-  return authMethodTexts[method];
+export function authMethodLabel(method: string): string {
+  return authMethodTexts[method] ?? method.replaceAll("-", " ");
 }
 
 export function resetCreditTypeLabel(type: string): string {
@@ -66,7 +70,7 @@ export function resetCreditTypeLabel(type: string): string {
 }
 
 export interface AuthMethodPresentation {
-  id: AuthMethod;
+  id: string;
   label: string;
   interaction: PublicAuthInteraction;
 }
@@ -82,7 +86,6 @@ export interface ProviderPresentation {
   websiteUrl?: string;
   authMethods: AuthMethodPresentation[];
   cliImportPath?: string;
-  plans: readonly PublicPlanDescriptor[];
 }
 
 function toPresentation(
@@ -101,12 +104,11 @@ function toPresentation(
     websiteUrl: offering.websiteUrl,
     authMethods: offering.authMethods.map((method) => ({
       id: method.method,
-      label: method.sourceLabel ?? authMethodTexts[method.method],
+      label: method.sourceLabel ?? authMethodLabel(method.method),
       interaction: method.interaction,
     })),
     cliImportPath: offering.authMethods.find((method) => method.method === "cli-import")
       ?.sourcePathHint,
-    plans: offering.plans,
   };
 }
 
@@ -135,7 +137,6 @@ const unknownPresentation = (offeringId: string, provider: string): ProviderPres
   description: "",
   mark: fallbackMark(offeringId),
   authMethods: [],
-  plans: [],
 });
 
 export function accountPresentation(
@@ -147,6 +148,25 @@ export function accountPresentation(
     if (offering) return toPresentation(offering, descriptor.displayName);
   }
   return unknownPresentation(account.offeringId, account.provider);
+}
+
+/**
+ * 套餐标签：直接消费主进程固化进快照的 `planLabel`（回退顺序已在主进程
+ * 决定：目录 displayName → 原始标识串）。空 plan 的展示方式归 UI——当前
+ * 选择不渲染标签，而不是虚构"未提供"占位。
+ */
+export function planTagLabel(usage: PublicUsage | null): string | null {
+  const label = usage?.planLabel?.trim();
+  return label ? label : null;
+}
+
+/**
+ * 未识别档位：上游有 plan 标识但目录未命中。倍率按默认档估算（主进程既有
+ * 行为），这里给出可见提示的判据——供应商改版导致 match 键失配时用户与
+ * 开发者能立刻看到，而不是无声错权重。
+ */
+export function isUnrecognizedPlan(usage: PublicUsage | null): boolean {
+  return Boolean(usage && usage.planId === null && usage.plan.trim());
 }
 
 function windowLabel(seconds: number | null): string | null {

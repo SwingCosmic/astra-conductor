@@ -10,6 +10,8 @@ export type {
 export {
   DEFAULT_PLAN_MULTIPLIER,
   providerCatalog,
+  providerIds,
+  authMethods,
   getProviderDescriptor,
   findOffering,
   matchOfferingPlan,

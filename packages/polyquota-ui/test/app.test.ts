@@ -18,18 +18,19 @@ import {
   accountPresentation,
   authMethodLabel,
   catalogPresentations,
+  isUnrecognizedPlan,
+  planTagLabel,
   quotaLabel,
   resetCreditTypeLabel,
 } from "../src/presentation";
 import {
   POLYQUOTA_SCHEMA_VERSION,
   emptyCompositeRemaining,
-  publicPlanDisplayName,
 } from "@astra-conductor/polyquota-contract";
 
 const codexPlans: PublicOfferingDescriptor["plans"] = [
-  { id: "plus", displayName: "Plus", match: ["plus"] },
-  { id: "pro-5x", displayName: "Pro 5x", match: ["prolite", "pro 5x", "pro5x"] },
+  { id: "plus", displayName: "Plus" },
+  { id: "pro-5x", displayName: "Pro 5x" },
 ];
 
 const providerCatalogFixture: PublicProviderDescriptor[] = [
@@ -185,8 +186,8 @@ const providerCatalogFixture: PublicProviderDescriptor[] = [
         iconKey: "copilot",
         authMethods: [{ method: "device-code", interaction: "device-code" }],
         plans: [
-          { id: "copilot-pro", displayName: "Copilot Pro", match: ["copilot pro"] },
-          { id: "copilot-pro-plus", displayName: "Copilot Pro+", match: ["copilot pro+"] },
+          { id: "copilot-pro", displayName: "Copilot Pro" },
+          { id: "copilot-pro-plus", displayName: "Copilot Pro+" },
         ],
       },
     ],
@@ -323,10 +324,26 @@ describe("desktop account UI", () => {
       "设备码",
       "Codex CLI",
     ]);
-    // 套餐档位来自接入点目录，未知档位不猜名。
-    expect(publicPlanDisplayName(codex.plans, "prolite")).toBe("Pro 5x");
-    expect(publicPlanDisplayName(codex.plans, "mystery-tier")).toBe("mystery-tier");
-    expect(publicPlanDisplayName(codex.plans, "plus")).toBe("Plus");
+    // 套餐标签直接消费主进程解析结果（planLabel），前端不做任何匹配；
+    // 未识别档位以 planId: null 显式暴露，展示回退原文并带可见提示。
+    const resolvedUsage = (plan: string, planId: string | null, planLabel: string | null) =>
+      ({
+        accountId: account.id,
+        plan,
+        planId,
+        planLabel,
+        overallRemainingPercentage: null,
+        groups: [],
+        extras: [],
+        resetCredits: null,
+        fetchedAt: "2026-09-27T00:00:00.000Z",
+      }) satisfies PublicUsage;
+    expect(planTagLabel(resolvedUsage("prolite", "pro-5x", "Pro 5x"))).toBe("Pro 5x");
+    expect(planTagLabel(resolvedUsage("mystery-tier", null, "mystery-tier"))).toBe("mystery-tier");
+    expect(planTagLabel(null)).toBeNull();
+    expect(isUnrecognizedPlan(resolvedUsage("mystery-tier", null, "mystery-tier"))).toBe(true);
+    expect(isUnrecognizedPlan(resolvedUsage("prolite", "pro-5x", "Pro 5x"))).toBe(false);
+    expect(isUnrecognizedPlan(resolvedUsage("", null, null))).toBe(false);
     // 占位符跟随名称首字符；未知 offering 不回退到第一行。
     expect(catalogRow("grok-build").mark).toBe("G");
     const unknown = accountPresentation(
@@ -335,7 +352,6 @@ describe("desktop account UI", () => {
     );
     expect(unknown.name).toBe("unknown-offering");
     expect(unknown.mark).toBe("U");
-    expect(unknown.plans).toEqual([]);
   });
 
   it("maps quota labels through native names and window durations only", () => {
@@ -498,6 +514,8 @@ describe("desktop account UI", () => {
         usage: {
           accountId: account.id,
           plan: "plus",
+          planId: "plus",
+          planLabel: "Plus",
           overallRemainingPercentage: 80,
           groups: [
             {
@@ -550,6 +568,32 @@ describe("desktop account UI", () => {
     expect(wrapper.text()).toContain("当前值");
     expect(wrapper.text()).toContain("$5.00");
     expect(wrapper.find(".credit-redeem-action").exists()).toBe(false);
+  });
+
+  it("marks unrecognized plan tiers visibly instead of silently defaulting", () => {
+    const wrapper = mount(QuotaCard, {
+      props: {
+        account,
+        busy: false,
+        providers: providerCatalogFixture,
+        usage: {
+          accountId: account.id,
+          // 目录未命中：展示回退原文，且套餐标签旁有可见提示（不再无声落默认倍率）。
+          plan: "ChatGPT Super Ultra",
+          planId: null,
+          planLabel: "ChatGPT Super Ultra",
+          overallRemainingPercentage: 80,
+          groups: [],
+          extras: [],
+          resetCredits: null,
+          fetchedAt: "2026-09-24T00:00:00.000Z",
+        },
+      },
+    });
+    const tag = wrapper.get(".plan-tag");
+    expect(tag.text()).toBe("ChatGPT Super Ultra?");
+    expect(tag.classes()).toContain("is-unrecognized");
+    expect(tag.attributes("title")).toContain("未识别的订阅档位");
   });
 
   it("keeps refresh available before the first usage snapshot", async () => {
@@ -663,6 +707,8 @@ describe("desktop account UI", () => {
         usage: {
           accountId: glmAccount.id,
           plan: "Pro",
+          planId: "pro",
+          planLabel: "Pro",
           overallRemainingPercentage: 75,
           groups: [],
           extras: [],
@@ -704,6 +750,8 @@ describe("desktop account UI", () => {
         usage: {
           accountId: codexAccount.id,
           plan: "plus",
+          planId: "plus",
+          planLabel: "Plus",
           overallRemainingPercentage: 80,
           groups: [],
           extras: [],
@@ -741,6 +789,8 @@ describe("desktop account UI", () => {
     const usage: PublicUsage = {
       accountId: glmAccount.id,
       plan: "Pro",
+      planId: "pro",
+      planLabel: "Pro",
       overallRemainingPercentage: 75,
       groups: [],
       extras: [],
@@ -789,6 +839,8 @@ describe("desktop account UI", () => {
         usage: {
           accountId: account.id,
           plan: "Starter",
+          planId: "starter",
+          planLabel: "Starter",
           overallRemainingPercentage: 75,
           groups: [
             {
@@ -917,6 +969,8 @@ describe("desktop account UI", () => {
         snapshot: {
           accountId: account.id,
           plan: "plus",
+          planId: "plus",
+          planLabel: "Plus",
           overallRemainingPercentage: 100,
           groups: [],
           extras: [],

@@ -10,12 +10,13 @@ import type {
   UsageQuota,
   UsageQuotaGroup,
 } from "../models";
-import { publicPlanDisplayName } from "@astra-conductor/polyquota-contract";
 import {
   accountPresentation,
   extraItemLabel,
   extraLabel,
   groupLabel,
+  isUnrecognizedPlan,
+  planTagLabel,
   quotaLabel,
   resetCreditTypeLabel,
 } from "../presentation";
@@ -37,16 +38,9 @@ const collapsed = reactive(new Set<string>());
 const selectedExtra = ref<UsageExtra | null>(null);
 const showResetCredits = ref(false);
 const presentation = computed(() => accountPresentation(props.account, props.providers));
-const offering = computed(() =>
-  props.providers
-    ?.flatMap((descriptor) => descriptor.offerings)
-    .find((item) => item.id === props.account.offeringId),
-);
 const cardTone = computed(() => tone(props.usage?.overallRemainingPercentage ?? null));
-const planName = computed(() => {
-  const raw = props.usage?.plan.trim() ?? "";
-  return raw ? publicPlanDisplayName(offering.value?.plans, raw) : null;
-});
+const planName = computed(() => planTagLabel(props.usage));
+const planUnrecognized = computed(() => isUnrecognizedPlan(props.usage));
 const resetCredits = computed(() => props.usage?.resetCredits ?? null);
 const resetCreditsCount = computed(() => {
   const credits = resetCredits.value;
@@ -143,7 +137,18 @@ function useAggregateResetCredit(type: string | null): void {
       <div class="provider-identity">
         <div class="provider-title">
           <h2>{{ presentation.name }}</h2>
-          <span v-if="planName" class="plan-tag">{{ planName }}</span>
+          <span
+            v-if="planName"
+            class="plan-tag"
+            :class="{ 'is-unrecognized': planUnrecognized }"
+            :title="
+              planUnrecognized
+                ? '未识别的订阅档位：展示为上游原文，聚合评分按默认倍率估算'
+                : undefined
+            "
+          >
+            {{ planName }}<span v-if="planUnrecognized" class="plan-tag-mark">?</span>
+          </span>
         </div>
         <p>{{ account.maskedIdentifier }}</p>
       </div>

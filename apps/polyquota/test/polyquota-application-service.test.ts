@@ -12,7 +12,6 @@ import {
   type UsageSnapshot,
 } from "@astra-conductor/core/internal";
 import {
-  parseSnapshot,
   type PolyQuotaChangedEvent,
   type PolyQuotaSnapshot,
 } from "@astra-conductor/polyquota-contract";
@@ -204,7 +203,7 @@ describe("PolyQuotaApplicationService", () => {
     );
   });
 
-  it("emits a snapshot the desktop preload parser accepts, including the live provider catalog", async () => {
+  it("emits a typed snapshot with the live provider catalog and resolved plan labels", async () => {
     const { service, storage } = createService(account);
     storage.snapshots.save({
       ...refreshOutcome.snapshot,
@@ -239,10 +238,36 @@ describe("PolyQuotaApplicationService", () => {
         },
       ],
     });
-    const snapshot = structuredClone(await service.getSnapshot());
-    expect(() => parseSnapshot(snapshot)).not.toThrow();
-    expect(parseSnapshot(snapshot).compositeRemaining.status).toBe("complete");
-    expect(parseSnapshot(snapshot).providers.length).toBeGreaterThan(0);
+    const snapshot = await service.getSnapshot();
+    // 解析点上移：套餐匹配在主进程完成，快照携带固化结果且目录不再下发 match。
+    expect(snapshot.compositeRemaining.status).toBe("complete");
+    expect(snapshot.providers.length).toBeGreaterThan(0);
+    expect(snapshot.usageByAccountId[account.id]).toMatchObject({
+      plan: "plus",
+      planId: "plus",
+      planLabel: "Plus",
+    });
+    for (const descriptor of snapshot.providers) {
+      for (const offering of descriptor.offerings) {
+        for (const plan of offering.plans) {
+          expect(Object.keys(plan).sort()).toEqual(["displayName", "id"]);
+        }
+      }
+    }
+  });
+
+  it("marks unrecognized plan strings with planId null and falls back to the raw label", async () => {
+    const { service, storage } = createService(account);
+    storage.snapshots.save({
+      ...refreshOutcome.snapshot,
+      plan: "ChatGPT Super Ultra",
+    });
+    const snapshot = await service.getSnapshot();
+    expect(snapshot.usageByAccountId[account.id]).toMatchObject({
+      plan: "ChatGPT Super Ultra",
+      planId: null,
+      planLabel: "ChatGPT Super Ultra",
+    });
   });
 
   it("computes composite remaining from enabled account snapshots", async () => {

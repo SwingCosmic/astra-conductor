@@ -1,4 +1,4 @@
-import { providerIds, type ProviderId } from "../models.js";
+import type { AuthMethod, ProviderId } from "../models.js";
 import type {
   ProviderCapability,
   ProviderDescriptor,
@@ -81,8 +81,8 @@ export function validateProviderCatalog(descriptors: readonly ProviderDescriptor
   const seenProviders = new Set<string>();
   const seenOfferings = new Set<string>();
   for (const descriptor of descriptors) {
-    if (!providerIds.includes(descriptor.provider)) {
-      throw new Error(`Provider catalog declares unknown provider: ${descriptor.provider}`);
+    if (!identifierPattern.test(descriptor.provider)) {
+      throw new Error(`Provider catalog declares invalid provider id: ${descriptor.provider}`);
     }
     if (seenProviders.has(descriptor.provider)) {
       throw new Error(`Provider catalog declares duplicate provider: ${descriptor.provider}`);
@@ -116,6 +116,11 @@ export function validateProviderCatalog(descriptors: readonly ProviderDescriptor
       }
       const seenMethods = new Set<string>();
       for (const method of offering.authMethods) {
+        if (!identifierPattern.test(method.method)) {
+          throw new Error(
+            `Offering ${offering.id} declares invalid auth method id: ${method.method}`,
+          );
+        }
         if (seenMethods.has(method.method)) {
           throw new Error(`Offering ${offering.id} declares duplicate method: ${method.method}`);
         }
@@ -145,6 +150,25 @@ const descriptors: readonly ProviderDescriptor[] = [
 validateProviderCatalog(descriptors);
 
 export const providerCatalog: readonly ProviderDescriptor[] = descriptors;
+
+/**
+ * 单源反转：供应商与认证方式的已知集合从注册 descriptors 收集导出，不再由
+ * 契约包词表供源。新增供应商 / 认证方式只登记 descriptor，这里自动跟上；
+ * 运行期"已知供应商 / 该接入点支持哪些认证方式"的检测一律以目录内容为准。
+ */
+export const providerIds: readonly ProviderId[] = descriptors.map(
+  (descriptor) => descriptor.provider,
+);
+
+export const authMethods: readonly AuthMethod[] = [
+  ...new Set(
+    descriptors.flatMap((descriptor) =>
+      descriptor.offerings.flatMap((offering) =>
+        offering.authMethods.map((method) => method.method),
+      ),
+    ),
+  ),
+];
 
 export function getProviderDescriptor(provider: ProviderId): ProviderDescriptor {
   const descriptor = providerCatalog.find((item) => item.provider === provider);

@@ -96,8 +96,8 @@ OmniRoute 并不存在一个包办所有职责的 `ProviderAdapter`。它的完�
 
 现有实现已经有良好分层，但服务商边界仍分散（下列问题已在阶段 A–D 与 IPC 契约改造中全部解决，仅保留两处注明"部分"的遗留）：
 
-- `ProviderId`、`AuthMethod` 在 Core 与 `polyquota-contract` 各维护一份封闭联合（已解决：封闭标识的唯一来源改为契约包，core re-export，UI 经 models 转发；GraphAgent 契约出现时应上移到共享协议层）；
-- UI 的 `presentation.ts` 同时承担目录、可用性、地区默认值和文案（已解决：收缩为图标资产与 iconKey 字符回退、内置枚举文本映射（含重置额度类型词汇）与窗口时长等纯展示计算；CLI 导入路径提示、配额/附加项标签回退、名称/描述/网站全部目录驱动，`planLabel` 删除，QuotaCard 直接使用契约包的 `publicPlanDisplayName`）；
+- `ProviderId`、`AuthMethod` 在 Core 与 `polyquota-contract` 各维护一份封闭联合（已解决，2026-10 结构侧批次修订：动态集合去契约化——契约 DTO 放宽为 slug 格式 `string`、不封闭 TS 类型，core 改为从注册 descriptors 收集导出 `providerIds` / `authMethods`，运行期检测一律查 `providerCatalog` 目录内容；GraphAgent 契约出现时应上移到共享协议层）；
+- UI 的 `presentation.ts` 同时承担目录、可用性、地区默认值和文案（已解决：收缩为图标资产与 iconKey 字符回退、内置枚举文本映射（含重置额度类型词汇）与窗口时长等纯展示计算；CLI 导入路径提示、配额/附加项标签回退、名称/描述/网站全部目录驱动；2026-10 结构侧批次修订：套餐匹配上移主进程——match 键不再随目录下发，快照携带主进程解析固化的 `planId` / `planLabel`，QuotaCard 只消费解析结果，未识别档位（`planId: null`）带可见提示，空 plan 的展示方式归 UI）；
 - `presentation.ts` 的 `providerPresentation` 在未知 offering 时最终回退到注册表第一个条目（已解决：未知 offering 显示占位行——名称为 offeringId、字符"?"，不回退）；
 - 桌面 `main.ts` 仍含约百行按供应商展开的组合代码（已解决：core `providers/<id>/bundle.ts` 组合工厂 + `createProviderContributions(ports)` 聚合，桌面组合根只注入 http/browser/callbackServer/storage/vault 端口，新增供应商零修改）；
 - GLM 的 `region` 把接入点差异压成一个地区枚举（已解决：descriptor 无 region 字段，`AuthStartOptions` 仅剩 `apiKey`，账号持久化 `offeringId`，GLM 实现内部按 offeringId 选择端点，`publicMetadata.region`/`presentationId` 与 UI 的 `accountPresentationId` 恢复逻辑全部删除）；
@@ -268,11 +268,11 @@ interface ProviderPlanDescriptor {
 }
 ```
 
-除 `protocolRoutes`、`extensions` 与接入点的 `protocolRouteIds` 外，上述形状已在 core `providers/<id>/descriptor.ts` 落地（六家：codex、glm、grok-build、antigravity、claude、opencode-go），`capabilities` 当前全部声明 `["account", "usage"]`，`plans` 已随账号持久化 `offeringId` 迁至接入点级（GLM 两个接入点各持一份相同目录，允许独立演进），offering 不再有 `region` 字段。`providers/catalog.ts` 聚合为唯一目录端点并构造期校验：未知或重复 provider、offering 归属与 id 格式、offering 内认证方式重复、iconKey 与 sourcePathHint 合法性、capability 取值、接入点内 plan 的 id/multiplier/match 合法性。快照经 `PublicProviderDescriptor` 透出 provider/displayName、offerings 全部展示字段（含 iconKey 与 sourcePathHint）与各接入点的 plans（id/displayName/match）；倍率与 `source` 属于运行期评分事实，不进公开目录。
+除 `protocolRoutes`、`extensions` 与接入点的 `protocolRouteIds` 外，上述形状已在 core `providers/<id>/descriptor.ts` 落地（六家：codex、glm、grok-build、antigravity、claude、opencode-go），`capabilities` 当前全部声明 `["account", "usage"]`，`plans` 已随账号持久化 `offeringId` 迁至接入点级（GLM 两个接入点各持一份相同目录，允许独立演进），offering 不再有 `region` 字段。`providers/catalog.ts` 聚合为唯一目录端点并构造期校验：provider id 格式（slug）与重复、offering 归属与 id 格式、offering 内认证方式 id 格式与重复、iconKey 与 sourcePathHint 合法性、capability 取值、接入点内 plan 的 id/multiplier/match 合法性（2026-10 结构侧批次：供应商/认证方式集合改为从注册 descriptors 收集导出，"未知 provider"检查转为结构性校验）。快照经 `PublicProviderDescriptor` 透出 provider/displayName、offerings 全部展示字段（含 iconKey 与 sourcePathHint）与各接入点的 plans（仅 id/displayName——match 键是 core 内部数据层标识，不过 IPC，套餐展示标签由主进程解析固化进 `PublicUsage.planLabel` 下发）；倍率与 `source` 属于运行期评分事实，不进公开目录。
 
 `displayName` 与 `description` 是 core 持有的标准表述（语言中立或与产品 UI 语言一致，一份即可）；UI 可以按 `offeringId` 覆盖更适合产品的名称与图标，但不得改变能力或可执行状态，也不得再保存一份供应商事实副本（本地化现阶段不做，归属边界见 §6.9）。
 
-`plans` 是一次性套餐目录：运行期把上游 `usage.plan` 归一化后按 `match` 查表取 `multiplier` 参与评分，`source` 区分官方公布与一次性推断。目录只做查表，不在运行期重新猜测名称；未命中时使用统一的默认档位。`displayName` 使用上游官方、不区分语言的档位表述（如 "Plus"、"Pro 5x"、"SuperGrok Heavy"）——标准名称映射的唯一归属是 core，UI 直接展示，不另存映射，也不做本地化改写。目标为接入点级：同一服务商的不同接入点计费模式可以完全不同（订阅档位与按量付费并存），账号保存 `offeringId` 后查表键从 provider 改为接入点（阶段 C 第 3 条）。
+`plans` 是一次性套餐目录：运行期把上游 `usage.plan` 归一化后按 `match` 查表取 `multiplier` 参与评分，`source` 区分官方公布与一次性推断。目录只做查表，不在运行期重新猜测名称；未命中时使用统一的默认档位。`displayName` 使用上游官方、不区分语言的档位表述（如 "Plus"、"Pro 5x"、"SuperGrok Heavy"）——标准名称映射的唯一归属是 core（2026-10 结构侧批次起匹配只在主进程构造公开快照时发生：解析结果 `planId` / `planLabel` 随 `PublicUsage` 固化下发，回退顺序为目录 `displayName` → 上游原始展示名 → 原始标识串，未识别态 `planId: null` 由 UI 给出可见提示），UI 直接展示、不另存映射，也不做本地化改写。目标为接入点级：同一服务商的不同接入点计费模式可以完全不同（订阅档位与按量付费并存），账号保存 `offeringId` 后查表键从 provider 改为接入点（阶段 C 第 3 条）。
 
 `region` 是本设计需要修正的一处：GLM 双 offering 落地时把接入点差异压成了一个地区枚举，而它在现行链路里同时承担四个职责——选择上游端点（vendor 按 `apiRegion` 区分 bigmodel 与 z.ai 的接口地址）、参与账号稳定身份（`stableIdentity` 拼接 region）、充当展示入口恢复键（`presentationId` 由 region 反推）、以及无命名空间地存进 `publicMetadata`。BigModel 与 Z.ai 实际是两个货真价实的接入点：接口地址不同，未来的模型目录与计费也可能不同。目标形态下这些差异由 offering 自身声明承载（认证方式、`protocolRouteIds`、接入点级 plans 与用量语义），地区退为 GLM 实现内部选择端点的细节，不再出现在公开 descriptor、认证输入或账号元数据中；迁移依赖账号持久化 `offeringId`（阶段 C 第 3 条），随后 `publicMetadata.region` / `presentationId`、`AuthStartOptions.region` 与 descriptor 的 `region` 字段一并退休（第 4 条）。
 
@@ -550,7 +550,7 @@ interface ProviderAuthFlow {
 | 元数据 | 当前位置 | 目标位置 | 说明 |
 | --- | --- | --- | --- |
 | offering 名称 / 描述 / 网站 | descriptor，`presentation.ts` 存回退副本 | descriptor，删除副本 | 快照已透出 |
-| 套餐展示名 | descriptor `plans` | 已达成 | UI `planLabel` 已目录驱动，使用官方档位表述，是本次迁移的范例 |
+| 套餐展示名 | descriptor `plans` | 已达成 | 主进程解析并固化进 `PublicUsage.planLabel`（回退顺序：目录 `displayName` → 原始标识串），使用官方档位表述，是本次迁移的范例（2026-10 结构侧批次起前端不再匹配） |
 | cli-import 来源标签（ZCode / Grok CLI / Claude Code） | descriptor `sourceLabel`，UI 存副本 | descriptor，删除副本 | UI 已优先 `sourceLabel` |
 | 内置枚举展示文本（认证方式 / 交互类型 / 凭据状态…） | UI 常量表 | 留 UI | 封闭协议类型的固定映射，非供应商事实；core 不为枚举提供描述（§6.3） |
 | CLI 导入路径展示（`~/.codex/auth.json` 等） | UI `cliImportPath` | descriptor `sourcePathHint` | 与 flow 内真实路径同源（§6.3） |
@@ -727,7 +727,7 @@ interface PolyQuotaSnapshot {
 - `extras[]` 表达无法归入配额窗口但需要展示的信息；
 - 上游原生 `displayName` 与 `windowSeconds` 都保留；
 - 缺失值保持 `null` 或省略，不能编造 0、无限或默认窗口；
-- 套餐展示名来自快照 `plans`，使用上游官方、不区分语言的档位表述（已落地）；配额、配额组与附加项的展示回退顺序为上游原生 `displayName` → 窗口时长等纯展示计算 → key 原样，本地化现阶段不做。
+- 套餐展示名消费主进程固化进快照的 `planLabel`（匹配只在主进程构造公开快照时发生），未识别档位（`planId: null`）由 UI 给出可见提示；配额、配额组与附加项的展示回退顺序为上游原生 `displayName` → 窗口时长等纯展示计算 → key 原样，本地化现阶段不做。
 
 重置额度（reset credits）是第一个超出通用 `extras` 能力的结构，升级为 `UsageSnapshot` 的一等字段，并按两种形态建模：
 
@@ -1026,6 +1026,8 @@ Electron 测试只覆盖共享 schema、固定通道、订阅释放、CSP、prel
 进展记录：第 1—3 条已随[运行流程与通信机制现状报告](../../polyquota/runtime-and-communication-review.md)第 7.1、7.2 节实施完成——`packages/polyquota-contract` 已建立为 UI、preload 与主进程的共同契约来源，preload 全局已更名为 `window.polyQuotaElectronService`，带 `revision` 的 `getSnapshot()` 与失效事件已替代分散读取。2026-10-12 修订：第 4、5 条按 §6.9 的归属清单细化为可执行项；2026-10-13 增补第 6 条（重置额度结构升级：聚合按类型分桶、codex 迁移为分体、修正聚合形态对账错位）。
 
 进展记录（2026-10-13，第 4—8 条全部落地）：descriptor 补齐 `iconKey`（七枚：codex/bigmodel/zai/grok/antigravity/claude/opencode）与 cli-import 的 `sourcePathHint`（与各 auth-flow 的真实路径解析同源维护并透传到公开 DTO）；`presentation.ts` 收缩为图标资产映射、iconKey 字符回退、内置枚举文本映射（认证方式 + 重置额度类型词汇 `resetCreditTypeLabel`）与窗口时长等纯展示计算，四张标签映射表、目录缺失副本、硬编码 `available` 与 `presentationRegistry[0]` 兜底全部删除，配额/附加项标签回退顺序为原生 `displayName` → 窗口时长计算 → key 原样。重置额度升级为 `UsageSnapshot` 与 `PublicUsage` 的一等 `resetCredits` 判别结构（schemaVersion 4）：codex 常规路径合并拉取明细端点输出分体（逐卡 id/类型/过期时间），明细暂不可用时如实退回聚合计数（单桶 banked），消耗侧 `ResetCreditRedemption` 分体带 `itemId`（兑换协议重新校验列表）、聚合按类型且由服务端挑选，伪造的常量 `actionToken` 与 extras 内的 reset-credits 展示删除，对账按形态区分（分体按 itemId 本地移除直至上游停止报告，聚合计数不做本地扣减），UI 按 `kind` 渲染分桶/逐卡两种消耗入口，grok 的计数展示暂留 extras（升级分体另行评估）。封闭标识（providerIds/authMethods/ProviderId/AuthMethod 等）的唯一来源改为契约包，core re-export（core → contract 为新增依赖方向，GraphAgent 契约出现时应上移共享协议层）；`UsageExtraItem.actionToken` 删除。旧 `publicMetadata` 的退休键（region/presentationId/product）已清理，codex/grok/claude 的工作区与组织事实待 §6.1 PublicExtension 机制落地后转换；逐账号读取 API 此前已随快照完成。
+
+进展记录（2026-10-15，[2026-10 漂移排查](./2026-10-drift-review/README.md)第一批·结构侧落地，schemaVersion 4 → 5）：上条记录的"封闭标识唯一来源改为契约包"已被单源反转取代——供应商/认证方式是随目录扩张的动态集合，契约 DTO 放宽为 slug 格式 `string` 且不封闭 TS 类型，`providerIds` / `authMethods` 改由 core `providers/catalog.ts` 从注册 descriptors 收集导出，契约包 `parseStartAuthRequest` 只做结构校验、方法可用性由主进程交叉查目录（AuthCoordinator 既有校验）。套餐匹配上移主进程：`match` 键退出公开目录（`PublicPlanDescriptor` 只剩 id/displayName），主进程构造公开快照时经 core 唯一实现（`matchOfferingPlan`）解析出 `planId` / `planLabel` 固化进 `PublicUsage`（回退顺序：目录 `displayName` → 原始标识串；上游原始展示名的附带待数据侧叶子改造），契约包的 `normalizePlanMatch` / `matchPublicPlan` / `publicPlanDisplayName` 退役，未识别态（`planId: null`）倍率仍走默认 5 但 UI 套餐标签带可见提示。校验归属迁移：主进程自产快照的 `parseSnapshot` 自检取消，preload 收包解析全部退役、只留 schemaVersion 比对与传输错误映射（错误消息正则抠 path 的 hack 随之消失），请求侧维持 main `ipc.ts` 一道校验。usage/account DTO 家族照 ResetCredits 先例收敛为契约单源 re-export（core `models.ts` 删除 `PublicAccountDto` / `PublicUsageDto` 与 quota 族副本定义）；契约包单文件按域拆分为 vocabularies / channels / dto/* / validation（约 611 行，原 1031 行）。
 
 ### 阶段 E：在 GraphAgent 可运行前固定推理骨架
 

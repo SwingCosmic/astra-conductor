@@ -373,6 +373,17 @@ button:disabled {
   font-weight: 600;
   line-height: 18px;
 }
+/* 未识别档位：目录未命中的 plan 回退原文展示，虚线描边 + 问号提示权重失真。 */
+.plan-tag.is-unrecognized {
+  border-style: dashed;
+  border-color: #f59e0b;
+  color: #92400e;
+}
+.plan-tag-mark {
+  margin-left: 3px;
+  cursor: help;
+  font-weight: 700;
+}
 .provider-identity p {
   margin: 5px 0 0;
   overflow: hidden;

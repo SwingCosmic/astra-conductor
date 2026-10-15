@@ -1,87 +1,110 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import {
-  ContractValidationError,
-  parseAuthStartResult,
-  parseChangedEvent,
-  parseCredentialRefreshOutcome,
-  parsePublicAccount,
-  parseRefreshBatchOutcome,
-  parseRefreshOutcome,
-  parseRedeemResetCreditOutcome,
-  parseServiceResult,
-  parseSnapshot,
-  parseSystemStatus,
-  parseVoid,
+  POLYQUOTA_SCHEMA_VERSION,
   polyQuotaIpcChannels,
   polyQuotaIpcEvents,
+  type AuthStartResult,
+  type CredentialRefreshOutcomeDto,
   type IPolyQuotaService,
+  type PolyQuotaChangedEvent,
+  type PolyQuotaSnapshot,
+  type PublicAccount,
   type PublicError,
+  type PublicSystemStatus,
+  type RedeemResetCreditOutcomeDto,
+  type RefreshBatchOutcomeDto,
+  type RefreshOutcomeDto,
   type ServiceResult,
 } from "@astra-conductor/polyquota-contract";
 
-type Parser<T> = (value: unknown) => T;
+/**
+ * 收包零解析（2026-10 校验归属定稿）：同一安装包内的主进程是可信源，响应
+ * 方向只做 schemaVersion 比对与传输错误映射，不做逐字段运行期断言；请求
+ * 方向由 main 的 ipc.ts 统一校验。传输形态异常一律折算为 transport 失败。
+ */
 
 function failure<T>(code: string, message: string): ServiceResult<T> {
   const error: PublicError = { code, message, retryable: false };
   return { ok: false, error };
 }
 
-async function invoke<T>(
-  channel: string,
-  parser: Parser<T>,
-  input?: unknown,
-): Promise<ServiceResult<T>> {
+const TRANSPORT_FAILURE_MESSAGE = "无法连接 PolyQuota 主进程";
+
+function asServiceResult<T>(raw: unknown): ServiceResult<T> {
+  if (raw && typeof raw === "object" && "ok" in raw) {
+    const result = raw as ServiceResult<T>;
+    if (result.ok === true || result.ok === false) return result;
+  }
+  return failure("transport", TRANSPORT_FAILURE_MESSAGE);
+}
+
+function schemaMismatch<T>(received: unknown): ServiceResult<T> {
+  return failure(
+    "contract-mismatch",
+    `桌面通信协议版本不一致（期望 ${POLYQUOTA_SCHEMA_VERSION}，收到 ${String(received)}）`,
+  );
+}
+
+async function invoke<T>(channel: string, input?: unknown): Promise<ServiceResult<T>> {
+  let raw: unknown;
   try {
-    const raw =
+    raw =
       input === undefined
         ? await ipcRenderer.invoke(channel)
         : await ipcRenderer.invoke(channel, input);
-    return parseServiceResult(raw, parser);
-  } catch (error) {
-    if (error instanceof ContractValidationError) {
-      console.error("PolyQuota contract mismatch", error.message);
-      const path = error.message.replace(/^Invalid PolyQuota contract value at /, "");
-      return failure("contract-mismatch", `桌面通信契约不一致（${path}）`);
-    }
-    return failure("transport", "无法连接 PolyQuota 主进程");
+  } catch {
+    return failure("transport", TRANSPORT_FAILURE_MESSAGE);
   }
+  return asServiceResult<T>(raw);
+}
+
+function asChangedEvent(payload: unknown): PolyQuotaChangedEvent | null {
+  if (!payload || typeof payload !== "object") return null;
+  const event = payload as PolyQuotaChangedEvent;
+  return event.schemaVersion === POLYQUOTA_SCHEMA_VERSION ? event : null;
 }
 
 const service: IPolyQuotaService = {
-  getSnapshot: () => invoke(polyQuotaIpcChannels.getSnapshot, parseSnapshot),
+  getSnapshot: async () => {
+    const result = await invoke<PolyQuotaSnapshot>(polyQuotaIpcChannels.getSnapshot);
+    if (!result.ok || result.value?.schemaVersion === POLYQUOTA_SCHEMA_VERSION) return result;
+    return schemaMismatch(result.value?.schemaVersion);
+  },
   subscribe(listener) {
     const handler = (_event: IpcRendererEvent, payload: unknown): void => {
-      try {
-        listener(parseChangedEvent(payload));
-      } catch (error) {
-        console.warn(
-          "Ignored invalid PolyQuota state event",
-          error instanceof ContractValidationError ? "contract-mismatch" : "unknown",
-        );
+      const event = asChangedEvent(payload);
+      if (!event) {
+        console.warn("Ignored invalid PolyQuota state event");
+        return;
       }
+      listener(event);
     };
     ipcRenderer.on(polyQuotaIpcEvents.stateChanged, handler);
     return () => ipcRenderer.removeListener(polyQuotaIpcEvents.stateChanged, handler);
   },
   setAccountEnabled(accountId, enabled) {
-    return invoke(polyQuotaIpcChannels.setAccountEnabled, parseVoid, { accountId, enabled });
+    return invoke<void>(polyQuotaIpcChannels.setAccountEnabled, { accountId, enabled });
   },
-  deleteAccount: (accountId) => invoke(polyQuotaIpcChannels.deleteAccount, parseVoid, accountId),
+  deleteAccount: (accountId) => invoke<void>(polyQuotaIpcChannels.deleteAccount, accountId),
   refreshAccount: (accountId) =>
-    invoke(polyQuotaIpcChannels.refreshAccount, parseRefreshOutcome, accountId),
-  refreshAll: () => invoke(polyQuotaIpcChannels.refreshAll, parseRefreshBatchOutcome),
+    invoke<RefreshOutcomeDto>(polyQuotaIpcChannels.refreshAccount, accountId),
+  refreshAll: () => invoke<RefreshBatchOutcomeDto>(polyQuotaIpcChannels.refreshAll),
   refreshCredentials: (accountId) =>
-    invoke(polyQuotaIpcChannels.refreshCredentials, parseCredentialRefreshOutcome, accountId),
-  redeemResetCredit: (accountId, redemption) =>
-    invoke(polyQuotaIpcChannels.redeemResetCredit, parseRedeemResetCreditOutcome, {
+    invoke<CredentialRefreshOutcomeDto>(polyQuotaIpcChannels.refreshCredentials, accountId),
+  redeemResetCredit(accountId, redemption) {
+    return invoke<RedeemResetCreditOutcomeDto>(polyQuotaIpcChannels.redeemResetCredit, {
       accountId,
       redemption,
-    }),
-  startAuth: (request) => invoke(polyQuotaIpcChannels.startAuth, parseAuthStartResult, request),
-  finishAuth: (sessionId) => invoke(polyQuotaIpcChannels.finishAuth, parsePublicAccount, sessionId),
-  cancelAuth: (sessionId) => invoke(polyQuotaIpcChannels.cancelAuth, parseVoid, sessionId),
-  saveSettings: (settings) => invoke(polyQuotaIpcChannels.saveSettings, parseVoid, settings),
-  getSystemStatus: () => invoke(polyQuotaIpcChannels.getSystemStatus, parseSystemStatus),
+    });
+  },
+  startAuth: (request) => invoke<AuthStartResult>(polyQuotaIpcChannels.startAuth, request),
+  finishAuth: (sessionId) => invoke<PublicAccount>(polyQuotaIpcChannels.finishAuth, sessionId),
+  cancelAuth: (sessionId) => invoke<void>(polyQuotaIpcChannels.cancelAuth, sessionId),
+  saveSettings: (settings) => invoke<void>(polyQuotaIpcChannels.saveSettings, settings),
+  getSystemStatus: () => invoke<PublicSystemStatus>(polyQuotaIpcChannels.getSystemStatus),
 };
+
+/** 暴露给 renderer 的桥接服务（导出仅供测试引用，安装即注册一次）。 */
+export const polyQuotaElectronService: IPolyQuotaService = service;
 
 contextBridge.exposeInMainWorld("polyQuotaElectronService", service);

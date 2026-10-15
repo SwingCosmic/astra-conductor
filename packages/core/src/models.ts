@@ -1,32 +1,44 @@
 /**
- * 封闭协议标识的唯一来源是 `@astra-conductor/polyquota-contract`（renderer、
- * preload 与主进程共用的轻量契约包）；core 在此 re-export，禁止再建副本。
+ * 协议 DTO 的单源是 `@astra-conductor/polyquota-contract`（renderer、preload
+ * 与主进程共用的轻量契约包）；core 在此 re-export，禁止再建副本。供应商 /
+ * 认证方式是随目录扩张的动态集合：类型不封闭为字面量联合，已知集合由
+ * `providers/catalog.ts` 从注册 descriptors 收集导出（providerIds / authMethods）。
  * 未来 GraphAgent 契约出现时，这一组标识应上移到共享协议层。
  */
-import {
-  authMethods,
-  providerIds,
-  type AuthMethod,
-  type CredentialState,
-  type JsonPrimitive,
-  type ProviderId,
-  type PublicMetadata,
-  type ResetCreditItem,
-  type ResetCreditRedemption,
-  type ResetCredits,
-} from "@astra-conductor/polyquota-contract";
-
-export { authMethods, providerIds };
-export type {
-  AuthMethod,
+import type {
   CredentialState,
   JsonPrimitive,
-  ProviderId,
+  PublicAccount,
   PublicMetadata,
+  PublicUsage,
   ResetCreditItem,
   ResetCreditRedemption,
   ResetCredits,
+  UsageExtra,
+  UsageExtraItem,
+  UsageQuota,
+  UsageQuotaGroup,
+} from "@astra-conductor/polyquota-contract";
+
+export type {
+  CredentialState,
+  JsonPrimitive,
+  PublicAccount,
+  PublicMetadata,
+  PublicUsage,
+  ResetCreditItem,
+  ResetCreditRedemption,
+  ResetCredits,
+  UsageExtra,
+  UsageExtraItem,
+  UsageQuota,
+  UsageQuotaGroup,
 };
+
+/** slug 格式（`^[a-z0-9][a-z0-9-]{0,63}$`）；已知集合见 catalog 导出的 providerIds。 */
+export type ProviderId = string;
+/** slug 格式；已知集合见 catalog 导出的 authMethods（目录声明供源）。 */
+export type AuthMethod = string;
 
 export interface Account {
   id: string;
@@ -77,41 +89,11 @@ export interface EncryptedCredential {
   updatedAt: string;
 }
 
-export interface UsageQuota {
-  key: string;
-  displayName: string | null;
-  windowSeconds: number | null;
-  used: number;
-  total: number;
-  remaining: number | null;
-  remainingPercentage: number | null;
-  resetAt: string | null;
-  unlimited: boolean;
-  /**
-   * 上游真实上报了 used/total 原始量（credit/token/请求数等）时为 true；
-   * 由百分比合成的刻度（total=100/1000）不算。缺省视为 false，旧快照因此不展示原始量。
-   */
-  rawAmounts?: boolean;
-}
-
-export interface UsageQuotaGroup {
-  key: string;
-  displayName: string | null;
-  quotas: UsageQuota[];
-}
-
-export interface UsageExtraItem {
-  key: string;
-  kind: string;
-  expiresAt: string | null;
-}
-
-export interface UsageExtra {
-  key: string;
-  value: string;
-  items?: UsageExtraItem[];
-}
-
+/**
+ * 供应商内部用量快照（持久化形态）。`plan` 是上游原始标识（数据层标识符）：
+ * 档位匹配与展示标签解析在主进程构造公开快照时进行（`toPublicUsage`），
+ * 结果（`planId` / `planLabel`）随公开 DTO 下发，不在存储层固化。
+ */
 export interface UsageSnapshot {
   accountId: string;
   plan: string;
@@ -135,23 +117,6 @@ export interface NotificationState {
 }
 
 export type SettingValue = JsonPrimitive | JsonPrimitive[] | PublicMetadata;
-
-export interface PublicAccountDto {
-  id: string;
-  provider: ProviderId;
-  offeringId: string;
-  authMethod: AuthMethod;
-  displayName: string;
-  maskedIdentifier: string;
-  enabled: boolean;
-  credentialState: CredentialState;
-  tokenExpiresAt: string | null;
-  publicMetadata: PublicMetadata;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface PublicUsageDto extends UsageSnapshot {}
 
 export interface NotificationCandidate {
   accountId: string;

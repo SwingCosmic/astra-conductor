@@ -592,7 +592,9 @@ describe("stage 3 core boundaries", () => {
       resetCredits: 2,
       fetchedAt: now.toISOString(),
     } as unknown as Parameters<typeof toPublicUsage>[0];
-    expect(toPublicUsage(legacy)).toMatchObject({
+    expect(toPublicUsage(legacy, "codex")).toMatchObject({
+      planId: "plus",
+      planLabel: "Plus",
       overallRemainingPercentage: null,
       groups: [{ key: "default", displayName: null, quotas: [] }],
       extras: [{ key: "reset-credits", value: "2" }],
@@ -619,7 +621,7 @@ describe("stage 3 core boundaries", () => {
     } as unknown as Parameters<typeof toPublicUsage>[0];
     // 破坏性结构更新：旧形态不做折算，resetCredits 为 null；旧结构由桌面端
     // 检测后触发刷新换取新数据，而不是在投影层适配。
-    expect(toPublicUsage(legacy)).toMatchObject({
+    expect(toPublicUsage(legacy, "codex")).toMatchObject({
       resetCredits: null,
       extras: [
         {

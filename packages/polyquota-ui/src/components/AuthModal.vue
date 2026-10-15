@@ -1,18 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from "vue";
-import type {
-  AuthMethod,
-  AuthStartResult,
-  IpcResult,
-  PublicAccount,
-  StartAuthRequest,
-} from "../models";
+import type { AuthStartResult, IpcResult, PublicAccount, StartAuthRequest } from "../models";
 import type { ProviderPresentation } from "../presentation";
 import { usePolyQuotaService } from "../services/polyquota-service-vue";
 
 const props = defineProps<{ provider: ProviderPresentation }>();
 const emit = defineEmits<{ close: []; connected: [account: PublicAccount] }>();
-const selected = ref<AuthMethod>(props.provider.authMethods[0]!.id);
+const selected = ref<string>(props.provider.authMethods[0]!.id);
 const pending = ref<Extract<AuthStartResult, { status: "pending" }> | null>(null);
 const busy = ref(false);
 const message = ref("");
@@ -86,7 +80,7 @@ function close(): void {
   emit("close");
 }
 
-function select(method: AuthMethod): void {
+function select(method: string): void {
   if (method === selected.value) return;
   cancelPending();
   selected.value = method;

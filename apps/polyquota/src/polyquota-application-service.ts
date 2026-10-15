@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
   POLYQUOTA_SCHEMA_VERSION,
-  parseSnapshot,
   type AuthStartResult,
   type CredentialRefreshOutcomeDto,
   type PolyQuotaChangedEvent,
@@ -119,7 +118,7 @@ export class PolyQuotaApplicationService {
         accounts.map((account) => {
           const snapshot = this.storage.snapshots.get(account.id);
           if (snapshot) this.refreshLegacySnapshot(account.id, snapshot);
-          return [account.id, snapshot ? toPublicUsage(snapshot) : null];
+          return [account.id, snapshot ? toPublicUsage(snapshot, account.offeringId) : null];
         }),
       );
       const settings = this.getSettings();
@@ -132,45 +131,43 @@ export class PolyQuotaApplicationService {
         accounts.map((account) => this.toPublicAccount(account)),
       );
       if (revision !== this.revision) continue;
-      try {
-        return parseSnapshot({
-          schemaVersion: POLYQUOTA_SCHEMA_VERSION,
-          revision,
-          generatedAt: this.now().toISOString(),
-          providers: this.options.registry.descriptors.map((descriptor) => ({
-            provider: descriptor.provider,
-            displayName: descriptor.displayName,
-            offerings: descriptor.offerings.map((offering) => ({
-              id: offering.id,
-              provider: offering.provider,
-              displayName: offering.displayName,
-              ...(offering.description ? { description: offering.description } : {}),
-              ...(offering.websiteUrl ? { websiteUrl: offering.websiteUrl } : {}),
-              ...(offering.iconKey ? { iconKey: offering.iconKey } : {}),
-              authMethods: offering.authMethods.map((method) => ({
-                method: method.method,
-                interaction: method.interaction,
-                ...(method.sourceLabel ? { sourceLabel: method.sourceLabel } : {}),
-                ...(method.sourcePathHint ? { sourcePathHint: method.sourcePathHint } : {}),
-              })),
-              plans: offering.plans.map((plan) => ({
-                id: plan.id,
-                displayName: plan.displayName,
-                match: [...plan.match],
-              })),
+      // 套餐解析点上移：目录匹配只在这里经 core 的唯一实现完成，解析结果
+      // （planId / planLabel）随快照固化下发；match 键是 core 内部数据层
+      // 标识，不再进公开目录。正确性由 TS 类型与契约测试保证，不做运行期自检。
+      const snapshot: PolyQuotaSnapshot = {
+        schemaVersion: POLYQUOTA_SCHEMA_VERSION,
+        revision,
+        generatedAt: this.now().toISOString(),
+        providers: this.options.registry.descriptors.map((descriptor) => ({
+          provider: descriptor.provider,
+          displayName: descriptor.displayName,
+          offerings: descriptor.offerings.map((offering) => ({
+            id: offering.id,
+            provider: offering.provider,
+            displayName: offering.displayName,
+            ...(offering.description ? { description: offering.description } : {}),
+            ...(offering.websiteUrl ? { websiteUrl: offering.websiteUrl } : {}),
+            ...(offering.iconKey ? { iconKey: offering.iconKey } : {}),
+            authMethods: offering.authMethods.map((method) => ({
+              method: method.method,
+              interaction: method.interaction,
+              ...(method.sourceLabel ? { sourceLabel: method.sourceLabel } : {}),
+              ...(method.sourcePathHint ? { sourcePathHint: method.sourcePathHint } : {}),
+            })),
+            plans: offering.plans.map((plan) => ({
+              id: plan.id,
+              displayName: plan.displayName,
             })),
           })),
-          accounts: publicAccounts,
-          usageByAccountId,
-          compositeRemaining: this.compositeRemaining(publicAccounts, usageByAccountId),
-          operations,
-          settings,
-          scheduler,
-        });
-      } catch (error) {
-        console.error("PolyQuota snapshot failed contract validation", error);
-        throw error;
-      }
+        })),
+        accounts: publicAccounts,
+        usageByAccountId,
+        compositeRemaining: this.compositeRemaining(publicAccounts, usageByAccountId),
+        operations,
+        settings,
+        scheduler,
+      };
+      return snapshot;
     }
   }
 
@@ -204,7 +201,7 @@ export class PolyQuotaApplicationService {
         this.polling
           .refresh(accountId)
           .then((outcome) => this.reconcilePendingResetCreditUses(outcome))
-          .then(toRefreshOutcome),
+          .then((outcome) => toRefreshOutcome(outcome, this.offeringIdOf(accountId))),
       ["accounts", "usage"],
     );
   }
@@ -222,7 +219,7 @@ export class PolyQuotaApplicationService {
         source,
         outcomes: (await this.polling.refreshAll())
           .map((outcome) => this.reconcilePendingResetCreditUses(outcome))
-          .map(toRefreshOutcome),
+          .map((outcome) => toRefreshOutcome(outcome, this.offeringIdOf(outcome.accountId))),
       }),
       ["accounts", "usage"],
     );
@@ -436,6 +433,11 @@ export class PolyQuotaApplicationService {
     }
   }
 
+  /** 刷新结果里的快照同样要在主进程完成套餐解析；账号已删除时查表自然落空。 */
+  private offeringIdOf(accountId: string): string | null {
+    return this.storage.accounts.get(accountId)?.offeringId ?? null;
+  }
+
   private commit(reasons: PolyQuotaChangeReason[]): void {
     this.revision += 1;
     for (const reason of reasons) this.pendingReasons.add(reason);
@@ -519,12 +521,12 @@ export class PolyQuotaApplicationService {
   }
 }
 
-function toRefreshOutcome(outcome: RefreshOutcome): RefreshOutcomeDto {
+function toRefreshOutcome(outcome: RefreshOutcome, offeringId: string | null): RefreshOutcomeDto {
   if (outcome.status === "updated") {
     return {
       status: "updated",
       accountId: outcome.accountId,
-      snapshot: toPublicUsage(outcome.snapshot),
+      snapshot: toPublicUsage(outcome.snapshot, offeringId ?? ""),
     };
   }
   return outcome;

@@ -1,15 +1,11 @@
-import type {
-  Account,
-  PublicAccountDto,
-  PublicUsageDto,
-  ResetCredits,
-  UsageSnapshot,
-} from "./models.js";
+import type { PublicAccount, PublicUsage } from "@astra-conductor/polyquota-contract";
+import type { Account, ResetCredits, UsageSnapshot } from "./models.js";
+import { matchOfferingPlan } from "./providers/catalog.js";
 
 export function toPublicAccount(
   account: Account,
   tokenExpiresAt: string | null = null,
-): PublicAccountDto {
+): PublicAccount {
   return {
     id: account.id,
     provider: account.provider,
@@ -37,13 +33,21 @@ function legacyResetCredits(
   return value.resetCredits ?? null;
 }
 
-export function toPublicUsage(snapshot: UsageSnapshot): PublicUsageDto {
+/**
+ * 套餐解析点上移后的唯一投影：档位匹配只在这里发生（core 目录为唯一实现），
+ * 解析结果固化进公开快照。回退顺序：目录 `displayName` → 上游原始展示名
+ * （叶子附带时，随数据侧批次提供）→ 原始标识串；未识别档位 `planId: null`，
+ * 倍率仍走默认档（既有行为），由 UI 给出可见提示。
+ */
+export function toPublicUsage(snapshot: UsageSnapshot, offeringId: string): PublicUsage {
   const value = structuredClone(snapshot) as UsageSnapshot & {
     quotas?: UsageSnapshot["groups"][number]["quotas"];
     resetCredits?: number;
     overallRemainingPercentage?: number | null;
   };
   const resetCredits = legacyResetCredits(snapshot);
+  const plan = typeof value.plan === "string" ? value.plan : "";
+  const matched = matchOfferingPlan(offeringId, plan);
   if (!Array.isArray(value.groups)) {
     value.groups = [{ key: "default", displayName: null, quotas: value.quotas ?? [] }];
   }
@@ -101,7 +105,9 @@ export function toPublicUsage(snapshot: UsageSnapshot): PublicUsageDto {
   delete value.quotas;
   return {
     accountId: value.accountId,
-    plan: value.plan,
+    plan,
+    planId: matched?.id ?? null,
+    planLabel: matched?.displayName ?? (plan.trim() || null),
     overallRemainingPercentage: value.overallRemainingPercentage,
     groups: value.groups,
     extras: value.extras,
