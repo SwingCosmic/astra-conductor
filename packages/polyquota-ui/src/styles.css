@@ -99,6 +99,11 @@ button:disabled {
   margin: 0 auto;
   padding: 34px 30px 44px;
 }
+/* 用量页放开容器宽度上限：卡片网格随窗口宽度自动增加列数，
+   其它页（服务商/设置）保留上限以维持可读行宽。 */
+.content-page--wide {
+  max-width: none;
+}
 .content-header {
   display: flex;
   flex-wrap: wrap;
@@ -121,8 +126,11 @@ button:disabled {
   color: #718096;
   font-size: 14px;
 }
+/* 评分环与标题区域等高（标题块约 60px），数值居中于环内、caption 在环
+   左侧；与标题及两环之间都留出明显间距。 */
 .content-header .usage-score-rings {
   margin-right: auto;
+  margin-left: 24px;
 }
 .content-header .outline-action {
   flex: none;
@@ -131,24 +139,23 @@ button:disabled {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 10px;
+  gap: 30px;
 }
 .usage-score-ring {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 2px;
-  width: 40px;
+  gap: 10px;
 }
 .usage-score-dial {
   position: relative;
-  width: 36px;
-  height: 36px;
+  width: 58px;
+  height: 58px;
 }
 .usage-score-dial svg {
   display: block;
-  width: 36px;
-  height: 36px;
+  width: 100%;
+  height: 100%;
   transform: rotate(-90deg);
 }
 .usage-score-track,
@@ -182,13 +189,14 @@ button:disabled {
   align-items: center;
   justify-content: center;
   color: #334155;
-  font-size: 10px;
-  font-weight: 700;
+  font-size: 15px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
   line-height: 1;
 }
 .usage-score-caption {
   color: #64748b;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.2;
 }
 .outline-action,
@@ -274,21 +282,17 @@ button:disabled {
   font-size: 13px;
 }
 
+/* 自动列数网格：卡片最小 420px，容器放不下时自然回退单列（min 防溢出）。
+   两列阈值 = 2×420 + 16 间距 = 856px；默认 1280px 窗口扣除 190px 侧栏、
+   2×30px 页面留白与滚动条后内容区约 1015px，稳定两列并留有余量；更窄窗口
+   回落单列。每行卡片撑满行高，避免同行高矮卡之间出现大片空白。 */
 .quota-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 1fr));
   gap: 16px;
-  align-items: start;
-}
-.quota-column {
-  display: grid;
-  gap: 16px;
-  align-content: start;
-  min-width: 0;
 }
 .quota-card {
   overflow: hidden;
-  align-self: start;
   border: 1px solid #cbd5e1;
   border-radius: 10px;
   background: white;
@@ -378,6 +382,12 @@ button:disabled {
   border-style: dashed;
   border-color: #f59e0b;
   color: #92400e;
+}
+/* 旧版套餐：目录 legacy 条目（存量档位）随套餐标签右侧展示的次级标记。 */
+.plan-tag-legacy {
+  border-color: #e2e8f0;
+  background: #f1f5f9;
+  color: #64748b;
 }
 .plan-tag-mark {
   margin-left: 3px;
@@ -514,6 +524,13 @@ button:disabled {
   margin: 5px 0 0;
   color: #8794aa;
   font-size: 11px;
+}
+.quota-detail {
+  margin: 3px 0 0;
+  color: #8794aa;
+  font-size: 11px;
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  overflow-wrap: anywhere;
 }
 .quota-amounts {
   margin-left: auto;
@@ -1016,9 +1033,6 @@ button:disabled {
 }
 
 @media (max-width: 980px) {
-  .quota-grid {
-    grid-template-columns: 1fr;
-  }
   .provider-summary {
     grid-template-columns: auto 1fr auto auto;
   }
@@ -1087,6 +1101,10 @@ button:disabled {
   }
   .content-header h1 {
     font-size: 24px;
+  }
+  .usage-score-dial {
+    width: 48px;
+    height: 48px;
   }
   .provider-summary {
     grid-template-columns: auto minmax(0, 1fr) auto;

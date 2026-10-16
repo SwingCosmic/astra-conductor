@@ -631,6 +631,86 @@ describe("stage 3 core boundaries", () => {
     );
   });
 
+  it("projects the legacy flag for catalog entries kept for legacy accounts", () => {
+    const base = {
+      accountId: "legacy-flag",
+      overallRemainingPercentage: null,
+      groups: [],
+      extras: [],
+      resetCredits: null,
+      fetchedAt: now.toISOString(),
+    };
+    // 目录 legacy 条目（新旧并存）：planLegacy 随解析结果固化，UI 据此展示"旧版"。
+    expect(toPublicUsage({ ...base, plan: "GrokPro" }, "grok-build")).toMatchObject({
+      planId: "supergrok-pro",
+      planLabel: "SuperGrok Pro",
+      planLegacy: true,
+    });
+    expect(toPublicUsage({ ...base, plan: "pro 20x" }, "codex")).toMatchObject({
+      planId: "pro-20x",
+      planLabel: "Pro 20x",
+      planLegacy: true,
+    });
+    // 普通档位与未识别档位不带 legacy 标记。
+    expect(toPublicUsage({ ...base, plan: "prolite" }, "codex")).toMatchObject({
+      planId: "pro-5x",
+      planLegacy: false,
+    });
+    expect(toPublicUsage({ ...base, plan: "mystery_tier" }, "codex")).toMatchObject({
+      planId: null,
+      planLegacy: false,
+    });
+  });
+
+  it("passes the upstream quota detail identifier through to the public snapshot", () => {
+    // antigravity 等叶子随行携带上游原始模型 id：投影不得裁掉，空白视为缺失。
+    const usage = toPublicUsage(
+      {
+        accountId: "detail",
+        plan: "prolite",
+        overallRemainingPercentage: null,
+        groups: [
+          {
+            key: "gemini",
+            displayName: "Gemini Models",
+            quotas: [
+              {
+                key: "flash_lite",
+                displayName: "Gemini 3.1 Flash Lite",
+                windowSeconds: 18_000,
+                used: 500,
+                total: 1000,
+                remaining: 500,
+                remainingPercentage: 50,
+                resetAt: null,
+                unlimited: false,
+                detail: "  gemini-3.8-flash-tiered  ",
+              },
+              {
+                key: "no_detail",
+                displayName: null,
+                windowSeconds: null,
+                used: 0,
+                total: 0,
+                remaining: null,
+                remainingPercentage: null,
+                resetAt: null,
+                unlimited: false,
+                detail: "   ",
+              },
+            ],
+          },
+        ],
+        extras: [],
+        resetCredits: null,
+        fetchedAt: now.toISOString(),
+      },
+      "codex",
+    );
+    expect(usage.groups[0]?.quotas[0]?.detail).toBe("gemini-3.8-flash-tiered");
+    expect(usage.groups[0]?.quotas[1]).not.toHaveProperty("detail");
+  });
+
   it("projects pre-upgrade itemized reset-credit extras without adaptation", () => {
     const legacy = {
       accountId: "legacy",

@@ -62,6 +62,7 @@ export function toPublicUsage(snapshot: UsageSnapshot, offeringId: string): Publ
       displayName: group.displayName ?? legacyGroup.title ?? null,
       quotas: group.quotas.map((quota) => {
         const legacyQuota = quota as typeof quota & { title?: string };
+        const detail = typeof quota.detail === "string" ? quota.detail.trim() : "";
         return {
           key: quota.key,
           displayName: quota.displayName ?? legacyQuota.title ?? null,
@@ -80,6 +81,8 @@ export function toPublicUsage(snapshot: UsageSnapshot, offeringId: string): Publ
           resetAt: quota.resetAt ?? null,
           unlimited: quota.unlimited === true,
           rawAmounts: quota.rawAmounts === true,
+          // 上游原始标识（模型桶 id 等）随行透传；空串不落字段。
+          ...(detail ? { detail } : {}),
         };
       }),
     };
@@ -112,6 +115,7 @@ export function toPublicUsage(snapshot: UsageSnapshot, offeringId: string): Publ
     plan,
     planId: matched?.id ?? null,
     planLabel: matched?.displayName ?? rawPlanLabel ?? (plan.trim() || null),
+    planLegacy: matched?.legacy === true,
     overallRemainingPercentage: value.overallRemainingPercentage,
     groups: value.groups,
     extras: value.extras,

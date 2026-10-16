@@ -3,7 +3,7 @@
 | 项目 | 内容 |
 | --- | --- |
 | 状态 | 数据侧实施方案已于 2026-10-15 实施（§8.1–§8.3 全部落地，§8.4 的 core / UI 测试断言随批补齐并通过；真实账号抽查、样本回填与 grok 防御性正则收敛留待统一验收） |
-| 更新日期 | 2026-10-15 |
+| 更新日期 | 2026-10-16 |
 | 排查范围 | `packages/core` 计划目录（descriptor / catalog / 倍率消费点）、`references/omniroute` 上游增量与叶子名称归一化、core → 契约包 → UI 的套餐展示名称链路、各供应商官方定价与档位公告、社区项目的档位字符串观测 |
 | 上游基线 | `references/omniroute` @ `3ee283bb944d6d62cc219f74317d5186942e1780`（上游 `origin/main` 领先 15 个提交，§2） |
 | 关联 | 结构侧问题与前置（解析点上移、契约瘦身、校验归属）见同目录 [core 与 contract 包的代码组织结构问题](./core-contract-structure.md) |
@@ -229,6 +229,8 @@
 
 - core：`matchOfferingPlan` 新语义用例（先精确后正则、正则只作用于规范化小写串、legacy 校验、空匹配正则拒绝、`sourceUrl` / `verifiedAt` 格式校验）；各 adapter 测试补 plan 解析断言（重点：antigravity 长 tier 名、codex `promax` 与 `self_serve_business_prolite`、grok 新档位、快照新字段的回退顺序、未识别 plan 字符串产出 `planId: null` 且倍率走默认 5）。**（已落在 `providers-catalog` / `stage3-core` / 各 adapter 与 `omniroute-vendor` 测试；全量套件通过。）**
 - UI：plan-tag 展示断言（消费主进程解析结果；未命中路径展示回退名，未识别态带可见提示）。**（结构侧批次已随 `planLabel` / `isUnrecognizedPlan` 落在 `app.test.ts`。）**
+- UI 展示批次（2026-10-16）：legacy 条目随快照下发 `planLegacy`（契约字段 + core 投影 + `isLegacyPlan` 判定），卡片套餐标签右侧追加"旧版"次级标记（未识别档位不展示）；extras 键固定文案映射，grok 走 extras 的重置计数与一等 `resetCredits` 展示统一叫"重置额度"。
+- antigravity 模型目录漂移批次（2026-10-16）：可用模型与模型目录反复改版（营销名可挂在静态快照不认识的新引擎 id 上，如 "Gemini 3.1 Flash Lite" 实际由 `gemini-3.8-flash-tiered` 提供）。按模型额度行的展示名改为 live 目录条目自带 displayName/name 优先、静态目录只兜底裸 id 模型；桶的原始 modelId 随 `UsageQuota.detail` 契约字段透传并在卡片行内展示，名称漂移始终可核对。
 - 验收口径：真实账号抽查卡片套餐标签与目录 `displayName` 一致；`Antigravity Starter Quota` 场景复验；grok 新档位样本回填后把防御性正则收敛为精确键；目录条目全部带 `sourceUrl` / `verifiedAt` 来源元数据。**（此项依赖真实账号，留待统一验收；inferred 条目的来源元数据随样本回填补齐。）**
 
 ### 8.5 组标题的目录化（独立决策，不阻塞本次）

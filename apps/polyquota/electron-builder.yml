@@ -26,4 +26,6 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
+  # 已有安装锁定原作用域与位置，清理跨作用域残留，见 build/installer.nsh
+  include: build/installer.nsh
   artifactName: ${productName}-${version}-setup.${ext}

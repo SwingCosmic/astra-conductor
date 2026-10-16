@@ -194,7 +194,7 @@ async function configureSessionProxy(): Promise<void> {
 
 async function createWindow(): Promise<void> {
   const win = new BrowserWindow({
-    width: 1120,
+    width: 1280,
     height: 800,
     minWidth: 760,
     minHeight: 560,

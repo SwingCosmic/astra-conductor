@@ -10,6 +10,11 @@ export interface UsageQuota {
   unlimited: boolean;
   /** 上游真实上报 used/total 原始量时为 true；百分比合成的刻度不算。缺省 false。 */
   rawAmounts?: boolean;
+  /**
+   * 上游原始标识（如 antigravity 的模型桶 id）：供应商会反复改模型名与目录，
+   * 展示名可能滞后于真实模型，id 随行透传供核对。缺省不展示。
+   */
+  detail?: string;
 }
 
 export interface UsageQuotaGroup {
@@ -72,6 +77,11 @@ export interface PublicUsage {
    * 展示名（叶子附带时）→ 原始标识串；`null` 表示上游没有 plan 信息。
    */
   planLabel: string | null;
+  /**
+   * 命中的目录条目带 `legacy` 标记（新旧并存的存量档位，数据侧 §7 规则 1）
+   * 时为 true；未识别档位与普通档位不带或为 false。
+   */
+  planLegacy?: boolean;
   overallRemainingPercentage: number | null;
   groups: UsageQuotaGroup[];
   extras: UsageExtra[];

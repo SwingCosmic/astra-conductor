@@ -108,13 +108,15 @@ Grok Build 同时保留设备码、浏览器 OAuth PKCE 和完整 CLI 导入。�
 | 上游相对路径                                         | 处理方式           | 当前保留内容                                   |
 | ---------------------------------------------------- | ------------------ | ---------------------------------------------- |
 | `open-sse/config/antigravityUpstream.ts`             | 整文件复制         | Code Assist 上游端点、onboard 与模型发现 URL   |
+| `open-sse/config/antigravitySharedModels.ts`        | 整文件复制         | 共享模型目录（id / 展示名，`buildSurfaceCatalog`） |
+| `open-sse/config/antigravityModelAliases.ts`        | 整文件复制         | 模型别名、retired/internal 过滤与按模型可见性、展示名解析 |
 | `open-sse/services/antigravityHeaders.ts`            | 最小签名保形补丁   | 全部 IDE 身份请求头函数与 profile 参数         |
 | `open-sse/services/codeAssistSubscription.ts`        | 声明裁剪、传输注入 | 套餐查询及套餐 ID 提取                         |
 | `open-sse/services/tokenRefresh/providers/google.ts` | 宿主解耦、传输注入 | Google refresh token 换票                      |
 | `src/lib/oauth/providers/antigravity.ts`             | 宿主解耦、传输注入 | Google 授权码换票、身份读取和 Cloud Code 项目发现 |
-| `open-sse/services/usage/antigravity.ts`             | 宿主解耦、传输注入、档位名透传 | 按模型族分组的 5 小时与周配额；套餐 tier 名停止关键词折叠、原文透传（Ultra 5x / 20x 的区分上移到 core 目录正则） |
+| `open-sse/services/usage/antigravity.ts`             | 宿主解耦、传输注入、档位名透传、按模型原始额度 | 三源组装：`fetchAvailableModels`（按模型目录视图）+ `retrieveUserQuota`（按模型实时消耗，优先覆盖目录刻度）+ `retrieveUserQuotaSummary`（按族 5h/周聚合）。按模型 5 小时额度归入其模型族（Gemini Models / Claude and GPT models）展示，有按模型数据的族不再重复展示族级 5h 聚合桶。模型行展示名 live 目录条目自带的 displayName/name 优先（供应商反复改模型目录、营销名可挂在静态快照不认识的新引擎 id 上），静态目录只兜底 live 视图里只有裸 id 的模型；桶的原始 modelId 随 `detail` 字段透传到 UI 供核对。套餐 tier 名停止关键词折叠、原文透传（Ultra 5x / 20x 的区分上移到 core 目录正则） |
 
-Antigravity 不复制上游数据库、连接记录和版本探测网络请求。`antigravityHeaders.ts` 恢复上游签名（含 `AntigravityClientProfile` 参数，默认 `"ide"`），唯一补丁是用固定回退版本（IDE `2.1.1`、CLI `1.1.5`，即上游缓存模块自身的回退值）替换在线版本缓存依赖。项目标识、OAuth 客户端选择与套餐信息由适配器保存为公开元数据，刷新凭证仍只进入加密信封；无法发现项目时明确拒绝接入，不用伪造项目 ID 继续请求。
+Antigravity 不复制上游数据库、连接记录和版本探测网络请求。`antigravityHeaders.ts` 恢复上游签名（含 `AntigravityClientProfile` 参数，默认 `"ide"`），唯一补丁是用固定回退版本（IDE `2.1.1`、CLI `1.1.5`，即上游缓存模块自身的回退值）替换在线版本缓存依赖。项目标识、OAuth 客户端选择与套餐信息由适配器保存为公开元数据，刷新凭证仍只进入加密信封；无法发现项目时明确拒绝接入，不用伪造项目 ID 继续请求。按模型额度组装对齐上游 `getAntigravityUsage` 的三源语义，但裁掉宿主特有部分：无本地用量历史回填、无消耗积分的余额探测、无模块级缓存（刷新节奏由宿主轮询负责）。模型展示名解析与上游相反（上游静态目录优先、live 名兜底）：静态表落后于线上改版时会展示错误的名字，这里改为 live 目录 displayName 优先、静态目录只兜底裸 id 模型，并把桶的原始 modelId 随 `detail` 透传，名称漂移始终可核对。
 
 ### 3.6 Claude Code 与 OpenCode Go
 

@@ -18,6 +18,8 @@ import {
   accountPresentation,
   authMethodLabel,
   catalogPresentations,
+  extraLabel,
+  isLegacyPlan,
   isUnrecognizedPlan,
   planTagLabel,
   quotaLabel,
@@ -267,20 +269,55 @@ function catalogRow(offeringId: string) {
 }
 
 describe("desktop account UI", () => {
-  it("keeps the ordinary browser preview runnable with the empty service", async () => {
+  it("keeps the ordinary browser preview runnable on the demo data", async () => {
     const wrapper = mountApp(emptyService);
     await flushPromises();
 
-    expect(wrapper.text()).toContain("还没有接入账号");
+    // 浏览器预览返回综合演示数据：各供应商账号直接可见，而不是空态。
+    expect(wrapper.text()).not.toContain("还没有接入账号");
     expect(wrapper.text()).not.toContain("桌面接口不可用");
+    expect(wrapper.text()).toContain("SuperGrok Pro");
+    // antigravity 演示行携带上游原始模型 id（营销名与引擎 id 漂移的真实案例）。
+    const details = wrapper.findAll(".quota-detail").map((item) => item.text());
+    expect(details).toContain("gemini-3.8-flash-tiered");
+    expect(details).toContain("claude-opus-4-6-thinking");
+    // 评分环消费演示聚合剩余度（文字在环左侧，数值来自演示读数）。
     expect(wrapper.get(".usage-score-rings").text()).toContain("5h");
     expect(wrapper.get(".usage-score-rings").text()).toContain("周");
-    expect(wrapper.findAll(".usage-score-value").map((item) => item.text())).toEqual(["—", "—"]);
+    expect(wrapper.findAll(".usage-score-value").map((item) => item.text())).toEqual(["52", "28"]);
     const header = wrapper.get(".content-header");
     expect(header.find(".usage-title-row").exists()).toBe(false);
     expect(header.find(".content-header-copy").exists()).toBe(true);
     expect(header.find(".usage-score-rings").exists()).toBe(true);
     expect(header.find(".outline-action").exists()).toBe(true);
+  });
+
+  it("collapses all but the first group on multi-group cards", async () => {
+    const wrapper = mountApp(emptyService);
+    await flushPromises();
+
+    // v-show 折叠：display 内联为 none；展开时移除。
+    const quotaListDisplay = (section: Element | null | undefined): string | null => {
+      const list = section?.querySelector(".quota-list");
+      return list instanceof HTMLElement ? list.style.display : null;
+    };
+
+    // 演示数据里唯一的多组卡片是 antigravity（Gemini Models + Claude and GPT
+    // Models）：默认只展开第一组，其余收起只留聚合摘要，避免卡片过长。
+    const toggles = wrapper.findAll(".group-toggle");
+    expect(toggles).toHaveLength(2);
+    expect(toggles[0]?.attributes("aria-expanded")).toBe("true");
+    expect(quotaListDisplay(toggles[0]?.element.closest(".quota-group"))).not.toBe("none");
+    expect(toggles[1]?.attributes("aria-expanded")).toBe("false");
+    const collapsedSection = toggles[1]?.element.closest(".quota-group");
+    expect(quotaListDisplay(collapsedSection)).toBe("none");
+    expect(collapsedSection?.querySelector(".group-summary")?.textContent).toBe("15%");
+
+    // 手动展开收起的组：额度行重新可见，聚合摘要消失。
+    await toggles[1]?.trigger("click");
+    expect(toggles[1]?.attributes("aria-expanded")).toBe("true");
+    expect(quotaListDisplay(collapsedSection)).not.toBe("none");
+    expect(collapsedSection?.querySelector(".group-summary")).toBeNull();
   });
 
   it("shows session and weekly rings from the snapshot remaining scores", async () => {
@@ -453,6 +490,30 @@ describe("desktop account UI", () => {
     expect(resetCreditTypeLabel("weekly")).toBe("每周周期");
     expect(resetCreditTypeLabel("banked")).toBe("结转额度");
     expect(resetCreditTypeLabel("future-kind")).toBe("future kind");
+    // extras 键固定文案：重置相关统一叫"重置额度"（grok 的计数展示与一等
+    // resetCredentials 结构一致），未知键回退连字符转空格。
+    expect(extraLabel({ key: "reset-credits", value: "3" })).toBe("重置额度");
+    expect(extraLabel({ key: "extra-credits", value: "$1.00" })).toBe("额外额度");
+    expect(extraLabel({ key: "auto-top-up", value: "已停用" })).toBe("自动充值");
+    expect(extraLabel({ key: "future-extra", value: "x" })).toBe("future extra");
+    // 旧版套餐判定：消费 planLegacy，只对已识别档位生效。
+    const legacyUsage = (planId: string | null, planLegacy: boolean) =>
+      ({
+        accountId: "legacy-check",
+        plan: "GrokPro",
+        planId,
+        planLabel: "SuperGrok Pro",
+        planLegacy,
+        overallRemainingPercentage: null,
+        groups: [],
+        extras: [],
+        resetCredits: null,
+        fetchedAt: "2026-09-27T00:00:00.000Z",
+      }) satisfies PublicUsage;
+    expect(isLegacyPlan(legacyUsage("supergrok-pro", true))).toBe(true);
+    expect(isLegacyPlan(legacyUsage("supergrok-pro", false))).toBe(false);
+    expect(isLegacyPlan(legacyUsage(null, true))).toBe(false);
+    expect(isLegacyPlan(null)).toBe(false);
     expect(authMethodLabel("cli-import")).toBe("CLI 导入");
   });
 
@@ -599,7 +660,8 @@ describe("desktop account UI", () => {
     expect(wrapper.get(".plan-tag").text()).toBe("Plus");
     expect(wrapper.text()).toContain("5 Hours");
     expect(wrapper.text()).toContain("Weekly");
-    expect(wrapper.text()).toContain("extra credits $5.00");
+    // extras 键走固定文案映射（"extra-credits" → "额外额度"），不再是连字符原文。
+    expect(wrapper.text()).toContain("额外额度 $5.00");
     expect(wrapper.find(".switch-field").exists()).toBe(true);
     // 真实原始量的配额在重置时间行右对齐展示 使用量/总量；百分比合成刻度不展示。
     const resetRows = wrapper.findAll(".reset-time");
@@ -636,6 +698,37 @@ describe("desktop account UI", () => {
     expect(tag.text()).toBe("ChatGPT Super Ultra?");
     expect(tag.classes()).toContain("is-unrecognized");
     expect(tag.attributes("title")).toContain("未识别的订阅档位");
+    // 未识别档位无从判断新旧，不展示旧版标记。
+    expect(wrapper.find(".plan-tag-legacy").exists()).toBe(false);
+  });
+
+  it("shows a legacy badge next to the plan tag for catalog legacy plans", () => {
+    const wrapper = mount(QuotaCard, {
+      props: {
+        account: { ...account, provider: "grok-build", offeringId: "grok-build" },
+        busy: false,
+        providers: providerCatalogFixture,
+        usage: {
+          accountId: account.id,
+          // 目录命中 legacy 条目：planLegacy 随快照下发，标签右侧追加"旧版"。
+          plan: "GrokPro",
+          planId: "supergrok-pro",
+          planLabel: "SuperGrok Pro",
+          planLegacy: true,
+          overallRemainingPercentage: 45,
+          groups: [],
+          extras: [],
+          resetCredits: null,
+          fetchedAt: "2026-09-24T00:00:00.000Z",
+        },
+      },
+    });
+    const tags = wrapper.findAll(".provider-title .plan-tag");
+    expect(tags).toHaveLength(2);
+    expect(tags[0]?.text()).toBe("SuperGrok Pro");
+    expect(tags[1]?.text()).toBe("旧版");
+    expect(tags[1]?.classes()).toContain("plan-tag-legacy");
+    expect(tags[1]?.attributes("title")).toContain("旧版套餐");
   });
 
   it("keeps refresh available before the first usage snapshot", async () => {
@@ -918,7 +1011,7 @@ describe("desktop account UI", () => {
     expect(wrapper.get(".group-summary").classes()).toContain("text-ok");
   });
 
-  it("uses independent desktop columns without changing the visual account order", () => {
+  it("lays accounts out in one auto-fill grid keeping the visual order", () => {
     const accounts: PublicAccount[] = [
       account,
       {
@@ -933,15 +1026,15 @@ describe("desktop account UI", () => {
     const wrapper = mount(UsageView, {
       props: { accounts, usage: {}, busy: false, providers: providerCatalogFixture },
     });
-    const columns = wrapper.findAll(".quota-column");
 
-    expect(columns).toHaveLength(2);
-    expect(columns[0]?.findAll(".provider-identity h2").map((heading) => heading.text())).toEqual([
+    // 自动列数网格（卡片最小 450px）：单一网格容器，卡片按账号顺序排列。
+    expect(wrapper.findAll(".quota-column")).toHaveLength(0);
+    const cards = wrapper.findAll(".quota-grid .quota-card");
+    expect(cards).toHaveLength(4);
+    expect(cards.map((card) => card.get(".provider-identity h2").text())).toEqual([
       "OpenAI Codex",
-      "Grok Build",
-    ]);
-    expect(columns[1]?.findAll(".provider-identity h2").map((heading) => heading.text())).toEqual([
       "BigModel Coding Plan",
+      "Grok Build",
       "Antigravity",
     ]);
   });

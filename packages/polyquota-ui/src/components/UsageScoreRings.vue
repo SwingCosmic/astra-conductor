@@ -38,6 +38,7 @@ const weekly = computed(() => ring(state.value.weeklyScore, state.value.weeklyBa
 <template>
   <div class="usage-score-rings" role="group" aria-label="综合剩余">
     <div v-for="item in [session, weekly]" :key="item.caption" class="usage-score-ring">
+      <span class="usage-score-caption">{{ item.caption }}</span>
       <div class="usage-score-dial">
         <svg
           viewBox="0 0 36 36"
@@ -60,7 +61,6 @@ const weekly = computed(() => ring(state.value.weeklyScore, state.value.weeklyBa
         </svg>
         <span class="usage-score-value">{{ item.label }}</span>
       </div>
-      <span class="usage-score-caption">{{ item.caption }}</span>
     </div>
   </div>
 </template>

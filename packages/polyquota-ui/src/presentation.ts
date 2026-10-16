@@ -169,6 +169,15 @@ export function isUnrecognizedPlan(usage: PublicUsage | null): boolean {
   return Boolean(usage && usage.planId === null && usage.plan.trim());
 }
 
+/**
+ * 旧版套餐：目录标记 legacy 的存量档位（新旧并存策略，数据侧 §7 规则 1）。
+ * 随解析结果（planLegacy）随快照下发，前端只消费标记不做匹配；未识别档位
+ * 无从判断新旧，不展示旧版标记。
+ */
+export function isLegacyPlan(usage: PublicUsage | null): boolean {
+  return usage?.planLegacy === true && usage.planId !== null;
+}
+
 function windowLabel(seconds: number | null): string | null {
   if (seconds === 18_000) return "5 Hours";
   if (seconds === 604_800) return "Weekly";
@@ -202,8 +211,19 @@ export function groupLabel(group: UsageQuotaGroup): string | null {
   return group.displayName ?? null;
 }
 
+/**
+ * 附加信息键的固定文案：跨供应商的小封闭集合（目前只有 grok 的计费信息）。
+ * 重置相关文案统一叫"重置额度"，与一等 resetCredits 结构的展示一致；未知
+ * 键回退为连字符转空格的原文。
+ */
+const extraTexts: Record<string, string> = {
+  "reset-credits": "重置额度",
+  "extra-credits": "额外额度",
+  "auto-top-up": "自动充值",
+};
+
 export function extraLabel(extra: UsageExtra): string {
-  return extra.key.replaceAll("-", " ");
+  return extraTexts[extra.key] ?? extra.key.replaceAll("-", " ");
 }
 
 export function extraItemLabel(kind: string): string {

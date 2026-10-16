@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import ChevronIcon from "./ChevronIcon.vue";
 import type {
   PublicAccount,
@@ -15,6 +15,7 @@ import {
   extraItemLabel,
   extraLabel,
   groupLabel,
+  isLegacyPlan,
   isUnrecognizedPlan,
   planTagLabel,
   quotaLabel,
@@ -35,12 +36,26 @@ const emit = defineEmits<{
 
 type Tone = "unknown" | "ok" | "warning" | "danger" | "critical";
 const collapsed = reactive(new Set<string>());
+const autoCollapseSettled = ref(false);
 const selectedExtra = ref<UsageExtra | null>(null);
 const showResetCredits = ref(false);
+
+// 多组卡片（如 antigravity 的两个模型族）默认只展开第一组，避免卡片过长；
+// 只在首次拿到用量时收起，之后用户手动展开的状态不随刷新回弹。
+watch(
+  () => props.usage,
+  (usage) => {
+    if (autoCollapseSettled.value || !usage) return;
+    autoCollapseSettled.value = true;
+    for (const group of usage.groups.slice(1)) collapsed.add(group.key);
+  },
+  { immediate: true },
+);
 const presentation = computed(() => accountPresentation(props.account, props.providers));
 const cardTone = computed(() => tone(props.usage?.overallRemainingPercentage ?? null));
 const planName = computed(() => planTagLabel(props.usage));
 const planUnrecognized = computed(() => isUnrecognizedPlan(props.usage));
+const planLegacy = computed(() => isLegacyPlan(props.usage));
 const resetCredits = computed(() => props.usage?.resetCredits ?? null);
 const resetCreditsCount = computed(() => {
   const credits = resetCredits.value;
@@ -88,6 +103,13 @@ function remainingLabel(quota: UsageQuota): string {
 function amountLabel(quota: UsageQuota): string | null {
   if (quota.unlimited || !quota.rawAmounts || quota.total <= 0) return null;
   return `${quota.used.toLocaleString("zh-CN")} / ${quota.total.toLocaleString("zh-CN")}`;
+}
+
+/** 上游原始标识（模型 id 等）：名称回退成 id 时与展示名相同，不再重复展示。 */
+function detailLabel(quota: UsageQuota): string | null {
+  const detail = quota.detail?.trim();
+  if (!detail) return null;
+  return detail.toLowerCase() === quotaLabel(quota).trim().toLowerCase() ? null : detail;
 }
 
 function groupRemainingPercentage(group: UsageQuotaGroup): number | null {
@@ -149,6 +171,13 @@ function useAggregateResetCredit(type: string | null): void {
           >
             {{ planName }}<span v-if="planUnrecognized" class="plan-tag-mark">?</span>
           </span>
+          <span
+            v-if="planLegacy"
+            class="plan-tag plan-tag-legacy"
+            title="旧版套餐：供应商改版后仍可使用的存量档位"
+          >
+            旧版
+          </span>
         </div>
         <p>{{ account.maskedIdentifier }}</p>
       </div>
@@ -186,6 +215,9 @@ function useAggregateResetCredit(type: string | null): void {
         <div v-show="!collapsed.has(group.key)" class="quota-list">
           <div v-for="quota in group.quotas" :key="quota.key" class="quota-window">
             <h3>{{ quotaLabel(quota) }}</h3>
+            <p v-if="detailLabel(quota)" class="quota-detail" :title="detailLabel(quota) ?? ''">
+              {{ detailLabel(quota) }}
+            </p>
             <div class="progress-row">
               <div
                 class="progress-track"
