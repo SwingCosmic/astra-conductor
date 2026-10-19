@@ -1,41 +1,37 @@
 # GraphAgent
 
-本目录是 GraphAgent 产品启动的文档入口。当前已根据概念设计和固定参考源码细化功能模块、协作语义与分阶段验收；仍未建立可运行工程。
+GraphAgent 是以执行图为中心的智能体协作产品。本目录按“从底层身份到外部交互”的顺序组织设计文档：编号越小越接近核心模型，编号越大越接近用户与外部系统。
 
-## 设计与启动入口
+## 文档顺序
 
-- [功能模块设计总览](./design.md)：产品范围、领域对象、模块职责、执行主路径和共享边界。
-- [概念设计](./concept-design.md)：整体构想；首页 2.5D 办公室及人物互动只属于概念宣传，不进入本阶段产品功能。
-- [01 职位模板与实例](./01agent-template.md)：身份、能力、模板版本、员工生命周期和 A2A 投影。
-- [02 任务图与 Assignment](./02task-graph-and-assignment.md)：动态依赖、多来源派单、共享任务、验收、返工和用户干预。
-- [03 运行时与调度](./03runtime-and-scheduling.md)：本机控制面、Actor 邮箱、排班、持久恢复和效果核对。
-- [04 拦截器与工具执行](./04interceptor-and-tool-execution.md)：信息边界、内容变换、语义审查、工具授权和资源仲裁。
-- [05 模型策略与预算](./05model-policy-and-budget.md)：共享推理绑定、模型租约、总预算、软限额收尾和回退。
-- [06 记忆与自我优化](./06memory-and-self-optimization.md)：默认 Markdown 文件/目录后端、公共结构、SQLite 原始消息档案、检索、版本与整理提交。
-- [07 工作台与应用服务](./07workspace-ui-and-application-service.md)：首页执行图、节点详情、管理页、服务契约和订阅恢复。
-- [08 Agent Loop](./08agent-loop.md)：执行层次、输入消费、模型/工具循环、运行 profile、checkpoint 与恢复。
-- [09 会话与消息交互](./09conversation-and-messaging.md)：IM 适配、私聊/群聊、@/通知、空闲接话、作业屏蔽与用户管理。
-- [10 提示词组合](./10prompt-composition.md)：来源权威、区块组合、协议渲染、上下文预算与固定调用快照。
-- [参考源码映射与取舍](./reference-code-map.md)：固定 commit、已核对的源码入口与设计新增部分。
-- [启动与验收计划](./plan.md)：G0–G5 的目的、依赖、工作和完成信号。
+1. [01_Agent 模板与实例](./01_agent-template-and-instance.md)：职位模板、员工实例、雇佣与生命周期、用工请求。
+2. [02_消息聊天](./02_conversation-and-messaging.md)：私聊/群聊、`@`/通知、interrupt/queue/steer、作业屏蔽、临时会话。
+3. [03_Agent Loop、派发与任务执行](./03_agent-loop-dispatch-and-execution.md)：任务图、派单、调度、执行循环、提示组合、模型选择与预算。
+4. [04_工具调用](./04_tool-execution.md)：原生工具调用协议、工具目录、授权、并发、用户交互工具、浏览器与桌面扩展。
+5. [05_拦截器、记忆、整理与技能](./05_interception-memory-and-skills.md)：拦截与策略门、原始档案、Markdown 记忆、recap、做梦与技能版本。
+6. [06_工作台与外部对接](./06_workspace-and-integrations.md)：执行图工作台、管理看板、应用服务、A2A、MCP、外部客户端与远端执行。
 
-各稿均为目标设计，接口字段与技术选型仍需实施样本验证。首页宣传互动不影响任务协作、拦截、预算和记忆整理进入本阶段范围。
+配套文档：
+
+- [功能模块设计总览](./design.md)：领域对象、模块边界、运行主路径与跨模块不变量。
+- [概念设计](./concept-design.md)：产品构想与范围；首页 2.5D 办公室只属于概念宣传，不进入排期。
+- [启动与验收计划](./plan.md)：阶段 1–4 的目标、步骤、交付与退出条件。
+- [工具专项目录](./tools/README.md)：第 4 篇的深度设计，包含终端、文件、网页、媒体、结果收据与外部连接。
+- [参考源码映射](./reference-code-map.md)：固定 commit、已核对的源码入口与采用边界。
+- [产品族图标设计](../common/icon-design/README.md)。
 
 ## 已确定边界
 
-- GraphAgent 与 PolyQuota 共用 [Provider Platform 契约](../common/core/cross-provider-service-protocol-design.md)中的 provider、账号、API 协议、模型目录、推理和用量基础类型。
-- GraphAgent 自己负责 `ModelPolicy`、模型选择、`ModelLease`、预算、回退和工具循环，不调用 `IPolyQuotaService`，也不让 PolyQuota 决定模型路由。
+- GraphAgent 与 PolyQuota 共用 [Provider Platform 契约](../common/core/cross-provider-service-protocol-design.md)中的 provider、账号、API 协议、模型目录、推理和用量基础类型。模型与账号管理不在本目录重复设计。
+- GraphAgent 自己负责 `ModelPolicy`、模型选择、`ModelLease`、预算、回退、亲和与工具循环；不调用 `IPolyQuotaService`，也不让 PolyQuota 决定模型路由。
 - GraphAgent 不复用 `packages/polyquota-ui`，也不以 PolyQuota 的 Vue/Electron 结构作为默认方案。
-- `apps/graph-agent` 当前仅为说明性占位，不包含 `package.json`、源码入口或构建脚本。
+- `apps/graph-agent` 当前仅为说明性占位，不包含运行入口或构建脚本。
 - 两个产品共用的设计材料进入 `docs/common`；GraphAgent 独有的设计、计划和探索结果留在本目录。
+- `references/` 下仓库只用于研究，不成为运行依赖。
 
-## 启动参考
+## 阅读约定
 
-- `references/omniroute`：固定到 `release/v3.8.51` 分支提交 `3ee283bb944d6d62cc219f74317d5186942e1780`；重点研究 provider registry、模型能力、协议 format/translator、Executor 和流式执行管线。当前 Core 仅搬运了认证、刷新和用量叶子，范围见[搬运基线](../common/core/omniroute-manual-extraction-baseline.md)。
-- `references/deepseek-harness`：固定到 `master` 分支提交 `477b4f420553e8a52c2fbccc464d7561b239c443`。
-- `references/zcode`：固定到 `main` 分支提交 `29628c9acdb81b703bbd4080c207a0e7ce5e276e`。
-- `references/hermes-agent`：固定到 `main` 分支提交 `6a6766fb896043ab3757a30713f1248b6054e0a6`。
-- `references/openclaw`：固定到 `main` 分支提交 `47a026ea3fe6201de974628a7c80228a4434a0e4`；本轮核对日期工作笔记、会话捕获、记忆索引与整理摄取状态。
-- [产品族图标设计](../common/icon-design/README.md)。
-
-参考仓库只用于研究和后续可追踪的提取，不得直接成为应用运行时依赖。后续按本目录设计与计划建立实施样本；模型执行前先落实共享推理骨架与凭据边界，不得另建一套 provider、apiType、model capability 或 credential 基础协议。
+- 所有编号文档都是目标设计，不是已实现能力；接口字段与技术选型仍需实施样本验证。
+- 模型、账号、provider、协议 route 和模型目录属于共享 Core；本目录只描述 GraphAgent 的策略和使用方式。
+- 工具能力的详细参数与验收矩阵放在 `tools/`，主文档只保留协议、目录与边界，避免重复。
+- 每篇文档只在本层展开职责，跨层规则用相对链接指向唯一归属，不复制整段设计。
