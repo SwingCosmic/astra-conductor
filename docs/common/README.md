@@ -13,6 +13,8 @@
 - [Hermes Agent 服务商架构探索报告](./core/hermes-agent-provider-architecture-exploration.md)
 - [跨服务商服务协议设计](./core/cross-provider-service-protocol-design.md)
 - [跨产品凭据共享与迁移](./core/credential-sharing.md)
+- [内置 Web 服务模式拆分与重构](./core/service-mode/plan.md)
+- [内置 Web 服务模式实施方案](./core/service-mode/implementation-plan.md)
 - [2026-10 供应商档位漂移与包结构排查](./core/2026-10-drift-review/README.md)
 
 这些材料对应共享的 `packages/core`。`references/` 下的仓库仅作为参考和提取输入，不是运行时依赖。
