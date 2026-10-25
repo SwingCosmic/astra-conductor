@@ -1,6 +1,6 @@
 /**
- * 协议 DTO 的单源是 `@astra-conductor/polyquota-contract`（renderer、preload
- * 与主进程共用的轻量契约包）；core 在此 re-export，禁止再建副本。供应商 /
+ * 协议 DTO 的单源是 `@astra-conductor/polyquota-contract`（UI 与宿主
+ * 共用的轻量契约包）；core 在此 re-export，禁止再建副本。供应商 /
  * 认证方式是随目录扩张的动态集合：类型不封闭为字面量联合，已知集合由
  * `providers/catalog.ts` 从注册 descriptors 收集导出（providerIds / authMethods）。
  * 未来 GraphAgent 契约出现时，这一组标识应上移到共享协议层。

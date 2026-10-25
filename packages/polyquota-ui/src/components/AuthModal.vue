@@ -22,13 +22,22 @@ const service = usePolyQuotaService();
 const sessionKey = `polyquota.auth.${props.provider.id}`;
 let timer: ReturnType<typeof setTimeout> | undefined;
 let disposed = false;
+let dismissed = false;
 
 async function restoreSession(): Promise<void> {
   const sessionId = sessionStorage.getItem(sessionKey);
   if (!sessionId || disposed) return;
   try {
-    const state = unwrap(await service.getAuthSession(sessionId));
+    const result = await service.getAuthSession(sessionId);
     if (disposed || sessionStorage.getItem(sessionKey) !== sessionId) return;
+    if (!result.ok && result.error.code === "not-found") {
+      sessionStorage.removeItem(sessionKey);
+      pending.value = null;
+      busy.value = false;
+      message.value = result.error.message;
+      return;
+    }
+    const state = unwrap(result);
     selected.value = state.method;
     if (state.status === "completed" && state.account) {
       pending.value = null;
@@ -77,11 +86,13 @@ function unwrap<T>(result: IpcResult<T>): T {
 async function finish(sessionId: string): Promise<void> {
   try {
     const account = unwrap(await service.finishAuth(sessionId));
+    if (disposed || sessionStorage.getItem(sessionKey) !== sessionId) return;
     pending.value = null;
     sessionStorage.removeItem(sessionKey);
     clearTimeout(timer);
     emit("connected", account);
   } catch (error) {
+    if (disposed || sessionStorage.getItem(sessionKey) !== sessionId) return;
     message.value = error instanceof Error ? error.message : "授权失败";
     if (!sessionStorage.getItem(sessionKey)) pending.value = null;
   } finally {
@@ -101,6 +112,14 @@ async function begin(): Promise<void> {
       ...(secretForm.value ? { apiKey: apiKey.value } : {}),
     };
     const result = unwrap(await service.startAuth(request));
+    if (dismissed) {
+      if (result.status === "pending") await service.cancelAuth(result.sessionId);
+      return;
+    }
+    if (disposed) {
+      if (result.status === "pending") sessionStorage.setItem(sessionKey, result.sessionId);
+      return;
+    }
     if (result.status === "completed") {
       emit("connected", result.account);
       busy.value = false;
@@ -132,6 +151,7 @@ function cancelPending(): void {
 }
 
 function close(): void {
+  dismissed = true;
   cancelPending();
   emit("close");
 }
@@ -187,7 +207,7 @@ onBeforeUnmount(() => {
           <span>2</span>
           <div>
             <strong>在浏览器完成授权</strong>
-            <p>{{ pending ? "正在等待浏览器回调…" : "浏览器将打开服务商授权页面。" }}</p>
+            <p>{{ pending ? "正在等待浏览器回调…" : "启动后使用授权链接前往服务商页面。" }}</p>
             <a
               v-if="pending?.interaction === 'browser-callback' && pending.authorizationUrl"
               :href="pending.authorizationUrl"
@@ -211,7 +231,7 @@ onBeforeUnmount(() => {
           <span>1</span>
           <div>
             <strong>获取设备码</strong>
-            <p>应用会打开服务商的设备验证页面。</p>
+            <p>获取设备码后，使用验证链接完成授权。</p>
           </div>
         </div>
         <template v-if="pending?.interaction === 'device-code'">

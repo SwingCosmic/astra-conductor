@@ -26,7 +26,7 @@ function cloneSnapshot(snapshot: PolyQuotaSnapshot): PolyQuotaSnapshot {
 }
 
 /**
- * 浏览器预览服务：无 Electron 后端时返回覆盖每个供应商与多种展示场景的
+ * 显式演示入口服务：返回覆盖每个供应商与多种展示场景的
  * 综合演示数据（见 fixtures/demo-snapshot.ts），便于在纯浏览器里排查
  * UI 交互。用量卡片的交互全部可用且不报"仅桌面可用"：
  * - 启停账号直接修改演示数据并广播变更；
@@ -150,31 +150,4 @@ export class EmptyPolyQuotaService implements IPolyQuotaService {
   getSystemStatus(): ReturnType<IPolyQuotaService["getSystemStatus"]> {
     return Promise.resolve({ ok: true, value: { proxyMode: "direct", proxyAddress: null } });
   }
-}
-
-const methodNames = [
-  "getSnapshot",
-  "subscribe",
-  "setAccountEnabled",
-  "deleteAccount",
-  "refreshAccount",
-  "refreshAll",
-  "refreshCredentials",
-  "redeemResetCredit",
-  "startAuth",
-  "getAuthSession",
-  "finishAuth",
-  "cancelAuth",
-  "saveSettings",
-  "getSystemStatus",
-] as const satisfies readonly (keyof IPolyQuotaService)[];
-
-function isPolyQuotaService(value: unknown): value is IPolyQuotaService {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Record<string, unknown>;
-  return methodNames.every((name) => typeof candidate[name] === "function");
-}
-
-export function resolvePolyQuotaService(candidate: unknown): IPolyQuotaService {
-  return isPolyQuotaService(candidate) ? candidate : new EmptyPolyQuotaService();
 }

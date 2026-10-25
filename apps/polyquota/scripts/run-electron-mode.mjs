@@ -6,8 +6,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const mode = process.argv[2];
-if (!new Set(["dev", "reset", "codex-cli-smoke", "ipc-smoke"]).has(mode)) {
-  throw new Error("Expected dev, reset, codex-cli-smoke, or ipc-smoke mode");
+if (!new Set(["dev", "reset", "codex-cli-smoke", "desktop-smoke"]).has(mode)) {
+  throw new Error("Expected dev, reset, codex-cli-smoke, or desktop-smoke mode");
 }
 
 const polyquotaRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -15,7 +15,7 @@ const sourceRoot = path.join(polyquotaRoot, "src");
 const electron = (await import("electron")).default;
 const pnpmScript = process.env.npm_execpath;
 const temporaryUserData =
-  mode === "codex-cli-smoke" || mode === "ipc-smoke"
+  mode === "codex-cli-smoke" || mode === "desktop-smoke"
     ? await mkdtemp(path.join(tmpdir(), "polyquota-live-"))
     : null;
 
@@ -23,7 +23,12 @@ const env = {
   ...process.env,
   ...(mode === "reset" ? { POLYQUOTA_RESET_DATA: "1" } : {}),
   ...(mode === "codex-cli-smoke" ? { POLYQUOTA_CODEX_CLI_SMOKE: "1" } : {}),
-  ...(mode === "ipc-smoke" ? { POLYQUOTA_IPC_SMOKE: "1" } : {}),
+  ...(mode === "desktop-smoke"
+    ? {
+        POLYQUOTA_DESKTOP_SMOKE: "1",
+        POLYQUOTA_DESKTOP_SMOKE_SCRIPT: path.join(polyquotaRoot, "test", "desktop-smoke.js"),
+      }
+    : {}),
   ...(temporaryUserData ? { POLYQUOTA_USER_DATA: temporaryUserData } : {}),
 };
 
@@ -43,8 +48,15 @@ function waitForExit(child) {
       resolve(child.exitCode);
       return;
     }
-    child.once("error", reject);
-    child.once("exit", (exitCode) => resolve(exitCode ?? 1));
+    const timeout = mode === "dev" ? undefined : setTimeout(() => child.kill(), 60_000);
+    child.once("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    child.once("exit", (exitCode) => {
+      clearTimeout(timeout);
+      resolve(exitCode ?? 1);
+    });
   });
 }
 

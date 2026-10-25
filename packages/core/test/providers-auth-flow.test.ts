@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -45,13 +45,29 @@ function callbackRecorder(onStart: (handler: OAuthCallbackHandler) => void = () 
   );
 }
 
-afterEach(() => {
+const directories: string[] = [];
+async function temporaryHome(prefix: "codex-home-" | "codex-empty-"): Promise<string> {
+  const directory = await mkdtemp(path.join(tmpdir(), prefix));
+  directories.push(directory);
+  return directory;
+}
+afterEach(async () => {
   vi.unstubAllEnvs();
+  await Promise.all(
+    directories.splice(0).map(async (directory) => {
+      if (
+        path.dirname(path.resolve(directory)) !== path.resolve(tmpdir()) ||
+        !/^codex-(home|empty)-/.test(path.basename(directory))
+      )
+        throw new Error("Unexpected test directory");
+      await rm(directory, { recursive: true, force: true });
+    }),
+  );
 });
 
 describe("codex auth flow", () => {
   it("imports from the Codex CLI auth file under CODEX_HOME", async () => {
-    const home = await mkdtemp(path.join(tmpdir(), "codex-home-"));
+    const home = await temporaryHome("codex-home-");
     await writeFile(path.join(home, "auth.json"), JSON.stringify({ tokens: "fixture" }));
     vi.stubEnv("CODEX_HOME", home);
     const fromCliAuth = vi.fn().mockReturnValue({ marker: "codex-provisioning" });
@@ -75,7 +91,7 @@ describe("codex auth flow", () => {
   });
 
   it("fails with the login hint when the CLI auth file is missing", async () => {
-    const home = await mkdtemp(path.join(tmpdir(), "codex-empty-"));
+    const home = await temporaryHome("codex-empty-");
     vi.stubEnv("CODEX_HOME", home);
     const flow = createCodexAuthFlow({
       adapter: { fromCliAuth: vi.fn() } as never,

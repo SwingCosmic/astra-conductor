@@ -4,7 +4,7 @@ AstraConductor 用于统一利用大模型与智能体，并管理相关控制�
 
 - **PolyQuota** 是面向本地桌面的 LLM 订阅用量聚合工具，以 Windows 托盘应用为首要形态。
 - **GraphAgent** 目前只预留文档和应用位置，后续采用独立结构，不复用 PolyQuota UI。
-- `packages/core` 由两个产品共享；`packages/polyquota-contract` 是 PolyQuota 渲染层、preload 与主进程共享的 IPC 契约包；`packages/polyquota-ui` 仅属于 PolyQuota。
+- `packages/core` 由两个产品共享；`packages/polyquota-contract` 是 PolyQuota UI、Electron 与 Node 宿主共享的服务契约包；`packages/polyquota-ui` 仅属于 PolyQuota。
 - 工作区包统一使用 `@astra-conductor/*` 命名空间；产品运行身份仍相互独立。
 
 PolyQuota 当前已接入六家服务商：Codex、GLM Coding Plan、Grok Build、Antigravity、Claude Code 与 OpenCode Go，且均已通过真实账号测试确认可用。其中 Codex（CLI 凭据导入、浏览器 OAuth PKCE、设备码）、GLM（国内与国际 API Key、只读导入 ZCode v2 凭据）、Grok Build 与 Antigravity 完成真实账号用量闭环，Claude Code（CLI 凭据只读导入）与 OpenCode Go（API Key）随后接入并通过真实账号验证。
@@ -63,9 +63,9 @@ pnpm data:reset
 
 - `pnpm native:prepare` 在隔离的临时目录中为当前 Electron、平台和架构构建 `apps/polyquota/lib/better-sqlite3/better_sqlite3.node`。首次开发前或 Electron、Node、`better-sqlite3`、平台、架构变化后手动执行；普通开发启动不重复检查。生产 `build` 会通过 Desktop 的 `prebuild` 自动重新生成。
 - `pnpm dev` 打开 PolyQuota 桌面窗口，按各服务商声明的方式接入：可只读导入 Codex CLI、Grok CLI、Claude Code 或 ZCode v2 凭据，可发起浏览器 OAuth（Codex、Grok Build、Antigravity）或设备码授权（Codex、Grok Build），也可填写 GLM 或 OpenCode Go 的 API Key。
-- `pnpm dev:server` 独立启动真实 Node 后端；`pnpm dev:web` 连接该后端；`pnpm dev:ui` 显式启用无后端的演示预览。分侧检查使用 `pnpm test:server`、`pnpm test:ui`，真实 Electron 协议检查使用 `pnpm test:protocol`，详见 [Service mode 开发与分侧验证](./docs/common/core/service-mode/development.md)。
+- `pnpm dev:server` 独立启动真实 Node 后端；`pnpm dev:web` 连接该后端；`pnpm dev:ui` 显式启用无后端的演示预览。分侧检查使用 `pnpm test:server`、`pnpm test:ui`，真实 Electron 协议检查使用 `pnpm test:protocol`，正式桌面闭环使用 `pnpm test:desktop`，打包后使用 `pnpm test:distribution`，详见 [Service mode 开发与分侧验证](./docs/common/core/service-mode/development.md)。
 - `pnpm build` 依次构建共享 Core、PolyQuota UI 和 PolyQuota Desktop；Desktop 会把 UI 构建结果复制到 `apps/polyquota/renderer`。
-- `pnpm package` 生成 Windows NSIS 安装包，产物位于 `apps/polyquota/release/`。
+- `pnpm package` 在 Windows x64 使用工作区已安装的同版本 Electron dist，生成 Windows NSIS 安装包，产物位于 `apps/polyquota/release/`。
 - `pnpm test:codex-cli` 使用本机 Codex CLI 凭据执行隔离的真实用量闭环，不改写 CLI 凭据，临时应用数据会在测试后删除。
 - `pnpm data:reset` 删除 PolyQuota `userData` 中的 `polyquota.db`、WAL 和共享内存文件，因此也会删除全部已保存凭据、账号、用量与设置；执行前必须退出应用。
 
@@ -75,5 +75,5 @@ pnpm data:reset
 - `packages/polyquota-ui` 只负责 PolyQuota 界面，不访问上游，不读取凭证，也不是 GraphAgent 的 UI 基础。
 - `apps/polyquota` 负责 PolyQuota 的窗口和系统能力，不写服务商协议。
 - `apps/graph-agent` 当前没有可运行 package，其结构需在 GraphAgent 启动阶段单独设计。
-- 渲染进程关闭 Node 集成，开启上下文隔离和沙箱。预加载脚本只暴露账号、用量、认证和设置所需的受控 IPC。
+- 渲染进程关闭 Node 集成，开启上下文隔离和沙箱。业务访问统一使用 fetch/SSE：Electron 通过 `polyquota-app://app/v1/...` 接入主进程内嵌服务，独立 Web 通过回环 HTTP `/api/v1/...` 接入；不再注入业务 preload 或注册业务 IPC。默认 UI 保留原打包加载路径，仅登记的动态资源使用 `polyquota-app://resources/<resourceId>`。
 - Node 与 Electron 使用彼此隔离的 `better-sqlite3` 二进制；Electron 版本存放在 `apps/polyquota/lib/better-sqlite3` 并通过 `nativeBinding` 显式加载。

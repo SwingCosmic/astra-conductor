@@ -20,10 +20,6 @@ const mainSource = readFileSync(
   path.join(path.dirname(fileURLToPath(import.meta.url)), "../src/main.ts"),
   "utf8",
 );
-const preloadSource = readFileSync(
-  path.join(path.dirname(fileURLToPath(import.meta.url)), "../src/preload.ts"),
-  "utf8",
-);
 const proxyDetectionSource = readFileSync(
   path.join(path.dirname(fileURLToPath(import.meta.url)), "../src/proxy-detection.ts"),
   "utf8",
@@ -39,8 +35,10 @@ describe("PolyQuota desktop shell", () => {
     expect(mainSource).toContain("nodeIntegration: false");
     expect(mainSource).toContain("sandbox: true");
     expect(mainSource).not.toMatch(/omniroute/i);
-    expect(preloadSource).toContain('exposeInMainWorld("polyQuotaElectronService"');
-    expect(preloadSource).not.toContain('exposeInMainWorld("llmUsage"');
+    expect(mainSource).not.toContain("preload:");
+    expect(mainSource).not.toContain("registerIpcHandlers");
+    expect(mainSource).not.toContain("webContents.send");
+    expect(mainSource).toContain("new ElectronProtocolAdapter");
   });
 
   it("provides tray, proxy-aware networking, notifications, and recoverable data reset", () => {
@@ -89,13 +87,6 @@ describe("PolyQuota desktop shell", () => {
       "utf8",
     );
     expect(pollingSource).toContain("new Notification");
-
-    expect(preloadSource).toContain("startAuth");
-    expect(preloadSource).toContain("cancelAuth");
-    expect(preloadSource).toContain("redeemResetCredit");
-    expect(preloadSource).toContain("polyQuotaIpcEvents.stateChanged");
-    expect(preloadSource).toContain("ipcRenderer.removeListener");
-    expect(preloadSource).not.toMatch(/accessToken|refreshToken|idToken|safeStorage/);
   });
 
   it("keeps executable code local while allowing external HTTPS presentation resources", () => {
@@ -114,7 +105,7 @@ describe("PolyQuota desktop shell", () => {
     expect(developmentRunnerSource).toContain('"build:main"');
     expect(developmentRunnerSource).toContain('type: "polyquota:dev-restart"');
     expect(developmentRunnerSource).not.toContain("packages/core");
-    expect(mainSource).toContain("waitForIpcHandlersToDrain");
+    expect(mainSource).toContain("await runtime?.stop()");
     expect(runtimeSource).toContain("stopAndDrain");
   });
 });

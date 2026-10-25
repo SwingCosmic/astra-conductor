@@ -212,7 +212,6 @@ const account: PublicAccount = {
 };
 
 afterEach(() => {
-  delete window.polyQuotaElectronService;
   vi.useRealTimers();
   vi.restoreAllMocks();
 });

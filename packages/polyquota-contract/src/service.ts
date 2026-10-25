@@ -32,23 +32,3 @@ export interface IPolyQuotaService {
   saveSettings(settings: Settings): Promise<ServiceResult<void>>;
   getSystemStatus(): Promise<ServiceResult<PublicSystemStatus>>;
 }
-
-export const polyQuotaIpcChannels = {
-  getSnapshot: "polyquota:snapshot:get",
-  setAccountEnabled: "polyquota:account:set-enabled",
-  deleteAccount: "polyquota:account:delete",
-  refreshAccount: "polyquota:refresh:account",
-  refreshAll: "polyquota:refresh:all",
-  refreshCredentials: "polyquota:credentials:refresh",
-  redeemResetCredit: "polyquota:reset-credit:redeem",
-  startAuth: "polyquota:auth:start",
-  getAuthSession: "polyquota:auth:get",
-  finishAuth: "polyquota:auth:finish",
-  cancelAuth: "polyquota:auth:cancel",
-  saveSettings: "polyquota:settings:save",
-  getSystemStatus: "polyquota:system:status",
-} as const;
-
-export const polyQuotaIpcEvents = {
-  stateChanged: "polyquota:state:changed",
-} as const;

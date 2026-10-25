@@ -1,14 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { publicAssetPath } from "../src/public-assets";
-import {
-  EmptyPolyQuotaService,
-  type IPolyQuotaService,
-  resolvePolyQuotaService,
-} from "../src/services/polyquota-service";
+import { EmptyPolyQuotaService, type IPolyQuotaService } from "../src/services/polyquota-service";
 
 describe("PolyQuota frontend service", () => {
-  it("serves the comprehensive demo snapshot outside Electron", async () => {
-    const service = resolvePolyQuotaService(undefined);
+  it("serves the comprehensive demo snapshot only when explicitly created", async () => {
+    const service = new EmptyPolyQuotaService();
     const snapshot = await service.getSnapshot();
 
     expect(snapshot.ok).toBe(true);
@@ -199,15 +195,6 @@ describe("PolyQuota frontend service", () => {
         retryable: false,
       },
     });
-  });
-
-  it("uses a complete injected Electron implementation without wrapping it", () => {
-    const service = new EmptyPolyQuotaService();
-    const getSnapshot = vi.spyOn(service, "getSnapshot");
-
-    expect(resolvePolyQuotaService(service)).toBe(service);
-    void service.getSnapshot();
-    expect(getSnapshot).toHaveBeenCalledOnce();
   });
 });
 

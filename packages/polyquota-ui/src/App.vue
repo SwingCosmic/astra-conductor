@@ -4,6 +4,8 @@ import AppSidebar, { type PageId } from "./components/AppSidebar.vue";
 import type { IpcResult, PolyQuotaSnapshot, PublicAccount, ResetCreditRedemption } from "./models";
 import { catalogPresentations } from "./presentation";
 import { usePolyQuotaService } from "./services/polyquota-service-vue";
+import { useHostService } from "./services/host-service-vue";
+import { startBrowserNotifications } from "./services/browser-notifications";
 import ProvidersView from "./views/ProvidersView.vue";
 import SettingsView from "./views/SettingsView.vue";
 import UsageView from "./views/UsageView.vue";
@@ -19,6 +21,8 @@ const messageTone = ref<"info" | "success" | "error">("info");
 const GLOBAL_MESSAGE_DURATION_MS = 8_000;
 let messageTimer: ReturnType<typeof setTimeout> | null = null;
 const service = usePolyQuotaService();
+const host = useHostService();
+let stopNotifications: (() => void) | undefined;
 let unsubscribe: (() => void) | null = null;
 let snapshotRequest: Promise<void> | null = null;
 let highestObservedRevision = 0;
@@ -164,27 +168,37 @@ function remove(account: PublicAccount): void {
   });
 }
 
-onMounted(() => {
-  unsubscribe = service.subscribe((event) => {
-    if (observedInstance !== event.instanceId) {
-      observedInstance = event.instanceId;
-      highestObservedRevision = 0;
-      generation += 1;
-      snapshot.value = null;
-    }
-    if (!event.resync && event.revision <= (snapshot.value?.revision ?? -1)) return;
-    void reloadSnapshot(event.revision).catch((error: unknown) => {
-      message.value = error instanceof Error ? error.message : "状态更新失败";
-    });
-  });
+function connect(): void {
   void run("load", async () => {
+    if (!unsubscribe) {
+      if (host) {
+        const capabilities = unwrap(await host.getCapabilities());
+        if (disposed) return;
+        if (capabilities.notifications === "browser")
+          stopNotifications = startBrowserNotifications(host);
+      }
+      unsubscribe = service.subscribe((event) => {
+        if (observedInstance !== event.instanceId) {
+          observedInstance = event.instanceId;
+          highestObservedRevision = 0;
+          generation += 1;
+          snapshot.value = null;
+        }
+        if (!event.resync && event.revision <= (snapshot.value?.revision ?? -1)) return;
+        void reloadSnapshot(event.revision).catch((error: unknown) => {
+          message.value = error instanceof Error ? error.message : "状态更新失败";
+        });
+      });
+    }
     await service.waitForEvents?.();
-    await reloadSnapshot();
+    if (!disposed) await reloadSnapshot();
   });
-});
+}
+onMounted(connect);
 onBeforeUnmount(() => {
   disposed = true;
   unsubscribe?.();
+  stopNotifications?.();
   if (messageTimer) clearTimeout(messageTimer);
 });
 </script>
@@ -202,6 +216,13 @@ onBeforeUnmount(() => {
       >
         {{ message }}
       </p>
+      <button
+        v-if="!snapshot && busy === null"
+        class="secondary-action reconnect-action"
+        @click="connect"
+      >
+        重新连接服务
+      </button>
       <UsageView
         v-if="page === 'usage'"
         :accounts="accounts"

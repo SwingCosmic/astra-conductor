@@ -12,7 +12,7 @@ export class ContractValidationError extends Error {
 
 /**
  * 请求侧（renderer → main）运行期校验：渲染进程输入是唯一值得防的输入，
- * 校验集中在这里。响应方向零解析——preload 只做 schemaVersion 比对与传输
+ * 校验集中在这里。响应方向零解析——客户端只做 schemaVersion 比对与传输
  */
 
 function fail(path: string): never {

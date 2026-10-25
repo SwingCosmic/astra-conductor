@@ -1,12 +1,31 @@
 import { createCipheriv, createHash, randomBytes } from "node:crypto";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   readZCodeCodingPlanApiKey,
   resolveZCodeCredentialsPath,
 } from "../src/providers/glm/zcode-credentials.js";
+
+const directories: string[] = [];
+async function temporaryDirectory(): Promise<string> {
+  const directory = await mkdtemp(path.join(tmpdir(), "polyquota-zcode-"));
+  directories.push(directory);
+  return directory;
+}
+afterEach(async () => {
+  await Promise.all(
+    directories.splice(0).map(async (directory) => {
+      if (
+        path.dirname(path.resolve(directory)) !== path.resolve(tmpdir()) ||
+        !path.basename(directory).startsWith("polyquota-zcode-")
+      )
+        throw new Error("Unexpected test directory");
+      await rm(directory, { recursive: true, force: true });
+    }),
+  );
+});
 
 function encryptCredential(value: string, secret: string): string {
   const iv = randomBytes(12);
@@ -24,7 +43,7 @@ function encryptCredential(value: string, secret: string): string {
 
 describe("ZCode credential import", () => {
   it("reads the encrypted individual Coding Plan API key without changing the source", async () => {
-    const directory = await mkdtemp(path.join(tmpdir(), "polyquota-zcode-"));
+    const directory = await temporaryDirectory();
     const credentialsPath = path.join(directory, "credentials.json");
     const secret = "test-zcode-credential-secret";
     const identity = "account@example.test";
@@ -46,7 +65,7 @@ describe("ZCode credential import", () => {
   });
 
   it("keeps domestic and international accounts separate", async () => {
-    const directory = await mkdtemp(path.join(tmpdir(), "polyquota-zcode-"));
+    const directory = await temporaryDirectory();
     const credentialsPath = path.join(directory, "credentials.json");
     await writeFile(credentialsPath, "{}", "utf8");
 
@@ -59,7 +78,7 @@ describe("ZCode credential import", () => {
   });
 
   it("imports a single pre-index credential left by an older ZCode version", async () => {
-    const directory = await mkdtemp(path.join(tmpdir(), "polyquota-zcode-"));
+    const directory = await temporaryDirectory();
     const credentialsPath = path.join(directory, "credentials.json");
     const providerId = "account:zai-individual-coding-plan";
     await writeFile(
@@ -77,7 +96,7 @@ describe("ZCode credential import", () => {
   });
 
   it("does not guess when a pre-index store contains multiple accounts", async () => {
-    const directory = await mkdtemp(path.join(tmpdir(), "polyquota-zcode-"));
+    const directory = await temporaryDirectory();
     const credentialsPath = path.join(directory, "credentials.json");
     const prefix = "account-provider:coding-plan:account:bigmodel-individual-coding-plan:account:";
     await writeFile(

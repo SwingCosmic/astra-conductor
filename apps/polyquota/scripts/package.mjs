@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -25,5 +26,15 @@ function run(args) {
   });
 }
 
+const args = ["exec", "electron-builder", "--win", "nsis", "--publish", "never"];
+if (process.platform === "win32" && process.arch === "x64") {
+  // Reuse the workspace's pinned distribution rather than downloading it again.
+  const require = createRequire(import.meta.url);
+  const distribution = path.dirname((await import("electron")).default);
+  const version = (await readFile(path.join(distribution, "version"), "utf8")).trim();
+  if (version.replace(/^v/, "") !== require("electron/package.json").version)
+    throw new Error("Installed Electron distribution does not match the pinned package");
+  args.push(`--config.electronDist=${distribution}`);
+}
 await rm(unpackedOutput, { recursive: true, force: true });
-process.exitCode = await run(["exec", "electron-builder", "--win", "nsis", "--publish", "never"]);
+process.exitCode = await run(args);

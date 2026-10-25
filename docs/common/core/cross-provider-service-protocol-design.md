@@ -8,6 +8,8 @@
 | 暂缓细节 | 统一消息 IR 的全部字段、完整流事件表、路由算法、第三方可执行插件、共享凭据代理物理实现 |
 | 参考输入 | [OmniRoute 原始协议探索](./omniroute-exploration.md)、[当前搬运基线](./omniroute-manual-extraction-baseline.md)、[同步工具形态设计](./omniroute-sync-tool-design.md)、[ZCode](./zcode-provider-architecture-exploration.md)、[DSH](./deepseek-harness-provider-architecture-exploration.md)、[Hermes Agent](./hermes-agent-provider-architecture-exploration.md)、[认证服务抽取设计](../../polyquota/auth-service-extraction-design.md) |
 
+> 2026-10-25 通信边界更新：PolyQuota 的正式业务入口已统一为 Hono + fetch/SSE，旧业务 preload/IPC/channel 与自动演示兜底已删除。本文关于 IPC 的阶段记录保留历史含义；当前运行入口、数据和凭据边界见[服务模式开发说明](./service-mode/development.md)。GraphAgent 的后续运行时未纳入本次实现。
+
 ## 1. 目标
 
 本设计建立两个产品共用的 Provider Platform，并解决以下问题：
@@ -1023,7 +1025,7 @@ Electron 测试只覆盖共享 schema、固定通道、订阅释放、CSP、prel
 7. 删除 Core 与 UI 重复的 `ProviderId`、`AuthMethod` 定义；
 8. 清理旧 `publicMetadata` 和逐账号读取 API。
 
-进展记录：第 1—3 条已随[运行流程与通信机制现状报告](../../polyquota/runtime-and-communication-review.md)第 7.1、7.2 节实施完成——`packages/polyquota-contract` 已建立为 UI、preload 与主进程的共同契约来源，preload 全局已更名为 `window.polyQuotaElectronService`，带 `revision` 的 `getSnapshot()` 与失效事件已替代分散读取。2026-10-12 修订：第 4、5 条按 §6.9 的归属清单细化为可执行项；2026-10-13 增补第 6 条（重置额度结构升级：聚合按类型分桶、codex 迁移为分体、修正聚合形态对账错位）。
+进展记录：第 1—3 条已完成；当前 `packages/polyquota-contract` 为 UI 与宿主的共同契约来源，`getSnapshot()` 与失效事件承载状态同步，业务通信使用 Hono + fetch/SSE。实现见[运行流程与通信说明](../../polyquota/runtime-and-communication-review.md)。2026-10-12 修订：第 4、5 条按 §6.9 的归属清单细化为可执行项；2026-10-13 增补第 6 条（重置额度结构升级：聚合按类型分桶、codex 迁移为分体、修正聚合形态对账错位）。
 
 进展记录（2026-10-13，第 4—8 条全部落地）：descriptor 补齐 `iconKey`（七枚：codex/bigmodel/zai/grok/antigravity/claude/opencode）与 cli-import 的 `sourcePathHint`（与各 auth-flow 的真实路径解析同源维护并透传到公开 DTO）；`presentation.ts` 收缩为图标资产映射、iconKey 字符回退、内置枚举文本映射（认证方式 + 重置额度类型词汇 `resetCreditTypeLabel`）与窗口时长等纯展示计算，四张标签映射表、目录缺失副本、硬编码 `available` 与 `presentationRegistry[0]` 兜底全部删除，配额/附加项标签回退顺序为原生 `displayName` → 窗口时长计算 → key 原样。重置额度升级为 `UsageSnapshot` 与 `PublicUsage` 的一等 `resetCredits` 判别结构（schemaVersion 4）：codex 常规路径合并拉取明细端点输出分体（逐卡 id/类型/过期时间），明细暂不可用时如实退回聚合计数（单桶 banked），消耗侧 `ResetCreditRedemption` 分体带 `itemId`（兑换协议重新校验列表）、聚合按类型且由服务端挑选，伪造的常量 `actionToken` 与 extras 内的 reset-credits 展示删除，对账按形态区分（分体按 itemId 本地移除直至上游停止报告，聚合计数不做本地扣减），UI 按 `kind` 渲染分桶/逐卡两种消耗入口，grok 的计数展示暂留 extras（升级分体另行评估）。封闭标识（providerIds/authMethods/ProviderId/AuthMethod 等）的唯一来源改为契约包，core re-export（core → contract 为新增依赖方向，GraphAgent 契约出现时应上移共享协议层）；`UsageExtraItem.actionToken` 删除。旧 `publicMetadata` 的退休键（region/presentationId/product）已清理，codex/grok/claude 的工作区与组织事实待 §6.1 PublicExtension 机制落地后转换；逐账号读取 API 此前已随快照完成。
 

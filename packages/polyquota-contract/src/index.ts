@@ -1,6 +1,6 @@
 /**
- * `@astra-conductor/polyquota-contract`：PolyQuota 的 IPC 契约（DTO、服务接口、
- * 通道与请求侧运行期校验），供 renderer / preload / main 三方共享。
+ * `@astra-conductor/polyquota-contract`：PolyQuota 的服务契约（DTO、服务接口、
+ * 请求侧运行期校验），供 renderer 与两种宿主共享。
  */
 export {
   POLYQUOTA_SCHEMA_VERSION,
@@ -63,8 +63,7 @@ export {
   type PolyQuotaChangedEvent,
 } from "./dto/snapshot.js";
 
-export type { IPolyQuotaService } from "./channels.js";
-export { polyQuotaIpcChannels, polyQuotaIpcEvents } from "./channels.js";
+export type { IPolyQuotaService } from "./service.js";
 
 export {
   ContractValidationError,

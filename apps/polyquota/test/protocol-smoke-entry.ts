@@ -10,8 +10,6 @@ import { ElectronDynamicResourceService } from "../src/platform/electron/dynamic
 import { ElectronProtocolAdapter } from "../src/platform/electron/protocol-adapter.js";
 import { installPageCsp, guardPage } from "../src/platform/electron/page-security.js";
 import { createHonoApp } from "../src/http/create-hono-app.js";
-import { registerIpcHandlers, unregisterIpcHandlers } from "../src/ipc.js";
-import { polyQuotaIpcEvents } from "@astra-conductor/polyquota-contract";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dataDirectory = process.env.POLYQUOTA_PROTOCOL_DATA!;
@@ -74,13 +72,8 @@ void app
       new Set(["null", new URL(devUrl).origin]),
     );
     partition.protocol.handle("polyquota-app", (request) => adapter.handle(request));
-    registerIpcHandlers(runtime.application, runtime.track);
     let window: BrowserWindow | undefined;
     let exitCode = 0;
-    runtime.events.subscribe((event) => {
-      if (event.type === "changed" && window && !window.isDestroyed())
-        window.webContents.send(polyQuotaIpcEvents.stateChanged, event.data);
-    });
     const clientBundle = await readFile(path.join(root, "dist/protocol-client.js"), "utf8");
 
     async function waitForSubscriptions(count: number): Promise<void> {
@@ -96,20 +89,23 @@ void app
 
     try {
       for (const mode of ["file", "vite"] as const) {
+        const beforeWindow = runtime.events.subscriberCount;
         installPageCsp(
           partition,
           mode === "vite" ? new URL(devUrl).origin : undefined,
           mode === "vite" ? new URL(backendUrl).origin : undefined,
         );
         window = new BrowserWindow({
+          width: 1280,
+          height: 900,
           show: false,
           webPreferences: {
             session: partition,
-            preload: path.join(root, "dist/preload.cjs"),
             contextIsolation: true,
             nodeIntegration: false,
             sandbox: true,
             webSecurity: true,
+            backgroundThrottling: false,
           },
         });
         guardPage(
@@ -123,6 +119,13 @@ void app
         const sourceUrl = window.webContents.getURL();
         if (mode === "file" ? !sourceUrl.startsWith("file:") : !sourceUrl.startsWith(devUrl))
           throw new Error("UI load path changed");
+        await window.webContents.executeJavaScript(`(async () => {
+          if ("polyQuotaElectronService" in window) throw new Error("Legacy business bridge present");
+          const limit = Date.now() + 5000;
+          while (!document.querySelector("nav button")) { if (Date.now() > limit) throw new Error("UI did not mount"); await new Promise(r => setTimeout(r, 20)); }
+          [...document.querySelectorAll("nav button")].find(button => button.textContent.includes("设置")).click();
+          while (!document.querySelector('.host-status')?.textContent.includes(${JSON.stringify(mode === "file" ? "系统通知" : "未配置")})) { if (Date.now() > limit) throw new Error("UI did not load real capabilities"); await new Promise(r => setTimeout(r, 20)); }
+        })()`);
         if (mode === "vite") {
           await window.webContents.executeJavaScript(`(async () => {
         const wait = async (check) => { const limit = Date.now() + 5000; while (!check()) { if (Date.now() > limit) throw new Error("Web UI did not load backend state"); await new Promise(r => setTimeout(r, 20)); } };
@@ -135,6 +138,29 @@ void app
         const saved = await fetch(${JSON.stringify(backendUrl)} + "/v1/polyquota/snapshot").then(response => response.json());
         if (!saved.ok || saved.value.settings.pollingIntervalMinutes !== 19 || saved.value.accounts.length !== 0 || saved.value.providers.length !== 7) throw new Error("Web UI did not persist real backend settings");
       })()`);
+          // Use the mounted App bridge, actual SSE and actual HTTP receipt route.
+          // The browser API is controlled so OS notification settings cannot make
+          // this transport test spuriously fail or display a real user toast.
+          await window.webContents.executeJavaScript(`(() => {
+            class TestNotification extends EventTarget {
+              static permission = "granted";
+              constructor() { super(); queueMicrotask(() => this.dispatchEvent(new Event("show"))); }
+              close() {}
+            }
+            window.Notification = TestNotification;
+          })()`);
+          const delivered = new Promise<boolean>((resolve) => {
+            const receive = (message: unknown): void => {
+              const result = message as { type?: string; delivered?: boolean };
+              if (result.type !== "polyquota:test-notification-result") return;
+              process.removeListener("message", receive);
+              resolve(result.delivered === true);
+            };
+            process.on("message", receive);
+          });
+          process.send?.({ type: "polyquota:test-notification" });
+          if (!(await delivered)) throw new Error("Web notification receipt was not delivered");
+          console.info("POLYQUOTA_WEB_NOTIFICATION_OK");
           console.info("POLYQUOTA_WEB_UI_SAVE_OK");
         }
         const baseline = runtime.events.subscriberCount;
@@ -183,7 +209,7 @@ void app
         );
         window.destroy();
         window = undefined;
-        await waitForSubscriptions(baseline);
+        await waitForSubscriptions(beforeWindow);
         console.info(`POLYQUOTA_PROTOCOL_SMOKE_OK ${mode} ${JSON.stringify(result)}`);
       }
       // The Vite page ran against a separate real Node backend, with no demo accounts.
@@ -201,7 +227,6 @@ void app
       exitCode = 1;
     } finally {
       window?.destroy();
-      unregisterIpcHandlers();
       partition.protocol.unhandle("polyquota-app");
       await runtime.stop();
       app.exit(exitCode);

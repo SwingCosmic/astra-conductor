@@ -10,7 +10,7 @@ export interface PublicAuthMethodDescriptor {
 
 /**
  * 公开目录里的套餐条目只剩展示事实。数据层标识符（match 键）与倍率是 core
- * 内部事实，不过 IPC：匹配只发生在主进程构造快照时，前端只消费解析结果。
+ * 内部事实，不跨传输边界：匹配只发生在主进程构造快照时，前端只消费解析结果。
  */
 export interface PublicPlanDescriptor {
   id: string;

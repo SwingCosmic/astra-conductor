@@ -16,7 +16,7 @@ import {
  */
 
 describe("PolyQuota contract request validation", () => {
-  it("keeps the schema version explicit so preload can compare it", () => {
+  it("keeps the schema version explicit so clients can compare it", () => {
     expect(POLYQUOTA_SCHEMA_VERSION).toBe(6);
   });
 

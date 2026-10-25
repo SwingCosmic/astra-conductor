@@ -14,7 +14,9 @@
 - [跨服务商服务协议设计](./core/cross-provider-service-protocol-design.md)
 - [跨产品凭据共享与迁移](./core/credential-sharing.md)
 - [内置 Web 服务模式拆分与重构](./core/service-mode/plan.md)
-- [内置 Web 服务模式实施方案](./core/service-mode/implementation-plan.md)
+- [内置 Web 服务模式实施结果](./core/service-mode/implementation-plan.md)
+- [Service mode 开发与分侧验证](./core/service-mode/development.md)
+- [Service mode 验收记录与用例矩阵](./core/service-mode/acceptance.md)
 - [2026-10 供应商档位漂移与包结构排查](./core/2026-10-drift-review/README.md)
 
 这些材料对应共享的 `packages/core`。`references/` 下的仓库仅作为参考和提取输入，不是运行时依赖。

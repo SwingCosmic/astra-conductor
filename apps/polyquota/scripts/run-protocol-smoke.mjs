@@ -13,13 +13,17 @@ const ui = path.resolve(root, "../../packages/polyquota-ui");
 const require = createRequire(path.join(ui, "package.json"));
 const viteRoot = path.dirname(require.resolve("vite/package.json"));
 const { createServer } = await import(pathToFileURL(path.join(viteRoot, "dist/node/index.js")));
+const bundles = [
+  path.join(root, "dist/protocol-smoke.mjs"),
+  path.join(root, "dist/protocol-client.js"),
+];
 const temporary = await mkdtemp(path.join(tmpdir(), "polyquota-protocol-"));
 let backend;
 let vite;
 try {
   await build({
     entryPoints: [path.join(root, "test/protocol-smoke-entry.ts")],
-    outfile: path.join(root, "dist/protocol-smoke.mjs"),
+    outfile: bundles[0],
     bundle: true,
     platform: "node",
     format: "esm",
@@ -27,7 +31,7 @@ try {
   });
   await build({
     entryPoints: [path.join(ui, "src/services/http-polyquota-service.ts")],
-    outfile: path.join(root, "dist/protocol-client.js"),
+    outfile: bundles[1],
     bundle: true,
     platform: "browser",
     format: "iife",
@@ -52,7 +56,7 @@ try {
   const url = vite.resolvedUrls.local[0];
   const child = spawn(electron, [path.join(root, "dist/protocol-smoke.mjs")], {
     cwd: root,
-    stdio: "inherit",
+    stdio: ["inherit", "inherit", "inherit", "ipc"],
     windowsHide: true,
     env: {
       ...process.env,
@@ -60,6 +64,14 @@ try {
       POLYQUOTA_PROTOCOL_VITE: url,
       POLYQUOTA_PROTOCOL_BACKEND: backend.url,
     },
+  });
+  child.on("message", (message) => {
+    if (message?.type !== "polyquota:test-notification") return;
+    void backend.runtime.browserNotifications
+      .deliver({ title: "Quota test", body: "Controlled delivery" })
+      .then((delivered) => {
+        if (child.connected) child.send({ type: "polyquota:test-notification-result", delivered });
+      });
   });
   const timeout = setTimeout(() => {
     console.error("Protocol smoke exceeded 60 seconds");
@@ -74,8 +86,14 @@ try {
     clearTimeout(timeout);
   }
 } finally {
-  await vite?.close();
-  await backend?.stop();
+  const stopped = await Promise.allSettled([vite?.close(), backend?.stop()]);
+  await Promise.all(bundles.map((filename) => rm(filename, { force: true })));
+  const failures = stopped.filter((result) => result.status === "rejected");
+  if (failures.length)
+    throw new AggregateError(
+      failures.map((result) => result.reason),
+      "Protocol smoke shutdown failed; temporary data retained",
+    );
   if (!path.resolve(temporary).startsWith(path.resolve(tmpdir()) + path.sep))
     throw new Error("Unexpected temporary path");
   await rm(temporary, { recursive: true, force: true });

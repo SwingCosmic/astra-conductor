@@ -1,6 +1,6 @@
 # 认证服务抽取设计（auth-service.ts 拆分进 core）
 
-> **状态：** 已于 2026-09-30 全部落地，结果以第 10 节末的落地记录为准。正文中的"现状/现行/现有"表述描述的是落地前的问题分析与目标设计，所述 `apps/polyquota/src/auth-service.ts` 与 `zcode-credentials.ts` 的原始位置等信息均已成为历史。
+> 原认证抽取已于 2026-09-30 完成，本文保留当时的设计依据。当前服务模式使用职责服务、Hono 与共用认证 UI，支持会话详情、终态保留和并发 finish 合并；现有数据真实验证已通过。实际运行与边界见[运行说明](./runtime-and-communication-review.md)，本文中的旧路径和 IPC 约束不作为当前实现说明。
 
 本设计描述如何把 `apps/polyquota/src/auth-service.ts`（428 行）这个按服务商分支的巨型文件，连同它内嵌编写的 OAuth 回调 HTTP 服务器，拆进 `packages/core`：每个供应商目录装齐自己的协议、声明与认证编排；回调服务器的处理逻辑、启动参数与回调后续都在 core，**监听的启动执行归桌面**；CLI 导入的文件读取与解析全部在 core，桌面只接收最终结果并落库。core 侧由一个不含任何分支的 `AuthCoordinator` 对外提供 `start / finish / cancel`。
 

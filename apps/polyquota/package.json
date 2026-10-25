@@ -9,18 +9,19 @@
     "icons:generate": "node ./scripts/run-icon-generator.mjs",
     "native:prepare": "node ./scripts/prepare-native.mjs",
     "prebuild": "pnpm run native:prepare",
-    "build:main": "tsc -p tsconfig.build.json && node ./scripts/build-preload.mjs",
+    "build:main": "tsc -p tsconfig.build.json && node ./scripts/clean-legacy-output.mjs",
     "dev:electron": "node ./scripts/run-electron-mode.mjs dev",
     "build": "pnpm run build:main && node ./scripts/copy-renderer.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "test:ipc": "node ./scripts/run-electron-mode.mjs ipc-smoke",
     "package": "node ./scripts/package.mjs",
     "data:reset": "node ./scripts/run-electron-mode.mjs reset",
     "test:codex-cli": "node ./scripts/run-electron-mode.mjs codex-cli-smoke",
     "dev:server": "node scripts/run-node-mode.mjs",
     "test:server": "vitest run test/service-mode-server.test.ts test/callback-server.test.ts test/browser-auth-roundtrip.test.ts test/node-http.test.ts",
-    "test:protocol": "node scripts/run-protocol-smoke.mjs"
+    "test:protocol": "node scripts/run-protocol-smoke.mjs",
+    "test:desktop": "node ./scripts/run-electron-mode.mjs desktop-smoke",
+    "test:distribution": "node scripts/run-distribution-smoke.mjs"
   },
   "dependencies": {
     "@astra-conductor/core": "workspace:*",

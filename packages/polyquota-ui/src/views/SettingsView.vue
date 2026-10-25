@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import HostStatus from "../components/HostStatus.vue";
 import { onMounted, ref, watch } from "vue";
 import type { IpcResult, PublicRefreshSchedulerState, Settings } from "../models";
 import { systemProxyLabel } from "../presentation";
@@ -74,11 +75,11 @@ onMounted(() => void load());
         }}
       </p>
     </section>
+    <HostStatus />
     <section class="settings-card">
       <h2>网络与代理</h2>
       <div class="setting-row">
-        <span
-          ><strong>当前代理</strong><small>由桌面主进程读取环境变量与系统代理配置得出</small></span
+        <span><strong>当前代理</strong><small>由应用服务读取环境变量与系统代理配置得出</small></span
         ><code>{{ proxy }}</code>
       </div>
     </section>

@@ -17,25 +17,24 @@ import {
   shell,
   type NativeImage,
 } from "electron";
-import { polyQuotaIpcEvents } from "@astra-conductor/polyquota-contract";
 import { existsSync } from "node:fs";
-import { rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { type LoggerPort } from "@astra-conductor/core/internal";
-import { registerIpcHandlers, unregisterIpcHandlers, waitForIpcHandlersToDrain } from "./ipc.js";
 import { PollingService } from "./polling-service.js";
 import { PolyQuotaApplicationService } from "./polyquota-application-service.js";
 import { envProxyAddress } from "./proxy-detection.js";
 import { taskbarProgress, trayIconFilename, trayTooltip } from "./quota-chrome.js";
 import { RefreshScheduler } from "./refresh-scheduler.js";
 import { ElectronSafeStorageCipher } from "./safe-storage-cipher.js";
-import { runStorageSmoke } from "./storage-smoke.js";
+import { runStorageSmoke, verifyStorageSmoke } from "./storage-smoke.js";
 
 const devServer = process.env.POLYQUOTA_DEV_SERVER?.trim() || undefined;
 const smoke = process.env.POLYQUOTA_SMOKE === "1";
-const ipcSmoke = process.env.POLYQUOTA_IPC_SMOKE === "1";
+const desktopSmoke = process.env.POLYQUOTA_DESKTOP_SMOKE === "1";
 const storageSmoke = process.env.POLYQUOTA_STORAGE_SMOKE === "1";
+const storageVerify = process.env.POLYQUOTA_STORAGE_SMOKE === "verify";
 const resetData = process.env.POLYQUOTA_RESET_DATA === "1";
 const codexCliSmoke = process.env.POLYQUOTA_CODEX_CLI_SMOKE === "1";
 const userDataOverride = process.env.POLYQUOTA_USER_DATA;
@@ -44,6 +43,7 @@ const databaseName = "polyquota.db";
 const productAppUserModelId = "io.astraconductor.polyquota";
 let runtime: PolyQuotaRuntime | null = null;
 let protocolAdapter: ElectronProtocolAdapter | null = null;
+let protocolRegistered = false;
 const outgoing = new AbortController();
 const appPartition = "persist:polyquota-app";
 protocol.registerSchemesAsPrivileged([
@@ -203,7 +203,6 @@ async function createWindow(): Promise<void> {
     icon: loadProductIcon(process.platform === "win32" ? "polyquota.ico" : "polyquota.png"),
     webPreferences: {
       partition: appPartition,
-      preload: path.join(appDir(), "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -213,11 +212,11 @@ async function createWindow(): Promise<void> {
   mainWindow = win;
 
   win.once("ready-to-show", () => {
-    win.show();
+    if (!desktopSmoke && !smoke) win.show();
   });
 
   win.on("close", (event) => {
-    if (!quitting && !smoke && !ipcSmoke) {
+    if (!quitting && !smoke && !desktopSmoke) {
       event.preventDefault();
       win.hide();
     }
@@ -254,54 +253,20 @@ async function createWindow(): Promise<void> {
       setTimeout(() => app.quit(), 250);
       return;
     }
-    if (ipcSmoke) {
+    if (desktopSmoke) {
       try {
-        const result = (await win.webContents.executeJavaScript(`
-          (async () => {
-            const service = window.polyQuotaElectronService;
-            if (!service) throw new Error("missing-service");
-            const initialResult = await service.getSnapshot();
-            if (!initialResult.ok) throw new Error(initialResult.error.code);
-            const invalidResult = await service.deleteAccount("../invalid-account");
-            if (invalidResult.ok || invalidResult.error.code !== "validation") {
-              throw new Error("invalid-input-not-rejected");
-            }
-            const initial = initialResult.value;
-            let timeout;
-            const eventPromise = new Promise((resolve, reject) => {
-              timeout = setTimeout(() => reject(new Error("event-timeout")), 5000);
-              const dispose = service.subscribe((event) => {
-                if (event.revision <= initial.revision) return;
-                clearTimeout(timeout);
-                dispose();
-                resolve(event);
-              });
-            });
-            const changedSettings = {
-              ...initial.settings,
-              pollingEnabled: !initial.settings.pollingEnabled,
-            };
-            const saveResult = await service.saveSettings(changedSettings);
-            if (!saveResult.ok) throw new Error(saveResult.error.code);
-            const event = await eventPromise;
-            const changedResult = await service.getSnapshot();
-            if (!changedResult.ok) throw new Error(changedResult.error.code);
-            if (changedResult.value.revision < event.revision) throw new Error("stale-snapshot");
-            if (changedResult.value.settings.pollingEnabled !== changedSettings.pollingEnabled) {
-              throw new Error("settings-not-applied");
-            }
-            const restoreResult = await service.saveSettings(initial.settings);
-            if (!restoreResult.ok) throw new Error(restoreResult.error.code);
-            return { revision: changedResult.value.revision, reasons: event.reasons };
-          })()
-        `)) as { revision: number; reasons: string[] };
+        const smokeScript = process.env.POLYQUOTA_DESKTOP_SMOKE_SCRIPT;
+        if (!smokeScript) throw new Error("Desktop smoke script is required");
+        const result = (await win.webContents.executeJavaScript(
+          await readFile(smokeScript, "utf8"),
+        )) as { revision: number; reasons: string[] };
         console.log(
-          `POLYQUOTA_IPC_SMOKE_OK revision=${result.revision} reasons=${result.reasons.join(",")}`,
+          `POLYQUOTA_DESKTOP_SMOKE_OK revision=${result.revision} reasons=${result.reasons.join(",")}`,
         );
         app.quit();
       } catch (error) {
         console.error(
-          "POLYQUOTA_IPC_SMOKE_FAILED",
+          "POLYQUOTA_DESKTOP_SMOKE_FAILED",
           error instanceof Error ? error.message : "unknown error",
         );
         app.exit(1);
@@ -345,21 +310,19 @@ function requestGracefulQuit(): void {
 async function shutdownServices(): Promise<void> {
   mainWindow?.destroy();
   mainWindow = null;
-  unregisterIpcHandlers();
   powerMonitor.removeListener("resume", handleSystemResume);
   tray?.destroy();
   tray = null;
-  await waitForIpcHandlersToDrainAfterStop();
-  session.fromPartition(appPartition).protocol.unhandle(BUSINESS_SCHEME);
+  await runtime?.stop();
+  if (protocolRegistered) {
+    session.fromPartition(appPartition).protocol.unhandle(BUSINESS_SCHEME);
+    protocolRegistered = false;
+  }
   protocolAdapter = null;
   refreshScheduler = null;
   polyQuotaService = null;
   polling = null;
   runtime = null;
-}
-
-async function waitForIpcHandlersToDrainAfterStop(): Promise<void> {
-  await Promise.all([runtime?.stop(), waitForIpcHandlersToDrain()]);
 }
 
 function handleSystemResume(): void {
@@ -400,6 +363,12 @@ if (hasSingleInstanceLock) {
         app.quit();
         return;
       }
+      if (storageVerify) {
+        await verifyStorageSmoke(databaseFile, sqliteNativeBindingPath());
+        console.log("POLYQUOTA_EXISTING_CIPHERTEXT_OK");
+        app.quit();
+        return;
+      }
       await configureSessionProxy();
       const appSession = session.fromPartition(appPartition);
       runtime = await startRuntime(
@@ -430,11 +399,9 @@ if (hasSingleInstanceLock) {
         new Set(["null", ...(devServer ? [new URL(devServer).origin] : [])]),
       );
       appSession.protocol.handle(BUSINESS_SCHEME, (request) => protocolAdapter!.handle(request));
+      protocolRegistered = true;
       runtime.events.subscribe((event) => {
         if (event.type !== "changed" || quitting) return;
-        const webContents = mainWindow?.webContents;
-        if (webContents && !webContents.isDestroyed())
-          webContents.send(polyQuotaIpcEvents.stateChanged, event.data);
         applyQuotaChrome();
       });
       if (codexCliSmoke) {
@@ -452,7 +419,6 @@ if (hasSingleInstanceLock) {
         app.quit();
         return;
       }
-      registerIpcHandlers(polyQuotaService, runtime.track);
       powerMonitor.on("resume", handleSystemResume);
       installPageCsp(appSession, devServer ? new URL(devServer).origin : undefined);
       await createWindow();

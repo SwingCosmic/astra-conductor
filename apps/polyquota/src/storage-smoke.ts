@@ -49,8 +49,20 @@ export async function runStorageSmoke(filename: string, nativeBinding: string): 
   first.close();
   assertNoPlaintext(filename);
 
+  await verifyStorageSmoke(filename, nativeBinding);
+}
+
+/** Verify a previous build's ciphertext without first rewriting its credential. */
+export async function verifyStorageSmoke(filename: string, nativeBinding: string): Promise<void> {
+  if (!existsSync(filename)) throw new Error("Storage verification requires an existing database");
   const reopened = new SqliteStorage(filename, { nativeBinding });
-  const loaded = await new CredentialVault(reopened, cipher).load(account.id);
-  if (loaded.secrets.accessToken !== testSecret) throw new Error("credential round trip failed");
-  reopened.close();
+  try {
+    const loaded = await new CredentialVault(reopened, new ElectronSafeStorageCipher()).load(
+      smokeAccount().id,
+    );
+    if (loaded.secrets.accessToken !== testSecret) throw new Error("credential round trip failed");
+    assertNoPlaintext(filename);
+  } finally {
+    reopened.close();
+  }
 }
