@@ -8,7 +8,12 @@ export interface AuthStartOptions {
 
 export type AuthStartResult =
   | { status: "completed"; account: Account }
-  | { status: "pending"; sessionId: string; interaction: "browser-callback" }
+  | {
+      status: "pending";
+      sessionId: string;
+      interaction: "browser-callback";
+      authorizationUrl?: string;
+    }
   | {
       status: "pending";
       sessionId: string;
@@ -22,12 +27,16 @@ export type AuthFlowStart =
   | {
       status: "pending";
       interaction: "browser-callback";
+      authorizationUrl?: string;
+      expiresAt?: string;
+      completion?: Promise<Account>;
       finish(): Promise<Account>;
       cancel(): void;
     }
   | {
       status: "pending";
       interaction: "device-code";
+      expiresAt?: string;
       finish(): Promise<Account>;
       cancel(): void;
       userCode: string;
@@ -50,3 +59,26 @@ export type StartOAuthCallbackServer = (options: {
   port: number;
   handler: OAuthCallbackHandler;
 }) => Promise<{ port: number }>;
+
+export type AuthSessionStatus =
+  | "pending"
+  | "finishing"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "expired";
+
+export interface AuthSession {
+  sessionId: string;
+  offeringId: string;
+  method: AuthMethod;
+  interaction: "browser-callback" | "device-code";
+  status: AuthSessionStatus;
+  createdAt: string;
+  expiresAt: string | null;
+  authorizationUrl?: string;
+  userCode?: string;
+  verificationUri?: string;
+  account?: Account;
+  error?: import("../errors.js").PublicErrorDto;
+}

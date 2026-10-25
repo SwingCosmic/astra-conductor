@@ -9,6 +9,7 @@ import {
   type PolyQuotaChangedEvent,
   type PolyQuotaSnapshot,
   type PublicAccount,
+  type PublicAuthSession,
   type PublicError,
   type PublicSystemStatus,
   type RedeemResetCreditOutcomeDto,
@@ -98,6 +99,8 @@ const service: IPolyQuotaService = {
     });
   },
   startAuth: (request) => invoke<AuthStartResult>(polyQuotaIpcChannels.startAuth, request),
+  getAuthSession: (sessionId) =>
+    invoke<PublicAuthSession>(polyQuotaIpcChannels.getAuthSession, sessionId),
   finishAuth: (sessionId) => invoke<PublicAccount>(polyQuotaIpcChannels.finishAuth, sessionId),
   cancelAuth: (sessionId) => invoke<void>(polyQuotaIpcChannels.cancelAuth, sessionId),
   saveSettings: (settings) => invoke<void>(polyQuotaIpcChannels.saveSettings, settings),

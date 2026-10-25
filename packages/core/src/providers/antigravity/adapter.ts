@@ -1,3 +1,5 @@
+import { CoreServices } from "../../services/contracts.js";
+import type { ServiceResolver } from "../../services/registry.js";
 import { randomUUID } from "node:crypto";
 import { AppError } from "../../errors.js";
 import type {
@@ -55,10 +57,13 @@ function metadataText(account: Account, key: string): string | null {
 export class AntigravityAdapter implements UsageProviderAdapter {
   readonly provider: ProviderId = "antigravity";
 
-  constructor(
-    private readonly fetchImpl: typeof fetch = fetch,
-    private readonly clock: ClockPort = { now: () => new Date() },
-  ) {}
+  private readonly fetchImpl: typeof fetch;
+  private readonly clock: ClockPort;
+
+  constructor(services: ServiceResolver) {
+    this.fetchImpl = services.get(CoreServices.http).fetch;
+    this.clock = services.get(CoreServices.clock);
+  }
 
   createBrowserAuthorization(redirectUri: string): AntigravityBrowserAuthorization {
     const state = generateState();

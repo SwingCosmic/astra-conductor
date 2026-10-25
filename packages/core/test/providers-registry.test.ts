@@ -1,3 +1,4 @@
+import { providerServices } from "./service-helpers.js";
 import { describe, expect, it } from "vitest";
 import {
   CredentialVault,
@@ -27,13 +28,14 @@ function fullRegistry(): ProviderRegistry {
   const storage = new MemoryStorage();
   const vault = new CredentialVault(storage, new FakeCipher());
   return new ProviderRegistry(
-    createProviderContributions({
-      http: { fetch },
-      browser: { openExternal: async () => undefined },
-      callbackServer: { start: async () => ({ port: 0 }) },
-      storage,
-      vault,
-    }),
+    createProviderContributions(
+      providerServices({
+        http: { fetch },
+        callbackServer: { start: async () => ({ port: 0 }) },
+        storage,
+        vault,
+      }),
+    ),
   );
 }
 

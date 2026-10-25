@@ -19,7 +19,13 @@
     "omniroute:sync": "node tools/omniroute-sync/src/index.mjs sync && pnpm omniroute:check",
     "package": "pnpm build && pnpm --filter @astra-conductor/polyquota package",
     "data:reset": "pnpm --filter @astra-conductor/polyquota build:main && pnpm --filter @astra-conductor/polyquota data:reset",
-    "test:codex-cli": "pnpm --filter @astra-conductor/core build && pnpm --filter @astra-conductor/polyquota build:main && pnpm --filter @astra-conductor/polyquota test:codex-cli"
+    "test:codex-cli": "pnpm --filter @astra-conductor/core build && pnpm --filter @astra-conductor/polyquota build:main && pnpm --filter @astra-conductor/polyquota test:codex-cli",
+    "dev:server": "pnpm --filter @astra-conductor/polyquota-contract build && pnpm --filter @astra-conductor/core build && pnpm --filter @astra-conductor/polyquota build:main && pnpm --filter @astra-conductor/polyquota dev:server",
+    "dev:web": "node scripts/dev-web.mjs web",
+    "dev:ui": "node scripts/dev-web.mjs demo",
+    "test:server": "pnpm --filter @astra-conductor/polyquota-contract build && pnpm --filter @astra-conductor/core build && pnpm --filter @astra-conductor/polyquota test:server",
+    "test:ui": "pnpm --filter @astra-conductor/polyquota-contract build && pnpm --filter @astra-conductor/polyquota-ui test",
+    "test:protocol": "pnpm build && pnpm --filter @astra-conductor/polyquota test:protocol"
   },
   "devDependencies": {
     "prettier": "catalog:",

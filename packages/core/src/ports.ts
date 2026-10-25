@@ -74,6 +74,7 @@ export interface DecryptionResult {
 }
 
 export interface CredentialCipherPort {
+  readonly unavailableReason?: string;
   isAvailable(): Promise<boolean>;
   encrypt(plaintext: string): Promise<Uint8Array>;
   decrypt(ciphertext: Uint8Array): Promise<DecryptionResult>;

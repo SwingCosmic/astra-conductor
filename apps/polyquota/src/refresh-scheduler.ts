@@ -28,6 +28,7 @@ export class RefreshScheduler {
   private timer: unknown | null = null;
   private activeBatch: Promise<RefreshBatchOutcomeDto> | null = null;
   private accepting = true;
+  private started = false;
   private settings = { pollingEnabled: false, pollingIntervalMinutes: 15 };
   private state: PublicRefreshSchedulerState = {
     status: "disabled",
@@ -47,6 +48,8 @@ export class RefreshScheduler {
   ) {}
 
   start(settings: { pollingEnabled: boolean; pollingIntervalMinutes: number }): void {
+    if (this.started) throw new Error("Refresh scheduler is already started");
+    this.started = true;
     this.accepting = true;
     this.configure(settings);
   }

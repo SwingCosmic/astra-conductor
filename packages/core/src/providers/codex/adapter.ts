@@ -1,3 +1,5 @@
+import { CoreServices } from "../../services/contracts.js";
+import type { ServiceResolver } from "../../services/registry.js";
 import { randomUUID } from "node:crypto";
 import { AppError } from "../../errors.js";
 import type {
@@ -130,10 +132,13 @@ function aggregateResetCredits(bankedCount: number): ResetCredits {
 
 export class CodexAdapter implements UsageProviderAdapter {
   readonly provider: ProviderId = "codex";
-  constructor(
-    private readonly fetchImpl: typeof fetch = fetch,
-    private readonly clock: ClockPort = { now: () => new Date() },
-  ) {}
+  private readonly fetchImpl: typeof fetch;
+  private readonly clock: ClockPort;
+
+  constructor(services: ServiceResolver) {
+    this.fetchImpl = services.get(CoreServices.http).fetch;
+    this.clock = services.get(CoreServices.clock);
+  }
 
   createBrowserAuthorization(
     redirectUri = "http://localhost:1455/auth/callback",

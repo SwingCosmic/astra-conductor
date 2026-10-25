@@ -22,6 +22,9 @@ const service = usePolyQuotaService();
 let unsubscribe: (() => void) | null = null;
 let snapshotRequest: Promise<void> | null = null;
 let highestObservedRevision = 0;
+let observedInstance: string | null = null;
+let generation = 0;
+let disposed = false;
 
 watch(message, (value) => {
   if (messageTimer) clearTimeout(messageTimer);
@@ -40,14 +43,27 @@ function unwrap<T>(result: IpcResult<T>): T {
 function reloadSnapshot(targetRevision = snapshot.value?.revision ?? 0): Promise<void> {
   highestObservedRevision = Math.max(highestObservedRevision, targetRevision);
   if (snapshotRequest) return snapshotRequest;
+  let succeeded = false;
   snapshotRequest = (async () => {
-    do {
+    for (;;) {
+      const requestedGeneration = generation;
       const next = unwrap(await service.getSnapshot());
-      if (!snapshot.value || next.revision >= snapshot.value.revision) snapshot.value = next;
-    } while ((snapshot.value?.revision ?? 0) < highestObservedRevision);
+      if (disposed) return;
+      if (requestedGeneration !== generation) continue;
+      if (observedInstance && next.instanceId !== observedInstance) return;
+      observedInstance ??= next.instanceId;
+      if (
+        !snapshot.value ||
+        next.instanceId !== snapshot.value.instanceId ||
+        next.revision >= snapshot.value.revision
+      )
+        snapshot.value = next;
+      if ((snapshot.value?.revision ?? 0) >= highestObservedRevision) break;
+    }
+    succeeded = true;
   })().finally(() => {
     snapshotRequest = null;
-    if ((snapshot.value?.revision ?? 0) < highestObservedRevision) {
+    if (succeeded && !disposed && (snapshot.value?.revision ?? 0) < highestObservedRevision) {
       void reloadSnapshot(highestObservedRevision).catch((error: unknown) => {
         message.value = error instanceof Error ? error.message : "状态更新失败";
       });
@@ -150,14 +166,24 @@ function remove(account: PublicAccount): void {
 
 onMounted(() => {
   unsubscribe = service.subscribe((event) => {
-    if (event.revision <= (snapshot.value?.revision ?? -1)) return;
+    if (observedInstance !== event.instanceId) {
+      observedInstance = event.instanceId;
+      highestObservedRevision = 0;
+      generation += 1;
+      snapshot.value = null;
+    }
+    if (!event.resync && event.revision <= (snapshot.value?.revision ?? -1)) return;
     void reloadSnapshot(event.revision).catch((error: unknown) => {
       message.value = error instanceof Error ? error.message : "状态更新失败";
     });
   });
-  void run("load", () => reloadSnapshot());
+  void run("load", async () => {
+    await service.waitForEvents?.();
+    await reloadSnapshot();
+  });
 });
 onBeforeUnmount(() => {
+  disposed = true;
   unsubscribe?.();
   if (messageTimer) clearTimeout(messageTimer);
 });

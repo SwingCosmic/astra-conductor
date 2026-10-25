@@ -73,6 +73,7 @@ describe("polyquota preload bridge", () => {
   it("accepts snapshots carrying the bundled schema version", async () => {
     const value = {
       schemaVersion: POLYQUOTA_SCHEMA_VERSION,
+      instanceId: "test-instance",
       revision: 1,
       generatedAt: "2026-09-27T00:00:00.000Z",
       providers: [],
@@ -105,6 +106,7 @@ describe("polyquota preload bridge", () => {
 
     const event = {
       schemaVersion: POLYQUOTA_SCHEMA_VERSION,
+      instanceId: "test-instance",
       revision: 2,
       reasons: ["usage"] as const,
       occurredAt: "2026-09-27T00:00:00.000Z",

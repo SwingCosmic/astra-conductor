@@ -1,17 +1,20 @@
 import type { ProviderContribution } from "../registry.js";
-import type { ProviderPorts } from "../ports.js";
+import { CoreServices } from "../../services/contracts.js";
+import type { ServiceResolver } from "../../services/registry.js";
 import { antigravityDescriptor } from "./descriptor.js";
 import { AntigravityAccountProvisioner, AntigravityAdapter } from "./adapter.js";
 import { createAntigravityAuthFlow } from "./auth-flow.js";
 
-export function createAntigravityProvider(ports: ProviderPorts): ProviderContribution {
-  const adapter = new AntigravityAdapter(ports.http.fetch, ports.clock);
-  const provisioner = new AntigravityAccountProvisioner(ports.storage, ports.vault);
+export function createAntigravityProvider(services: ServiceResolver): ProviderContribution {
+  const adapter = new AntigravityAdapter(services);
+  const provisioner = new AntigravityAccountProvisioner(
+    services.get(CoreServices.storage),
+    services.get(CoreServices.vault),
+  );
   const authFlow = createAntigravityAuthFlow({
     adapter,
     provisioner,
-    openExternal: (url) => ports.browser.openExternal(url),
-    startCallbackServer: ports.callbackServer.start,
+    startCallbackServer: services.get(CoreServices.callbackServer).start,
   });
   return {
     descriptor: antigravityDescriptor,

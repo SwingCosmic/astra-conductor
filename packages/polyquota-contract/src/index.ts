@@ -41,6 +41,7 @@ export type {
   PublicProviderDescriptor,
   StartAuthRequest,
   AuthStartResult,
+  PublicAuthSession,
 } from "./dto/auth.js";
 export type { Settings } from "./dto/settings.js";
 export type {
@@ -75,3 +76,4 @@ export {
   parseResetCreditRedemption,
   parseRedeemResetCreditRequest,
 } from "./validation/request.js";
+export * from "./dto/host.js";

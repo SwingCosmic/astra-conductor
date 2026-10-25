@@ -1,3 +1,5 @@
+import { CoreServices } from "../../services/contracts.js";
+import type { ServiceResolver } from "../../services/registry.js";
 import { createHash, randomUUID } from "node:crypto";
 import { AppError } from "../../errors.js";
 import type {
@@ -68,10 +70,13 @@ function stableIdentity(bootstrap: ClaudeBootstrap | null, refreshToken: string)
 export class ClaudeAdapter implements UsageProviderAdapter {
   readonly provider: ProviderId = "claude";
 
-  constructor(
-    private readonly fetchImpl: typeof fetch = fetch,
-    private readonly clock: ClockPort = { now: () => new Date() },
-  ) {}
+  private readonly fetchImpl: typeof fetch;
+  private readonly clock: ClockPort;
+
+  constructor(services: ServiceResolver) {
+    this.fetchImpl = services.get(CoreServices.http).fetch;
+    this.clock = services.get(CoreServices.clock);
+  }
 
   async createProvisioningFromCli(raw: unknown): Promise<ClaudeProvisioningResult> {
     let parsed;

@@ -1,3 +1,4 @@
+import { httpServices } from "./service-helpers.js";
 import { describe, expect, it, vi } from "vitest";
 import {
   AppError,
@@ -132,7 +133,7 @@ describe("stage 3 core boundaries", () => {
       () => now,
       () => `account-${++sequence}`,
     );
-    const adapter = new CodexAdapter(fetch, { now: () => now });
+    const adapter = new CodexAdapter(httpServices(fetch, { now: () => now }));
 
     const browser = adapter.fromBrowserTokens({
       access_token: "browser-access",
@@ -254,7 +255,7 @@ describe("stage 3 core boundaries", () => {
         },
       });
     };
-    const adapter = new CodexAdapter(fetchImpl, { now: () => now });
+    const adapter = new CodexAdapter(httpServices(fetchImpl, { now: () => now }));
     const logs: unknown[] = [];
     const coordinator = new RefreshCoordinator(
       storage,
@@ -300,25 +301,27 @@ describe("stage 3 core boundaries", () => {
 
     const calls: string[] = [];
     const adapter = new CodexAdapter(
-      async (input, init) => {
-        const url = String(input);
-        if (url.includes("/oauth/token")) {
-          calls.push("refresh");
+      httpServices(
+        async (input, init) => {
+          const url = String(input);
+          if (url.includes("/oauth/token")) {
+            calls.push("refresh");
+            return Response.json({
+              access_token: "access-oauth-new",
+              refresh_token: "refresh-oauth-new",
+              expires_in: 3600,
+            });
+          }
+          calls.push(new Headers(init?.headers).get("Authorization") ?? "");
           return Response.json({
-            access_token: "access-oauth-new",
-            refresh_token: "refresh-oauth-new",
-            expires_in: 3600,
+            plan_type: "plus",
+            rate_limit: {
+              primary_window: { used_percent: 10, limit_window_seconds: 18_000 },
+            },
           });
-        }
-        calls.push(new Headers(init?.headers).get("Authorization") ?? "");
-        return Response.json({
-          plan_type: "plus",
-          rate_limit: {
-            primary_window: { used_percent: 10, limit_window_seconds: 18_000 },
-          },
-        });
-      },
-      { now: () => now },
+        },
+        { now: () => now },
+      ),
     );
     const coordinator = new RefreshCoordinator(
       storage,
@@ -346,29 +349,31 @@ describe("stage 3 core boundaries", () => {
 
     const calls: string[] = [];
     const adapter = new CodexAdapter(
-      async (input, init) => {
-        const url = String(input);
-        if (url.includes("/oauth/token")) {
-          calls.push("refresh");
+      httpServices(
+        async (input, init) => {
+          const url = String(input);
+          if (url.includes("/oauth/token")) {
+            calls.push("refresh");
+            return Response.json({
+              access_token: "access-retry-new",
+              refresh_token: "refresh-retry-new",
+              expires_in: 3600,
+            });
+          }
+          const authorization = new Headers(init?.headers).get("Authorization") ?? "";
+          calls.push(authorization);
+          if (authorization === "Bearer access-oauth-retry") {
+            return new Response("expired", { status: 401 });
+          }
           return Response.json({
-            access_token: "access-retry-new",
-            refresh_token: "refresh-retry-new",
-            expires_in: 3600,
+            plan_type: "plus",
+            rate_limit: {
+              primary_window: { used_percent: 10, limit_window_seconds: 18_000 },
+            },
           });
-        }
-        const authorization = new Headers(init?.headers).get("Authorization") ?? "";
-        calls.push(authorization);
-        if (authorization === "Bearer access-oauth-retry") {
-          return new Response("expired", { status: 401 });
-        }
-        return Response.json({
-          plan_type: "plus",
-          rate_limit: {
-            primary_window: { used_percent: 10, limit_window_seconds: 18_000 },
-          },
-        });
-      },
-      { now: () => now },
+        },
+        { now: () => now },
+      ),
     );
     const coordinator = new RefreshCoordinator(
       storage,
@@ -399,7 +404,7 @@ describe("stage 3 core boundaries", () => {
         expires_in: 7200,
       }),
     );
-    const adapter = new CodexAdapter(fetchMock, { now: () => now });
+    const adapter = new CodexAdapter(httpServices(fetchMock, { now: () => now }));
     const coordinator = new RefreshCoordinator(
       storage,
       vault,
@@ -417,22 +422,24 @@ describe("stage 3 core boundaries", () => {
   });
 
   it("uses duration-correct Codex window titles without duplicating labels", async () => {
-    const adapter = new CodexAdapter(async () =>
-      Response.json({
-        plan_type: "pro",
-        rate_limit: {
-          primary_window: {
-            used_percent: 10,
-            limit_window_seconds: 604_800,
-            reset_after_seconds: 100,
+    const adapter = new CodexAdapter(
+      httpServices(async () =>
+        Response.json({
+          plan_type: "pro",
+          rate_limit: {
+            primary_window: {
+              used_percent: 10,
+              limit_window_seconds: 604_800,
+              reset_after_seconds: 100,
+            },
+            secondary_window: {
+              used_percent: 20,
+              limit_window_seconds: 18_000,
+              reset_after_seconds: 100,
+            },
           },
-          secondary_window: {
-            used_percent: 20,
-            limit_window_seconds: 18_000,
-            reset_after_seconds: 100,
-          },
-        },
-      }),
+        }),
+      ),
     );
     const result = await adapter.fetchUsage(account("labels"), envelope("labels"));
     expect(result.groups).toHaveLength(1);

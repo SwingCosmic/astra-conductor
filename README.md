@@ -63,6 +63,7 @@ pnpm data:reset
 
 - `pnpm native:prepare` 在隔离的临时目录中为当前 Electron、平台和架构构建 `apps/polyquota/lib/better-sqlite3/better_sqlite3.node`。首次开发前或 Electron、Node、`better-sqlite3`、平台、架构变化后手动执行；普通开发启动不重复检查。生产 `build` 会通过 Desktop 的 `prebuild` 自动重新生成。
 - `pnpm dev` 打开 PolyQuota 桌面窗口，按各服务商声明的方式接入：可只读导入 Codex CLI、Grok CLI、Claude Code 或 ZCode v2 凭据，可发起浏览器 OAuth（Codex、Grok Build、Antigravity）或设备码授权（Codex、Grok Build），也可填写 GLM 或 OpenCode Go 的 API Key。
+- `pnpm dev:server` 独立启动真实 Node 后端；`pnpm dev:web` 连接该后端；`pnpm dev:ui` 显式启用无后端的演示预览。分侧检查使用 `pnpm test:server`、`pnpm test:ui`，真实 Electron 协议检查使用 `pnpm test:protocol`，详见 [Service mode 开发与分侧验证](./docs/common/core/service-mode/development.md)。
 - `pnpm build` 依次构建共享 Core、PolyQuota UI 和 PolyQuota Desktop；Desktop 会把 UI 构建结果复制到 `apps/polyquota/renderer`。
 - `pnpm package` 生成 Windows NSIS 安装包，产物位于 `apps/polyquota/release/`。
 - `pnpm test:codex-cli` 使用本机 Codex CLI 凭据执行隔离的真实用量闭环，不改写 CLI 凭据，临时应用数据会在测试后删除。

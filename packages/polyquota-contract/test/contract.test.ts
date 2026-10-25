@@ -17,7 +17,7 @@ import {
 
 describe("PolyQuota contract request validation", () => {
   it("keeps the schema version explicit so preload can compare it", () => {
-    expect(POLYQUOTA_SCHEMA_VERSION).toBe(5);
+    expect(POLYQUOTA_SCHEMA_VERSION).toBe(6);
   });
 
   it("accepts shape-valid auth requests keyed by offering id", () => {

@@ -1,3 +1,4 @@
+import { httpServices } from "./service-helpers.js";
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Account, CredentialEnvelope } from "../src/internal.js";
@@ -89,7 +90,7 @@ describe("github copilot device flow", () => {
       }
       return new Response(null, { status: 404 });
     }) as typeof fetch;
-    const adapter = new CopilotAdapter(fetchImpl, clock);
+    const adapter = new CopilotAdapter(httpServices(fetchImpl, clock));
 
     const authorization = await adapter.requestDeviceAuthorization();
     expect(authorization.userCode).toBe("ABCD-1234");
@@ -149,7 +150,7 @@ describe("github copilot device flow", () => {
       if (url.includes("copilot_internal/user")) return new Response(null, { status: 403 });
       return new Response(null, { status: 404 });
     }) as typeof fetch;
-    const adapter = new CopilotAdapter(fetchImpl, clock);
+    const adapter = new CopilotAdapter(httpServices(fetchImpl, clock));
 
     await expect(
       adapter.finishDeviceAuthorization({
@@ -184,7 +185,7 @@ describe("github copilot device flow", () => {
       if (url.endsWith("/user")) return new Response(null, { status: 403 });
       return new Response(null, { status: 404 });
     }) as typeof fetch;
-    const adapter = new CopilotAdapter(fetchImpl, clock);
+    const adapter = new CopilotAdapter(httpServices(fetchImpl, clock));
 
     const provisioning = await adapter.finishDeviceAuthorization({
       deviceCode: "device-1",
@@ -212,7 +213,7 @@ describe("github copilot device flow", () => {
       if (url.endsWith("/user")) return new Response(null, { status: 400 });
       return new Response(null, { status: 404 });
     }) as typeof fetch;
-    const adapter = new CopilotAdapter(fetchImpl, clock);
+    const adapter = new CopilotAdapter(httpServices(fetchImpl, clock));
 
     const provisioning = await adapter.finishDeviceAuthorization({
       deviceCode: "device-1",
@@ -229,8 +230,10 @@ describe("github copilot device flow", () => {
 
   it("maps device flow terminal errors and unknown polling failures", async () => {
     const adapter = new CopilotAdapter(
-      (async () => jsonResponse({ error: "expired_token" })) as unknown as typeof fetch,
-      clock,
+      httpServices(
+        (async () => jsonResponse({ error: "expired_token" })) as unknown as typeof fetch,
+        clock,
+      ),
     );
     const authorization = {
       deviceCode: "device-1",
@@ -249,7 +252,7 @@ describe("github copilot device flow", () => {
 describe("github copilot credential migration", () => {
   it("is a no-op without network access once the envelope is migrated", async () => {
     const fetchImpl = vi.fn() as unknown as typeof fetch;
-    const adapter = new CopilotAdapter(fetchImpl, clock);
+    const adapter = new CopilotAdapter(httpServices(fetchImpl, clock));
     const migrated = {
       ...envelope,
       expiresAt: null,
@@ -264,7 +267,7 @@ describe("github copilot credential migration", () => {
     // v2/token 会话令牌层退役：存量信封（expiresAt 跟踪会话过期 + copilotToken
     // 密钥）随首次刷新迁移为无过期形态，迁移不发网络请求。
     const fetchImpl = vi.fn() as unknown as typeof fetch;
-    const adapter = new CopilotAdapter(fetchImpl, clock);
+    const adapter = new CopilotAdapter(httpServices(fetchImpl, clock));
     const legacy = {
       ...envelope,
       expiresAt: new Date(now.getTime() - 1000).toISOString(),
@@ -297,10 +300,12 @@ describe("github copilot usage", () => {
         },
       })) as typeof fetch);
     const adapter = new CopilotAdapter(
-      (async () => {
-        throw new Error("usage must use global fetch");
-      }) as typeof fetch,
-      clock,
+      httpServices(
+        (async () => {
+          throw new Error("usage must use global fetch");
+        }) as typeof fetch,
+        clock,
+      ),
     );
 
     const snapshot = await adapter.fetchUsage(account, envelope);
@@ -338,10 +343,12 @@ describe("github copilot usage", () => {
         limited_user_reset_date: "2026-11-01T00:00:00Z",
       })) as typeof fetch);
     const adapter = new CopilotAdapter(
-      (async () => {
-        throw new Error("unused");
-      }) as typeof fetch,
-      clock,
+      httpServices(
+        (async () => {
+          throw new Error("unused");
+        }) as typeof fetch,
+        clock,
+      ),
     );
 
     const snapshot = await adapter.fetchUsage(account, envelope);
@@ -378,10 +385,12 @@ describe("github copilot usage", () => {
         },
       })) as typeof fetch);
     const adapter = new CopilotAdapter(
-      (async () => {
-        throw new Error("unused");
-      }) as typeof fetch,
-      clock,
+      httpServices(
+        (async () => {
+          throw new Error("unused");
+        }) as typeof fetch,
+        clock,
+      ),
     );
 
     const snapshot = await adapter.fetchUsage(account, envelope);
@@ -402,10 +411,12 @@ describe("github copilot usage", () => {
         },
       })) as typeof fetch);
     const adapter = new CopilotAdapter(
-      (async () => {
-        throw new Error("unused");
-      }) as typeof fetch,
-      clock,
+      httpServices(
+        (async () => {
+          throw new Error("unused");
+        }) as typeof fetch,
+        clock,
+      ),
     );
 
     const snapshot = await adapter.fetchUsage(account, envelope);
@@ -424,10 +435,12 @@ describe("github copilot usage", () => {
     vi.stubGlobal("fetch", (async () =>
       jsonResponse({ message: "denied" }, 403)) as unknown as typeof fetch);
     const adapter = new CopilotAdapter(
-      (async () => {
-        throw new Error("unused");
-      }) as typeof fetch,
-      clock,
+      httpServices(
+        (async () => {
+          throw new Error("unused");
+        }) as typeof fetch,
+        clock,
+      ),
     );
 
     // 403 响应体不是 message 结构时叶子抛错，这里验证无令牌路径的错误分类。
@@ -441,24 +454,25 @@ describe("github copilot auth flow", () => {
     return createCopilotAuthFlow({
       adapter: adapter as CopilotAdapter,
       provisioner: { save: vi.fn() },
-      openExternal: vi.fn().mockResolvedValue(undefined),
     });
   }
 
   it("starts the device-code interaction and exposes the user code", async () => {
     const adapter = new CopilotAdapter(
-      (async (input: unknown) =>
-        String(input).endsWith("/login/device/code")
-          ? jsonResponse({
-              device_code: "device-1",
-              user_code: "ABCD-1234",
-              verification_uri: "https://github.com/login/device",
-              verification_uri_complete: "https://github.com/login/device?user_code=ABCD-1234",
-              expires_in: 900,
-              interval: 5,
-            })
-          : new Response(null, { status: 404 })) as typeof fetch,
-      clock,
+      httpServices(
+        (async (input: unknown) =>
+          String(input).endsWith("/login/device/code")
+            ? jsonResponse({
+                device_code: "device-1",
+                user_code: "ABCD-1234",
+                verification_uri: "https://github.com/login/device",
+                verification_uri_complete: "https://github.com/login/device?user_code=ABCD-1234",
+                expires_in: 900,
+                interval: 5,
+              })
+            : new Response(null, { status: 404 })) as typeof fetch,
+        clock,
+      ),
     );
     const flow = flowWith(adapter);
 
@@ -473,10 +487,12 @@ describe("github copilot auth flow", () => {
   it("rejects unknown offerings and unsupported methods", async () => {
     const flow = flowWith(
       new CopilotAdapter(
-        (async () => {
-          throw new Error("unused");
-        }) as typeof fetch,
-        clock,
+        httpServices(
+          (async () => {
+            throw new Error("unused");
+          }) as typeof fetch,
+          clock,
+        ),
       ),
     );
     await expect(flow.start("codex", "device-code", {})).rejects.toThrow(

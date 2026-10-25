@@ -1,6 +1,6 @@
+import { publicError } from "./http/public-error.js";
 import { ipcMain } from "electron";
 import {
-  ContractValidationError,
   parseAccountId,
   parseRedeemResetCreditRequest,
   parseSessionId,
@@ -8,27 +8,17 @@ import {
   parseSettings,
   parseStartAuthRequest,
   polyQuotaIpcChannels,
-  type PublicError,
   type ServiceResult,
 } from "@astra-conductor/polyquota-contract";
-import { toPublicError } from "@astra-conductor/core/internal";
 import type { PolyQuotaApplicationService } from "./polyquota-application-service.js";
+
+let trackOperation: <T>(operation: () => T | Promise<T>) => Promise<T> = (operation) =>
+  Promise.resolve().then(operation);
 
 const pendingResponses = new Set<Promise<unknown>>();
 
-function publicError(error: unknown): PublicError {
-  if (error instanceof ContractValidationError) {
-    return { code: "validation", message: error.message, retryable: false };
-  }
-  const converted = toPublicError(error);
-  return converted.code === "upstream" && converted.message === "Unexpected operation failure"
-    ? { code: "internal", message: "操作未能完成", retryable: false }
-    : converted;
-}
-
 function response<T>(operation: () => T | Promise<T>): Promise<ServiceResult<T>> {
-  const pending = Promise.resolve()
-    .then(operation)
+  const pending = trackOperation(operation)
     .then((value) => ({ ok: true as const, value }))
     .catch((error: unknown) => ({ ok: false as const, error: publicError(error) }));
   pendingResponses.add(pending);
@@ -36,7 +26,11 @@ function response<T>(operation: () => T | Promise<T>): Promise<ServiceResult<T>>
   return pending;
 }
 
-export function registerIpcHandlers(service: PolyQuotaApplicationService): void {
+export function registerIpcHandlers(
+  service: PolyQuotaApplicationService,
+  track?: typeof trackOperation,
+): void {
+  trackOperation = track ?? ((operation) => Promise.resolve().then(operation));
   ipcMain.handle(polyQuotaIpcChannels.getSnapshot, () => response(() => service.getSnapshot()));
   ipcMain.handle(polyQuotaIpcChannels.setAccountEnabled, (_event, input: unknown) =>
     response(() => {
@@ -64,6 +58,9 @@ export function registerIpcHandlers(service: PolyQuotaApplicationService): void 
   );
   ipcMain.handle(polyQuotaIpcChannels.startAuth, (_event, input: unknown) =>
     response(() => service.startAuth(parseStartAuthRequest(input))),
+  );
+  ipcMain.handle(polyQuotaIpcChannels.getAuthSession, (_event, input: unknown) =>
+    response(() => service.getAuthSession(parseSessionId(input))),
   );
   ipcMain.handle(polyQuotaIpcChannels.finishAuth, (_event, input: unknown) =>
     response(() => service.finishAuth(parseSessionId(input))),

@@ -1,3 +1,4 @@
+import type { UserEnvironmentService } from "../../services/contracts.js";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -27,9 +28,9 @@ interface CodexAuthFlowDeps {
     | "finishDeviceAuthorization"
   >;
   provisioner: Pick<CodexAccountProvisioner, "save">;
-  openExternal: (url: string) => Promise<void>;
   startCallbackServer: StartOAuthCallbackServer;
   readFile?: (path: string) => Promise<string>;
+  environment?: UserEnvironmentService;
 }
 
 const CALLBACK = {
@@ -44,8 +45,10 @@ const SUPPORTED_METHODS: readonly AuthMethod[] = ["browser-oauth", "device-code"
 /** 展示用默认路径提示，与 codexAuthPath 的真实解析同源维护（CODEX_HOME 优先）。 */
 export const CODEX_CLI_IMPORT_PATH_HINT = "~/.codex/auth.json";
 
-function codexAuthPath(): string {
-  const root = process.env.CODEX_HOME?.trim() || path.join(homedir(), ".codex");
+function codexAuthPath(environment?: UserEnvironmentService): string {
+  const root =
+    (environment ? environment.env("CODEX_HOME") : process.env.CODEX_HOME)?.trim() ||
+    path.join(environment?.homeDirectory() ?? homedir(), ".codex");
   return path.join(root, "auth.json");
 }
 
@@ -54,7 +57,7 @@ export function createCodexAuthFlow(deps: CodexAuthFlowDeps): ProviderAuthFlow {
 
   async function importFromCodexCli(): Promise<Account> {
     try {
-      const raw = JSON.parse(await readFileImpl(codexAuthPath())) as unknown;
+      const raw = JSON.parse(await readFileImpl(codexAuthPath(deps.environment))) as unknown;
       return await deps.provisioner.save(deps.adapter.fromCliAuth(raw));
     } catch (error) {
       if (error instanceof AppError) throw error;
@@ -87,22 +90,27 @@ export function createCodexAuthFlow(deps: CodexAuthFlowDeps): ProviderAuthFlow {
       throw new AppError("network", "无法监听 codex 授权回调端口", false, { cause: error });
     }
     const redirectUri = `http://${CALLBACK.redirectHost}:${port}${CALLBACK.path}`;
-    const authorization: BrowserAuthorization =
-      deps.adapter.createBrowserAuthorization(redirectUri);
-    expectedState = authorization.state;
-    const account = handler.completion
-      .then((code) => deps.adapter.finishBrowserAuthorization(authorization, code))
-      .then((provisioning) => deps.provisioner.save(provisioning));
-    void account.catch(() => undefined);
+    let authorization: BrowserAuthorization;
     try {
-      await deps.openExternal(authorization.url);
+      authorization = deps.adapter.createBrowserAuthorization(redirectUri);
     } catch (error) {
       controller.abort();
       throw error;
     }
+    expectedState = authorization.state;
+    const account = handler.completion
+      .then((code) => deps.adapter.finishBrowserAuthorization(authorization, code))
+      .then((provisioning) => {
+        controller.signal.throwIfAborted();
+        return deps.provisioner.save(provisioning);
+      });
+    void account.catch(() => undefined);
     return {
       status: "pending",
       interaction: "browser-callback",
+      authorizationUrl: authorization.url,
+      completion: account,
+      expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
       finish: () => account,
       cancel: () => controller.abort(),
     };
@@ -113,21 +121,19 @@ export function createCodexAuthFlow(deps: CodexAuthFlowDeps): ProviderAuthFlow {
     const authorization: DeviceAuthorization = await deps.adapter.requestDeviceAuthorization(
       controller.signal,
     );
-    try {
-      await deps.openExternal(authorization.verificationUri);
-    } catch (error) {
-      controller.abort();
-      throw error;
-    }
     return {
       status: "pending",
       interaction: "device-code",
+      expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
       userCode: authorization.userCode,
       verificationUri: authorization.verificationUri,
       finish: () =>
         deps.adapter
           .finishDeviceAuthorization(authorization, controller.signal)
-          .then((provisioning) => deps.provisioner.save(provisioning)),
+          .then((provisioning) => {
+            controller.signal.throwIfAborted();
+            return deps.provisioner.save(provisioning);
+          }),
       cancel: () => controller.abort(),
     };
   }

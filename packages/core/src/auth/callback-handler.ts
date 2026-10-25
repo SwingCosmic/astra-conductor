@@ -52,6 +52,7 @@ export function createOAuthCallbackHandler(
   let timeout: ReturnType<typeof setTimeout> | undefined;
   const stopTimer = (): void => {
     clearTimeout(timeout);
+    signal.removeEventListener("abort", onAbort);
   };
   const fail = (error: unknown): void => {
     if (settled) return;
@@ -63,13 +64,13 @@ export function createOAuthCallbackHandler(
         : new AppError("network", `无法监听 ${label} 授权回调端口`, false, { cause: error }),
     );
   };
+  const onAbort = (): void => fail(new AppError("authentication", "授权已取消"));
   timeout = setTimeout(
     () => fail(new AppError("authentication", `${label} 浏览器授权已超时`)),
     timeoutMs,
   );
-  signal.addEventListener("abort", () => fail(new AppError("authentication", "授权已取消")), {
-    once: true,
-  });
+  signal.addEventListener("abort", onAbort, { once: true });
+  if (signal.aborted) onAbort();
   return {
     completion,
     fail,

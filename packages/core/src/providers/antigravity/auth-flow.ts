@@ -16,7 +16,6 @@ import type {
 interface AntigravityAuthFlowDeps {
   adapter: Pick<AntigravityAdapter, "createBrowserAuthorization" | "finishBrowserAuthorization">;
   provisioner: Pick<AntigravityAccountProvisioner, "save">;
-  openExternal: (url: string) => Promise<void>;
   startCallbackServer: StartOAuthCallbackServer;
 }
 
@@ -53,22 +52,27 @@ export function createAntigravityAuthFlow(deps: AntigravityAuthFlowDeps): Provid
       throw new AppError("network", "无法监听 antigravity 授权回调端口", false, { cause: error });
     }
     const redirectUri = `http://${CALLBACK.redirectHost}:${port}${CALLBACK.path}`;
-    const authorization: AntigravityBrowserAuthorization =
-      deps.adapter.createBrowserAuthorization(redirectUri);
-    expectedState = authorization.state;
-    const account = handler.completion
-      .then((code) => deps.adapter.finishBrowserAuthorization(authorization, code))
-      .then((provisioning) => deps.provisioner.save(provisioning));
-    void account.catch(() => undefined);
+    let authorization: AntigravityBrowserAuthorization;
     try {
-      await deps.openExternal(authorization.url);
+      authorization = deps.adapter.createBrowserAuthorization(redirectUri);
     } catch (error) {
       controller.abort();
       throw error;
     }
+    expectedState = authorization.state;
+    const account = handler.completion
+      .then((code) => deps.adapter.finishBrowserAuthorization(authorization, code))
+      .then((provisioning) => {
+        controller.signal.throwIfAborted();
+        return deps.provisioner.save(provisioning);
+      });
+    void account.catch(() => undefined);
     return {
       status: "pending",
       interaction: "browser-callback",
+      authorizationUrl: authorization.url,
+      completion: account,
+      expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
       finish: () => account,
       cancel: () => controller.abort(),
     };

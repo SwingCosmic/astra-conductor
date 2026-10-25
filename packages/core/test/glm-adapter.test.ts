@@ -1,3 +1,4 @@
+import { httpServices } from "./service-helpers.js";
 import { describe, expect, it } from "vitest";
 import {
   CredentialVault,
@@ -85,7 +86,7 @@ describe("GLM Coding Plan adapter", () => {
       if (url.endsWith("/use")) return Response.json({ success: true, code: 200, data: {} });
       return url.includes("customer-package-reset") ? resetResponse() : quotaResponse();
     };
-    const adapter = new GlmAdapter(fetchImpl, { now: () => now });
+    const adapter = new GlmAdapter(httpServices(fetchImpl, { now: () => now }));
     const provisioning = await adapter.createProvisioning(
       "china-secret-key",
       "bigmodel-coding-plan",
@@ -193,7 +194,7 @@ describe("GLM Coding Plan adapter", () => {
         },
       });
     };
-    const adapter = new GlmAdapter(fetchImpl, { now: () => now });
+    const adapter = new GlmAdapter(httpServices(fetchImpl, { now: () => now }));
     const provisioning = await adapter.createProvisioning(
       "china-secret-key",
       "bigmodel-coding-plan",
@@ -223,12 +224,14 @@ describe("GLM Coding Plan adapter", () => {
 
   it("keeps international accounts separate and rejects invalid keys", async () => {
     const urls: string[] = [];
-    const adapter = new GlmAdapter(async (input) => {
-      const url = String(input);
-      urls.push(url);
-      if (url.includes("customer-package-reset")) return resetResponse();
-      return quotaResponse();
-    });
+    const adapter = new GlmAdapter(
+      httpServices(async (input) => {
+        const url = String(input);
+        urls.push(url);
+        if (url.includes("customer-package-reset")) return resetResponse();
+        return quotaResponse();
+      }),
+    );
     const china = await adapter.createProvisioning("shared-key", "bigmodel-coding-plan");
     const international = await adapter.createProvisioning("shared-key", "zai-coding-plan");
     const imported = await adapter.createProvisioning(
@@ -244,7 +247,7 @@ describe("GLM Coding Plan adapter", () => {
     expect(international.publicMetadata).toEqual({});
     expect(urls).toContain("https://api.z.ai/api/monitor/usage/quota/limit");
 
-    const invalid = new GlmAdapter(async () => new Response("", { status: 401 }));
+    const invalid = new GlmAdapter(httpServices(async () => new Response("", { status: 401 })));
     await expect(
       invalid.createProvisioning("bad-key", "bigmodel-coding-plan"),
     ).rejects.toMatchObject({
@@ -264,8 +267,10 @@ describe("GLM Coding Plan adapter", () => {
       () => now,
       () => "glm-1",
     );
-    const adapter = new GlmAdapter(async (input) =>
-      String(input).includes("customer-package-reset") ? resetResponse() : quotaResponse(),
+    const adapter = new GlmAdapter(
+      httpServices(async (input) =>
+        String(input).includes("customer-package-reset") ? resetResponse() : quotaResponse(),
+      ),
     );
     const input = await adapter.createProvisioning("private-key-value", "bigmodel-coding-plan");
     const first = await provisioner.save(input);

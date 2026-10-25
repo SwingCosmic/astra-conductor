@@ -10,7 +10,6 @@ import type {
 interface CopilotAuthFlowDeps {
   adapter: Pick<CopilotAdapter, "requestDeviceAuthorization" | "finishDeviceAuthorization">;
   provisioner: Pick<CopilotAccountProvisioner, "save">;
-  openExternal: (url: string) => Promise<void>;
 }
 
 const SUPPORTED_METHODS: readonly AuthMethod[] = ["device-code"];
@@ -20,21 +19,19 @@ export function createCopilotAuthFlow(deps: CopilotAuthFlowDeps): ProviderAuthFl
     const controller = new AbortController();
     const authorization: CopilotDeviceAuthorization =
       await deps.adapter.requestDeviceAuthorization();
-    try {
-      await deps.openExternal(authorization.verificationUriComplete);
-    } catch (error) {
-      controller.abort();
-      throw error;
-    }
     return {
       status: "pending",
       interaction: "device-code",
+      expiresAt: new Date(authorization.expiresAtMs).toISOString(),
       userCode: authorization.userCode,
       verificationUri: authorization.verificationUriComplete,
       finish: () =>
         deps.adapter
           .finishDeviceAuthorization(authorization, controller.signal)
-          .then((provisioning) => deps.provisioner.save(provisioning)),
+          .then((provisioning) => {
+            controller.signal.throwIfAborted();
+            return deps.provisioner.save(provisioning);
+          }),
       cancel: () => controller.abort(),
     };
   }

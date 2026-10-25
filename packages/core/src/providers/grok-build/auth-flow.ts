@@ -1,3 +1,4 @@
+import type { UserEnvironmentService } from "../../services/contracts.js";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -27,9 +28,9 @@ interface GrokBuildAuthFlowDeps {
     | "finishDeviceAuthorization"
   >;
   provisioner: Pick<GrokBuildAccountProvisioner, "save">;
-  openExternal: (url: string) => Promise<void>;
   startCallbackServer: StartOAuthCallbackServer;
   readFile?: (path: string) => Promise<string>;
+  environment?: UserEnvironmentService;
 }
 
 const CALLBACK = {
@@ -44,8 +45,8 @@ const SUPPORTED_METHODS: readonly AuthMethod[] = ["device-code", "browser-oauth"
 /** 展示用默认路径提示，与 grokAuthPath 的真实解析同源维护。 */
 export const GROK_CLI_IMPORT_PATH_HINT = "~/.grok/auth.json";
 
-function grokAuthPath(): string {
-  return path.join(homedir(), ".grok", "auth.json");
+function grokAuthPath(environment?: UserEnvironmentService): string {
+  return path.join(environment?.homeDirectory() ?? homedir(), ".grok", "auth.json");
 }
 
 export function createGrokBuildAuthFlow(deps: GrokBuildAuthFlowDeps): ProviderAuthFlow {
@@ -53,7 +54,7 @@ export function createGrokBuildAuthFlow(deps: GrokBuildAuthFlowDeps): ProviderAu
 
   async function importFromGrokCli(): Promise<Account> {
     try {
-      const raw = JSON.parse(await readFileImpl(grokAuthPath())) as unknown;
+      const raw = JSON.parse(await readFileImpl(grokAuthPath(deps.environment))) as unknown;
       return await deps.provisioner.save(deps.adapter.fromCliAuth(raw));
     } catch (error) {
       if (error instanceof AppError) throw error;
@@ -86,22 +87,27 @@ export function createGrokBuildAuthFlow(deps: GrokBuildAuthFlowDeps): ProviderAu
       throw new AppError("network", "无法监听 grok-build 授权回调端口", false, { cause: error });
     }
     const redirectUri = `http://${CALLBACK.redirectHost}:${port}${CALLBACK.path}`;
-    const authorization: GrokBrowserAuthorization =
-      deps.adapter.createBrowserAuthorization(redirectUri);
-    expectedState = authorization.state;
-    const account = handler.completion
-      .then((code) => deps.adapter.finishBrowserAuthorization(authorization, code))
-      .then((provisioning) => deps.provisioner.save(provisioning));
-    void account.catch(() => undefined);
+    let authorization: GrokBrowserAuthorization;
     try {
-      await deps.openExternal(authorization.url);
+      authorization = deps.adapter.createBrowserAuthorization(redirectUri);
     } catch (error) {
       controller.abort();
       throw error;
     }
+    expectedState = authorization.state;
+    const account = handler.completion
+      .then((code) => deps.adapter.finishBrowserAuthorization(authorization, code))
+      .then((provisioning) => {
+        controller.signal.throwIfAborted();
+        return deps.provisioner.save(provisioning);
+      });
+    void account.catch(() => undefined);
     return {
       status: "pending",
       interaction: "browser-callback",
+      authorizationUrl: authorization.url,
+      completion: account,
+      expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
       finish: () => account,
       cancel: () => controller.abort(),
     };
@@ -110,21 +116,19 @@ export function createGrokBuildAuthFlow(deps: GrokBuildAuthFlowDeps): ProviderAu
   async function startDeviceLogin(): Promise<AuthFlowStart> {
     const controller = new AbortController();
     const authorization: GrokDeviceAuthorization = await deps.adapter.requestDeviceAuthorization();
-    try {
-      await deps.openExternal(authorization.verificationUriComplete);
-    } catch (error) {
-      controller.abort();
-      throw error;
-    }
     return {
       status: "pending",
       interaction: "device-code",
+      expiresAt: new Date(authorization.expiresAtMs).toISOString(),
       userCode: authorization.userCode,
       verificationUri: authorization.verificationUriComplete,
       finish: () =>
         deps.adapter
           .finishDeviceAuthorization(authorization, controller.signal)
-          .then((provisioning) => deps.provisioner.save(provisioning)),
+          .then((provisioning) => {
+            controller.signal.throwIfAborted();
+            return deps.provisioner.save(provisioning);
+          }),
       cancel: () => controller.abort(),
     };
   }

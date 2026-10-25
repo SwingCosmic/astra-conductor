@@ -1,3 +1,4 @@
+import type { PublicAuthSession } from "@astra-conductor/polyquota-contract";
 import { randomUUID } from "node:crypto";
 import {
   POLYQUOTA_SCHEMA_VERSION,
@@ -43,6 +44,7 @@ export interface PolyQuotaApplicationServiceOptions {
   /** 唯一的供应商注册表：目录投影、认证与重置额度分派全部经它解析。 */
   registry: ProviderRegistry;
   now?: () => Date;
+  instanceId?: string;
 }
 
 /**
@@ -68,6 +70,8 @@ function reconcileRedeemedResetItems(
 }
 
 export class PolyQuotaApplicationService {
+  readonly instanceId: string;
+  private disposed = false;
   private revision = 0;
   private readonly operations = new Map<string, PublicOperationState>();
   private readonly pendingResetCreditUses = new Map<string, Set<string>>();
@@ -84,6 +88,7 @@ export class PolyQuotaApplicationService {
     private readonly auth: AuthCoordinator,
     private readonly options: PolyQuotaApplicationServiceOptions,
   ) {
+    this.instanceId = options.instanceId ?? randomUUID();
     this.now = options.now ?? (() => new Date());
   }
 
@@ -93,7 +98,24 @@ export class PolyQuotaApplicationService {
   }
 
   dispose(): void {
-    return;
+    this.disposed = true;
+    this.pendingReasons.clear();
+  }
+
+  getRevision(): number {
+    return this.revision;
+  }
+
+  authSessionChanged(sessionId: string): void {
+    const state = this.auth.getSession(sessionId);
+    if (["completed", "failed", "cancelled", "expired"].includes(state.status))
+      this.operations.delete(sessionId);
+    this.commit(["accounts", "operations"]);
+  }
+
+  async getAuthSession(sessionId: string): Promise<PublicAuthSession> {
+    const { account, ...state } = this.auth.getSession(sessionId);
+    return { ...state, ...(account ? { account: await this.toPublicAccount(account) } : {}) };
   }
 
   getSettings(): Settings {
@@ -136,6 +158,7 @@ export class PolyQuotaApplicationService {
       // 标识，不再进公开目录。正确性由 TS 类型与契约测试保证，不做运行期自检。
       const snapshot: PolyQuotaSnapshot = {
         schemaVersion: POLYQUOTA_SCHEMA_VERSION,
+        instanceId: this.instanceId,
         revision,
         generatedAt: this.now().toISOString(),
         providers: this.options.registry.descriptors.map((descriptor) => ({
@@ -301,14 +324,16 @@ export class PolyQuotaApplicationService {
         this.commit(["accounts", "operations"]);
         return { status: "completed", account };
       }
-      this.operations.set(result.sessionId, {
-        id: result.sessionId,
-        kind: "auth",
-        status: "waiting-for-user",
-        accountId: null,
-        source: null,
-        startedAt: this.now().toISOString(),
-      });
+      const session = this.auth.getSession(result.sessionId);
+      if (["pending", "finishing"].includes(session.status))
+        this.operations.set(result.sessionId, {
+          id: result.sessionId,
+          kind: "auth",
+          status: "waiting-for-user",
+          accountId: null,
+          source: null,
+          startedAt: this.now().toISOString(),
+        });
       this.commit(["operations"]);
       return result;
     } catch (error) {
@@ -439,15 +464,17 @@ export class PolyQuotaApplicationService {
   }
 
   private commit(reasons: PolyQuotaChangeReason[]): void {
+    if (this.disposed) return;
     this.revision += 1;
     for (const reason of reasons) this.pendingReasons.add(reason);
     if (this.publishQueued) return;
     this.publishQueued = true;
     queueMicrotask(() => {
       this.publishQueued = false;
-      if (!this.pendingReasons.size) return;
+      if (this.disposed || !this.pendingReasons.size) return;
       const event: PolyQuotaChangedEvent = {
         schemaVersion: POLYQUOTA_SCHEMA_VERSION,
+        instanceId: this.instanceId,
         revision: this.revision,
         reasons: [...this.pendingReasons],
         occurredAt: this.now().toISOString(),

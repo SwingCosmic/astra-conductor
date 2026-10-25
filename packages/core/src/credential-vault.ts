@@ -53,7 +53,10 @@ export class CredentialVault {
   async seal(account: Account, envelope: CredentialEnvelope): Promise<EncryptedCredential> {
     validateEnvelope(account, envelope);
     if (!(await this.cipher.isAvailable())) {
-      throw new AppError("secure-storage", "System credential protection is unavailable");
+      throw new AppError(
+        "secure-storage",
+        this.cipher.unavailableReason ?? "System credential protection is unavailable",
+      );
     }
     try {
       return {
@@ -82,7 +85,10 @@ export class CredentialVault {
       throw new AppError("secure-storage", "Credential record is missing");
     }
     if (!(await this.cipher.isAvailable())) {
-      throw new AppError("secure-storage", "System credential protection is unavailable");
+      throw new AppError(
+        "secure-storage",
+        this.cipher.unavailableReason ?? "System credential protection is unavailable",
+      );
     }
     try {
       const decrypted = await this.cipher.decrypt(encrypted.ciphertext);

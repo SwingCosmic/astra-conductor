@@ -1,10 +1,17 @@
+import { installPageCsp, guardPage } from "./platform/electron/page-security.js";
+import { Services } from "./runtime/register-common-services.js";
+import { startRuntime, type PolyQuotaRuntime } from "./runtime/start-runtime.js";
+import { registerElectronServices } from "./platform/electron/register-electron-services.js";
+import { ElectronProtocolAdapter, BUSINESS_SCHEME } from "./platform/electron/protocol-adapter.js";
+import { ElectronDynamicResourceService } from "./platform/electron/dynamic-resources.js";
+import { createHonoApp } from "./http/create-hono-app.js";
 import {
   app,
   BrowserWindow,
   Menu,
   Tray,
   nativeImage,
-  net,
+  protocol,
   powerMonitor,
   session,
   shell,
@@ -14,27 +21,18 @@ import { polyQuotaIpcEvents } from "@astra-conductor/polyquota-contract";
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import {
-  AuthCoordinator,
-  CredentialVault,
-  ProviderRegistry,
-  RefreshCoordinator,
-  createProviderContributions,
-  type LoggerPort,
-} from "@astra-conductor/core/internal";
-import { startOAuthCallbackServer } from "./auth/callback-server.js";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { type LoggerPort } from "@astra-conductor/core/internal";
 import { registerIpcHandlers, unregisterIpcHandlers, waitForIpcHandlersToDrain } from "./ipc.js";
 import { PollingService } from "./polling-service.js";
 import { PolyQuotaApplicationService } from "./polyquota-application-service.js";
-import { detectProxyStatus, envProxyAddress } from "./proxy-detection.js";
+import { envProxyAddress } from "./proxy-detection.js";
 import { taskbarProgress, trayIconFilename, trayTooltip } from "./quota-chrome.js";
 import { RefreshScheduler } from "./refresh-scheduler.js";
 import { ElectronSafeStorageCipher } from "./safe-storage-cipher.js";
-import { SqliteStorage } from "./sqlite-storage.js";
 import { runStorageSmoke } from "./storage-smoke.js";
 
-const devServer = process.env.POLYQUOTA_DEV_SERVER;
+const devServer = process.env.POLYQUOTA_DEV_SERVER?.trim() || undefined;
 const smoke = process.env.POLYQUOTA_SMOKE === "1";
 const ipcSmoke = process.env.POLYQUOTA_IPC_SMOKE === "1";
 const storageSmoke = process.env.POLYQUOTA_STORAGE_SMOKE === "1";
@@ -44,11 +42,25 @@ const userDataOverride = process.env.POLYQUOTA_USER_DATA;
 const productUserData = path.join(app.getPath("appData"), "AstraConductor", "PolyQuota");
 const databaseName = "polyquota.db";
 const productAppUserModelId = "io.astraconductor.polyquota";
-let storage: SqliteStorage | null = null;
+let runtime: PolyQuotaRuntime | null = null;
+let protocolAdapter: ElectronProtocolAdapter | null = null;
+const outgoing = new AbortController();
+const appPartition = "persist:polyquota-app";
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: BUSINESS_SCHEME,
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+    },
+  },
+]);
 let polling: PollingService | null = null;
 let polyQuotaService: PolyQuotaApplicationService | null = null;
 let refreshScheduler: RefreshScheduler | null = null;
-let auth: AuthCoordinator | null = null;
 let tray: Tray | null = null;
 let mainWindow: BrowserWindow | null = null;
 let quitting = false;
@@ -158,19 +170,6 @@ function applyQuotaChrome(): void {
     });
 }
 
-function installProductionCsp(): void {
-  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        "Content-Security-Policy": [
-          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; font-src 'self' data: https:; connect-src 'self'",
-        ],
-      },
-    });
-  });
-}
-
 /**
  * 启动时仅按环境变量决定会话代理；没有环境变量则让 Chromium 遵循系统设置。
  * 不读取系统配置、不做检测——设置页"当前代理"的检测结论由 proxy-detection
@@ -179,11 +178,11 @@ function installProductionCsp(): void {
 async function configureSessionProxy(): Promise<void> {
   const address = envProxyAddress(process.env);
   if (!address) {
-    await session.defaultSession.setProxy({ mode: "system" });
+    await session.fromPartition(appPartition).setProxy({ mode: "system" });
     return;
   }
   const environmentBypass = process.env.NO_PROXY?.trim().replaceAll(",", ";");
-  await session.defaultSession.setProxy({
+  await session.fromPartition(appPartition).setProxy({
     mode: "fixed_servers",
     proxyRules: address,
     proxyBypassRules: ["<local>", "localhost", "127.0.0.1", environmentBypass]
@@ -203,6 +202,7 @@ async function createWindow(): Promise<void> {
     title: "PolyQuota",
     icon: loadProductIcon(process.platform === "win32" ? "polyquota.ico" : "polyquota.png"),
     webPreferences: {
+      partition: appPartition,
       preload: path.join(appDir(), "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
@@ -223,6 +223,11 @@ async function createWindow(): Promise<void> {
     }
   });
 
+  guardPage(
+    win,
+    devServer ?? pathToFileURL(path.join(appDir(), "../renderer/index.html")).href,
+    () => protocolAdapter?.abortRequests(),
+  );
   win.on("closed", () => {
     if (mainWindow === win) mainWindow = null;
   });
@@ -341,22 +346,20 @@ async function shutdownServices(): Promise<void> {
   mainWindow?.destroy();
   mainWindow = null;
   unregisterIpcHandlers();
-  auth?.cancelAll();
   powerMonitor.removeListener("resume", handleSystemResume);
   tray?.destroy();
   tray = null;
-  polyQuotaService?.dispose();
-  await Promise.all([
-    waitForIpcHandlersToDrain(),
-    refreshScheduler?.stopAndDrain(),
-    polling?.stopAndDrain(),
-  ]);
+  await waitForIpcHandlersToDrainAfterStop();
+  session.fromPartition(appPartition).protocol.unhandle(BUSINESS_SCHEME);
+  protocolAdapter = null;
   refreshScheduler = null;
   polyQuotaService = null;
   polling = null;
-  storage?.close();
-  storage = null;
-  auth = null;
+  runtime = null;
+}
+
+async function waitForIpcHandlersToDrainAfterStop(): Promise<void> {
+  await Promise.all([runtime?.stop(), waitForIpcHandlersToDrain()]);
 }
 
 function handleSystemResume(): void {
@@ -398,30 +401,42 @@ if (hasSingleInstanceLock) {
         return;
       }
       await configureSessionProxy();
-      storage = new SqliteStorage(databaseFile, { nativeBinding: sqliteNativeBindingPath() });
-      const vault = new CredentialVault(storage, new ElectronSafeStorageCipher());
-      const fetchImpl: typeof fetch = (input, init) =>
-        net.fetch(input instanceof URL ? input.toString() : input, init);
-      // 组合根只创建宿主端口：供应商的组合细节全部收在 core 组合工厂，新增
-      // 供应商时这里零修改（阶段 B，§8.1）。
-      const providerRegistry = new ProviderRegistry(
-        createProviderContributions({
-          http: { fetch: fetchImpl },
-          browser: { openExternal: (url) => shell.openExternal(url) },
-          callbackServer: { start: startOAuthCallbackServer },
-          storage,
-          vault,
-        }),
+      const appSession = session.fromPartition(appPartition);
+      runtime = await startRuntime(
+        (registry) =>
+          registerElectronServices(registry, {
+            dataDirectory: app.getPath("userData"),
+            nativeBinding: sqliteNativeBindingPath(),
+            session: appSession,
+            signal: outgoing.signal,
+            logger: mainLogger,
+            credentialsAvailable: false,
+            openExternal: (url) => shell.openExternal(url),
+            showWindow: () => mainWindow?.show(),
+          }),
+        () => outgoing.abort(),
       );
-      const coordinator = new RefreshCoordinator(
-        storage,
-        vault,
-        providerRegistry,
-        undefined,
-        mainLogger,
+      runtime.host.capabilities.credentials = await new ElectronSafeStorageCipher().isAvailable();
+      polyQuotaService = runtime.application;
+      refreshScheduler = runtime.scheduler;
+      polling = runtime.registry.get(Services.polling);
+      const auth = runtime.auth;
+      protocolAdapter = new ElectronProtocolAdapter(
+        createHonoApp(runtime),
+        new ElectronDynamicResourceService(
+          path.dirname(iconResourcePath("polyquota.png")),
+          new Map([["product-icon", "polyquota.png"]]),
+        ),
+        new Set(["null", ...(devServer ? [new URL(devServer).origin] : [])]),
       );
-      auth = new AuthCoordinator(providerRegistry, mainLogger);
-      polling = new PollingService(storage, coordinator);
+      appSession.protocol.handle(BUSINESS_SCHEME, (request) => protocolAdapter!.handle(request));
+      runtime.events.subscribe((event) => {
+        if (event.type !== "changed" || quitting) return;
+        const webContents = mainWindow?.webContents;
+        if (webContents && !webContents.isDestroyed())
+          webContents.send(polyQuotaIpcEvents.stateChanged, event.data);
+        applyQuotaChrome();
+      });
       if (codexCliSmoke) {
         const authResult = await auth.start("codex", "cli-import");
         if (authResult.status !== "completed") throw new Error("Codex CLI import did not complete");
@@ -437,36 +452,19 @@ if (hasSingleInstanceLock) {
         app.quit();
         return;
       }
-      polyQuotaService = new PolyQuotaApplicationService(storage, vault, polling, auth, {
-        registry: providerRegistry,
-        detectProxyStatus: () => detectProxyStatus(),
-        publishChanged: (event) => {
-          if (quitting) return;
-          const webContents = mainWindow?.webContents;
-          if (webContents && !webContents.isDestroyed()) {
-            webContents.send(polyQuotaIpcEvents.stateChanged, event);
-          }
-          applyQuotaChrome();
-        },
-      });
-      refreshScheduler = new RefreshScheduler(
-        (source) => polyQuotaService!.executeRefreshBatch(source),
-        () => polyQuotaService?.schedulerChanged(),
-      );
-      polyQuotaService.attachScheduler(refreshScheduler);
-      registerIpcHandlers(polyQuotaService);
-      refreshScheduler.start(polyQuotaService.getSettings());
+      registerIpcHandlers(polyQuotaService, runtime.track);
       powerMonitor.on("resume", handleSystemResume);
-      if (!devServer) installProductionCsp();
+      installPageCsp(appSession, devServer ? new URL(devServer).origin : undefined);
       await createWindow();
       createTray();
       applyQuotaChrome();
     })
-    .catch((error: unknown) => {
+    .catch(async (error: unknown) => {
       console.error(
         "PolyQuota startup failed",
         error instanceof Error ? `${error.name}: ${error.message}` : "unknown error",
       );
+      await shutdownServices().catch(() => undefined);
       app.exit(1);
     });
 

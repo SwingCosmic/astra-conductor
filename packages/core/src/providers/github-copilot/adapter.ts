@@ -1,3 +1,5 @@
+import { CoreServices } from "../../services/contracts.js";
+import type { ServiceResolver } from "../../services/registry.js";
 import { createHash, randomUUID } from "node:crypto";
 import { AppError } from "../../errors.js";
 import type {
@@ -94,10 +96,13 @@ interface GitHubUserInfo {
 export class CopilotAdapter implements UsageProviderAdapter {
   readonly provider: ProviderId = "github-copilot";
 
-  constructor(
-    private readonly fetchImpl: typeof fetch = fetch,
-    private readonly clock: ClockPort = { now: () => new Date() },
-  ) {}
+  private readonly fetchImpl: typeof fetch;
+  private readonly clock: ClockPort;
+
+  constructor(services: ServiceResolver) {
+    this.fetchImpl = services.get(CoreServices.http).fetch;
+    this.clock = services.get(CoreServices.clock);
+  }
 
   async requestDeviceAuthorization(): Promise<CopilotDeviceAuthorization> {
     const response = await this.fetchImpl(COPILOT_CONFIG.deviceCodeUrl, {

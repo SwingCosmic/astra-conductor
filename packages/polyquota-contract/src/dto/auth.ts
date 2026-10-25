@@ -48,7 +48,12 @@ export interface StartAuthRequest {
 
 export type AuthStartResult =
   | { status: "completed"; account: PublicAccount }
-  | { status: "pending"; sessionId: string; interaction: "browser-callback" }
+  | {
+      status: "pending";
+      sessionId: string;
+      interaction: "browser-callback";
+      authorizationUrl?: string;
+    }
   | {
       status: "pending";
       sessionId: string;
@@ -56,3 +61,18 @@ export type AuthStartResult =
       userCode: string;
       verificationUri: string;
     };
+
+export interface PublicAuthSession {
+  sessionId: string;
+  offeringId: string;
+  method: string;
+  interaction: "browser-callback" | "device-code";
+  status: "pending" | "finishing" | "completed" | "failed" | "cancelled" | "expired";
+  createdAt: string;
+  expiresAt: string | null;
+  authorizationUrl?: string;
+  userCode?: string;
+  verificationUri?: string;
+  account?: PublicAccount;
+  error?: import("./errors.js").PublicError;
+}

@@ -3,7 +3,7 @@
  * 枚举留守在这里。随业务数据扩张的集合（供应商 id、认证方式 id）已去契约化
  */
 
-export const POLYQUOTA_SCHEMA_VERSION = 5 as const;
+export const POLYQUOTA_SCHEMA_VERSION = 6 as const;
 
 /** 新增交互形态是产品协议变更；认证方式 id 本身不受此约束（目录声明即可）。 */
 export type PublicAuthInteraction =

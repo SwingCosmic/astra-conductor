@@ -55,6 +55,7 @@ export class EmptyPolyQuotaService implements IPolyQuotaService {
     this.snapshot.generatedAt = new Date().toISOString();
     const event: PolyQuotaChangedEvent = {
       schemaVersion: POLYQUOTA_SCHEMA_VERSION,
+      instanceId: "test-instance",
       revision: this.snapshot.revision,
       reasons: [...reasons],
       occurredAt: new Date().toISOString(),
@@ -130,6 +131,10 @@ export class EmptyPolyQuotaService implements IPolyQuotaService {
     return unavailable();
   }
 
+  getAuthSession(): ReturnType<IPolyQuotaService["getAuthSession"]> {
+    return unavailable();
+  }
+
   finishAuth(): ReturnType<IPolyQuotaService["finishAuth"]> {
     return unavailable();
   }
@@ -157,6 +162,7 @@ const methodNames = [
   "refreshCredentials",
   "redeemResetCredit",
   "startAuth",
+  "getAuthSession",
   "finishAuth",
   "cancelAuth",
   "saveSettings",

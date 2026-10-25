@@ -1,3 +1,4 @@
+import { httpServices } from "./service-helpers.js";
 import { describe, expect, it, vi } from "vitest";
 import { OpencodeGoAdapter, type Account, type CredentialEnvelope } from "../src/internal.js";
 
@@ -20,7 +21,7 @@ describe("OpencodeGoAdapter", () => {
       expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer oc-secret-key");
       return quotaResponse();
     });
-    const adapter = new OpencodeGoAdapter(fetchImpl, { now: () => now });
+    const adapter = new OpencodeGoAdapter(httpServices(fetchImpl, { now: () => now }));
 
     const result = await adapter.createProvisioning("Bearer oc-secret-key");
 
@@ -35,7 +36,9 @@ describe("OpencodeGoAdapter", () => {
   });
 
   it("normalizes all three official quota windows", async () => {
-    const adapter = new OpencodeGoAdapter(async () => quotaResponse(), { now: () => now });
+    const adapter = new OpencodeGoAdapter(
+      httpServices(async () => quotaResponse(), { now: () => now }),
+    );
     const account = {
       id: "opencode-1",
       provider: "opencode-go",
@@ -58,7 +61,9 @@ describe("OpencodeGoAdapter", () => {
   });
 
   it("classifies rejected keys as authentication failures", async () => {
-    const adapter = new OpencodeGoAdapter(async () => new Response("", { status: 401 }));
+    const adapter = new OpencodeGoAdapter(
+      httpServices(async () => new Response("", { status: 401 })),
+    );
 
     await expect(adapter.createProvisioning("bad-key")).rejects.toMatchObject({
       code: "authentication",

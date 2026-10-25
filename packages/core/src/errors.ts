@@ -1,4 +1,8 @@
 export type AppErrorCode =
+  | "not-found"
+  | "conflict"
+  | "desktop-unavailable"
+  | "service-unavailable"
   | "authentication"
   | "permission"
   | "network"

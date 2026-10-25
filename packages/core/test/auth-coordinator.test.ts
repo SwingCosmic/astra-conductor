@@ -85,7 +85,9 @@ function contributionFromFlow(flow: ProviderAuthFlow): ProviderContribution {
 }
 
 function coordinatorWith(flows: readonly ProviderAuthFlow[]): AuthCoordinator {
-  return new AuthCoordinator(new ProviderRegistry(flows.map(contributionFromFlow)));
+  return new AuthCoordinator(new ProviderRegistry(flows.map(contributionFromFlow)), undefined, {
+    authorization: { present: async () => "awaiting-user" },
+  });
 }
 
 describe("auth coordinator", () => {
@@ -129,7 +131,7 @@ describe("auth coordinator", () => {
     });
   });
 
-  it("finishes through the stored handle and clears the session", async () => {
+  it("finishes through the stored handle and retains an idempotent result", async () => {
     const { flow, finish } = fakeFlow();
     const coordinator = coordinatorWith([flow]);
     const result = await coordinator.start("codex", "browser-oauth");
@@ -137,7 +139,7 @@ describe("auth coordinator", () => {
 
     await expect(coordinator.finish(result.sessionId)).resolves.toBe(account);
     expect(finish).toHaveBeenCalledOnce();
-    await expect(coordinator.finish(result.sessionId)).rejects.toThrow("授权会话不存在或已经结束");
+    await expect(coordinator.finish(result.sessionId)).resolves.toBe(account);
   });
 
   it("cancels through the stored handle and ignores unknown sessions", async () => {
@@ -162,10 +164,10 @@ describe("auth coordinator", () => {
     expect(codex.cancel).toHaveBeenCalledOnce();
     expect(grok.cancel).toHaveBeenCalledOnce();
     if (first.status === "pending") {
-      await expect(coordinator.finish(first.sessionId)).rejects.toThrow("授权会话不存在");
+      await expect(coordinator.finish(first.sessionId)).rejects.toThrow("授权已取消");
     }
     if (second.status === "pending") {
-      await expect(coordinator.finish(second.sessionId)).rejects.toThrow("授权会话不存在");
+      await expect(coordinator.finish(second.sessionId)).rejects.toThrow("授权已取消");
     }
   });
 

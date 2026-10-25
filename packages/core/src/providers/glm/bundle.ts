@@ -1,5 +1,7 @@
+import { readZCodeCodingPlanApiKey } from "./zcode-credentials.js";
 import type { ProviderContribution } from "../registry.js";
-import type { ProviderPorts } from "../ports.js";
+import { CoreServices } from "../../services/contracts.js";
+import type { ServiceResolver } from "../../services/registry.js";
 import { glmDescriptor } from "./descriptor.js";
 import { GlmAccountProvisioner, GlmAdapter } from "./adapter.js";
 import { createGlmAuthFlow } from "./auth-flow.js";
@@ -9,10 +11,27 @@ import { createGlmAuthFlow } from "./auth-flow.js";
  * 由 offering 声明承载并在实现内部解析。API Key 无主动刷新协议，account
  * facet 不提供无效果的 refreshCredentials。
  */
-export function createGlmProvider(ports: ProviderPorts): ProviderContribution {
-  const adapter = new GlmAdapter(ports.http.fetch, ports.clock);
-  const provisioner = new GlmAccountProvisioner(ports.storage, ports.vault);
-  const authFlow = createGlmAuthFlow({ adapter, provisioner });
+export function createGlmProvider(services: ServiceResolver): ProviderContribution {
+  const adapter = new GlmAdapter(services);
+  const provisioner = new GlmAccountProvisioner(
+    services.get(CoreServices.storage),
+    services.get(CoreServices.vault),
+  );
+  const files = services.get(CoreServices.files);
+  const environment = services.get(CoreServices.environment);
+  const authFlow = createGlmAuthFlow({
+    adapter,
+    provisioner,
+    readZCodeCredentials: (offeringId) =>
+      readZCodeCodingPlanApiKey(offeringId, {
+        readText: files.readText,
+        homeDirectory: environment.homeDirectory(),
+        env: {
+          ZCODE_DATA_BASE_DIR: environment.env("ZCODE_DATA_BASE_DIR"),
+          ZCODE_CREDENTIAL_SECRET: environment.env("ZCODE_CREDENTIAL_SECRET"),
+        },
+      }),
+  });
   return {
     descriptor: glmDescriptor,
     account: {

@@ -234,6 +234,7 @@ function snapshot(
 ): PolyQuotaSnapshot {
   return {
     schemaVersion: POLYQUOTA_SCHEMA_VERSION,
+    instanceId: "test-instance",
     revision,
     generatedAt: "2026-09-27T00:00:00.000Z",
     providers: providerCatalogFixture,
@@ -1083,6 +1084,7 @@ describe("desktop account UI", () => {
 
     listener({
       schemaVersion: POLYQUOTA_SCHEMA_VERSION,
+      instanceId: "test-instance",
       revision: 2,
       reasons: ["accounts"],
       occurredAt: "2026-09-27T00:01:00.000Z",
@@ -1092,6 +1094,63 @@ describe("desktop account UI", () => {
 
     wrapper.unmount();
     expect(dispose).toHaveBeenCalledOnce();
+  });
+
+  it("accepts a low revision after a backend restart and ignores a delayed old snapshot", async () => {
+    let listener!: Parameters<IPolyQuotaService["subscribe"]>[0];
+    let finishOld!: (value: { ok: true; value: PolyQuotaSnapshot }) => void;
+    const first = { ...snapshot([account], undefined, 30), instanceId: "first" };
+    const second = { ...snapshot([], {}, 0), instanceId: "second" };
+    const getSnapshot = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, value: first })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishOld = resolve;
+          }),
+      )
+      .mockResolvedValue({ ok: true, value: second });
+    const wrapper = mountApp(
+      serviceWithSnapshot(first, {
+        getSnapshot,
+        subscribe: (next) => {
+          listener = next;
+          return () => undefined;
+        },
+      }),
+    );
+    await vi.waitFor(() => expect(wrapper.text()).toContain("te***@example.test"));
+    listener({
+      schemaVersion: POLYQUOTA_SCHEMA_VERSION,
+      instanceId: "first",
+      revision: 31,
+      reasons: ["accounts"],
+      occurredAt: "now",
+    });
+    await vi.waitFor(() => expect(getSnapshot).toHaveBeenCalledTimes(2));
+    listener({
+      schemaVersion: POLYQUOTA_SCHEMA_VERSION,
+      instanceId: "second",
+      revision: 0,
+      reasons: [],
+      occurredAt: "now",
+      resync: true,
+    });
+    finishOld({ ok: true, value: { ...first, revision: 31 } });
+    await vi.waitFor(() => expect(getSnapshot).toHaveBeenCalledTimes(3));
+    await flushPromises();
+    expect(wrapper.text()).not.toContain("te***@example.test");
+    listener({
+      schemaVersion: POLYQUOTA_SCHEMA_VERSION,
+      instanceId: "second",
+      revision: 0,
+      reasons: [],
+      occurredAt: "now",
+      resync: true,
+    });
+    await vi.waitFor(() => expect(getSnapshot).toHaveBeenCalledTimes(4));
+    wrapper.unmount();
   });
 
   it("refreshes a newly connected account before loading its first snapshot", async () => {

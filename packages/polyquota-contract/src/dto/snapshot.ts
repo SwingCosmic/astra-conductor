@@ -38,6 +38,7 @@ export function emptyCompositeRemaining(): PublicCompositeRemaining {
 
 export interface PolyQuotaSnapshot {
   schemaVersion: typeof POLYQUOTA_SCHEMA_VERSION;
+  instanceId: string;
   revision: number;
   generatedAt: string;
   providers: PublicProviderDescriptor[];
@@ -50,7 +51,10 @@ export interface PolyQuotaSnapshot {
 }
 
 export interface PolyQuotaChangedEvent {
+  /** Client connection ready/reconnected: read a fresh snapshot even at the same revision. */
+  resync?: boolean;
   schemaVersion: typeof POLYQUOTA_SCHEMA_VERSION;
+  instanceId: string;
   revision: number;
   reasons: PolyQuotaChangeReason[];
   occurredAt: string;

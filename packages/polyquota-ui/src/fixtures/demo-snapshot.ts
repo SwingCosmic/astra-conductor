@@ -606,6 +606,7 @@ function demoUsage(): Record<string, PublicUsage | null> {
 export function createDemoSnapshot(): PolyQuotaSnapshot {
   return {
     schemaVersion: POLYQUOTA_SCHEMA_VERSION,
+    instanceId: "test-instance",
     revision: 1,
     generatedAt: new Date().toISOString(),
     providers,

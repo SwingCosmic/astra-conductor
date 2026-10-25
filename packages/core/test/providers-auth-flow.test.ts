@@ -59,7 +59,7 @@ describe("codex auth flow", () => {
     const flow = createCodexAuthFlow({
       adapter: { fromCliAuth } as never,
       provisioner,
-      openExternal: vi.fn(),
+
       startCallbackServer: callbackRecorder(),
     });
 
@@ -80,7 +80,7 @@ describe("codex auth flow", () => {
     const flow = createCodexAuthFlow({
       adapter: { fromCliAuth: vi.fn() } as never,
       provisioner: provisionerFake(),
-      openExternal: vi.fn(),
+
       startCallbackServer: callbackRecorder(),
     });
 
@@ -102,7 +102,7 @@ describe("codex auth flow", () => {
     const flow = createCodexAuthFlow({
       adapter: { createBrowserAuthorization, finishBrowserAuthorization } as never,
       provisioner,
-      openExternal,
+
       startCallbackServer,
     });
 
@@ -113,7 +113,7 @@ describe("codex auth flow", () => {
     expect(startCallbackServer).toHaveBeenCalledWith(
       expect.objectContaining({ host: "127.0.0.1", port: 1455, handler: expect.anything() }),
     );
-    expect(openExternal).toHaveBeenCalledWith("https://auth.example.test/authorize");
+    expect(result).toMatchObject({ authorizationUrl: "https://auth.example.test/authorize" });
     if (result.status !== "pending") return;
 
     const handler = startCallbackServer.mock.calls[0]![0].handler;
@@ -136,7 +136,7 @@ describe("codex auth flow", () => {
     const flow = createCodexAuthFlow({
       adapter: { createBrowserAuthorization: vi.fn() } as never,
       provisioner: provisionerFake(),
-      openExternal: vi.fn(),
+
       startCallbackServer,
     });
 
@@ -159,13 +159,13 @@ describe("codex auth flow", () => {
     const flow = createCodexAuthFlow({
       adapter: { requestDeviceAuthorization, finishDeviceAuthorization } as never,
       provisioner,
-      openExternal,
+
       startCallbackServer: callbackRecorder(),
     });
 
     const result = await flow.start("codex", "device-code", {});
 
-    expect(openExternal).toHaveBeenCalledWith("https://example.test/device");
+    expect(result).toMatchObject({ verificationUri: "https://example.test/device" });
     expect(result).toMatchObject({
       status: "pending",
       interaction: "device-code",
@@ -183,7 +183,7 @@ describe("codex auth flow", () => {
     const flow = createCodexAuthFlow({
       adapter: {} as never,
       provisioner: provisionerFake(),
-      openExternal: vi.fn(),
+
       startCallbackServer: callbackRecorder(),
     });
 
@@ -252,7 +252,7 @@ describe("grok build auth flow", () => {
     const flow = createGrokBuildAuthFlow({
       adapter: { fromCliAuth } as never,
       provisioner,
-      openExternal: vi.fn(),
+
       startCallbackServer: callbackRecorder(),
       readFile,
     });
@@ -277,13 +277,15 @@ describe("grok build auth flow", () => {
     const flow = createGrokBuildAuthFlow({
       adapter: { requestDeviceAuthorization: vi.fn().mockResolvedValue(authorization) } as never,
       provisioner: provisionerFake(),
-      openExternal,
+
       startCallbackServer: callbackRecorder(),
     });
 
     const result = await flow.start("grok-build", "device-code", {});
 
-    expect(openExternal).toHaveBeenCalledWith("https://example.test/device?user_code=GROK-1234");
+    expect(result).toMatchObject({
+      verificationUri: "https://example.test/device?user_code=GROK-1234",
+    });
     expect(result).toMatchObject({
       interaction: "device-code",
       verificationUri: "https://example.test/device?user_code=GROK-1234",
@@ -298,7 +300,7 @@ describe("grok build auth flow", () => {
     const flow = createGrokBuildAuthFlow({
       adapter: { createBrowserAuthorization } as never,
       provisioner: provisionerFake(),
-      openExternal: vi.fn(),
+
       startCallbackServer,
     });
 
@@ -322,7 +324,7 @@ describe("antigravity auth flow", () => {
     const flow = createAntigravityAuthFlow({
       adapter: { createBrowserAuthorization, finishBrowserAuthorization } as never,
       provisioner,
-      openExternal: vi.fn(),
+
       startCallbackServer,
     });
 
@@ -351,7 +353,7 @@ describe("antigravity auth flow", () => {
     const flow = createAntigravityAuthFlow({
       adapter: { createBrowserAuthorization: vi.fn() } as never,
       provisioner: provisionerFake(),
-      openExternal: vi.fn(),
+
       startCallbackServer: callbackRecorder(),
     });
 

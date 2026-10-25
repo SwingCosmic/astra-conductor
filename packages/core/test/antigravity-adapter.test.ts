@@ -1,3 +1,4 @@
+import { httpServices } from "./service-helpers.js";
 import { describe, expect, it, vi } from "vitest";
 import { AntigravityAdapter, type Account } from "../src/internal.js";
 import { parseAntigravityQuotaGroups } from "../src/vendor/omniroute/open-sse/services/usage/antigravity.ts";
@@ -12,25 +13,27 @@ describe("Antigravity protocol", () => {
   it("uses Google consent without openid and discovers a project with numeric metadata", async () => {
     const requests: Array<{ url: string; init?: RequestInit }> = [];
     const adapter = new AntigravityAdapter(
-      async (input, init) => {
-        const url = String(input);
-        requests.push({ url, init });
-        if (url.includes("oauth2.googleapis.com/token")) {
-          return json({ access_token: "access", refresh_token: "refresh", expires_in: 3600 });
-        }
-        if (url.includes("userinfo")) return json({ email: "user@example.test" });
-        if (url.includes("loadCodeAssist")) {
-          const body = JSON.parse(String(init?.body)) as { metadata: Record<string, unknown> };
-          expect(body.metadata).toMatchObject({ ideType: 9, pluginType: 2 });
-          expect(typeof body.metadata.platform).toBe("number");
-          return json({
-            cloudaicompanionProject: { id: "project-1" },
-            currentTier: { id: "PRO", name: "Pro" },
-          });
-        }
-        return new Response(null, { status: 404 });
-      },
-      { now: () => now },
+      httpServices(
+        async (input, init) => {
+          const url = String(input);
+          requests.push({ url, init });
+          if (url.includes("oauth2.googleapis.com/token")) {
+            return json({ access_token: "access", refresh_token: "refresh", expires_in: 3600 });
+          }
+          if (url.includes("userinfo")) return json({ email: "user@example.test" });
+          if (url.includes("loadCodeAssist")) {
+            const body = JSON.parse(String(init?.body)) as { metadata: Record<string, unknown> };
+            expect(body.metadata).toMatchObject({ ideType: 9, pluginType: 2 });
+            expect(typeof body.metadata.platform).toBe("number");
+            return json({
+              cloudaicompanionProject: { id: "project-1" },
+              currentTier: { id: "PRO", name: "Pro" },
+            });
+          }
+          return new Response(null, { status: 404 });
+        },
+        { now: () => now },
+      ),
     );
     const authorization = adapter.createBrowserAuthorization("http://localhost:43210/callback");
     const url = new URL(authorization.url);
@@ -93,22 +96,24 @@ describe("Antigravity protocol", () => {
     ];
     for (const [tier, expected] of cases) {
       const adapter = new AntigravityAdapter(
-        async (input) => {
-          const url = String(input);
-          if (url.includes("loadCodeAssist")) return json({ currentTier: { name: tier } });
-          if (url.includes("retrieveUserQuotaSummary")) {
-            return json({
-              groups: [
-                {
-                  displayName: "Gemini Models",
-                  buckets: [{ displayName: "Weekly Quota", remainingFraction: 0.5 }],
-                },
-              ],
-            });
-          }
-          return new Response(null, { status: 404 });
-        },
-        { now: () => now },
+        httpServices(
+          async (input) => {
+            const url = String(input);
+            if (url.includes("loadCodeAssist")) return json({ currentTier: { name: tier } });
+            if (url.includes("retrieveUserQuotaSummary")) {
+              return json({
+                groups: [
+                  {
+                    displayName: "Gemini Models",
+                    buckets: [{ displayName: "Weekly Quota", remainingFraction: 0.5 }],
+                  },
+                ],
+              });
+            }
+            return new Response(null, { status: 404 });
+          },
+          { now: () => now },
+        ),
       );
       const account: Account = {
         id: "agy-tier",
@@ -138,27 +143,29 @@ describe("Antigravity protocol", () => {
 
   it("uses a 15-minute refresh lead and normalizes live groups", async () => {
     const adapter = new AntigravityAdapter(
-      async (input, init) => {
-        const url = String(input);
-        if (url.includes("oauth2.googleapis.com/token")) {
-          const body = new URLSearchParams(String(init?.body));
-          expect(body.get("refresh_token")).toBe("refresh-old");
-          return json({ access_token: "access-new", expires_in: 3600 });
-        }
-        if (url.includes("loadCodeAssist")) return json({ currentTier: { name: "Starter" } });
-        if (url.includes("retrieveUserQuotaSummary")) {
-          return json({
-            groups: [
-              {
-                displayName: "Gemini Models",
-                buckets: [{ displayName: "Weekly Quota", remainingFraction: 0.9 }],
-              },
-            ],
-          });
-        }
-        return new Response(null, { status: 404 });
-      },
-      { now: () => now },
+      httpServices(
+        async (input, init) => {
+          const url = String(input);
+          if (url.includes("oauth2.googleapis.com/token")) {
+            const body = new URLSearchParams(String(init?.body));
+            expect(body.get("refresh_token")).toBe("refresh-old");
+            return json({ access_token: "access-new", expires_in: 3600 });
+          }
+          if (url.includes("loadCodeAssist")) return json({ currentTier: { name: "Starter" } });
+          if (url.includes("retrieveUserQuotaSummary")) {
+            return json({
+              groups: [
+                {
+                  displayName: "Gemini Models",
+                  buckets: [{ displayName: "Weekly Quota", remainingFraction: 0.9 }],
+                },
+              ],
+            });
+          }
+          return new Response(null, { status: 404 });
+        },
+        { now: () => now },
+      ),
     );
     const account: Account = {
       id: "agy-1",
@@ -202,84 +209,86 @@ describe("Antigravity protocol", () => {
     // 新引擎 id 上（"Gemini 3.1 Flash Lite" 实际由 gemini-3.8-flash-tiered 提供），
     // 行内 detail 保留桶的原始 id 供核对。
     const adapter = new AntigravityAdapter(
-      async (input) => {
-        const url = String(input);
-        if (url.includes("loadCodeAssist")) return json({ currentTier: { name: "Starter" } });
-        if (url.includes("retrieveUserQuotaSummary")) {
-          return json({
-            groups: [
-              {
-                displayName: "Gemini Models",
-                buckets: [
-                  {
-                    bucketId: "five_hour",
-                    displayName: "5 Hour Quota",
-                    remainingFraction: 0.6,
-                    resetTime: "2026-09-27T12:00:00.000Z",
-                  },
-                  {
-                    bucketId: "weekly",
-                    displayName: "Weekly Quota",
-                    remainingFraction: 0.4,
-                    resetTime: "2026-10-01T00:00:00.000Z",
-                  },
-                ],
+      httpServices(
+        async (input) => {
+          const url = String(input);
+          if (url.includes("loadCodeAssist")) return json({ currentTier: { name: "Starter" } });
+          if (url.includes("retrieveUserQuotaSummary")) {
+            return json({
+              groups: [
+                {
+                  displayName: "Gemini Models",
+                  buckets: [
+                    {
+                      bucketId: "five_hour",
+                      displayName: "5 Hour Quota",
+                      remainingFraction: 0.6,
+                      resetTime: "2026-09-27T12:00:00.000Z",
+                    },
+                    {
+                      bucketId: "weekly",
+                      displayName: "Weekly Quota",
+                      remainingFraction: 0.4,
+                      resetTime: "2026-10-01T00:00:00.000Z",
+                    },
+                  ],
+                },
+                {
+                  displayName: "Claude and GPT models",
+                  buckets: [
+                    {
+                      bucketId: "five_hour",
+                      displayName: "5 Hour Quota",
+                      remainingFraction: 0.8,
+                      resetTime: "2026-09-27T12:00:00.000Z",
+                    },
+                    {
+                      bucketId: "weekly",
+                      displayName: "Weekly Quota",
+                      remainingFraction: 0.7,
+                      resetTime: "2026-10-01T00:00:00.000Z",
+                    },
+                  ],
+                },
+              ],
+            });
+          }
+          if (url.includes("fetchAvailableModels")) {
+            return json({
+              models: {
+                "gemini-3.8-flash-tiered": {
+                  displayName: "Gemini 3.1 Flash Lite",
+                  quotaInfo: { remainingFraction: 0.9, resetTime: "2026-09-27T12:00:00.000Z" },
+                },
+                "gemini-internal-preview": {
+                  isInternal: true,
+                  quotaInfo: { remainingFraction: 0.9, resetTime: "2026-09-27T12:00:00.000Z" },
+                },
+                "gemini-2.5-flash": { quotaInfo: {} },
+                "claude-opus-4-6-thinking": {
+                  quotaInfo: { remainingFraction: 0.25, resetTime: "2026-09-27T12:00:00.000Z" },
+                },
+                "gpt-oss-120b-medium": { quotaInfo: { remainingFraction: 1 } },
               },
-              {
-                displayName: "Claude and GPT models",
-                buckets: [
-                  {
-                    bucketId: "five_hour",
-                    displayName: "5 Hour Quota",
-                    remainingFraction: 0.8,
-                    resetTime: "2026-09-27T12:00:00.000Z",
-                  },
-                  {
-                    bucketId: "weekly",
-                    displayName: "Weekly Quota",
-                    remainingFraction: 0.7,
-                    resetTime: "2026-10-01T00:00:00.000Z",
-                  },
-                ],
-              },
-            ],
-          });
-        }
-        if (url.includes("fetchAvailableModels")) {
-          return json({
-            models: {
-              "gemini-3.8-flash-tiered": {
-                displayName: "Gemini 3.1 Flash Lite",
-                quotaInfo: { remainingFraction: 0.9, resetTime: "2026-09-27T12:00:00.000Z" },
-              },
-              "gemini-internal-preview": {
-                isInternal: true,
-                quotaInfo: { remainingFraction: 0.9, resetTime: "2026-09-27T12:00:00.000Z" },
-              },
-              "gemini-2.5-flash": { quotaInfo: {} },
-              "claude-opus-4-6-thinking": {
-                quotaInfo: { remainingFraction: 0.25, resetTime: "2026-09-27T12:00:00.000Z" },
-              },
-              "gpt-oss-120b-medium": { quotaInfo: { remainingFraction: 1 } },
-            },
-          });
-        }
-        if (url.includes("retrieveUserQuota")) {
-          // 实时桶优先：目录刻度 90%，实时只剩 50%；目录外新模型只出现在这里。
-          return json({
-            buckets: [
-              {
-                modelId: "gemini-3.8-flash-tiered",
-                remainingFraction: 0.5,
-                resetTime: "2026-09-27T12:00:00.000Z",
-              },
-              { modelId: "gemini-4.2-flash-solo", remainingFraction: 0.75 },
-            ],
-          });
-        }
-        return new Response(null, { status: 404 });
-      },
-      { now: () => now },
+            });
+          }
+          if (url.includes("retrieveUserQuota")) {
+            // 实时桶优先：目录刻度 90%，实时只剩 50%；目录外新模型只出现在这里。
+            return json({
+              buckets: [
+                {
+                  modelId: "gemini-3.8-flash-tiered",
+                  remainingFraction: 0.5,
+                  resetTime: "2026-09-27T12:00:00.000Z",
+                },
+                { modelId: "gemini-4.2-flash-solo", remainingFraction: 0.75 },
+              ],
+            });
+          }
+          return new Response(null, { status: 404 });
+        },
+        { now: () => now },
+      ),
     );
     const snapshot = await adapter.fetchUsage(
       {
@@ -346,24 +355,26 @@ describe("Antigravity protocol", () => {
 
   it("synthesizes family groups from model quotas when the summary RPC is unavailable", async () => {
     const adapter = new AntigravityAdapter(
-      async (input) => {
-        const url = String(input);
-        if (url.includes("loadCodeAssist")) return json({ currentTier: { name: "Starter" } });
-        if (url.includes("fetchAvailableModels")) {
-          return json({
-            models: {
-              "gemini-3.1-flash-lite": {
-                quotaInfo: { remainingFraction: 0.8, resetTime: "2026-09-27T12:00:00.000Z" },
+      httpServices(
+        async (input) => {
+          const url = String(input);
+          if (url.includes("loadCodeAssist")) return json({ currentTier: { name: "Starter" } });
+          if (url.includes("fetchAvailableModels")) {
+            return json({
+              models: {
+                "gemini-3.1-flash-lite": {
+                  quotaInfo: { remainingFraction: 0.8, resetTime: "2026-09-27T12:00:00.000Z" },
+                },
+                "claude-sonnet-4-6": {
+                  quotaInfo: { remainingFraction: 0.6, resetTime: "2026-09-27T12:00:00.000Z" },
+                },
               },
-              "claude-sonnet-4-6": {
-                quotaInfo: { remainingFraction: 0.6, resetTime: "2026-09-27T12:00:00.000Z" },
-              },
-            },
-          });
-        }
-        return new Response(null, { status: 404 });
-      },
-      { now: () => now },
+            });
+          }
+          return new Response(null, { status: 404 });
+        },
+        { now: () => now },
+      ),
     );
     const snapshot = await adapter.fetchUsage(
       {

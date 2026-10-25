@@ -1,4 +1,4 @@
-import { Notification, type Event } from "electron";
+import { AppError } from "@astra-conductor/core/internal";
 import type {
   CredentialRefreshOutcome,
   NotificationCandidate,
@@ -7,8 +7,6 @@ import type {
   StoragePort,
 } from "@astra-conductor/core/internal";
 
-const NOTIFICATION_DELIVERY_TIMEOUT_MS = 3_000;
-
 export interface SystemNotificationOptions {
   title: string;
   body: string;
@@ -16,46 +14,6 @@ export interface SystemNotificationOptions {
 
 export interface SystemNotificationPort {
   deliver(options: SystemNotificationOptions): Promise<boolean>;
-}
-
-class ElectronSystemNotificationPort implements SystemNotificationPort {
-  async deliver(options: SystemNotificationOptions): Promise<boolean> {
-    if (!Notification.isSupported()) return false;
-    return new Promise((resolve) => {
-      let settled = false;
-      let notification: Notification | null = null;
-      const finish = (delivered: boolean): void => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timeout);
-        notification?.removeListener("show", onShow);
-        notification?.removeListener("failed", onFailed);
-        notification = null;
-        resolve(delivered);
-      };
-      const onShow = (): void => finish(true);
-      const onFailed = (_event: Event, error: string): void => {
-        console.warn("System notification delivery failed", error);
-        finish(false);
-      };
-      const timeout = setTimeout(() => {
-        console.warn("System notification delivery was not confirmed");
-        finish(false);
-      }, NOTIFICATION_DELIVERY_TIMEOUT_MS);
-      try {
-        notification = new Notification(options);
-        notification.once("show", onShow);
-        notification.once("failed", onFailed);
-        notification.show();
-      } catch (error) {
-        console.warn(
-          "System notification delivery failed",
-          error instanceof Error ? error.message : "unknown error",
-        );
-        finish(false);
-      }
-    });
-  }
 }
 
 function shouldNotify(storage: StoragePort, candidate: NotificationCandidate): boolean {
@@ -71,23 +29,26 @@ function shouldNotify(storage: StoragePort, candidate: NotificationCandidate): b
 }
 
 export class PollingService {
+  private accepting = true;
   private readonly pendingNotifications = new Set<string>();
   private readonly activeOperations = new Set<Promise<unknown>>();
 
   constructor(
     private readonly storage: StoragePort,
     private readonly coordinator: RefreshCoordinator,
-    private readonly systemNotifications: SystemNotificationPort = new ElectronSystemNotificationPort(),
+    private readonly systemNotifications: SystemNotificationPort,
     private readonly now: () => Date = () => new Date(),
   ) {}
 
   async stopAndDrain(): Promise<void> {
+    this.accepting = false;
     while (this.activeOperations.size) {
       await Promise.allSettled([...this.activeOperations]);
     }
   }
 
   refresh(accountId: string): Promise<RefreshOutcome> {
+    if (!this.accepting) return Promise.reject(new AppError("service-unavailable", "轮询已停止"));
     return this.track(this.performRefresh(accountId));
   }
 
@@ -98,10 +59,12 @@ export class PollingService {
   }
 
   refreshCredentials(accountId: string): Promise<CredentialRefreshOutcome> {
+    if (!this.accepting) return Promise.reject(new AppError("service-unavailable", "轮询已停止"));
     return this.track(this.coordinator.refreshCredentials(accountId));
   }
 
   refreshAll(): Promise<RefreshOutcome[]> {
+    if (!this.accepting) return Promise.reject(new AppError("service-unavailable", "轮询已停止"));
     return this.track(this.performRefreshAll());
   }
 

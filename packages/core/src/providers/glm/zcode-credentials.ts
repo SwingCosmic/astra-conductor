@@ -34,6 +34,7 @@ const codingPlanProviderIds: Record<GlmRegion, string> = {
 export const ZCODE_CREDENTIALS_PATH_HINT = "~/.zcode/v2/credentials.json";
 
 interface ZCodeCredentialImportOptions {
+  readText?: (path: string) => Promise<string>;
   credentialsPath?: string;
   env?: Readonly<Record<string, string | undefined>>;
   homeDirectory?: string;
@@ -158,7 +159,11 @@ export async function readZCodeCodingPlanApiKey(
   const credentialsPath = resolveZCodeCredentialsPath(options);
   let record: Record<string, string>;
   try {
-    record = parseCredentialRecord(JSON.parse(await readFile(credentialsPath, "utf8")));
+    record = parseCredentialRecord(
+      JSON.parse(
+        await (options.readText ?? ((file: string) => readFile(file, "utf8")))(credentialsPath),
+      ),
+    );
   } catch (error) {
     throw new AppError(
       "validation",

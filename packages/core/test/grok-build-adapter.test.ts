@@ -1,3 +1,4 @@
+import { httpServices } from "./service-helpers.js";
 import { describe, expect, it, vi } from "vitest";
 import { GrokBuildAdapter, type Account, type CredentialEnvelope } from "../src/internal.js";
 import {
@@ -57,11 +58,13 @@ describe("Grok Build protocol", () => {
     });
     const calls: Array<{ url: string; body: URLSearchParams }> = [];
     const adapter = new GrokBuildAdapter(
-      async (input, init) => {
-        calls.push({ url: String(input), body: new URLSearchParams(String(init?.body)) });
-        return json({ access_token: "new-access", expires_in: 7200 });
-      },
-      { now: () => now },
+      httpServices(
+        async (input, init) => {
+          calls.push({ url: String(input), body: new URLSearchParams(String(init?.body)) });
+          return json({ access_token: "new-access", expires_in: 7200 });
+        },
+        { now: () => now },
+      ),
     );
     const provisioning = adapter.fromCliAuth({
       "https://auth.x.ai::client": {
@@ -106,29 +109,31 @@ describe("Grok Build protocol", () => {
   it("normalizes weekly, product, credits, and auto-top-up usage", async () => {
     let autoTopUpAvailable = true;
     const adapter = new GrokBuildAdapter(
-      async (input) => {
-        const url = String(input);
-        if (url.endsWith("/user?include=subscription")) {
-          return json({ userId: "user-1", subscriptionTier: "SuperGrok Pro" });
-        }
-        if (url.includes("/billing?format=credits")) {
-          return json({
-            config: {
-              creditUsagePercent: 20,
-              currentPeriod: { end: "2026-10-01T00:00:00.000Z" },
-              productUsage: [{ product: "Grok Build", usagePercent: 45 }],
-              prepaidBalance: { val: -1234 },
-            },
-          });
-        }
-        if (url.endsWith("/auto-topup-rule")) {
-          return autoTopUpAvailable
-            ? json({ rule: { enabled: false } })
-            : new Response(null, { status: 404 });
-        }
-        return new Response(null, { status: 404 });
-      },
-      { now: () => now },
+      httpServices(
+        async (input) => {
+          const url = String(input);
+          if (url.endsWith("/user?include=subscription")) {
+            return json({ userId: "user-1", subscriptionTier: "SuperGrok Pro" });
+          }
+          if (url.includes("/billing?format=credits")) {
+            return json({
+              config: {
+                creditUsagePercent: 20,
+                currentPeriod: { end: "2026-10-01T00:00:00.000Z" },
+                productUsage: [{ product: "Grok Build", usagePercent: 45 }],
+                prepaidBalance: { val: -1234 },
+              },
+            });
+          }
+          if (url.endsWith("/auto-topup-rule")) {
+            return autoTopUpAvailable
+              ? json({ rule: { enabled: false } })
+              : new Response(null, { status: 404 });
+          }
+          return new Response(null, { status: 404 });
+        },
+        { now: () => now },
+      ),
     );
     const account: Account = {
       id: "grok-1",

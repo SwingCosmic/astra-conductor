@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import type { AuthStartResult, IpcResult, PublicAccount, StartAuthRequest } from "../models";
 import type { ProviderPresentation } from "../presentation";
 import { usePolyQuotaService } from "../services/polyquota-service-vue";
@@ -19,6 +19,55 @@ const cliImportSourceLabel = computed(
   () => props.provider.authMethods.find((method) => method.id === "cli-import")?.label ?? "CLI",
 );
 const service = usePolyQuotaService();
+const sessionKey = `polyquota.auth.${props.provider.id}`;
+let timer: ReturnType<typeof setTimeout> | undefined;
+let disposed = false;
+
+async function restoreSession(): Promise<void> {
+  const sessionId = sessionStorage.getItem(sessionKey);
+  if (!sessionId || disposed) return;
+  try {
+    const state = unwrap(await service.getAuthSession(sessionId));
+    if (disposed || sessionStorage.getItem(sessionKey) !== sessionId) return;
+    selected.value = state.method;
+    if (state.status === "completed" && state.account) {
+      pending.value = null;
+      sessionStorage.removeItem(sessionKey);
+      busy.value = false;
+      emit("connected", state.account);
+      return;
+    }
+    if (["failed", "cancelled", "expired"].includes(state.status)) {
+      message.value = state.error?.message ?? "授权已结束";
+      pending.value = null;
+      sessionStorage.removeItem(sessionKey);
+      busy.value = false;
+      return;
+    }
+    pending.value =
+      state.interaction === "device-code"
+        ? {
+            status: "pending",
+            sessionId,
+            interaction: "device-code",
+            userCode: state.userCode ?? "",
+            verificationUri: state.verificationUri ?? "",
+          }
+        : {
+            status: "pending",
+            sessionId,
+            interaction: "browser-callback",
+            authorizationUrl: state.authorizationUrl,
+          };
+  } catch (error) {
+    message.value = error instanceof Error ? error.message : "无法查询授权状态";
+  }
+  if (!disposed) timer = setTimeout(() => void restoreSession(), 1500);
+}
+
+onMounted(() => {
+  if (sessionStorage.getItem(sessionKey)) void restoreSession();
+});
 
 function unwrap<T>(result: IpcResult<T>): T {
   if (!result.ok) throw new Error(result.error.message);
@@ -29,10 +78,12 @@ async function finish(sessionId: string): Promise<void> {
   try {
     const account = unwrap(await service.finishAuth(sessionId));
     pending.value = null;
+    sessionStorage.removeItem(sessionKey);
+    clearTimeout(timer);
     emit("connected", account);
   } catch (error) {
     message.value = error instanceof Error ? error.message : "授权失败";
-    pending.value = null;
+    if (!sessionStorage.getItem(sessionKey)) pending.value = null;
   } finally {
     busy.value = false;
   }
@@ -56,6 +107,9 @@ async function begin(): Promise<void> {
       return;
     }
     pending.value = result;
+    sessionStorage.setItem(sessionKey, result.sessionId);
+    clearTimeout(timer);
+    timer = setTimeout(() => void restoreSession(), 1500);
     if (result.interaction === "browser-callback") void finish(result.sessionId);
     else busy.value = false;
   } catch (error) {
@@ -71,6 +125,8 @@ function completeDevice(): void {
 }
 
 function cancelPending(): void {
+  clearTimeout(timer);
+  sessionStorage.removeItem(sessionKey);
   if (pending.value) void service.cancelAuth(pending.value.sessionId);
   pending.value = null;
 }
@@ -87,7 +143,10 @@ function select(method: string): void {
   message.value = "";
 }
 
-onBeforeUnmount(cancelPending);
+onBeforeUnmount(() => {
+  disposed = true;
+  clearTimeout(timer);
+});
 </script>
 
 <template>
@@ -129,6 +188,13 @@ onBeforeUnmount(cancelPending);
           <div>
             <strong>在浏览器完成授权</strong>
             <p>{{ pending ? "正在等待浏览器回调…" : "浏览器将打开服务商授权页面。" }}</p>
+            <a
+              v-if="pending?.interaction === 'browser-callback' && pending.authorizationUrl"
+              :href="pending.authorizationUrl"
+              target="_blank"
+              rel="noreferrer"
+              >打开授权页面</a
+            >
           </div>
         </div>
         <div class="auth-step">
@@ -150,7 +216,13 @@ onBeforeUnmount(cancelPending);
         </div>
         <template v-if="pending?.interaction === 'device-code'">
           <div class="device-code">{{ pending.userCode }}</div>
-          <p class="verification-uri">{{ pending.verificationUri }}</p>
+          <a
+            class="verification-uri"
+            :href="pending.verificationUri"
+            target="_blank"
+            rel="noreferrer"
+            >打开设备验证页面</a
+          >
         </template>
         <div class="auth-step">
           <span>2</span>

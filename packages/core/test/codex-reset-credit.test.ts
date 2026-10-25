@@ -1,3 +1,4 @@
+import { httpServices } from "./service-helpers.js";
 import { describe, expect, it } from "vitest";
 import { CodexAdapter, type Account, type CredentialEnvelope } from "../src/internal.js";
 import { redeemCodexResetCredit } from "../src/providers/codex/reset-card-redemption.js";
@@ -61,7 +62,7 @@ function resetCreditFetch(options: {
 }
 
 function adapterWith(fetchImpl: typeof fetch): CodexAdapter {
-  return new CodexAdapter(fetchImpl, { now: () => now });
+  return new CodexAdapter(httpServices(fetchImpl, { now: () => now }));
 }
 
 describe("codex reset credit redemption", () => {

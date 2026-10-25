@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { CoreServices, ServiceRegistry } from "@astra-conductor/core/internal";
 import { describe, expect, it } from "vitest";
 import {
   AuthCoordinator,
@@ -38,41 +41,51 @@ describe("browser auth roundtrip (antigravity chain)", () => {
     };
     const coordinator = new AuthCoordinator(
       new ProviderRegistry(
-        createProviderContributions({
-          http: {
-            fetch: async (input, init) => {
-              const url = String(input);
-              if (url.includes("oauth2.googleapis.com/token")) {
-                return Response.json({
-                  access_token: "access",
-                  refresh_token: "refresh",
-                  expires_in: 3600,
-                });
-              }
-              if (url.includes("userinfo")) {
-                return Response.json({ email: "user@example.test" });
-              }
-              if (url.includes("loadCodeAssist")) {
-                void init;
-                return Response.json({
-                  cloudaicompanionProject: { id: "project-1" },
-                  currentTier: { id: "PRO", name: "Pro" },
-                });
-              }
-              return new Response(null, { status: 404 });
-            },
-          },
-          browser: {
-            openExternal: async (url) => {
-              openedUrls.push(url);
-            },
-          },
-          callbackServer: { start: recordingListener },
-          storage,
-          vault,
-          clock: { now: () => now },
-        }),
+        createProviderContributions(
+          new ServiceRegistry()
+            .value(CoreServices.http, {
+              fetch: async (input, init) => {
+                const url = String(input);
+                if (url.includes("oauth2.googleapis.com/token")) {
+                  return Response.json({
+                    access_token: "access",
+                    refresh_token: "refresh",
+                    expires_in: 3600,
+                  });
+                }
+                if (url.includes("userinfo")) {
+                  return Response.json({ email: "user@example.test" });
+                }
+                if (url.includes("loadCodeAssist")) {
+                  void init;
+                  return Response.json({
+                    cloudaicompanionProject: { id: "project-1" },
+                    currentTier: { id: "PRO", name: "Pro" },
+                  });
+                }
+                return new Response(null, { status: 404 });
+              },
+            })
+            .value(CoreServices.callbackServer, { start: recordingListener })
+            .value(CoreServices.storage, storage)
+            .value(CoreServices.vault, vault)
+            .value(CoreServices.clock, { now: () => now })
+            .value(CoreServices.files, { readText: (filename) => readFile(filename, "utf8") })
+            .value(CoreServices.environment, {
+              homeDirectory: homedir,
+              env: (name) => process.env[name],
+            }),
+        ),
       ),
+      undefined,
+      {
+        authorization: {
+          present: async ({ url }) => {
+            openedUrls.push(url);
+            return "opened";
+          },
+        },
+      },
     );
 
     const result = await coordinator.start("antigravity", "browser-oauth");
@@ -100,6 +113,8 @@ describe("browser auth roundtrip (antigravity chain)", () => {
     expect(storage.accounts.findByStableIdentity("antigravity", account.stableIdentity)).toEqual(
       expect.objectContaining({ id: account.id }),
     );
-    await expect(coordinator.finish(result.sessionId)).rejects.toThrow("授权会话不存在");
+    await expect(coordinator.finish(result.sessionId)).resolves.toEqual(account);
+    coordinator.cancelAll();
+    await coordinator.drain();
   });
 });

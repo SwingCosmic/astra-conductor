@@ -25,5 +25,4 @@ export type {
   ProviderUsageCapability,
 } from "./registry.js";
 export { ProviderRegistry } from "./registry.js";
-export type { ProviderPorts } from "./ports.js";
 export { createProviderContributions } from "./contributions.js";

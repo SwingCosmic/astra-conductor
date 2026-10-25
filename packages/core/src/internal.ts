@@ -1,4 +1,6 @@
 export * from "./errors.js";
+export * from "./services/registry.js";
+export * from "./services/contracts.js";
 export * from "./credential-vault.js";
 export * from "./logger.js";
 export * from "./auth/types.js";

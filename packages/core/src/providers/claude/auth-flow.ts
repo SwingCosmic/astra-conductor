@@ -1,3 +1,4 @@
+import type { UserEnvironmentService } from "../../services/contracts.js";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -10,6 +11,7 @@ interface ClaudeAuthFlowDeps {
   adapter: Pick<ClaudeAdapter, "createProvisioningFromCli">;
   provisioner: Pick<ClaudeAccountProvisioner, "save">;
   readFile?: (path: string) => Promise<string>;
+  environment?: UserEnvironmentService;
 }
 
 const SUPPORTED_METHODS: readonly AuthMethod[] = ["cli-import"];
@@ -17,8 +19,8 @@ const SUPPORTED_METHODS: readonly AuthMethod[] = ["cli-import"];
 /** 展示用默认路径提示，与 claudeAuthPath 的真实解析同源维护。 */
 export const CLAUDE_CLI_IMPORT_PATH_HINT = "~/.claude/.credentials.json";
 
-function claudeAuthPath(): string {
-  return path.join(homedir(), ".claude", ".credentials.json");
+function claudeAuthPath(environment?: UserEnvironmentService): string {
+  return path.join(environment?.homeDirectory() ?? homedir(), ".claude", ".credentials.json");
 }
 
 export function createClaudeAuthFlow(deps: ClaudeAuthFlowDeps): ProviderAuthFlow {
@@ -38,7 +40,7 @@ export function createClaudeAuthFlow(deps: ClaudeAuthFlowDeps): ProviderAuthFlow
         throw new AppError("validation", "Claude Code 当前仅支持本地凭据导入");
       }
       try {
-        const raw = JSON.parse(await readFileImpl(claudeAuthPath())) as unknown;
+        const raw = JSON.parse(await readFileImpl(claudeAuthPath(deps.environment))) as unknown;
         const provisioning = await deps.adapter.createProvisioningFromCli(raw);
         return { status: "completed", account: await deps.provisioner.save(provisioning) };
       } catch (error) {

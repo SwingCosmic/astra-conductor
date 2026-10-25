@@ -1,17 +1,22 @@
 import type { ProviderContribution } from "../registry.js";
-import type { ProviderPorts } from "../ports.js";
+import { CoreServices } from "../../services/contracts.js";
+import type { ServiceResolver } from "../../services/registry.js";
 import { grokBuildDescriptor } from "./descriptor.js";
 import { GrokBuildAccountProvisioner, GrokBuildAdapter } from "./adapter.js";
 import { createGrokBuildAuthFlow } from "./auth-flow.js";
 
-export function createGrokBuildProvider(ports: ProviderPorts): ProviderContribution {
-  const adapter = new GrokBuildAdapter(ports.http.fetch, ports.clock);
-  const provisioner = new GrokBuildAccountProvisioner(ports.storage, ports.vault);
+export function createGrokBuildProvider(services: ServiceResolver): ProviderContribution {
+  const adapter = new GrokBuildAdapter(services);
+  const provisioner = new GrokBuildAccountProvisioner(
+    services.get(CoreServices.storage),
+    services.get(CoreServices.vault),
+  );
   const authFlow = createGrokBuildAuthFlow({
     adapter,
     provisioner,
-    openExternal: (url) => ports.browser.openExternal(url),
-    startCallbackServer: ports.callbackServer.start,
+    readFile: services.get(CoreServices.files).readText,
+    environment: services.get(CoreServices.environment),
+    startCallbackServer: services.get(CoreServices.callbackServer).start,
   });
   return {
     descriptor: grokBuildDescriptor,

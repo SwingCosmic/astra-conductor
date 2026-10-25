@@ -3,6 +3,19 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
+const hostSource = readFileSync(
+  new URL("../src/platform/electron/register-electron-services.ts", import.meta.url),
+  "utf8",
+);
+const runtimeSource = readFileSync(
+  new URL("../src/runtime/start-runtime.ts", import.meta.url),
+  "utf8",
+);
+
+const securitySource = readFileSync(
+  new URL("../src/platform/electron/page-security.ts", import.meta.url),
+  "utf8",
+);
 const mainSource = readFileSync(
   path.join(path.dirname(fileURLToPath(import.meta.url)), "../src/main.ts"),
   "utf8",
@@ -36,9 +49,9 @@ describe("PolyQuota desktop shell", () => {
     expect(mainSource).toContain("applyQuotaChrome");
     expect(mainSource).not.toContain("setOverlayIcon");
     expect(mainSource).toContain("trayIconFilename");
-    expect(mainSource).toContain("net.fetch");
+    expect(hostSource).toContain("options.session.fetch");
     expect(mainSource).toContain("configureSessionProxy");
-    expect(mainSource).toContain("detectProxyStatus");
+    expect(hostSource).toContain("detectProxyStatus");
     expect(mainSource).toContain('mode: "system"');
     expect(mainSource).toContain('mode: "fixed_servers"');
     expect(proxyDetectionSource).toContain("env.HTTPS_PROXY?.trim()");
@@ -69,7 +82,10 @@ describe("PolyQuota desktop shell", () => {
     expect(mainSource).toContain('const databaseName = "polyquota.db"');
 
     const pollingSource = readFileSync(
-      path.join(path.dirname(fileURLToPath(import.meta.url)), "../src/polling-service.ts"),
+      path.join(
+        path.dirname(fileURLToPath(import.meta.url)),
+        "../src/platform/electron/notifications.ts",
+      ),
       "utf8",
     );
     expect(pollingSource).toContain("new Notification");
@@ -83,11 +99,11 @@ describe("PolyQuota desktop shell", () => {
   });
 
   it("keeps executable code local while allowing external HTTPS presentation resources", () => {
-    expect(mainSource).toContain("script-src 'self'");
+    expect(securitySource).toContain("script-src ${scripts}");
     expect(mainSource).not.toContain("script-src 'self' https:");
-    expect(mainSource).toContain("style-src 'self' 'unsafe-inline' https:");
-    expect(mainSource).toContain("img-src 'self' data: https:");
-    expect(mainSource).toContain("font-src 'self' data: https:");
+    expect(securitySource).toContain("style-src 'self' 'unsafe-inline' https:");
+    expect(securitySource).toContain("img-src 'self' data: https:");
+    expect(securitySource).toContain("font-src 'self' data: https:");
     expect(mainSource).toContain("webSecurity: true");
   });
 
@@ -99,6 +115,6 @@ describe("PolyQuota desktop shell", () => {
     expect(developmentRunnerSource).toContain('type: "polyquota:dev-restart"');
     expect(developmentRunnerSource).not.toContain("packages/core");
     expect(mainSource).toContain("waitForIpcHandlersToDrain");
-    expect(mainSource).toContain("stopAndDrain");
+    expect(runtimeSource).toContain("stopAndDrain");
   });
 });

@@ -1,3 +1,5 @@
+import { CoreServices } from "../../services/contracts.js";
+import type { ServiceResolver } from "../../services/registry.js";
 import { randomUUID } from "node:crypto";
 import { AppError } from "../../errors.js";
 import type {
@@ -85,10 +87,13 @@ function delay(milliseconds: number, signal?: AbortSignal): Promise<void> {
 export class GrokBuildAdapter implements UsageProviderAdapter {
   readonly provider: ProviderId = "grok-build";
 
-  constructor(
-    private readonly fetchImpl: typeof fetch = fetch,
-    private readonly clock: ClockPort = { now: () => new Date() },
-  ) {}
+  private readonly fetchImpl: typeof fetch;
+  private readonly clock: ClockPort;
+
+  constructor(services: ServiceResolver) {
+    this.fetchImpl = services.get(CoreServices.http).fetch;
+    this.clock = services.get(CoreServices.clock);
+  }
 
   createBrowserAuthorization(
     redirectUri = "http://127.0.0.1:56122/callback",

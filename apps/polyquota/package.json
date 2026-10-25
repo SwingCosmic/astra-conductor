@@ -17,20 +17,26 @@
     "test:ipc": "node ./scripts/run-electron-mode.mjs ipc-smoke",
     "package": "node ./scripts/package.mjs",
     "data:reset": "node ./scripts/run-electron-mode.mjs reset",
-    "test:codex-cli": "node ./scripts/run-electron-mode.mjs codex-cli-smoke"
+    "test:codex-cli": "node ./scripts/run-electron-mode.mjs codex-cli-smoke",
+    "dev:server": "node scripts/run-node-mode.mjs",
+    "test:server": "vitest run test/service-mode-server.test.ts test/callback-server.test.ts test/browser-auth-roundtrip.test.ts test/node-http.test.ts",
+    "test:protocol": "node scripts/run-protocol-smoke.mjs"
   },
   "dependencies": {
     "@astra-conductor/core": "workspace:*",
     "@astra-conductor/polyquota-contract": "workspace:*",
-    "better-sqlite3": "catalog:"
+    "@hono/node-server": "^1.19.17",
+    "better-sqlite3": "catalog:",
+    "hono": "^4.13.13",
+    "undici": "^7.29.1"
   },
   "devDependencies": {
     "@electron/rebuild": "catalog:",
     "@types/better-sqlite3": "catalog:",
     "@types/node": "catalog:",
-    "esbuild": "catalog:",
     "electron": "catalog:",
     "electron-builder": "catalog:",
+    "esbuild": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

@@ -1,13 +1,22 @@
 import type { ProviderContribution } from "../registry.js";
-import type { ProviderPorts } from "../ports.js";
+import { CoreServices } from "../../services/contracts.js";
+import type { ServiceResolver } from "../../services/registry.js";
 import { claudeDescriptor } from "./descriptor.js";
 import { ClaudeAccountProvisioner, ClaudeAdapter } from "./adapter.js";
 import { createClaudeAuthFlow } from "./auth-flow.js";
 
-export function createClaudeProvider(ports: ProviderPorts): ProviderContribution {
-  const adapter = new ClaudeAdapter(ports.http.fetch, ports.clock);
-  const provisioner = new ClaudeAccountProvisioner(ports.storage, ports.vault);
-  const authFlow = createClaudeAuthFlow({ adapter, provisioner });
+export function createClaudeProvider(services: ServiceResolver): ProviderContribution {
+  const adapter = new ClaudeAdapter(services);
+  const provisioner = new ClaudeAccountProvisioner(
+    services.get(CoreServices.storage),
+    services.get(CoreServices.vault),
+  );
+  const authFlow = createClaudeAuthFlow({
+    adapter,
+    provisioner,
+    readFile: services.get(CoreServices.files).readText,
+    environment: services.get(CoreServices.environment),
+  });
   return {
     descriptor: claudeDescriptor,
     account: {

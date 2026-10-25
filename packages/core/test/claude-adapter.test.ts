@@ -1,3 +1,4 @@
+import { httpServices } from "./service-helpers.js";
 import { describe, expect, it, vi } from "vitest";
 import { ClaudeAdapter, type Account, type CredentialEnvelope } from "../src/internal.js";
 
@@ -47,7 +48,7 @@ function fetchMock() {
 describe("ClaudeAdapter", () => {
   it("imports Claude Code credentials and derives identity from bootstrap", async () => {
     const fetchImpl = fetchMock();
-    const adapter = new ClaudeAdapter(fetchImpl, { now: () => now });
+    const adapter = new ClaudeAdapter(httpServices(fetchImpl, { now: () => now }));
 
     const result = await adapter.createProvisioningFromCli({
       claudeAiOauth: {
@@ -77,7 +78,7 @@ describe("ClaudeAdapter", () => {
   });
 
   it("normalizes account and model quota windows", async () => {
-    const adapter = new ClaudeAdapter(fetchMock(), { now: () => now });
+    const adapter = new ClaudeAdapter(httpServices(fetchMock(), { now: () => now }));
     const account = {
       id: "claude-1",
       provider: "claude",
@@ -113,7 +114,7 @@ describe("ClaudeAdapter", () => {
         expires_in: 3600,
       });
     });
-    const adapter = new ClaudeAdapter(fetchImpl, { now: () => now });
+    const adapter = new ClaudeAdapter(httpServices(fetchImpl, { now: () => now }));
     const account = { provider: "claude", offeringId: "claude", publicMetadata: {} } as Account;
     const envelope = {
       provider: "claude",
