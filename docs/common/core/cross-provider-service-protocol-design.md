@@ -10,6 +10,10 @@
 
 > 2026-10-25 通信边界更新：PolyQuota 的正式业务入口已统一为 Hono + fetch/SSE，旧业务 preload/IPC/channel 与自动演示兜底已删除。本文关于 IPC 的阶段记录保留历史含义；当前运行入口、数据和凭据边界见[服务模式开发说明](./service-mode/development.md)。GraphAgent 的后续运行时未纳入本次实现。
 
+> 2026-10-31 凭据设计更新：[跨产品凭据共享与迁移](./credential-sharing/design.md)已细化私有/共享两种后端、主动迁移与导入、固定目录、跨平台参数明确的加密格式及唯一凭据服务。用户在接受方填写迁移密钥，实际解密校验后确认导入；不要求密文固定。该方案尚未实施；现有 DI 注册不等于凭据写入已全部收口。
+
+> 2026-11-01 补充：存储位置允许用户选择并切回内置；导出成功与 broker 接管分别记录，切换失败保留主密钥以便重试。更新导出/换钥采用新 storageVersion，验证成功后才发布 currentVersion；主动切回后删除本客户端记住的主密钥，再次进入须重新输入迁移密钥。以下新增边界均为设计，尚未实施。
+
 ## 1. 目标
 
 本设计建立两个产品共用的 Provider Platform，并解决以下问题：
@@ -195,6 +199,24 @@ GraphAgent 自己提供：
 - 面向其 UI 或控制面的应用服务。
 
 GraphAgent 不重新定义 provider、protocol、model capability、credential 或 usage 的基础类型；PolyQuota 也不决定 GraphAgent 的模型路由和执行策略。
+
+类型和协议复用不意味着数据共享。GraphAgent 无需读取 PolyQuota 的用量、通知或设置，也不通过共享凭据服务取得这些信息；自己的推理 usage/成本记录归自己的业务存储。两个产品的数据库保持独立。
+
+### 5.4 凭据后端与共享服务
+
+默认使用产品内置凭据服务，共享模式注册同一 Credential Broker 的客户端。共享身份通过 credentialId 与产品 localAccountId 绑定，产品业务数据库保持独立。broker 只保存不透明 payload，提供刷新互斥许可、修订提交与事件；token 刷新由取得许可的应用端 provider 执行，provider 不直接写共享库。
+
+记录外壳增加由 broker 认证身份填写的 createdByClientId、lastUpdatedByClientId，以及 `Record<string, string>` metadata。客户端用 `"true"`/`"false"` 字符串声明 supportsUsage 等用途能力，broker 提供权限范围内、不含 payload 的描述列表与字符串精确筛选，不接受嵌套元数据；PolyQuota 按用量能力及本地 provider 支持发现凭据，不按创建产品或是否 API Key 判断。元数据不包含用量结果，broker 不解释供应商语义；归属、原子更新、容量限制及筛选变更规则见凭据共享设计第 2.2 节。
+
+稳定规则见[凭据共享设计](./credential-sharing/design.md)，范围和验收见[两阶段实施方案](./credential-sharing/implementation-plan.md)：一阶段仅 PolyQuota 单向导出、GraphAgent 单向导入、统一建立共享及 PolyQuota 切回内置；GraphAgent 只做空白主页和设置页。双向导出/切换、重新导出和密钥更新属于二阶段。
+
+导出成功不等于服务接管，切换失败保留主密钥用于重试；主动切回则忘记本客户端主密钥，再次进入需要输入迁移密钥。版本准备与 currentVersion 发布、凭据更新权交接、客户端接线分别记录，不把跨库操作宣称为单个事务。
+
+共享服务面向任意获准的第三方客户端，独立安装、运行和升级；不依赖产品 apps、contract/UI、Electron 或 provider。中立存储协议独立于当前 core/polyquota-contract，供应商类型与刷新逻辑继续由应用复用，不需要移植进 broker。公开协议使用 clientId、实例授权与能力协商，不硬编码产品；刷新许可覆盖读取、外部调用与提交全过程，细节见凭据共享设计第 2 节。
+
+共享模式的 broker 是唯一凭据来源，应用不长期缓存 token，每次业务使用/刷新按服务当前修订读取。提交后立即通知订阅者自动读取最新内容，断线重连补取；短期请求快照与主密钥安全缓存不属于长期 token 副本。C1→C2→C3 的顺序由许可、fence 和 revision 保证，不由两个应用自己的进程内锁保证。
+
+任何客户端切回私有存储只解除自己的共享接入，不让 broker 释放共享更新权、不停用其他绑定。用户可以保存相同凭据的私有副本并自行刷新，供应商轮换导致的相互失效风险由用户承担，不强制重新授权。唯一写入者约束只覆盖共享副本；客户端私有副本不参与共享状态协调。
 
 ## 6. Core 服务商协议
 
@@ -545,6 +567,8 @@ interface ProviderAuthFlow {
 
 与完整形态的差异（该设计 §11 已列，2026-10-13 更新）：认证输入已改为 `offeringId + method`（协调器对目录交叉验证，secret-form 输入为可选 `apiKey`）；flow 已作为 account facet 并入 contribution（阶段 B 完成）。仍保留的差异：flow 内部直接调用各 provisioner 保存，尚未经 accountRepository 与 credentialService 统一收口——保存归属迁移留给后续独立实施。
 
+2026-11-01 补充：上述保存差异仍存在。认证会话、候选验证和 token 刷新保留在应用侧；共享模式先取得 broker 的记录级更新许可，再读取当前不透明信封、执行 provider 并提交。broker 只验证通用权限、许可、修订和字节格式，原子保存结果与回执。产品绑定通过本地事务恢复，不宣称与共享库跨库原子。
+
 ### 6.9 展示元数据的归属边界
 
 目录驱动改造后，UI `presentation.ts` 仍持有一批供应商事实。判定准则：**不依赖产品视觉决策、可由供应商目录推导的内容属于 descriptor；UI 只保留图标资产、内置枚举的文本映射与布局；本地化现阶段整体不做。** 逐项归属：
@@ -708,7 +732,7 @@ interface PolyQuotaSnapshot {
 
 快照投影过程从一个已提交的应用状态读取数据，`revision` 只在公开状态真正变化后递增。UI 收到变更通知后重新读取快照；事件本身只是失效提示，不携带零散业务状态。
 
-删除账号后，下一修订必须同时移除账号、用量和相关操作状态。后台刷新完成后，账号凭据状态与新用量在同一修订出现。
+删除账号后，下一修订必须同时移除账号、用量和相关操作状态。后台刷新完成后，账号凭据状态投影与新用量在同一产品快照修订出现。未来共享模式中，broker 的 credential revision 与产品快照 revision 分开；该要求只保证本地公开快照一致，不能保证两库原子提交。用量成功不得覆盖更新的共享凭据失效状态。
 
 ### 9.2 账号公开 DTO
 
@@ -852,7 +876,8 @@ createApp(App).provide(polyQuotaServiceKey, service).mount("#app");
 - OAuth refresh token 轮换继续遵守服务商自己的跨账号串行规则；
 - `finishAuth` 和 `cancelAuth` 对同一 session 至多一个成功；
 - 应用退出时先停止新调用，再取消认证会话和刷新，最后关闭存储与注册实现；
-- 共享凭据服务落地后，凭据写入还必须遵守[跨产品凭据共享与迁移](./credential-sharing.md)的单一写入者约束。
+- 共享凭据服务落地后，应用执行 token 刷新前须按[凭据共享设计](./credential-sharing/design.md)取得有界更新许可；broker 不执行供应商逻辑。短暂掉线不立即释放，可续期但有绝对占用上限，到期允许一个等待者接替；结果未知不构成永久锁。operationId 负责提交幂等，revision/fence/有效期拒绝旧提交。超时后供应商可能重复刷新的风险按可用性优先策略接受，应用有限重试或提示授权；私有副本独立刷新规则不变。
+- 应用已判断本次刷新失败时主动 abortUpdate，broker 原子记录 failed-released 并立即释放，凭据内容与修订不变；失败方重试需重新申请许可，或由其他等待客户端接替。网络错误无法证明上游未变化也不阻止释放；发送释放失败时才由租约到期兜底。迟到 abort 不能释放别人的新许可或覆盖已有成功回执。
 
 ## 12. 安全边界
 
@@ -867,6 +892,8 @@ createApp(App).provide(polyQuotaServiceKey, service).mount("#app");
 - GraphAgent 的完整提示词、工具参数和模型原始响应，除非产品明确以脱敏审计记录保存。
 
 ### 12.2 输入约束
+
+共享迁移向导允许一次性显示系统生成的迁移密钥，并由用户填入接受方后台；这是显式设计的迁移交互，不开放供应商 token 或存储主密钥读取。加密包只在后台解密，UI 取得脱敏预览；迁移密钥不进入普通查询、事件、缓存或日志，具体规则见[凭据共享设计](./credential-sharing/design.md)。
 
 - 所有标识使用长度和字符集受限的 schema；
 - `offeringId`、`authMethodId` 必须从注册表交叉验证；
@@ -1094,5 +1121,5 @@ Electron 测试只覆盖共享 schema、固定通道、订阅释放、CSP、prel
 - 不原样复制 OmniRoute 的完整 `chatCore`、代理宿主、数据库或 UI；
 - 不用一个万能 `Record<string, unknown>` 代替共同领域模型；
 - 不要求 GraphAgent 采用 PolyQuota 的 Vue、Electron 或 IPC 结构；
-- 不在本设计中决定共享凭据代理的进程和物理存储；
+- 不在本文重复定义共享凭据代理的进程和物理存储；统一遵循[凭据共享设计](./credential-sharing/design.md)，该设计的细化不代表运行实现已完成；
 - 不为了消除所有条件分支而隐藏真实服务商差异。

@@ -540,7 +540,7 @@ PromptSnapshot 与 callId 存入原始档案，保留实际输入、已选记忆
 
 ### 6.1 共享边界
 
-provider、账号、模型目录、协议 route、codec、推理执行和用量基础类型属于共享 Core，见[跨服务商服务协议设计](../common/core/cross-provider-service-protocol-design.md)与[凭据共享](../common/core/credential-sharing.md)。GraphAgent 只拥有 `ModelPolicy`、候选选择、`ModelLease`、预算、回退和亲和策略；不调用 PolyQuota 服务，不打开其数据库，也不重新定义 provider/协议基础类型。
+provider、账号、模型目录、协议 route、codec、推理执行和用量基础类型属于共享 Core，见[跨服务商服务协议设计](../common/core/cross-provider-service-protocol-design.md)与[凭据共享](../common/core/credential-sharing/design.md)。GraphAgent 只拥有 `ModelPolicy`、候选选择、`ModelLease`、预算、回退和亲和策略；不调用 PolyQuota 服务，不打开其数据库，也不重新定义 provider/协议基础类型。
 
 “已接入账号”不等于“有可执行 inference route”。UI 必须分别展示账号授权与可执行模型。
 

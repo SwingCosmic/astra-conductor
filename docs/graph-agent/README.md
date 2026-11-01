@@ -13,6 +13,7 @@ GraphAgent 是以执行图为中心的智能体协作产品。本目录按“从
 
 配套文档：
 
+- [凭据共享实施方案](../common/core/credential-sharing/implementation-plan.md)：当前最小启动范围，只做空白主页和设置页，承接 PolyQuota 单向导出的凭据；其余业务后续实施。
 - [功能模块设计总览](./design.md)：领域对象、模块边界、运行主路径与跨模块不变量。
 - [概念设计](./concept-design.md)：产品构想与范围；首页 2.5D 办公室只属于概念宣传，不进入排期。
 - [启动与验收计划](./plan.md)：阶段 1–4 的目标、步骤、交付与退出条件。
@@ -25,7 +26,7 @@ GraphAgent 是以执行图为中心的智能体协作产品。本目录按“从
 - GraphAgent 与 PolyQuota 共用 [Provider Platform 契约](../common/core/cross-provider-service-protocol-design.md)中的 provider、账号、API 协议、模型目录、推理和用量基础类型。模型与账号管理不在本目录重复设计。
 - GraphAgent 自己负责 `ModelPolicy`、模型选择、`ModelLease`、预算、回退、亲和与工具循环；不调用 `IPolyQuotaService`，也不让 PolyQuota 决定模型路由。
 - GraphAgent 不复用 `packages/polyquota-ui`，也不以 PolyQuota 的 Vue/Electron 结构作为默认方案。
-- `apps/graph-agent` 当前仅为说明性占位，不包含运行入口或构建脚本。
+- `apps/graph-agent` 当前仍为说明性占位。下一步按凭据共享一阶段建立最小可运行壳，只包含空白主页和设置页；不把下面的完整业务设计作为本阶段交付。
 - 两个产品共用的设计材料进入 `docs/common`；GraphAgent 独有的设计、计划和探索结果留在本目录。
 - `references/` 下仓库只用于研究，不成为运行依赖。
 

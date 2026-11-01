@@ -12,7 +12,7 @@
 - 窗口标题、HTML 标题、安装程序、快捷方式、托盘菜单、授权完成页面统一使用新名称；EXE 为 `PolyQuota.exe`，安装包建议为 `PolyQuota-${version}-setup.exe`。
 - 版本从实际构建版本生成。目前侧栏硬编码为 v0.1.0，而 Desktop package 已是 0.3.0，需要在实施时统一。
 
-工作区包名使用 `@astra-conductor/*`，PolyQuota 开发与测试环境变量使用 `POLYQUOTA_*`。Electron app name 和 `productName` 为 `PolyQuota`，appId 与 AppUserModelID 为 `io.astraconductor.polyquota`，`userData` 固定在系统 `appData/AstraConductor/PolyQuota`，数据库名为 `polyquota.db`。早期测试数据已在新身份下完成凭据解密与重加密，不再保留旧占位身份兼容代码。跨产品复用仍按[跨产品凭据共享与迁移](../common/core/credential-sharing.md)单独实施。
+工作区包名使用 `@astra-conductor/*`，PolyQuota 开发与测试环境变量使用 `POLYQUOTA_*`。Electron app name 和 `productName` 为 `PolyQuota`，appId 与 AppUserModelID 为 `io.astraconductor.polyquota`，`userData` 固定在系统 `appData/AstraConductor/PolyQuota`，数据库名为 `polyquota.db`。早期测试数据已在新身份下完成凭据解密与重加密，不再保留旧占位身份兼容代码。跨产品复用仍按[跨产品凭据共享与迁移](../common/core/credential-sharing/design.md)单独实施。
 
 ## 2. 图标构成
 

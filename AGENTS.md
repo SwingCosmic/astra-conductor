@@ -42,4 +42,4 @@ Keep commit subjects short; any language is acceptable. Prefer `feat:`, `fix:`, 
 
 ## Security & Vendor Boundaries
 
-Never log or expose tokens through UI or renderer IPC. PolyQuota currently owns its encrypted credentials in its private SQLite database; follow `docs/common/core/credential-sharing.md` when extracting them into the future shared credential service, and never make either product open the other's database. Do not import runtime code from any repository under `references/`; changes to the curated vendor subset must retain source traceability and update its baseline tests or documentation.
+Never log or expose tokens through UI or renderer IPC. PolyQuota currently owns its encrypted credentials in its private SQLite database; follow `docs/common/core/credential-sharing/design.md` when extracting them into the future shared credential service, and never make either product open the other's database. Do not import runtime code from any repository under `references/`; changes to the curated vendor subset must retain source traceability and update its baseline tests or documentation.

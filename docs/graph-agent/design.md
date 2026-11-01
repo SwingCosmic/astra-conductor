@@ -103,7 +103,7 @@ flowchart TD
 
 服务商、认证、账号、模型目录、API 协议、codec、推理执行和用量基础类型遵循[共享 Provider Platform](../common/core/cross-provider-service-protocol-design.md)。GraphAgent 拥有 ModelPolicy、ModelLease、预算、回退、亲和、工具循环和自己的应用服务；不调用 `IPolyQuotaService`，不复用 `packages/polyquota-ui`。
 
-凭据遵循[共享与迁移设计](../common/core/credential-sharing.md)。两个产品的任务和设置独立存储；GraphAgent 不打开 PolyQuota 私有数据库。共享凭据代理的物理实现仍须专项验证。
+凭据遵循[共享与迁移设计](../common/core/credential-sharing/design.md)。两个产品的任务和设置独立存储；GraphAgent 不打开 PolyQuota 私有数据库。共享凭据代理的物理实现仍须专项验证。
 
 ## 7. 技术决策边界
 
