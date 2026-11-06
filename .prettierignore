@@ -6,3 +6,4 @@ release
 coverage
 pnpm-lock.yaml
 apps/polyquota/renderer
+apps/graph-agent/renderer/app.js

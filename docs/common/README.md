@@ -16,13 +16,14 @@
 - [凭据共享两阶段实施方案](./core/credential-sharing/implementation-plan.md)
 - [Credential Broker A1/A2 实施详细设计](./core/credential-sharing/broker-a1-a2-detailed-design.md)
 - [A3—A5 本地安装与 PolyQuota 导出侧实施](./core/credential-sharing/a3-a5-export-implementation.md)
+- [A6—A8 GraphAgent 导入、统一共享与返回内置](./core/credential-sharing/a6-a8-sharing-implementation.md)
 - [内置 Web 服务模式拆分与重构](./core/service-mode/plan.md)
 - [内置 Web 服务模式实施结果](./core/service-mode/implementation-plan.md)
 - [Service mode 开发与分侧验证](./core/service-mode/development.md)
 - [Service mode 验收记录与用例矩阵](./core/service-mode/acceptance.md)
 - [2026-10 供应商档位漂移与包结构排查](./core/2026-10-drift-review/README.md)
 
-这些材料对应共享的 `packages/core`。`references/` 下的仓库仅作为参考和提取输入，不是运行时依赖。
+这些材料对应共享的 `packages/core`、`packages/credentials` 与 `packages/credential-host`。`references/` 下的仓库仅作为参考和提取输入，不是运行时依赖。
 
 ## 产品族图标
 

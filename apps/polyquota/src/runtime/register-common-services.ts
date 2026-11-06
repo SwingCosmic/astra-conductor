@@ -1,10 +1,12 @@
 import path from "node:path";
+import { BROKER_DISTRIBUTION } from "@astra-conductor/credentials";
 import { WindowsBrokerHost } from "../credential-sharing/broker-host.js";
 import { CredentialSharingService, sharingFrozenKey } from "../credential-sharing/service.js";
 import {
   AuthCoordinator,
   CoreServices,
   CredentialVault,
+  SwitchingCredentialService,
   CredentialMutationGate,
   ProviderRegistry,
   RefreshCoordinator,
@@ -66,11 +68,13 @@ export function registerCommonServices(registry: ServiceRegistry): void {
       CoreServices.vault,
       [CoreServices.storage, Services.cipher, Services.mutations],
       (services) =>
-        new CredentialVault(
-          services.get(CoreServices.storage),
-          services.get(Services.cipher),
-          undefined,
-          services.get(Services.mutations),
+        new SwitchingCredentialService(
+          new CredentialVault(
+            services.get(CoreServices.storage),
+            services.get(Services.cipher),
+            undefined,
+            services.get(Services.mutations),
+          ),
         ),
     )
     .register(
@@ -164,11 +168,12 @@ export function registerCommonServices(registry: ServiceRegistry): void {
           "AstraCredentialBroker",
           "downloads",
           "win-x64",
-          "0.1.0",
+          BROKER_DISTRIBUTION.version,
         );
         return new CredentialSharingService({
           storage: services.get(CoreServices.storage),
           credentials: services.get(CoreServices.vault),
+          switcher: services.get(CoreServices.vault) as SwitchingCredentialService,
           cipher: services.get(Services.cipher),
           mutations: services.get(Services.mutations),
           providers: services.get(Services.providers),
@@ -179,6 +184,7 @@ export function registerCommonServices(registry: ServiceRegistry): void {
           hasActiveAuth: () => auth.hasActiveSessions(),
         });
       },
+      (sharing) => sharing.stop(),
     )
     .register(
       Services.application,
@@ -191,9 +197,11 @@ export function registerCommonServices(registry: ServiceRegistry): void {
         Services.proxyStatus,
         Services.mutations,
         Services.events,
+        Services.sharing,
       ],
       (services) => {
         const events = services.get(Services.events);
+        const sharing = services.get(Services.sharing);
         return new PolyQuotaApplicationService(
           services.get(CoreServices.storage),
           services.get(CoreServices.vault),
@@ -202,6 +210,8 @@ export function registerCommonServices(registry: ServiceRegistry): void {
           {
             registry: services.get(Services.providers),
             mutations: services.get(Services.mutations),
+            isShared: () => sharing.isSharedSelected(),
+            visibleAccountIds: () => sharing.visibleAccountIds(),
             detectProxyStatus: services.get(Services.proxyStatus),
             publishChanged: (event) => events.publish({ type: "changed", data: event }),
           },

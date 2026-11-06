@@ -305,6 +305,25 @@ API 按业务对象和实际操作命名，不照搬狭义 RESTful 的资源增�
 
 桌面动作与通知回执路由沿用同一规则：以实际窗口、通知等对象和动作命名；缺少唯一对象标识时使用无路径参数的动作接口，将业务参数完整放入 body。可用性仍由注入服务决定，不在路由名中加入 Electron/Web 分支。
 
+2026-11-06 凭据专项接入后的路由补充如下，路径保持已发布客户端使用的动作名称。共享状态与安装状态分开，安装/导出/接管的业务前提由凭据共享服务校验；普通状态不返回凭据、主密钥或迁移密钥。
+
+| 能力 / 公开方法 | HTTP 与实际路由 | body |
+| --- | --- | --- |
+| 显示桌面窗口 | POST /v1/host/window/show | 无业务 body |
+| 通知回执 | POST /v1/notifications/:notificationId/acknowledge | `{ status }`：delivered / failed / denied |
+| 共享存储状态 | GET /v1/polyquota/credential-sharing/status | 无 body |
+| 选择导出目录 | POST /v1/polyquota/credential-sharing/selectDirectory | 无业务 body |
+| 安装本地组件 | POST /v1/polyquota/credential-sharing/install | 无业务 body |
+| 卸载组件 | POST /v1/polyquota/credential-sharing/uninstall | 无业务 body |
+| 首次导出 / 恢复交付 | POST /v1/polyquota/credential-sharing/export | `{ vaultDirectory }` |
+| 确认密钥交付 | POST /v1/polyquota/credential-sharing/acknowledgeDelivery | 无业务 body |
+| 接管前取消 | POST /v1/polyquota/credential-sharing/cancel | 无业务 body |
+| 统一启用共享 | POST /v1/polyquota/credential-sharing/enableShared | 无业务 body |
+| 返回内置存储 | POST /v1/polyquota/credential-sharing/returnToPrivate | 仅接受 `{ acceptIndependentRefreshRisk: true }` |
+| 恢复本次共享 | POST /v1/polyquota/credential-sharing/rejoinShared | 仅接受 `{ migrationKey }`；字符串格式为 `acm1_` 加 43 位 base64url，实际解密校验由服务完成 |
+
+上述操作拒绝额外字段；未确认独立刷新风险、错误类型或格式的迁移密钥在调用业务服务前返回 `400/validation`。迁移密钥仅经本次请求传递，响应使用 `Cache-Control: no-store`，错误响应不回显输入。
+
 认证会话详情仅返回面向当前 UI 的交互与结果状态，不返回供应商访问令牌、刷新令牌、PKCE verifier 或凭据后端数据。认证开始、详情和事件中引用同一 sessionId；会话所有权与结束后可查询期限由共同认证契约定义。
 
 ### 8.3 操作参数与校验

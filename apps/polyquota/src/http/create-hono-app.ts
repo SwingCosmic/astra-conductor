@@ -160,11 +160,26 @@ export function createHonoApp(runtime: PolyQuotaRuntime): Hono {
     "uninstall",
     "acknowledgeDelivery",
     "cancel",
+    "enableShared",
   ] as const)
     route("POST", `/v1/polyquota/credential-sharing/${action}`, async (c) => {
       await empty(c);
       return runtime.credentialSharing[action]();
     });
+  route("POST", "/v1/polyquota/credential-sharing/returnToPrivate", async (c) => {
+    const request = await body(c, ["acceptIndependentRefreshRisk"]);
+    if (request.acceptIndependentRefreshRisk !== true) invalid();
+    return runtime.credentialSharing.returnToPrivate(true);
+  });
+  route("POST", "/v1/polyquota/credential-sharing/rejoinShared", async (c) => {
+    const request = await body(c, ["migrationKey"]);
+    if (
+      typeof request.migrationKey !== "string" ||
+      !/^acm1_[A-Za-z0-9_-]{43}$/.test(request.migrationKey)
+    )
+      invalid();
+    return runtime.credentialSharing.rejoinShared(request.migrationKey);
+  });
   route("POST", "/v1/notifications/:notificationId/acknowledge", async (c) => {
     const id = parseSessionId(c.req.param("notificationId"));
     const { status } = await body(c, ["status"]);

@@ -9,6 +9,7 @@ const confirmingExport = ref(false);
 const status = ref<CredentialSharingStatus | null>(null);
 const directory = ref("");
 const migrationKey = ref("");
+const reentryKey = ref("");
 const busy = ref(false);
 const message = ref("");
 const packageLabels = {
@@ -21,7 +22,7 @@ const installedLabels = {
   "not-installed": "未安装",
   installed: "已安装",
   damaged: "安装损坏",
-  incompatible: "版本或平台不兼容",
+  incompatible: "不兼容",
   unknown: "无法确认",
 };
 const exportLabels = {
@@ -107,6 +108,7 @@ function uninstall(): void {
   });
 }
 function exportCredentials(): void {
+  if (!compatibleComponent()) return;
   confirmingExport.value = false;
   migrationKey.value = "";
   void perform(async () => {
@@ -134,6 +136,42 @@ function cancel(): void {
     migrationKey.value = "";
   });
 }
+function enableShared(): void {
+  if (!compatibleComponent()) return;
+  void perform(async () => {
+    unwrap(await service!.enableShared());
+    message.value = "已启用共享存储";
+  });
+}
+function returnToPrivate(): void {
+  if (
+    !window.confirm(
+      "返回内置后，本应用与共享侧将独立刷新同一供应商凭据。令牌轮换可能使另一侧失效，需要重新授权。将保存可用私有副本并清除本应用记住的共享主密钥，其他客户端继续运行。是否继续？",
+    )
+  )
+    return;
+  void perform(async () => {
+    unwrap(await service!.returnToPrivate(true));
+    message.value = "已返回内置存储，凭据可独立刷新。恢复共享时需重新输入迁移密钥。";
+  });
+}
+function rejoinShared(): void {
+  if (!compatibleComponent()) return;
+  const key = reentryKey.value;
+  reentryKey.value = "";
+  void perform(async () => {
+    unwrap(await service!.rejoinShared(key));
+    message.value = "已恢复本次共享，使用共享侧当前凭据";
+  });
+}
+function compatibleComponent(): boolean {
+  if (status.value?.installState === "installed") return true;
+  const requirement = status.value
+    ? `API ${status.value.requiredApiLevel} 及以上`
+    : "当前应用所需的 API";
+  message.value = `请先安装支持${requirement}的兼容组件，再导出、启用或恢复共享。`;
+  return false;
+}
 onMounted(() => {
   void perform(async () => {
     await load();
@@ -141,6 +179,7 @@ onMounted(() => {
 });
 onUnmounted(() => {
   migrationKey.value = "";
+  reentryKey.value = "";
 });
 </script>
 
@@ -160,6 +199,11 @@ onUnmounted(() => {
     <template v-if="status">
       <section class="settings-card" aria-label="凭据服务组件">
         <h2>凭据服务组件</h2>
+        <p v-if="status.installState === 'incompatible'" class="setting-hint" role="status">
+          当前凭据共享服务不满足应用的通信或接口要求，请先安装支持 API
+          {{ status.requiredApiLevel }}
+          及以上的兼容组件，再导出、启用或恢复共享。返回内置存储仍可使用已有私有副本。
+        </p>
         <div class="setting-row">
           <span
             ><strong>下载状态</strong
@@ -180,13 +224,26 @@ onUnmounted(() => {
         <p v-if="status.installationDirectory" class="path-value">
           {{ status.installationDirectory }}
         </p>
+        <div class="setting-row">
+          <span
+            ><strong>API 能力</strong
+            ><small>当前组件 API {{ status.installedApiLevel ?? "未声明" }}</small></span
+          >
+          <span>所需 API {{ status.requiredApiLevel }}</span>
+        </div>
         <div class="sharing-actions">
           <button
             class="outline-action"
             :disabled="busy || status.localPackageState !== 'ready'"
             @click="install"
           >
-            {{ status.installState === "installed" ? "从本地包重新安装" : "安装本地包" }}
+            {{
+              status.installState === "installed"
+                ? "从本地包重新安装"
+                : status.installState === "incompatible"
+                  ? "安装兼容本地包"
+                  : "安装本地包"
+            }}
           </button>
           <button
             v-if="status.installState === 'installed'"
@@ -219,18 +276,37 @@ onUnmounted(() => {
           <span
             ><strong>当前凭据存储</strong
             ><small>{{
-              status.frozen ? "凭据更新已暂停，本地历史仍可查看" : "由本应用独立维护凭据"
+              status.frozen
+                ? "凭据更新已暂停，本地历史仍可查看"
+                : status.activeBackend === "shared"
+                  ? "按需读取共享凭据，刷新由服务协调许可"
+                  : "由本应用独立维护凭据"
             }}</small></span
-          ><span>内置存储</span>
+          ><span>{{
+            status.activeBackend === "shared"
+              ? "共享存储"
+              : status.activeBackend === "unavailable"
+                ? "共享存储暂不可用"
+                : "内置存储"
+          }}</span>
         </div>
         <div v-if="status.exportState !== 'cancelled'" class="setting-row">
           <span
             ><strong>共享凭据更新权</strong
-            ><small>导出后由来源应用保留，接收方导入后再统一交接</small></span
+            ><small>{{
+              status.sharingState === "private" || status.sharingState === "returning"
+                ? "共享库由服务协调；本应用独立更新私有副本"
+                : status.sharingState === "active"
+                  ? "共享服务协调已连接客户端的凭据更新"
+                  : "导出后由来源应用保留，接收方导入后再统一交接"
+            }}</small></span
           ><span>{{ ownershipLabels[status.brokerOwnership] ?? "无法确认" }}</span>
         </div>
-        <p v-if="status.exportState !== 'cancelled'" class="setting-hint">
-          先导出并保存迁移密钥，再由接收方导入。当前版本暂不支持启用共享存储。
+        <p
+          v-if="status.exportState !== 'cancelled' && status.sharingState === 'none'"
+          class="setting-hint"
+        >
+          先导出并保存迁移密钥，再由接收方导入。接收方准备好后，点击启用共享统一交接更新权。
         </p>
         <div class="sharing-directory">
           <strong>{{ status.exportState === "cancelled" ? "原导出目录" : "导出目录" }}</strong>
@@ -255,7 +331,15 @@ onUnmounted(() => {
         </p>
         <div class="setting-row">
           <span
-            ><strong>{{ exportLabels[status.exportState] }}</strong
+            ><strong>{{
+              status.sharingState === "active"
+                ? "已建立共享"
+                : status.sharingState === "handoff-pending"
+                  ? "共享交接结果待确认"
+                  : status.sharingState === "private" || status.sharingState === "returning"
+                    ? "已返回内置存储"
+                    : exportLabels[status.exportState]
+            }}</strong
             ><small>主密钥{{ status.rememberedKey ? "已安全记住" : "尚未记住" }}</small></span
           ><span v-if="status.recordCount">{{ status.recordCount }} 条凭据</span>
         </div>
@@ -284,7 +368,11 @@ onUnmounted(() => {
           </p>
           <p>导出成功后需保存迁移密钥，并在接收方完成导入。</p>
           <div class="sharing-actions">
-            <button class="primary-action" :disabled="busy" @click="exportCredentials">
+            <button
+              class="primary-action"
+              :disabled="busy || status.installState !== 'installed'"
+              @click="exportCredentials"
+            >
               确认导出</button
             ><button class="outline-action" :disabled="busy" @click="confirmingExport = false">
               暂不导出
@@ -306,7 +394,11 @@ onUnmounted(() => {
           </button>
         </div>
         <p
-          v-else-if="status.exportState === 'exported' && status.deliveryAcknowledged"
+          v-else-if="
+            status.exportState === 'exported' &&
+            status.deliveryAcknowledged &&
+            status.sharingState === 'none'
+          "
           class="setting-hint"
         >
           迁移密钥已确认交付。等待接收方导入与后续统一启用共享。
@@ -314,7 +406,68 @@ onUnmounted(() => {
         <p v-if="status.exportState === 'cancelled'" class="setting-hint">
           已恢复使用内置存储独立更新凭据。原导出文件保留，不再用于本次共享切换。
         </p>
-        <button v-if="status.frozen" class="outline-action" :disabled="busy" @click="cancel">
+        <div
+          v-if="status.exportState === 'exported' && status.deliveryAcknowledged"
+          class="sharing-actions"
+        >
+          <button
+            v-if="
+              status.sharingState === 'none' ||
+              status.sharingState === 'handoff-pending' ||
+              status.activeBackend === 'unavailable'
+            "
+            class="primary-action"
+            :disabled="busy || status.installState !== 'installed'"
+            @click="enableShared"
+          >
+            {{ status.selectedBackend === "shared" ? "重试共享连接" : "启用共享" }}
+          </button>
+          <button
+            v-if="status.selectedBackend === 'shared' || status.sharingState === 'returning'"
+            class="outline-action"
+            :disabled="busy"
+            @click="returnToPrivate"
+          >
+            {{ status.sharingState === "returning" ? "重试本地清理" : "返回内置存储" }}
+          </button>
+        </div>
+        <p v-if="status.snapshotAt" class="setting-hint">
+          私有副本保存时间：{{
+            new Date(status.snapshotAt).toLocaleString()
+          }}。服务不可达时可使用此副本，可能落后于共享侧。
+        </p>
+        <p v-if="status.keyCleanupPending || status.sessionCleanupPending" class="setting-hint">
+          已切换本地后端，部分解绑或密钥清理待重试；其他共享客户端不受影响。
+        </p>
+        <form
+          v-if="status.sharingState === 'private' || status.sharingState === 'returning'"
+          class="key-delivery"
+          @submit.prevent="rejoinShared"
+        >
+          <label
+            >恢复本次共享<input
+              v-model="reentryKey"
+              type="password"
+              :disabled="busy || status.installState !== 'installed'"
+              autocomplete="off"
+              spellcheck="false"
+              aria-label="重新输入迁移密钥"
+              placeholder="重新输入迁移密钥"
+          /></label>
+          <p class="setting-hint">恢复后读取共享侧当前凭据，内置副本的更新不会覆盖共享数据。</p>
+          <button
+            class="primary-action"
+            :disabled="busy || !reentryKey || status.installState !== 'installed'"
+          >
+            验证并恢复共享
+          </button>
+        </form>
+        <button
+          v-if="status.frozen && status.selectedBackend === 'private'"
+          class="outline-action"
+          :disabled="busy"
+          @click="cancel"
+        >
           取消共享切换
         </button>
         <p v-if="status.lastError" class="setting-hint">最近错误：{{ status.lastError }}</p>
@@ -346,6 +499,7 @@ code.path-value {
   font-weight: 600;
 }
 .sharing-directory input,
+.key-delivery input,
 .key-delivery textarea {
   padding: 10px 12px;
   border: 1px solid #cbd5e1;
@@ -392,6 +546,7 @@ code.path-value {
   display: grid;
   gap: 8px;
 }
+.key-delivery input,
 .key-delivery textarea {
   width: 100%;
   box-sizing: border-box;

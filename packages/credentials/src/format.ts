@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { ApiDecimal, asApiDecimal } from "./api-level.js";
 
 export class BrokerError extends Error {
   constructor(readonly code: string) {
@@ -60,6 +61,30 @@ export function hash(value: unknown): string {
 }
 /** Bounded JSON decoder: reject duplicate keys before authenticated data is interpreted. */
 export function parseJson(bytes: Uint8Array): unknown {
+  return parseJsonValue(bytes, false);
+}
+/** Only the top-level API field is decimal; all other numbers retain the strict integer domain. */
+export function parseCompatibilityJson(bytes: Uint8Array): unknown {
+  return parseJsonValue(bytes, true);
+}
+/** The two authentication API slots are unquoted normalized numeric tokens. */
+export function canonicalApiArray(
+  values: readonly unknown[],
+  apiIndices: readonly number[],
+): string {
+  return `[${values.map((value, index) => (apiIndices.includes(index) ? asApiDecimal(value).toString() : canonical(value))).join(",")}]`;
+}
+/** Used only for the Hello contract, keeping its API field numeric without binary-float conversion. */
+export function canonicalCompatibilityJson(value: Record<string, unknown>): string {
+  return `{${Object.keys(value)
+    .sort()
+    .map(
+      (key) =>
+        `${canonical(key)}:${key === "apiRevision" ? asApiDecimal(value[key]).toString() : canonical(value[key])}`,
+    )
+    .join(",")}}`;
+}
+function parseJsonValue(bytes: Uint8Array, compatibility: boolean): unknown {
   requireValue(bytes.length <= 2 * 1024 * 1024, "message-too-large");
   const source = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   let position = 0;
@@ -75,7 +100,7 @@ export function parseJson(bytes: Uint8Array): unknown {
     }
     throw new BrokerError("invalid-json");
   };
-  const read = (depth: number): unknown => {
+  const read = (depth: number, apiLevel = false): unknown => {
     requireValue(depth <= 32, "message-too-deep");
     whitespace();
     const char = source[position];
@@ -96,7 +121,7 @@ export function parseJson(bytes: Uint8Array): unknown {
             keys.add(key);
             whitespace();
             requireValue(source[position++] === ":", "invalid-json");
-            result[key] = read(depth + 1);
+            result[key] = read(depth + 1, compatibility && depth === 0 && key === "apiRevision");
           } else list.push(read(depth + 1));
           whitespace();
           if (source[position] !== ",") break;
@@ -111,6 +136,13 @@ export function parseJson(bytes: Uint8Array): unknown {
     );
     requireValue(match, "invalid-json");
     position += match[0].length;
+    if (apiLevel) {
+      try {
+        return ApiDecimal.parse(match[0]);
+      } catch {
+        throw new BrokerError("invalid-api-level");
+      }
+    }
     const result: unknown = JSON.parse(match[0]);
     if (typeof result === "number")
       requireValue(Number.isSafeInteger(result), "noncanonical-number");

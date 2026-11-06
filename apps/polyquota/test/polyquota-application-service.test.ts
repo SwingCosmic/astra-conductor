@@ -82,7 +82,12 @@ function testRegistry(redeemResetCredit?: Mock): ProviderRegistry {
   return new ProviderRegistry(contributions);
 }
 
-function createService(savedAccount: Account = account, redeemResetCredit?: Mock) {
+function createService(
+  savedAccount: Account = account,
+  redeemResetCredit?: Mock,
+  shared = false,
+  visibleAccountIds?: ReadonlySet<string>,
+) {
   const storage = new MemoryStorage();
   storage.accounts.save(savedAccount);
   storage.snapshots.save(refreshOutcome.snapshot);
@@ -113,7 +118,7 @@ function createService(savedAccount: Account = account, redeemResetCredit?: Mock
     refreshAll: vi.fn().mockResolvedValue([refreshOutcome]),
     refreshCredentials: vi.fn(),
   } as unknown as PollingService;
-  const auth = { cancel: vi.fn() } as unknown as AuthCoordinator;
+  const auth = { cancel: vi.fn(), start: vi.fn(), finish: vi.fn() } as unknown as AuthCoordinator;
   const detectProxyStatus = vi.fn().mockResolvedValue({ proxyMode: "system", proxyAddress: null });
   const service = new PolyQuotaApplicationService(
     storage,
@@ -123,6 +128,8 @@ function createService(savedAccount: Account = account, redeemResetCredit?: Mock
     {
       publishChanged: (event) => events.push(event),
       registry: testRegistry(redeemResetCredit),
+      isShared: () => shared,
+      visibleAccountIds: () => visibleAccountIds ?? null,
       detectProxyStatus,
       now: () => new Date("2026-09-27T00:02:00.000Z"),
     },
@@ -135,7 +142,16 @@ function createService(savedAccount: Account = account, redeemResetCredit?: Mock
   );
   service.attachScheduler(scheduler);
   scheduler.start(service.getSettings());
-  return { service, storage, polling, scheduler, events, redeemResetCredit, detectProxyStatus };
+  return {
+    service,
+    storage,
+    polling,
+    scheduler,
+    events,
+    redeemResetCredit,
+    detectProxyStatus,
+    auth,
+  };
 }
 
 function remainingFromVisibleUsage(snapshot: PolyQuotaSnapshot) {
@@ -150,6 +166,36 @@ function remainingFromVisibleUsage(snapshot: PolyQuotaSnapshot) {
 }
 
 describe("PolyQuotaApplicationService", () => {
+  it("rejects authorization and deletion in shared mode before executing providers or changing local records", async () => {
+    const { service, storage, auth } = createService(account, undefined, true);
+    await expect(service.startAuth({ offeringId: "codex", method: "cli-import" })).rejects.toThrow(
+      "共享模式",
+    );
+    await expect(service.finishAuth("session")).rejects.toThrow("共享模式");
+    expect(() => service.deleteAccount(account.id)).toThrow("共享模式");
+    expect(auth.start).not.toHaveBeenCalled();
+    expect(auth.finish).not.toHaveBeenCalled();
+    expect(storage.accounts.get(account.id)).toEqual(account);
+    expect(storage.credentials.get(account.id)).not.toBeNull();
+  });
+
+  it("limits shared snapshots and scheduled refreshes to records selected by the shared backend", async () => {
+    const { service, storage, polling } = createService(
+      account,
+      undefined,
+      true,
+      new Set([account.id]),
+    );
+    storage.accounts.save({ ...account, id: "private-account", stableIdentity: "private-only" });
+    const snapshot = await service.getSnapshot();
+    expect(snapshot.accounts.map((item) => item.id)).toEqual([account.id]);
+    await service.executeRefreshBatch("manual");
+    expect(polling.refreshAll).not.toHaveBeenCalled();
+    expect(polling.refresh).toHaveBeenCalledOnce();
+    expect(polling.refresh).toHaveBeenCalledWith(account.id);
+    expect(storage.accounts.get("private-account")).not.toBeNull();
+  });
+
   it("returns one revisioned snapshot with matching account and usage keys", async () => {
     const { service } = createService();
     const snapshot = await service.getSnapshot();

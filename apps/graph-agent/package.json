@@ -1,0 +1,30 @@
+{
+  "name": "@astra-conductor/graph-agent",
+  "version": "0.1.1",
+  "private": true,
+  "description": "GraphAgent desktop application",
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "icons:generate": "node scripts/run-icon-generator.mjs",
+    "build": "tsc -p tsconfig.build.json && node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:desktop": "node scripts/run-desktop-smoke.mjs",
+    "dev": "pnpm build && node scripts/run.mjs",
+    "package": "electron-builder --win nsis --x64 --config electron-builder.json"
+  },
+  "dependencies": {
+    "@astra-conductor/core": "workspace:*",
+    "@astra-conductor/credentials": "workspace:*",
+    "@astra-conductor/credential-host": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "electron": "catalog:",
+    "electron-builder": "catalog:",
+    "esbuild": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

@@ -2,7 +2,7 @@
 
 | 项目         | 内容                                                         |
 | ------------ | ------------------------------------------------------------ |
-| 状态         | 启动阶段设计草案；本轮只细化设计，不建立运行工程             |
+| 状态         | 业务启动设计草案；凭据共享最小壳已单独实现，见[最小宿主](./minimal-host.md) |
 | 输入         | [概念设计](./concept-design.md)、[参考源码映射](./reference-code-map.md) |
 | 首个验收目标 | 用户提交目标后，多个员工可动态协作，执行图可观察、可干预、可恢复，预算与信息边界受控 |
 
@@ -111,7 +111,7 @@ flowchart TD
 
 建议先在现有 TypeScript/Node 工具链上验证独立、无 UI 的本机运行内核，提供 fake 端口和可取消 Activity。采用 Actor 的身份、顺序邮箱和持久恢复语义，不以 Kubernetes、Orleans 或分布式 Worker 为首版前提。
 
-记忆模块已确定默认 Markdown 文件/真实目录后端，以及独立 SQLite 原始消息档案与派生索引。其余 UI 框架、桌面宿主、图布局库、Task Ledger 存储与共享凭据代理传输在实施前做专项选择。本设计不提前创建包名或目录占位。
+记忆模块已确定默认 Markdown 文件/真实目录后端，以及独立 SQLite 原始消息档案与派生索引。凭据共享最小壳已选择独立 Electron 宿主和 Windows 命名管道，见[最小宿主](./minimal-host.md)；完整业务的 UI 框架、图布局库与 Task Ledger 存储仍在实施前做专项选择。
 
 工具专项默认选择原生结构化调用、按平台解析的 ripgrep、直接 argv 与 Windows pwsh 7/UTF-8，以及实时搜索/排除、正则替换和版本化提交。网页研究提供 search/extract/crawl，首版优先适配 Tavily 且不实现本地浏览器渲染；browser use 采用按需安装的 Chrome DevTools MCP；桌面能力另做扩展样本。细分设计统一进入 [tools 目录](./tools/README.md)。
 

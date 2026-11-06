@@ -27,3 +27,4 @@ export * from "./public-api.js";
 export * from "./composite-remaining.js";
 export * from "./credential-service.js";
 export * from "./credential-mutation-gate.js";
+export * from "./shared-credential-service.js";

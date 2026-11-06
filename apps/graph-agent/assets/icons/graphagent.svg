@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 64 64" role="img" aria-label="GraphAgent: centered open regular tetrahedron projection with an unfinished dispatch edge">
+  <title>GraphAgent: centered open tetrahedron projection and unfinished dispatch edge</title>
+  <g fill="none" stroke="#6423D9" stroke-width="1.6" stroke-linecap="round">
+    <path d="M43.64 52.48 10.65 37.42 34.97 8.6 53.34 29.5 48.49 40.99"/>
+  </g>
+  <g fill="#6423D9">
+    <circle cx="34.97" cy="8.6" r="5.2"/>
+    <circle cx="53.34" cy="29.5" r="5.2"/>
+    <circle cx="43.64" cy="52.48" r="5.2"/>
+    <circle cx="10.65" cy="37.42" r="5.2"/>
+    <path d="M35.65 24.5C36.3 28.8 38.85 31.35 43.15 32C38.85 32.65 36.3 35.2 35.65 39.5C35 35.2 32.45 32.65 28.15 32C32.45 31.35 35 28.8 35.65 24.5Z"/>
+  </g>
+</svg>

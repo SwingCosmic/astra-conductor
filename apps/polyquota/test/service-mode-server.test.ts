@@ -63,6 +63,9 @@ describe("service mode backend", () => {
         "POST /v1/polyquota/credential-sharing/uninstall",
         "POST /v1/polyquota/credential-sharing/acknowledgeDelivery",
         "POST /v1/polyquota/credential-sharing/cancel",
+        "POST /v1/polyquota/credential-sharing/enableShared",
+        "POST /v1/polyquota/credential-sharing/returnToPrivate",
+        "POST /v1/polyquota/credential-sharing/rejoinShared",
         "POST /v1/notifications/:notificationId/acknowledge",
       ].sort(),
     );
@@ -92,6 +95,57 @@ describe("service mode backend", () => {
       expect(response.status).toBe(200);
       expect(redeem).toHaveBeenLastCalledWith("account-1", redemption);
     }
+  });
+
+  it("validates sharing risk confirmation and migration-key bodies before invoking the sharing service", async () => {
+    const instance = await server();
+    const sharing = instance.runtime.credentialSharing;
+    const enable = vi.spyOn(sharing, "enableShared").mockResolvedValue();
+    const returnToPrivate = vi.spyOn(sharing, "returnToPrivate").mockResolvedValue();
+    const rejoin = vi.spyOn(sharing, "rejoinShared").mockResolvedValue();
+    const migrationKey = `acm1_${Buffer.alloc(32, 7).toString("base64url")}`;
+    const invalidBodies = [
+      ["enableShared", { unexpected: true }],
+      ["returnToPrivate", {}],
+      ["returnToPrivate", { acceptIndependentRefreshRisk: false }],
+      ["returnToPrivate", { acceptIndependentRefreshRisk: "true" }],
+      ["returnToPrivate", { acceptIndependentRefreshRisk: true, unexpected: true }],
+      ["rejoinShared", {}],
+      ["rejoinShared", { migrationKey: false }],
+      ["rejoinShared", { migrationKey: "wrong-key" }],
+      ["rejoinShared", { migrationKey, masterKey: "must-not-be-accepted" }],
+    ] as const;
+    for (const [action, body] of invalidBodies) {
+      const response = await fetch(`${instance.url}/v1/polyquota/credential-sharing/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      expect(response.status).toBe(400);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      const result = await response.text();
+      expect(JSON.parse(result)).toMatchObject({ ok: false, error: { code: "validation" } });
+      expect(result).not.toContain(migrationKey);
+    }
+    expect(enable).not.toHaveBeenCalled();
+    expect(returnToPrivate).not.toHaveBeenCalled();
+    expect(rejoin).not.toHaveBeenCalled();
+    for (const [action, body] of [
+      ["enableShared", {}],
+      ["returnToPrivate", { acceptIndependentRefreshRisk: true }],
+      ["rejoinShared", { migrationKey }],
+    ] as const) {
+      const response = await fetch(`${instance.url}/v1/polyquota/credential-sharing/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ ok: true, value: null });
+    }
+    expect(enable).toHaveBeenCalledOnce();
+    expect(returnToPrivate).toHaveBeenCalledWith(true);
+    expect(rejoin).toHaveBeenCalledWith(migrationKey);
   });
 
   it("rejects new work while stopping and drains accepted work before releasing SQLite and its owner", async () => {

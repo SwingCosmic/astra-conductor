@@ -1,6 +1,19 @@
 import { createConnection, type Socket } from "node:net";
 import { createHmac, createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { BrokerError, canonical, id, object, parseJson, requireValue, unb64 } from "./format.js";
+import {
+  BrokerError,
+  canonical,
+  canonicalApiArray,
+  canonicalCompatibilityJson,
+  id,
+  object,
+  parseCompatibilityJson,
+  parseJson,
+  requireValue,
+  unb64,
+} from "./format.js";
+import { ApiDecimal } from "./api-level.js";
+import { assertBrokerRuntimeCompatibility, BROKER_COMPATIBILITY } from "./compatibility.js";
 
 export interface BrokerIdentity {
   vaultId: string;
@@ -16,6 +29,7 @@ class Frames {
     resolve(value: unknown): void;
     reject(error: Error): void;
     timer: ReturnType<typeof setTimeout>;
+    compatibility: boolean;
   };
   constructor(private readonly socket: Socket) {
     socket.on("data", (chunk: Buffer) => {
@@ -52,13 +66,18 @@ class Frames {
     const bytes = this.buffer.subarray(4, length + 4);
     this.buffer = this.buffer.subarray(length + 4);
     try {
-      pending.resolve(parseJson(bytes));
-    } catch {
-      pending.reject(new BrokerError("invalid-broker-data"));
+      pending.resolve(pending.compatibility ? parseCompatibilityJson(bytes) : parseJson(bytes));
+    } catch (error) {
+      pending.reject(
+        error instanceof BrokerError &&
+          ["noncanonical-number", "invalid-api-level"].includes(error.code)
+          ? error
+          : new BrokerError("invalid-broker-data"),
+      );
       this.fail();
     }
   }
-  read(timeout: number): Promise<unknown> {
+  read(timeout: number, compatibility = false): Promise<unknown> {
     if (this.failed) return Promise.reject(new BrokerError("broker-disconnected"));
     requireValue(!this.waiting, "concurrent-read");
     return new Promise((resolve, reject) => {
@@ -66,12 +85,15 @@ class Frames {
         resolve,
         reject,
         timer: setTimeout(() => this.fail("broker-request-timeout"), timeout),
+        compatibility,
       };
       this.deliver();
     });
   }
-  write(value: unknown): void {
-    const bytes = Buffer.from(canonical(value));
+  write(value: unknown, compatibility = false): void {
+    const bytes = Buffer.from(
+      compatibility ? canonicalCompatibilityJson(object(value)) : canonical(value),
+    );
     requireValue(bytes.length <= 2 * 1024 * 1024, "message-too-large");
     const size = Buffer.alloc(4);
     size.writeInt32LE(bytes.length);
@@ -98,8 +120,12 @@ export class BrokerClient {
     const frames = new Frames(socket);
     let stage = "greeting";
     try {
-      const greeting = object(await frames.read(5_000), [
+      const greeting = object(await frames.read(5_000, true));
+      assertBrokerRuntimeCompatibility(greeting);
+      object(greeting, [
         "protocolVersion",
+        "apiRevision",
+        "componentVersion",
         "vaultId",
         "generation",
         "nonce",
@@ -111,6 +137,7 @@ export class BrokerClient {
       id(greeting.generation);
       unb64(greeting.nonce, 32);
       const nonce = randomBytes(32).toString("base64url");
+      const requiredApi = ApiDecimal.parse(BROKER_COMPATIBILITY.requiredApiLevel);
       const token = unb64(identity.accessToken, 32);
       const verifier = createHash("sha256").update(token).digest();
       token.fill(0);
@@ -118,28 +145,38 @@ export class BrokerClient {
         const proof = (role: string) =>
           createHmac("sha256", verifier)
             .update(
-              canonical([
-                "astra.pipe-auth.v1",
-                role,
-                1,
-                identity.vaultId,
-                greeting.generation,
-                greeting.nonce,
-                identity.clientId,
-                identity.instanceId,
-                nonce,
-                false,
-              ]),
+              canonicalApiArray(
+                [
+                  "astra.pipe-auth.v1",
+                  role,
+                  greeting.protocolVersion,
+                  greeting.apiRevision,
+                  greeting.componentVersion,
+                  identity.vaultId,
+                  greeting.generation,
+                  greeting.nonce,
+                  requiredApi,
+                  identity.clientId,
+                  identity.instanceId,
+                  nonce,
+                  false,
+                ],
+                [3, 8],
+              ),
             )
             .digest();
-        frames.write({
-          protocolVersion: 1,
-          clientId: identity.clientId,
-          instanceId: identity.instanceId,
-          clientNonce: nonce,
-          proof: proof("client").toString("base64url"),
-          management: false,
-        });
+        frames.write(
+          {
+            protocolVersion: 1,
+            apiRevision: requiredApi,
+            clientId: identity.clientId,
+            instanceId: identity.instanceId,
+            clientNonce: nonce,
+            proof: proof("client").toString("base64url"),
+            management: false,
+          },
+          true,
+        );
         stage = "welcome";
         const welcome = object(await frames.read(5_000), ["proof"]);
         requireValue(
@@ -152,6 +189,10 @@ export class BrokerClient {
       return new BrokerClient(socket, frames);
     } catch (error) {
       socket.destroy();
+      if (stage === "greeting" && error instanceof BrokerError) {
+        if (error.code === "invalid-api-level") throw new BrokerError("api-incompatible");
+        if (error.code === "noncanonical-number") throw new BrokerError("protocol-incompatible");
+      }
       if (error instanceof BrokerError && error.code === "broker-disconnected")
         throw new BrokerError(`broker-handshake-${stage}-disconnected`);
       throw error;

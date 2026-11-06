@@ -13,6 +13,9 @@ files:
 extraResources:
   - from: lib/better-sqlite3
     to: lib/better-sqlite3
+    filter:
+      - better_sqlite3.node
+      - manifest.json
   - from: assets/icons
     to: icons
 win:

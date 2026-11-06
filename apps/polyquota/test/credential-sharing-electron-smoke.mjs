@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import { CredentialVault, CredentialMutationGate } from "@astra-conductor/core/internal";
+import { BROKER_DISTRIBUTION } from "@astra-conductor/credentials";
 import { SqliteStorage } from "../dist/sqlite-storage.js";
 import { ElectronSafeStorageCipher } from "../dist/safe-storage-cipher.js";
 import { WindowsBrokerHost, runPrivate } from "../dist/credential-sharing/broker-host.js";
@@ -37,7 +38,12 @@ app
     let host;
     try {
       const home = path.join(root, "service-home");
-      const localPackageDirectory = path.join(root, "downloads", "win-x64", "0.1.0");
+      const localPackageDirectory = path.join(
+        root,
+        "downloads",
+        "win-x64",
+        BROKER_DISTRIBUTION.version,
+      );
       const vaultDirectory = path.join(root, "shared-vault");
       const cacheDirectory = path.join(root, "product", "credential-sharing");
       host = new WindowsBrokerHost(home, localPackageDirectory, cacheDirectory);

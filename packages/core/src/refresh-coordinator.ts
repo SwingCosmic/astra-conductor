@@ -5,7 +5,7 @@ import type {
   NotificationCandidate,
   UsageSnapshot,
 } from "./models.js";
-import type { ClockPort, LoggerPort, StoragePort } from "./ports.js";
+import type { ClockPort, CredentialRefreshResult, LoggerPort, StoragePort } from "./ports.js";
 import type { ProviderRegistry } from "./providers/registry.js";
 import type { CredentialService } from "./credential-service.js";
 import type { CredentialMutationGate } from "./credential-mutation-gate.js";
@@ -110,9 +110,7 @@ export class RefreshCoordinator {
       if (!refresh) {
         throw new AppError("validation", `该账号类型没有主动刷新协议：${account.provider}`);
       }
-      const current = await this.vault.load(account.id);
-      const refreshed = await refresh(account, current, { force: true });
-      if (refreshed.changed) await this.persistCredentials(account, refreshed.envelope);
+      const refreshed = await this.refreshCredential(account, refresh, true);
       return {
         status: refreshed.changed ? "updated" : "unchanged",
         accountId,
@@ -144,12 +142,9 @@ export class RefreshCoordinator {
     try {
       const usage = this.registry.requireUsage(account.provider);
       const refresh = this.registry.getAccount(account.provider)?.refreshCredentials;
-      let envelope = await this.vault.load(account.id);
-      if (refresh) {
-        const refreshed = await refresh(account, envelope, { force: false });
-        envelope = refreshed.envelope;
-        if (refreshed.changed) await this.persistCredentials(account, envelope);
-      }
+      let envelope = refresh
+        ? (await this.refreshCredential(account, refresh, false)).envelope
+        : await this.vault.load(account.id);
 
       let snapshot: UsageSnapshot;
       try {
@@ -158,9 +153,8 @@ export class RefreshCoordinator {
         if (!refresh || !(error instanceof AppError) || error.code !== "authentication") {
           throw error;
         }
-        const forced = await refresh(account, envelope, { force: true });
+        const forced = await this.refreshCredential(account, refresh, true);
         envelope = forced.envelope;
-        if (forced.changed) await this.persistCredentials(account, envelope);
         snapshot = await usage.fetchUsage(account, envelope);
       }
       this.storage.transaction(() => {
@@ -197,6 +191,26 @@ export class RefreshCoordinator {
       });
       return { status: "failed", accountId, error: publicError };
     }
+  }
+
+  private async refreshCredential(
+    account: Account,
+    refresh: (
+      account: Account,
+      envelope: CredentialEnvelope,
+      options: { force: boolean },
+    ) => Promise<CredentialRefreshResult>,
+    force: boolean,
+  ): Promise<CredentialRefreshResult> {
+    if (this.vault.refresh) {
+      return this.vault.refresh(account, (envelope, currentAccount) =>
+        refresh(currentAccount, envelope, { force }),
+      );
+    }
+    const current = await this.vault.load(account.id);
+    const result = await refresh(account, current, { force });
+    if (result.changed) await this.persistCredentials(account, result.envelope);
+    return result;
   }
 
   private async persistCredentials(account: Account, envelope: CredentialEnvelope): Promise<void> {

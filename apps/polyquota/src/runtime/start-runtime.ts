@@ -30,8 +30,11 @@ export async function startRuntime(
       auth.cancelAll();
       events.dispose();
       await Promise.allSettled([scheduler.stopAndDrain(), polling.stopAndDrain(), auth.drain()]);
+      await credentialSharing.stop();
     };
     application.attachScheduler(scheduler);
+    credentialSharing.setChangedHandler(() => application.sharedAccountsChanged());
+    await credentialSharing.start();
     detachAuth = events.subscribe((event) => {
       if (event.type === "auth") application.authSessionChanged(event.data.sessionId);
     });
@@ -102,6 +105,7 @@ export async function startRuntime(
           } finally {
             clearTimeout(timeout);
           }
+          await credentialSharing.stop();
           await registry.dispose();
           state = "stopped";
         })();

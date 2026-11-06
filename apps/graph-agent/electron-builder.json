@@ -1,0 +1,16 @@
+{
+  "appId": "com.astraconductor.graphagent",
+  "productName": "GraphAgent",
+  "directories": { "output": "release" },
+  "files": ["dist/**", "renderer/**", "assets/icons/**", "package.json"],
+  "asar": true,
+  "npmRebuild": false,
+  "win": { "target": "nsis", "icon": "assets/icons/graphagent.ico" },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "installerIcon": "assets/icons/graphagent.ico",
+    "uninstallerIcon": "assets/icons/graphagent.ico",
+    "installerHeaderIcon": "assets/icons/graphagent.ico"
+  }
+}

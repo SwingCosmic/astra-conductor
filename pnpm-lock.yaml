@@ -65,11 +65,45 @@ importers:
         specifier: "catalog:"
         version: 5.6.3
 
+  apps/graph-agent:
+    dependencies:
+      "@astra-conductor/core":
+        specifier: workspace:*
+        version: link:../../packages/core
+      "@astra-conductor/credential-host":
+        specifier: workspace:*
+        version: link:../../packages/credential-host
+      "@astra-conductor/credentials":
+        specifier: workspace:*
+        version: link:../../packages/credentials
+    devDependencies:
+      "@types/node":
+        specifier: "catalog:"
+        version: 22.20.4
+      electron:
+        specifier: "catalog:"
+        version: 42.11.6
+      electron-builder:
+        specifier: "catalog:"
+        version: 26.15.3(electron-builder-squirrel-windows@26.15.3)
+      esbuild:
+        specifier: "catalog:"
+        version: 0.21.5
+      typescript:
+        specifier: "catalog:"
+        version: 5.6.3
+      vitest:
+        specifier: "catalog:"
+        version: 2.1.8(@types/node@22.20.4)(happy-dom@15.11.7)
+
   apps/polyquota:
     dependencies:
       "@astra-conductor/core":
         specifier: workspace:*
         version: link:../../packages/core
+      "@astra-conductor/credential-host":
+        specifier: workspace:*
+        version: link:../../packages/credential-host
       "@astra-conductor/credentials":
         specifier: workspace:*
         version: link:../../packages/credentials
@@ -116,6 +150,9 @@ importers:
 
   packages/core:
     dependencies:
+      "@astra-conductor/credentials":
+        specifier: workspace:*
+        version: link:../credentials
       "@astra-conductor/polyquota-contract":
         specifier: workspace:*
         version: link:../polyquota-contract
@@ -129,6 +166,22 @@ importers:
       esbuild:
         specifier: "catalog:"
         version: 0.21.5
+      typescript:
+        specifier: "catalog:"
+        version: 5.6.3
+      vitest:
+        specifier: "catalog:"
+        version: 2.1.8(@types/node@22.20.4)(happy-dom@15.11.7)
+
+  packages/credential-host:
+    dependencies:
+      "@astra-conductor/credentials":
+        specifier: workspace:*
+        version: link:../credentials
+    devDependencies:
+      "@types/node":
+        specifier: "catalog:"
+        version: 22.20.4
       typescript:
         specifier: "catalog:"
         version: 5.6.3

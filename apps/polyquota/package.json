@@ -1,6 +1,6 @@
 {
   "name": "@astra-conductor/polyquota",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "description": "PolyQuota desktop application",
   "type": "module",
@@ -22,7 +22,8 @@
     "test:protocol": "node scripts/run-protocol-smoke.mjs",
     "test:desktop": "node ./scripts/run-electron-mode.mjs desktop-smoke",
     "test:distribution": "node scripts/run-distribution-smoke.mjs",
-    "test:credential-sharing": "node ./scripts/run-credential-sharing-smoke.mjs"
+    "test:credential-sharing": "node ./scripts/run-credential-sharing-smoke.mjs",
+    "test:credential-sharing-loop": "node scripts/run-credential-sharing-loop.mjs"
   },
   "dependencies": {
     "@astra-conductor/core": "workspace:*",
@@ -31,7 +32,8 @@
     "better-sqlite3": "catalog:",
     "hono": "^4.13.13",
     "undici": "^7.29.1",
-    "@astra-conductor/credentials": "workspace:*"
+    "@astra-conductor/credentials": "workspace:*",
+    "@astra-conductor/credential-host": "workspace:*"
   },
   "devDependencies": {
     "@electron/rebuild": "catalog:",

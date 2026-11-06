@@ -45,6 +45,8 @@ export interface PolyQuotaApplicationServiceOptions {
   /** 唯一的供应商注册表：目录投影、认证与重置额度分派全部经它解析。 */
   registry: ProviderRegistry;
   mutations?: CredentialMutationGate;
+  isShared?(): boolean;
+  visibleAccountIds?(): ReadonlySet<string> | null;
   now?: () => Date;
   instanceId?: string;
 }
@@ -107,6 +109,13 @@ export class PolyQuotaApplicationService {
   getRevision(): number {
     return this.revision;
   }
+  sharedAccountsChanged(): void {
+    this.commit(["accounts"]);
+  }
+  private assertPrivate(): void {
+    if (this.options.isShared?.())
+      throw new AppError("conflict", "共享模式暂不支持新增、删除或重新授权，请先返回内置存储");
+  }
 
   authSessionChanged(sessionId: string): void {
     const state = this.auth.getSession(sessionId);
@@ -134,6 +143,7 @@ export class PolyQuotaApplicationService {
       const revision = this.revision;
       const accounts = this.storage.accounts
         .list()
+        .filter((account) => this.options.visibleAccountIds?.()?.has(account.id) ?? true)
         .sort(
           (left, right) =>
             left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id),
@@ -206,6 +216,7 @@ export class PolyQuotaApplicationService {
   }
 
   deleteAccount(accountId: string): void {
+    this.assertPrivate();
     this.options.mutations?.assertAvailable();
     if (!this.storage.accounts.get(accountId)) {
       throw new AppError("validation", "Account does not exist");
@@ -244,7 +255,13 @@ export class PolyQuotaApplicationService {
       source,
       async () => ({
         source,
-        outcomes: (await this.polling.refreshAll())
+        outcomes: (
+          await (this.options.visibleAccountIds?.()
+            ? Promise.all(
+                [...this.options.visibleAccountIds()!].map((id) => this.polling.refresh(id)),
+              )
+            : this.polling.refreshAll())
+        )
           .map((outcome) => this.reconcilePendingResetCreditUses(outcome))
           .map((outcome) => toRefreshOutcome(outcome, this.offeringIdOf(outcome.accountId))),
       }),
@@ -318,6 +335,7 @@ export class PolyQuotaApplicationService {
   }
 
   async startAuth(request: StartAuthRequest): Promise<AuthStartResult> {
+    this.assertPrivate();
     this.options.mutations?.assertAvailable();
     const operationId = this.startOperation("auth", null, null);
     try {
@@ -349,6 +367,7 @@ export class PolyQuotaApplicationService {
   }
 
   async finishAuth(sessionId: string): Promise<PublicAccount> {
+    this.assertPrivate();
     this.options.mutations?.assertAvailable();
     const pending = this.operations.get(sessionId);
     if (pending) {

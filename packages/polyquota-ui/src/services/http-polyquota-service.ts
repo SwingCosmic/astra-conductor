@@ -54,6 +54,16 @@ export class HttpPolyQuotaService implements IPolyQuotaService, IHostService, IN
     acknowledgeDelivery: () =>
       this.request<void>("/v1/polyquota/credential-sharing/acknowledgeDelivery", undefined, true),
     cancel: () => this.request<void>("/v1/polyquota/credential-sharing/cancel", undefined, true),
+    enableShared: () =>
+      this.request<void>("/v1/polyquota/credential-sharing/enableShared", undefined, true),
+    returnToPrivate: (acceptIndependentRefreshRisk) =>
+      this.request<void>(
+        "/v1/polyquota/credential-sharing/returnToPrivate",
+        { acceptIndependentRefreshRisk },
+        true,
+      ),
+    rejoinShared: (migrationKey) =>
+      this.request<void>("/v1/polyquota/credential-sharing/rejoinShared", { migrationKey }, true),
   };
   private readonly listeners = new Set<(event: PolyQuotaChangedEvent) => void>();
   private readonly notificationListeners = new Set<(request: NotificationRequest) => void>();

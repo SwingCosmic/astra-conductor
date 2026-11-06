@@ -28,7 +28,8 @@ async function component() {
   await Promise.all(required.map((name) => writeFile(path.join(directory, name), bytes)));
   const manifest = {
     component: "astra-credential-broker",
-    version: "0.1.0",
+    version: "0.2.0",
+    apiRevision: 2,
     rid: "win-x64",
     protocolMin: 1,
     protocolMax: 1,
