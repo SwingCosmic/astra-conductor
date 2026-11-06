@@ -21,7 +21,7 @@ import type {
   UsageProviderAdapter,
 } from "../../ports.js";
 import { includedQuotas } from "../quota-inclusion.js";
-import { CredentialVault } from "../../credential-vault.js";
+import type { CredentialService } from "../../credential-service.js";
 import { listAvailableCodexResetCredits, redeemCodexResetCredit } from "./reset-card-redemption.js";
 import { getCodexUsage } from "@omniroute/open-sse/services/usage/codex.ts";
 import { refreshCodexToken } from "@omniroute/open-sse/services/tokenRefresh/providers/codex.ts";
@@ -413,7 +413,7 @@ export class CodexAdapter implements UsageProviderAdapter {
 export class CodexAccountProvisioner {
   constructor(
     private readonly storage: StoragePort,
-    private readonly vault: CredentialVault,
+    private readonly vault: CredentialService,
     private readonly now: () => Date = () => new Date(),
     private readonly createId: () => string = randomUUID,
   ) {}
@@ -435,13 +435,9 @@ export class CodexAccountProvisioner {
       createdAt: existing?.createdAt ?? timestamp,
       updatedAt: timestamp,
     };
-    const encrypted = await this.vault.seal(account, {
+    await this.vault.saveAccount(account, {
       ...input.credentials,
       accountId: account.id,
-    });
-    this.storage.transaction(() => {
-      this.storage.accounts.save(account);
-      this.storage.credentials.save(encrypted);
     });
     return account;
   }

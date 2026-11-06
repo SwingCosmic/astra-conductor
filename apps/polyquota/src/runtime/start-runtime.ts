@@ -18,6 +18,7 @@ export async function startRuntime(
     registerHost(registry);
     registry.validate();
     const application = registry.get(Services.application);
+    const credentialSharing = registry.get(Services.sharing);
     const scheduler = registry.get(Services.scheduler);
     const auth = registry.get(Services.auth);
     const events = registry.get(Services.events);
@@ -39,6 +40,7 @@ export async function startRuntime(
     return {
       registry,
       application,
+      credentialSharing,
       scheduler,
       auth,
       events,

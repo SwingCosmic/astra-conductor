@@ -1,7 +1,11 @@
+import path from "node:path";
+import { WindowsBrokerHost } from "../credential-sharing/broker-host.js";
+import { CredentialSharingService, sharingFrozenKey } from "../credential-sharing/service.js";
 import {
   AuthCoordinator,
   CoreServices,
   CredentialVault,
+  CredentialMutationGate,
   ProviderRegistry,
   RefreshCoordinator,
   ServiceRegistry,
@@ -22,6 +26,12 @@ export interface HostService {
 }
 
 export const Services = {
+  sharingPaths: serviceId<{
+    dataDirectory: string;
+    selectDirectory?(): Promise<string | null>;
+  }>("polyquota.sharing-paths"),
+  mutations: serviceId<CredentialMutationGate>("polyquota.credential-mutations"),
+  sharing: serviceId<CredentialSharingService>("polyquota.sharing"),
   cipher: serviceId<CredentialCipherPort>("polyquota.cipher"),
   host: serviceId<HostService>("polyquota.host"),
   proxyStatus: serviceId<() => Promise<PublicSystemStatus>>("polyquota.proxy-status"),
@@ -45,10 +55,23 @@ export function registerCommonServices(registry: ServiceRegistry): void {
       (events) => events.dispose(),
     )
     .register(
-      CoreServices.vault,
-      [CoreServices.storage, Services.cipher],
+      Services.mutations,
+      [CoreServices.storage],
       (services) =>
-        new CredentialVault(services.get(CoreServices.storage), services.get(Services.cipher)),
+        new CredentialMutationGate(
+          services.get(CoreServices.storage).settings.get(sharingFrozenKey) === true,
+        ),
+    )
+    .register(
+      CoreServices.vault,
+      [CoreServices.storage, Services.cipher, Services.mutations],
+      (services) =>
+        new CredentialVault(
+          services.get(CoreServices.storage),
+          services.get(Services.cipher),
+          undefined,
+          services.get(Services.mutations),
+        ),
     )
     .register(
       Services.providers,
@@ -65,7 +88,13 @@ export function registerCommonServices(registry: ServiceRegistry): void {
     )
     .register(
       Services.refresh,
-      [CoreServices.storage, CoreServices.vault, Services.providers, CoreServices.logger],
+      [
+        CoreServices.storage,
+        CoreServices.vault,
+        Services.providers,
+        CoreServices.logger,
+        Services.mutations,
+      ],
       (services) =>
         new RefreshCoordinator(
           services.get(CoreServices.storage),
@@ -73,6 +102,7 @@ export function registerCommonServices(registry: ServiceRegistry): void {
           services.get(Services.providers),
           undefined,
           services.get(CoreServices.logger),
+          services.get(Services.mutations),
         ),
     )
     .register(
@@ -109,6 +139,48 @@ export function registerCommonServices(registry: ServiceRegistry): void {
         ),
     )
     .register(
+      Services.sharing,
+      [
+        CoreServices.storage,
+        CoreServices.vault,
+        Services.cipher,
+        Services.mutations,
+        Services.providers,
+        Services.auth,
+        Services.sharingPaths,
+        CoreServices.environment,
+      ],
+      (services) => {
+        const env = services.get(CoreServices.environment);
+        const auth = services.get(Services.auth);
+        const local = env.env("LOCALAPPDATA") ?? path.join(env.homeDirectory(), "AppData", "Local");
+        const cacheDirectory = path.join(
+          services.get(Services.sharingPaths).dataDirectory,
+          "credential-sharing",
+        );
+        const home = path.join(local, "AstraCredentialBroker", "v1");
+        const localPackageDirectory = path.join(
+          local,
+          "AstraCredentialBroker",
+          "downloads",
+          "win-x64",
+          "0.1.0",
+        );
+        return new CredentialSharingService({
+          storage: services.get(CoreServices.storage),
+          credentials: services.get(CoreServices.vault),
+          cipher: services.get(Services.cipher),
+          mutations: services.get(Services.mutations),
+          providers: services.get(Services.providers),
+          host: new WindowsBrokerHost(home, localPackageDirectory, cacheDirectory),
+          cacheDirectory,
+          privateDataDirectory: services.get(Services.sharingPaths).dataDirectory,
+          selectDirectory: services.get(Services.sharingPaths).selectDirectory,
+          hasActiveAuth: () => auth.hasActiveSessions(),
+        });
+      },
+    )
+    .register(
       Services.application,
       [
         CoreServices.storage,
@@ -117,6 +189,7 @@ export function registerCommonServices(registry: ServiceRegistry): void {
         Services.auth,
         Services.providers,
         Services.proxyStatus,
+        Services.mutations,
         Services.events,
       ],
       (services) => {
@@ -128,6 +201,7 @@ export function registerCommonServices(registry: ServiceRegistry): void {
           services.get(Services.auth),
           {
             registry: services.get(Services.providers),
+            mutations: services.get(Services.mutations),
             detectProxyStatus: services.get(Services.proxyStatus),
             publishChanged: (event) => events.publish({ type: "changed", data: event }),
           },

@@ -1,5 +1,5 @@
 import type { StartOAuthCallbackServer } from "../auth/types.js";
-import type { CredentialVault } from "../credential-vault.js";
+import type { CredentialService } from "../credential-service.js";
 import type { ClockPort, HttpPort, LoggerPort, StoragePort } from "../ports.js";
 import { serviceId } from "./registry.js";
 
@@ -31,6 +31,6 @@ export const CoreServices = {
   callbackServer: serviceId<{ start: StartOAuthCallbackServer }>("core.oauth-callback"),
   authorization: serviceId<AuthorizationInteractionService>("core.authorization"),
   storage: serviceId<StoragePort>("core.storage"),
-  vault: serviceId<CredentialVault>("core.credentials"),
+  vault: serviceId<CredentialService>("core.credentials"),
   logger: serviceId<LoggerPort>("core.logger"),
 } as const;

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CredentialStorageManager from "../components/CredentialStorageManager.vue";
 import HostStatus from "../components/HostStatus.vue";
 import { onMounted, ref, watch } from "vue";
 import type { IpcResult, PublicRefreshSchedulerState, Settings } from "../models";
@@ -11,6 +12,7 @@ const proxy = ref("正在读取…");
 const busy = ref(false);
 const message = ref("");
 const service = usePolyQuotaService();
+const managingCredentials = ref(false);
 
 function unwrap<T>(result: IpcResult<T>): T {
   if (!result.ok) throw new Error(result.error.message);
@@ -41,7 +43,8 @@ onMounted(() => void load());
 </script>
 
 <template>
-  <section class="content-page settings-page">
+  <CredentialStorageManager v-if="managingCredentials" @close="managingCredentials = false" />
+  <section v-else class="content-page settings-page">
     <header class="content-header">
       <div>
         <h1>应用设置</h1>
@@ -74,6 +77,11 @@ onMounted(() => void load());
           scheduler.nextRunAt ? ` · 下次 ${new Date(scheduler.nextRunAt).toLocaleString()}` : ""
         }}
       </p>
+    </section>
+    <section class="settings-card">
+      <h2>凭据存储</h2>
+      <p class="setting-hint">管理凭据服务组件、导出凭据与存储切换。</p>
+      <button class="outline-action" @click="managingCredentials = true">管理凭据存储</button>
     </section>
     <HostStatus />
     <section class="settings-card">

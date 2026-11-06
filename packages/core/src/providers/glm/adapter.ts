@@ -20,7 +20,7 @@ import type {
   UsageProviderAdapter,
 } from "../../ports.js";
 import { includedQuotas } from "../quota-inclusion.js";
-import { CredentialVault } from "../../credential-vault.js";
+import type { CredentialService } from "../../credential-service.js";
 import { redeemGlmResetCard } from "./reset-card-redemption.js";
 import { glmRegionForOffering, type GlmRegion } from "./zcode-credentials.js";
 import { getGlmUsage } from "@omniroute/open-sse/services/usage/glm.ts";
@@ -208,7 +208,7 @@ export class GlmAdapter implements UsageProviderAdapter {
 export class GlmAccountProvisioner {
   constructor(
     private readonly storage: StoragePort,
-    private readonly vault: CredentialVault,
+    private readonly vault: CredentialService,
     private readonly now: () => Date = () => new Date(),
     private readonly createId: () => string = randomUUID,
   ) {}
@@ -230,13 +230,9 @@ export class GlmAccountProvisioner {
       createdAt: existing?.createdAt ?? timestamp,
       updatedAt: timestamp,
     };
-    const encrypted = await this.vault.seal(account, {
+    await this.vault.saveAccount(account, {
       ...input.credentials,
       accountId: account.id,
-    });
-    this.storage.transaction(() => {
-      this.storage.accounts.save(account);
-      this.storage.credentials.save(encrypted);
     });
     return account;
   }

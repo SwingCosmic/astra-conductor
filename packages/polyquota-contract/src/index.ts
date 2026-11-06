@@ -76,3 +76,6 @@ export {
   parseRedeemResetCreditRequest,
 } from "./validation/request.js";
 export * from "./dto/host.js";
+
+export * from "./dto/credential-sharing.js";
+export { parseCredentialExportRequest } from "./validation/request.js";

@@ -16,7 +16,7 @@ import type {
   UsageProviderAdapter,
 } from "../../ports.js";
 import { includedQuotas } from "../quota-inclusion.js";
-import { CredentialVault } from "../../credential-vault.js";
+import type { CredentialService } from "../../credential-service.js";
 import {
   getGitHubCopilotChatUserAgent,
   getGitHubCopilotInternalUserHeaders,
@@ -321,7 +321,7 @@ export class CopilotAdapter implements UsageProviderAdapter {
 export class CopilotAccountProvisioner {
   constructor(
     private readonly storage: StoragePort,
-    private readonly vault: CredentialVault,
+    private readonly vault: CredentialService,
     private readonly now: () => Date = () => new Date(),
     private readonly createId: () => string = randomUUID,
   ) {}
@@ -346,13 +346,9 @@ export class CopilotAccountProvisioner {
       createdAt: existing?.createdAt ?? timestamp,
       updatedAt: timestamp,
     };
-    const encrypted = await this.vault.seal(account, {
+    await this.vault.saveAccount(account, {
       ...input.credentials,
       accountId: account.id,
-    });
-    this.storage.transaction(() => {
-      this.storage.accounts.save(account);
-      this.storage.credentials.save(encrypted);
     });
     return account;
   }

@@ -7,7 +7,8 @@ import type {
 } from "./models.js";
 import type { ClockPort, LoggerPort, StoragePort } from "./ports.js";
 import type { ProviderRegistry } from "./providers/registry.js";
-import { CredentialVault } from "./credential-vault.js";
+import type { CredentialService } from "./credential-service.js";
+import type { CredentialMutationGate } from "./credential-mutation-gate.js";
 import { silentLogger } from "./logger.js";
 
 export type RefreshOutcome =
@@ -55,10 +56,11 @@ export class RefreshCoordinator {
 
   constructor(
     private readonly storage: StoragePort,
-    private readonly vault: CredentialVault,
+    private readonly vault: CredentialService,
     private readonly registry: ProviderRegistry,
     private readonly clock: ClockPort = { now: () => new Date() },
     private readonly logger: LoggerPort = silentLogger,
+    private readonly mutations?: CredentialMutationGate,
   ) {}
 
   refresh(accountId: string): Promise<RefreshOutcome> {
@@ -81,7 +83,8 @@ export class RefreshCoordinator {
 
   private serialize<T>(accountId: string, operation: () => Promise<T>): Promise<T> {
     const previous = this.operationTails.get(accountId) ?? Promise.resolve();
-    const result = previous.then(operation, operation);
+    const guarded = () => (this.mutations ? this.mutations.run(operation) : operation());
+    const result = previous.then(guarded, guarded);
     const tail = result.then(
       () => undefined,
       () => undefined,
@@ -197,15 +200,10 @@ export class RefreshCoordinator {
   }
 
   private async persistCredentials(account: Account, envelope: CredentialEnvelope): Promise<void> {
-    const encrypted = await this.vault.seal(account, envelope);
     const timestamp = this.clock.now().toISOString();
-    this.storage.transaction(() => {
-      this.storage.credentials.save(encrypted);
-      this.storage.accounts.save({
-        ...account,
-        credentialState: "available",
-        updatedAt: timestamp,
-      });
-    });
+    await this.vault.saveAccount(
+      { ...account, credentialState: "available", updatedAt: timestamp },
+      envelope,
+    );
   }
 }

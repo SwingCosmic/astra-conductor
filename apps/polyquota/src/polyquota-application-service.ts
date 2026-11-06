@@ -22,7 +22,8 @@ import {
 } from "@astra-conductor/polyquota-contract";
 import {
   AppError,
-  CredentialVault,
+  type CredentialService,
+  type CredentialMutationGate,
   computeCompositeRemaining,
   toPublicAccount,
   toPublicUsage,
@@ -43,6 +44,7 @@ export interface PolyQuotaApplicationServiceOptions {
   detectProxyStatus: () => Promise<PublicSystemStatus>;
   /** 唯一的供应商注册表：目录投影、认证与重置额度分派全部经它解析。 */
   registry: ProviderRegistry;
+  mutations?: CredentialMutationGate;
   now?: () => Date;
   instanceId?: string;
 }
@@ -83,7 +85,7 @@ export class PolyQuotaApplicationService {
 
   constructor(
     private readonly storage: StoragePort,
-    private readonly vault: CredentialVault,
+    private readonly vault: CredentialService,
     private readonly polling: PollingService,
     private readonly auth: AuthCoordinator,
     private readonly options: PolyQuotaApplicationServiceOptions,
@@ -195,6 +197,7 @@ export class PolyQuotaApplicationService {
   }
 
   setAccountEnabled(accountId: string, enabled: boolean): void {
+    this.options.mutations?.assertAvailable();
     const account = this.storage.accounts.get(accountId);
     if (!account) throw new AppError("validation", "Account does not exist");
     if (account.enabled === enabled) return;
@@ -203,6 +206,7 @@ export class PolyQuotaApplicationService {
   }
 
   deleteAccount(accountId: string): void {
+    this.options.mutations?.assertAvailable();
     if (!this.storage.accounts.get(accountId)) {
       throw new AppError("validation", "Account does not exist");
     }
@@ -314,6 +318,7 @@ export class PolyQuotaApplicationService {
   }
 
   async startAuth(request: StartAuthRequest): Promise<AuthStartResult> {
+    this.options.mutations?.assertAvailable();
     const operationId = this.startOperation("auth", null, null);
     try {
       const options = request.apiKey === undefined ? {} : { apiKey: request.apiKey };
@@ -344,6 +349,7 @@ export class PolyQuotaApplicationService {
   }
 
   async finishAuth(sessionId: string): Promise<PublicAccount> {
+    this.options.mutations?.assertAvailable();
     const pending = this.operations.get(sessionId);
     if (pending) {
       this.operations.set(sessionId, { ...pending, status: "running" });
@@ -426,7 +432,9 @@ export class PolyQuotaApplicationService {
     const id = this.startOperation(kind, accountId, source);
     const started = this.now().getTime();
     try {
-      const value = await operation();
+      const value = await (kind === "use-reset-credit" && this.options.mutations
+        ? this.options.mutations.run(operation)
+        : operation());
       console.info("PolyQuota operation completed", {
         operation: kind,
         operationId: id,

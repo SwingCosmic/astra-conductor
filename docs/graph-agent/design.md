@@ -48,6 +48,8 @@ GraphAgent 是以执行图为中心的智能体协作产品。用户提交目标
 | 5    | 拦截、记忆、整理与技能 | [05_拦截器、记忆、整理与技能](./05_interception-memory-and-skills.md) |
 | 6    | 工作台与外部对接     | [06_工作台与外部对接](./06_workspace-and-integrations.md)        |
 
+跨设备的设备注册、权限、放置与产物传输见[跨设备任务派发设计](./cross-device-dispatch-design.md)；它细化第 3 层调度与第 6 层连接，不新增任务或员工种类。
+
 各层拥有自己的业务事实，通过命令和已提交事件协作。Scheduler 不直接改记忆，做梦模型不直接改进行中的 Task，UI 不直接写运行存储，Interceptor 不直接替调度器创建 Assignment。
 
 ## 4. 运行主路径

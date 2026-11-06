@@ -1,6 +1,9 @@
 import {
   POLYQUOTA_SCHEMA_VERSION,
   type IPolyQuotaService,
+  type ICredentialSharingService,
+  type CredentialSharingStatus,
+  type CredentialExportDelivery,
   type IHostService,
   type INotificationService,
   type AuthStartResult,
@@ -28,6 +31,30 @@ function failure<T>(code: string, message: string): ServiceResult<T> {
 }
 
 export class HttpPolyQuotaService implements IPolyQuotaService, IHostService, INotificationService {
+  readonly credentialSharing: ICredentialSharingService = {
+    selectDirectory: () =>
+      this.request<string | null>(
+        "/v1/polyquota/credential-sharing/selectDirectory",
+        undefined,
+        true,
+        300_000,
+        true,
+      ),
+    getStatus: () =>
+      this.request<CredentialSharingStatus>("/v1/polyquota/credential-sharing/status"),
+    install: () => this.request<void>("/v1/polyquota/credential-sharing/install", undefined, true),
+    uninstall: () =>
+      this.request<void>("/v1/polyquota/credential-sharing/uninstall", undefined, true),
+    exportCredentials: (vaultDirectory) =>
+      this.request<CredentialExportDelivery>(
+        "/v1/polyquota/credential-sharing/export",
+        { vaultDirectory },
+        true,
+      ),
+    acknowledgeDelivery: () =>
+      this.request<void>("/v1/polyquota/credential-sharing/acknowledgeDelivery", undefined, true),
+    cancel: () => this.request<void>("/v1/polyquota/credential-sharing/cancel", undefined, true),
+  };
   private readonly listeners = new Set<(event: PolyQuotaChangedEvent) => void>();
   private readonly notificationListeners = new Set<(request: NotificationRequest) => void>();
   private readonly readyListeners = new Set<() => void>();
@@ -44,7 +71,13 @@ export class HttpPolyQuotaService implements IPolyQuotaService, IHostService, IN
     this.fetchImpl = fetchImpl.bind(globalThis);
   }
 
-  private async request<T>(path: string, body?: unknown, post = false): Promise<ServiceResult<T>> {
+  private async request<T>(
+    path: string,
+    body?: unknown,
+    post = false,
+    timeoutMs = 30_000,
+    preserveNull = false,
+  ): Promise<ServiceResult<T>> {
     try {
       const response = await this.fetchImpl(`${this.baseUrl.replace(/\/$/, "")}${path}`, {
         method: post ? "POST" : "GET",
@@ -52,14 +85,16 @@ export class HttpPolyQuotaService implements IPolyQuotaService, IHostService, IN
         ...(body === undefined
           ? {}
           : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
-        signal: AbortSignal.timeout(30_000),
+        signal: AbortSignal.timeout(timeoutMs),
       });
       const result = (await response.json()) as ServiceResult<T>;
       if (!result || (result.ok !== true && result.ok !== false))
         return failure("transport", "服务响应无效");
       if (result.ok && (!response.ok || !("value" in result)))
         return failure("transport", "服务响应无效");
-      return result.ok && result.value === null ? { ok: true, value: undefined as T } : result;
+      return result.ok && result.value === null && !preserveNull
+        ? { ok: true, value: undefined as T }
+        : result;
     } catch {
       return failure("transport", "无法连接 PolyQuota 服务");
     }

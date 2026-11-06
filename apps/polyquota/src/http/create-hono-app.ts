@@ -5,6 +5,7 @@ import {
   ContractValidationError,
   POLYQUOTA_SCHEMA_VERSION,
   parseAccountId,
+  parseCredentialExportRequest,
   parseSessionId,
   parseSetAccountEnabledRequest,
   parseRedeemResetCreditRequest,
@@ -146,6 +147,24 @@ export function createHonoApp(runtime: PolyQuotaRuntime): Hono {
     service.saveSettings(parseSettings(await body(c))),
   );
   route("GET", "/v1/polyquota/system-status", () => service.getSystemStatus());
+  route("GET", "/v1/polyquota/credential-sharing/status", () =>
+    runtime.credentialSharing.getStatus(),
+  );
+  route("POST", "/v1/polyquota/credential-sharing/export", async (c) => {
+    const request = parseCredentialExportRequest(await body(c));
+    return runtime.credentialSharing.exportCredentials(request.vaultDirectory);
+  });
+  for (const action of [
+    "selectDirectory",
+    "install",
+    "uninstall",
+    "acknowledgeDelivery",
+    "cancel",
+  ] as const)
+    route("POST", `/v1/polyquota/credential-sharing/${action}`, async (c) => {
+      await empty(c);
+      return runtime.credentialSharing[action]();
+    });
   route("POST", "/v1/notifications/:notificationId/acknowledge", async (c) => {
     const id = parseSessionId(c.req.param("notificationId"));
     const { status } = await body(c, ["status"]);

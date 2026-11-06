@@ -209,6 +209,15 @@ export class AuthCoordinator {
     this.settle(entry, "cancelled", new AppError("authentication", "授权已取消"));
   }
 
+  hasActiveSessions(): boolean {
+    return (
+      this.starting.size > 0 ||
+      [...this.sessions.values()].some((entry) =>
+        ["pending", "finishing"].includes(entry.state.status),
+      )
+    );
+  }
+
   cancelAll(): void {
     this.stopped = true;
     for (const id of this.sessions.keys()) this.cancel(id);

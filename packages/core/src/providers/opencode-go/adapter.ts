@@ -11,7 +11,7 @@ import type {
 } from "../../models.js";
 import type { ClockPort, StoragePort, UsageProviderAdapter } from "../../ports.js";
 import { includedQuotas } from "../quota-inclusion.js";
-import { CredentialVault } from "../../credential-vault.js";
+import type { CredentialService } from "../../credential-service.js";
 import {
   getOpencodeUsage,
   type OpencodeUsageWindow,
@@ -131,7 +131,7 @@ export class OpencodeGoAdapter implements UsageProviderAdapter {
 export class OpencodeGoAccountProvisioner {
   constructor(
     private readonly storage: StoragePort,
-    private readonly vault: CredentialVault,
+    private readonly vault: CredentialService,
     private readonly now: () => Date = () => new Date(),
     private readonly createId: () => string = randomUUID,
   ) {}
@@ -156,13 +156,9 @@ export class OpencodeGoAccountProvisioner {
       createdAt: existing?.createdAt ?? timestamp,
       updatedAt: timestamp,
     };
-    const encrypted = await this.vault.seal(account, {
+    await this.vault.saveAccount(account, {
       ...input.credentials,
       accountId: account.id,
-    });
-    this.storage.transaction(() => {
-      this.storage.accounts.save(account);
-      this.storage.credentials.save(encrypted);
     });
     return account;
   }

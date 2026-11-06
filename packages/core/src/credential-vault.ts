@@ -1,3 +1,5 @@
+import type { CredentialService } from "./credential-service.js";
+import type { CredentialMutationGate } from "./credential-mutation-gate.js";
 import { AppError } from "./errors.js";
 import {
   credentialSecretKeys,
@@ -43,14 +45,16 @@ function parseEnvelope(plaintext: string): CredentialEnvelope {
   }
 }
 
-export class CredentialVault {
+export class CredentialVault implements CredentialService {
   constructor(
     private readonly storage: StoragePort,
     private readonly cipher: CredentialCipherPort,
     private readonly now: () => Date = () => new Date(),
+    private readonly mutations?: CredentialMutationGate,
   ) {}
 
   async seal(account: Account, envelope: CredentialEnvelope): Promise<EncryptedCredential> {
+    this.mutations?.assertWritable();
     validateEnvelope(account, envelope);
     if (!(await this.cipher.isAvailable())) {
       throw new AppError(
@@ -75,7 +79,17 @@ export class CredentialVault {
 
   async save(account: Account, envelope: CredentialEnvelope): Promise<void> {
     const encrypted = await this.seal(account, envelope);
+    this.mutations?.assertWritable();
     this.storage.credentials.save(encrypted);
+  }
+
+  async saveAccount(account: Account, envelope: CredentialEnvelope): Promise<void> {
+    const encrypted = await this.seal(account, envelope);
+    this.mutations?.assertWritable();
+    this.storage.transaction(() => {
+      this.storage.accounts.save(account);
+      this.storage.credentials.save(encrypted);
+    });
   }
 
   async load(accountId: string): Promise<CredentialEnvelope> {
@@ -94,9 +108,9 @@ export class CredentialVault {
       const decrypted = await this.cipher.decrypt(encrypted.ciphertext);
       const envelope = parseEnvelope(decrypted.plaintext);
       validateEnvelope(account, envelope);
-      if (decrypted.shouldReEncrypt) {
+      if (decrypted.shouldReEncrypt && !this.mutations?.isFrozen) {
         const replacement = await this.seal(account, envelope);
-        this.storage.credentials.save(replacement);
+        if (!this.mutations?.isFrozen) this.storage.credentials.save(replacement);
       }
       return envelope;
     } catch (error) {

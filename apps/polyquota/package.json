@@ -21,7 +21,8 @@
     "test:server": "vitest run test/service-mode-server.test.ts test/callback-server.test.ts test/browser-auth-roundtrip.test.ts test/node-http.test.ts",
     "test:protocol": "node scripts/run-protocol-smoke.mjs",
     "test:desktop": "node ./scripts/run-electron-mode.mjs desktop-smoke",
-    "test:distribution": "node scripts/run-distribution-smoke.mjs"
+    "test:distribution": "node scripts/run-distribution-smoke.mjs",
+    "test:credential-sharing": "node ./scripts/run-credential-sharing-smoke.mjs"
   },
   "dependencies": {
     "@astra-conductor/core": "workspace:*",
@@ -29,7 +30,8 @@
     "@hono/node-server": "^1.19.17",
     "better-sqlite3": "catalog:",
     "hono": "^4.13.13",
-    "undici": "^7.29.1"
+    "undici": "^7.29.1",
+    "@astra-conductor/credentials": "workspace:*"
   },
   "devDependencies": {
     "@electron/rebuild": "catalog:",

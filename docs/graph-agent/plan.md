@@ -200,6 +200,8 @@
 - `ModelPolicy` 交集、共享模型目录过滤、`ProviderRouteSelection` 和 `ModelLease`；
 - 跨模型/协议交接的可移植摘要和效果核对；
 - 多客户端同时连接时的单写入者、epoch 和 fencing；
+- 独立的设备注册、DeviceGrant、资源绑定、固定放置与本地 Gate；
+- 版本化产物 manifest、跨设备权限、断点续传、哈希核验与交付回执；
 - 离线、重连、取消和未知效果处理。
 
 **退出条件**：
@@ -209,9 +211,14 @@
 - 目录刷新或账号变化不影响在途流；
 - 设备丢失不会自动在另一设备重做未知副作用；
 - 未获准的 Worker 不能扩大权限或预算；
-- 本机模式与跨设备模式使用相同领域契约。
+- 本机模式与跨设备模式使用相同领域契约；
+- UI 切换不改变自主 Worker 授权；两台获准设备的独立任务可真正并行；
+- start 应答丢失不重复执行，断线暂停/取消区分 pending 与 applied；
+- 远端文件未传输时显示所属设备，不能声称目标设备已收到。
 
-**关联文档**：[03_Agent Loop、派发与任务执行](./03_agent-loop-dispatch-and-execution.md)、[共享 Provider Platform](../common/core/cross-provider-service-protocol-design.md)。
+**实施切分**：按[跨设备专项设计](./cross-device-dispatch-design.md)依次完成 3.3a 身份与注册、3.3b 放置与执行、3.3c 产物与恢复、3.3d 工作台与加固；保留本节预算、模型和亲和交付，与各子阶段共同验收。不依赖阶段 4.4 厂商适配来实现自主 Worker。
+
+**关联文档**：[03_Agent Loop、派发与任务执行](./03_agent-loop-dispatch-and-execution.md)、[跨设备任务派发设计](./cross-device-dispatch-design.md)、[dots 设备连接实测报告](./dots-device-connection-report.md)、[共享 Provider Platform](../common/core/cross-provider-service-protocol-design.md)。
 
 ### 步骤 3.4 剩余工具
 
@@ -404,7 +411,7 @@
 - 首个真实推理 route、usage/费用来源及跨协议 fixture。
 - Markdown MemoryStore 与 SQLite 原始消息档案的发布/恢复协议；工作/辅助模型组合。
 - UI 框架、图布局和桌面/本机服务宿主，完成真实原型评估。
-- 跨设备 Worker 注册、租约、fencing 与离线恢复协议。
+- 跨设备领域边界按[专项设计](./cross-device-dispatch-design.md)落实；工程选型仍需确定控制面宿主、认证与密钥轮换、心跳/租约期限、中继内容库、配额与保留策略，并验证离线恢复。
 - A2A 规范版本、外部 coding agent 适配器的固定版本与沙箱行为。
 
 这些选择不阻塞当前功能设计；实施到对应阶段时，以可审查样本和完成信号确认，不把草案当作已选定工程结构。

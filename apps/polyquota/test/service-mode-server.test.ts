@@ -56,6 +56,13 @@ describe("service mode backend", () => {
         "POST /v1/polyquota/auth/sessions/:sessionId/cancel",
         "POST /v1/polyquota/settings/save",
         "GET /v1/polyquota/system-status",
+        "GET /v1/polyquota/credential-sharing/status",
+        "POST /v1/polyquota/credential-sharing/export",
+        "POST /v1/polyquota/credential-sharing/selectDirectory",
+        "POST /v1/polyquota/credential-sharing/install",
+        "POST /v1/polyquota/credential-sharing/uninstall",
+        "POST /v1/polyquota/credential-sharing/acknowledgeDelivery",
+        "POST /v1/polyquota/credential-sharing/cancel",
         "POST /v1/notifications/:notificationId/acknowledge",
       ].sort(),
     );

@@ -1,3 +1,4 @@
+import type { ICredentialSharingService } from "./dto/credential-sharing.js";
 import type { ServiceResult } from "./dto/errors.js";
 import type { PublicAccount } from "./dto/account.js";
 import type { AuthStartResult, PublicAuthSession, StartAuthRequest } from "./dto/auth.js";
@@ -13,6 +14,7 @@ import type {
 import type { PolyQuotaChangedEvent, PolyQuotaSnapshot } from "./dto/snapshot.js";
 
 export interface IPolyQuotaService {
+  readonly credentialSharing?: ICredentialSharingService;
   waitForEvents?(): Promise<void>;
   getSnapshot(): Promise<ServiceResult<PolyQuotaSnapshot>>;
   subscribe(listener: (event: PolyQuotaChangedEvent) => void): () => void;

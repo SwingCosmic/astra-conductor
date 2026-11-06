@@ -18,6 +18,8 @@ GraphAgent 是以执行图为中心的智能体协作产品。本目录按“从
 - [概念设计](./concept-design.md)：产品构想与范围；首页 2.5D 办公室只属于概念宣传，不进入排期。
 - [启动与验收计划](./plan.md)：阶段 1–4 的目标、步骤、交付与退出条件。
 - [工具专项目录](./tools/README.md)：第 4 篇的深度设计，包含终端、文件、网页、媒体、结果收据与外部连接。
+- [dots 设备连接实测报告](./dots-device-connection-report.md)：work/pro 资源溯源、官方连接规则、体验限制与待测项。
+- [跨设备任务派发设计](./cross-device-dispatch-design.md)：阶段 3.3 的注册、授权、放置、租约、恢复与产物传输专项设计；尚未实现。
 - [参考源码映射](./reference-code-map.md)：固定 commit、已核对的源码入口与采用边界。
 - [产品族图标设计](../common/icon-design/README.md)。
 

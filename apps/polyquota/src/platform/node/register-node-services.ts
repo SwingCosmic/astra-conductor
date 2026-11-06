@@ -63,6 +63,7 @@ export function registerNodeServices(
     .value(CoreServices.logger, silentLogger)
     .value(CoreServices.callbackServer, { start: startOAuthCallbackServer })
     .value(CoreServices.authorization, { present: async () => "awaiting-user" as const })
+    .value(Services.sharingPaths, { dataDirectory: options.dataDirectory })
     .value(Services.cipher, options.cipher ?? unavailableCipher)
     .value(Services.host, {
       capabilities: {

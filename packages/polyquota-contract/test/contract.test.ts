@@ -5,6 +5,7 @@ import {
   parseRedeemResetCreditRequest,
   parseResetCreditRedemption,
   parseSettings,
+  parseCredentialExportRequest,
   parseStartAuthRequest,
 } from "../src/index";
 
@@ -18,6 +19,18 @@ import {
 describe("PolyQuota contract request validation", () => {
   it("keeps the schema version explicit so clients can compare it", () => {
     expect(POLYQUOTA_SCHEMA_VERSION).toBe(6);
+  });
+
+  it("accepts only explicit absolute shared directories and rejects extra export fields", () => {
+    expect(parseCredentialExportRequest({ vaultDirectory: "C:/test/shared" })).toEqual({
+      vaultDirectory: "C:/test/shared",
+    });
+    for (const request of [
+      { vaultDirectory: "../relative" },
+      { vaultDirectory: "C:/shared", accessToken: "forbidden" },
+      { vaultDirectory: "" },
+    ])
+      expect(() => parseCredentialExportRequest(request)).toThrow(ContractValidationError);
   });
 
   it("accepts shape-valid auth requests keyed by offering id", () => {

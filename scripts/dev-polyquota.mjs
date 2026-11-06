@@ -92,6 +92,15 @@ process.on("SIGINT", () => {
   });
 });
 
+const credentialsBuildCode = await exitCode(
+  run(["--filter", "@astra-conductor/credentials", "run", "build"]),
+);
+if (credentialsBuildCode !== 0) {
+  await stopAll();
+  process.exitCode = credentialsBuildCode;
+  process.exit();
+}
+
 const contractBuildCode = await exitCode(
   run(["--filter", "@astra-conductor/polyquota-contract", "run", "build"]),
 );

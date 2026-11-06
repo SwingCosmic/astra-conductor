@@ -137,3 +137,16 @@ export function parseRedeemResetCreditRequest(value: unknown): RedeemResetCredit
     redemption: parseResetCreditRedemption(record.redemption),
   };
 }
+
+export function parseCredentialExportRequest(value: unknown): { vaultDirectory: string } {
+  const record = object(value, "credentialExport");
+  exact(record, ["vaultDirectory"], "credentialExport");
+  const vaultDirectory = string(record.vaultDirectory, "credentialExport.vaultDirectory");
+  if (
+    !/^(?:[a-zA-Z]:[\\/]|\\\\[^\\]+\\[^\\]+)/.test(vaultDirectory) ||
+    vaultDirectory.length > 4096 ||
+    /[\x00-\x1f]/.test(vaultDirectory)
+  )
+    return fail("credentialExport.vaultDirectory");
+  return { vaultDirectory };
+}
