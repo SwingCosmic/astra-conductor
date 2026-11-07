@@ -5,7 +5,7 @@
 | 状态       | A1—C4 实施完成；现有数据真实验证通过                      |
 | 更新日期   | 2026-10-25                                                |
 | 分支       | `feat/service-mode`                                       |
-| 设计依据   | [架构与功能边界](./plan.md)                               |
+| 设计依据   | [架构与功能边界](./design.md)                               |
 | 运行与验收 | [开发说明](./development.md)、[验收记录](./acceptance.md) |
 
 ## 1. 交付范围
@@ -55,7 +55,7 @@ SQLite、回调监听、代理检测及 application/polling/scheduler 保留原�
 ## 4. 关键实现约定
 
 - **依赖与实例**：每个 runtime 使用独立容器；服务工厂声明实际依赖并缓存应用级实例。调度器在 runtime 初始化时 attach、start，停止时统一排空。纯协议/vendor 函数保留窄参数与来源追溯。
-- **接口**：Hono 仅定义 `/v1/...` 逻辑路由，完整清单见[业务路由表](./plan.md#82-业务路由与方法映射)。Electron 使用 `polyquota-app://app/v1/...`，Node 入口仅剥离一次 `/api`。
+- **接口**：Hono 仅定义 `/v1/...` 逻辑路由，完整清单见[业务路由表](./design.md#82-业务路由与方法映射)。Electron 使用 `polyquota-app://app/v1/...`，Node 入口仅剥离一次 `/api`。
 - **结果与校验**：HTTP 使用 `ServiceResult`；void 成功编码为 `value: null`，客户端恢复为 undefined。路径 id 与 body 独立校验，禁止覆盖 id 和额外字段，Settings 保持完整保存语义。供应商业务失败 DTO 与传输错误分开处理。
 - **同步**：SSE 先订阅再发送 ready，携带 schemaVersion、instanceId、revision；客户端重连全量重读，拒绝旧实例迟到响应。队列有界，取消、窗口销毁与退出释放流和监听。
 - **认证**：会话维护独立状态与展示信息，并发 finish 合并。页面仅保存 sessionId；重载查询恢复，设备轮询由用户显式完成触发。关闭取消与组件卸载分开，详情轮询和 finish 不重复报告完成。

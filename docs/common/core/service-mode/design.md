@@ -396,7 +396,7 @@ A1—C4 已完成，包含职责服务、Hono/内部协议、独立 Node 入口�
 
 - [实施结果](./implementation-plan.md)：代码落点、完成情况与实现约定。
 - [验收记录](./acceptance.md)：最终结果、验证范围与回归用例。
-- [跨服务商服务协议设计](../cross-provider-service-protocol-design.md)：共享能力与产品边界。
+- [跨服务商服务协议设计](../provider/design.md)：共享能力与产品边界。
 - [跨产品凭据共享与迁移](../credential-sharing/design.md)：默认私有后端、主动迁移/导入、固定目录与唯一凭据服务的待实施方案；当前仍保留原后端。
 - [Core 与 contract 结构](../2026-10-drift-review/core-contract-structure.md)：公开 DTO、校验与展示归属。
 - [认证服务抽取设计](../../../polyquota/auth-service-extraction-design.md)：Core 已有 CLI、OAuth 与回调编排。

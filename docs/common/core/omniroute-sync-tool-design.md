@@ -4,7 +4,7 @@
 | -------- | -------------------------------------------------------------------------- |
 | 状态     | 已定稿，待实施（阶段 6）                                                   |
 | 更新日期 | 2026-09-30                                                                 |
-| 设计依据 | [手工抽取基线](./omniroute-manual-extraction-baseline.md)、[跨服务商服务协议设计](./cross-provider-service-protocol-design.md)、[实施计划阶段 6](../../polyquota/plan.md) |
+| 设计依据 | [手工抽取基线](./omniroute-manual-extraction-baseline.md)、[跨服务商服务协议设计](./provider/design.md)、[实施计划阶段 6](../../polyquota/plan.md) |
 | 实施位置 | `tools/omniroute-sync`                                                     |
 | 上游基线 | `references/omniroute` 固定提交 `3ee283bb944d6d62cc219f74317d5186942e1780` |
 
@@ -87,7 +87,7 @@
 - 未来接入新厂商或阶段 F 抽取推理协议时，部分配置和数据可能已经在 vendor 中，只需补充实现声明；
 - 补丁数量下降，每个补丁的存在都对应一个真实约束，审查信号更强。
 
-vendor 包含未支持厂商的纯声明不构成能力声明。共享 Core 的公开边界仍然是 `ProviderDescriptor` 与能力 facet（见[跨服务商服务协议设计](./cross-provider-service-protocol-design.md)），`packages/core/src/index.ts` 继续不导出 vendor 模块。
+vendor 包含未支持厂商的纯声明不构成能力声明。共享 Core 的公开边界仍然是 `ProviderDescriptor` 与能力 facet（见[跨服务商服务协议设计](./provider/design.md)），`packages/core/src/index.ts` 继续不导出 vendor 模块。
 
 ## 4. 工具形态
 

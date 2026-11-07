@@ -10,7 +10,7 @@
 - core 不执行任何 `listen`、不持有 HTTP server 句柄；监听启动是桌面实现的端口，其契约由 core 定义。
 - IPC 契约零变化：`StartAuthRequest`、`AuthStartResult`、`startAuth / finishAuth / cancelAuth` 通道与 schemaVersion 均不动。
 - 回调处理按"纯搬运"处理，行为逐字保留（§6 有保留清单）。
-- 本设计是[跨服务商服务协议设计](../common/core/cross-provider-service-protocol-design.md)阶段 C 第 1、2 条的落地预演，与完整形态的差异见 §11。
+- 本设计是[跨服务商服务协议设计](../common/core/provider/design.md)阶段 C 第 1、2 条的落地预演，与完整形态的差异见 §11。
 
 ## 1. 现状问题
 

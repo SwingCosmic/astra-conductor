@@ -6,13 +6,13 @@
 | 更新日期 | 2026-11-07 |
 | 适用范围 | 服务商目录、认证、账号、凭据刷新、用量、模型目录、API 协议族、推理执行边界与产品服务 |
 | 暂缓细节 | 统一消息 IR 的全部字段、完整流事件表、路由算法、第三方可执行插件 |
-| 参考输入 | [OmniRoute 原始协议探索](./omniroute-exploration.md)、[当前搬运基线](./omniroute-manual-extraction-baseline.md)、[同步工具形态设计](./omniroute-sync-tool-design.md)、[ZCode](./zcode-provider-architecture-exploration.md)、[DSH](./deepseek-harness-provider-architecture-exploration.md)、[Hermes Agent](./hermes-agent-provider-architecture-exploration.md)、[认证服务抽取设计](../../polyquota/auth-service-extraction-design.md) |
+| 参考输入 | [OmniRoute 原始协议探索](../../exploration/omniroute.md)、[当前搬运基线](../omniroute-manual-extraction-baseline.md)、[同步工具形态设计](../omniroute-sync-tool-design.md)、[ZCode](../../exploration/zcode.md)、[DSH](../../exploration/deepseek-harness.md)、[Hermes Agent](../../exploration/hermes-agent.md)、[认证服务抽取设计](../../../polyquota/auth-service-extraction-design.md) |
 
-> 2026-10-25，PolyQuota 正式入口统一为 Hono + fetch/SSE，第 15 节保留当时的 IPC 迁移记录。现行传输见[服务模式开发说明](./service-mode/development.md)。
+> 2026-10-25，PolyQuota 正式入口统一为 Hono + fetch/SSE，第 15 节保留当时的 IPC 迁移记录。现行传输见[服务模式开发说明](../service-mode/development.md)。
 
-> 2026-10-31 至 11-01，[凭据共享设计](./credential-sharing/design.md)确定私有与共享后端、迁移密钥验证、交接与切回流程。11-06，本机闭环已验证 PolyQuota 导出、GraphAgent 导入、双方共享刷新以及 PolyQuota 返回内置与重入。GraphAgent 当前使用独立沙箱宿主和受限 preload。验收范围见 [A6—A8 实施记录](./credential-sharing/a6-a8-sharing-implementation.md)。
+> 2026-10-31 至 11-01，[凭据共享设计](../credential-sharing/design.md)确定私有与共享后端、迁移密钥验证、交接与切回流程。11-06，本机闭环已验证 PolyQuota 导出、GraphAgent 导入、双方共享刷新以及 PolyQuota 返回内置与重入。GraphAgent 当前使用独立沙箱宿主和受限 preload。验收范围见 [A6—A8 实施记录](../credential-sharing/a6-a8-sharing-implementation.md)。
 
-> 2026-11-07，普通 API Key、多协议地址、模型发现与预置、请求映射和共用页面的下一阶段设计见[供应商接入与模型目录](./provider-connections-and-model-catalog.md)。目标包归属、对称 Hono 请求路径和产品启动形式遵循[项目架构](../../architecture.md)。
+> 2026-11-07，普通 API Key、多协议地址、模型发现与预置、请求映射和共用页面的下一阶段设计见[供应商接入与模型目录](./connections-and-models.md)。目标包归属、对称 Hono 请求路径和产品启动形式遵循[项目架构](../../../architecture.md)。
 
 ## 1. 目标
 
@@ -57,7 +57,7 @@ OmniRoute 并不存在一个包办所有职责的 `ProviderAdapter`。它的完�
 - Codex 用量请求、GLM Coding Plan 配额与重置卡查询、Grok Build 与 Antigravity 的认证、刷新和用量协议、Claude Code 的 CLI 凭据导入/刷新/用量，以及 OpenCode Go 的 API Key 用量；
 - 为本项目注入 `fetchImpl`、收窄声明和替换路径别名所需的可审查改动。
 
-阶段 6 起按[同步工具形态设计](./omniroute-sync-tool-design.md)的最小修改原则维护：抽取产物可以保留尚未支持厂商的纯声明与数据，只要其依赖闭包不超出清单和外部依赖白名单；vendor 的惰性声明不构成能力声明，共享 Core 的公开边界仍由 `ProviderDescriptor` 与能力 facet 决定。
+阶段 6 起按[同步工具形态设计](../omniroute-sync-tool-design.md)的最小修改原则维护：抽取产物可以保留尚未支持厂商的纯声明与数据，只要其依赖闭包不超出清单和外部依赖白名单；vendor 的惰性声明不构成能力声明，共享 Core 的公开边界仍由 `ProviderDescriptor` 与能力 facet 决定。
 
 当前明确没有搬运：
 
@@ -82,7 +82,7 @@ OmniRoute 并不存在一个包办所有职责的 `ProviderAdapter`。它的完�
 | 尚未搬运的 Executor | `ProviderInferenceCapability` 候选来源 | 只抽纯协议/执行叶子，宿主策略由本项目实现 |
 | 尚未搬运的模型能力 | `ProviderModelCatalogCapability` 候选来源 | 保留来源、静态/动态目录和模型级协议覆盖 |
 
-现有[手工抽取基线](./omniroute-manual-extraction-baseline.md)仍是当前 49 个产物的事实记录。本设计扩大未来共享 Core 的能力边界，不追溯修改该基线来假装推理协议已经搬运。
+现有[手工抽取基线](../omniroute-manual-extraction-baseline.md)仍是当前 49 个产物的事实记录。本设计扩大未来共享 Core 的能力边界，不追溯修改该基线来假装推理协议已经搬运。
 
 ## 3. 参考架构的综合取舍
 
@@ -116,7 +116,7 @@ OmniRoute 并不存在一个包办所有职责的 `ProviderAdapter`。它的完�
 - 共享 Core 当前只有认证、凭据刷新、用量和套餐目录评分能力，没有模型目录、API 协议类型、推理请求与流式结果契约；
 - 先前草案中的 `ProviderRuntime` 强制所有实现提供用量方法，错误地以 PolyQuota 能力定义共享服务商边界；
 - GraphAgent 的 `ModelPolicy`、`ModelLease`、额度感知调度和模型执行尚无可绑定的共享协议；
-- 当前 OmniRoute vendor 基线与未来推理协议抽取之间没有演进位置，容易在 GraphAgent 启动时另起一套不兼容抽象（该位置已由[同步工具形态设计](./omniroute-sync-tool-design.md)确定：现有产物与未来抽取共用同一清单、闭包规则和门禁）。
+- 当前 OmniRoute vendor 基线与未来推理协议抽取之间没有演进位置，容易在 GraphAgent 启动时另起一套不兼容抽象（该位置已由[同步工具形态设计](../omniroute-sync-tool-design.md)确定：现有产物与未来抽取共用同一清单、闭包规则和门禁）。
 
 最终结构应消除这些分散判断，保留当前已经验证的凭据、刷新与用量逻辑，并在 GraphAgent 启动前固定模型与协议层的关键边界。
 
@@ -213,11 +213,11 @@ PolyQuota 默认使用内置凭据服务，GraphAgent 的当前最小宿主支�
 
 记录外壳增加由 broker 认证身份填写的 createdByClientId、lastUpdatedByClientId，以及 `Record<string, string>` metadata。客户端用 `"true"`/`"false"` 字符串声明 supportsUsage 等用途能力，broker 提供权限范围内、不含 payload 的描述列表与字符串精确筛选，不接受嵌套元数据；PolyQuota 按用量能力及本地 provider 支持发现凭据，不按创建产品或是否 API Key 判断。元数据不包含用量结果，broker 不解释供应商语义；归属、原子更新、容量限制及筛选变更规则见凭据共享设计第 2.2 节。
 
-稳定规则见[凭据共享设计](./credential-sharing/design.md)，范围和验收见[两阶段实施方案](./credential-sharing/implementation-plan.md)：一阶段仅 PolyQuota 单向导出、GraphAgent 单向导入、统一建立共享及 PolyQuota 切回内置；GraphAgent 只做空白主页和设置页。双向导出/切换、重新导出和密钥更新属于二阶段。
+稳定规则见[凭据共享设计](../credential-sharing/design.md)，范围和验收见[两阶段实施方案](../credential-sharing/implementation-plan.md)：一阶段仅 PolyQuota 单向导出、GraphAgent 单向导入、统一建立共享及 PolyQuota 切回内置；GraphAgent 只做空白主页和设置页。双向导出/切换、重新导出和密钥更新属于二阶段。
 
 导出成功不等于服务接管，切换失败保留主密钥用于重试；主动切回则忘记本客户端主密钥，再次进入需要输入迁移密钥。版本准备与 currentVersion 发布、凭据更新权交接、客户端接线分别记录，不把跨库操作宣称为单个事务。
 
-共享服务面向任意获准的第三方客户端，独立安装、运行和升级。其存储协议属于 broker，产品前后端 API 属于 `contract`，供应商类型与刷新逻辑属于应用复用的 Core。broker 协议使用 clientId、实例授权与能力协商。刷新许可覆盖读取、外部调用与提交全过程，细节见[凭据共享设计](./credential-sharing/design.md)第 2 节。
+共享服务面向任意获准的第三方客户端，独立安装、运行和升级。其存储协议属于 broker，产品前后端 API 属于 `contract`，供应商类型与刷新逻辑属于应用复用的 Core。broker 协议使用 clientId、实例授权与能力协商。刷新许可覆盖读取、外部调用与提交全过程，细节见[凭据共享设计](../credential-sharing/design.md)第 2 节。
 
 共享模式的 broker 是唯一凭据来源，应用不长期缓存 token，每次业务使用/刷新按服务当前修订读取。提交后立即通知订阅者自动读取最新内容，断线重连补取；短期请求快照与主密钥安全缓存不属于长期 token 副本。C1→C2→C3 的顺序由许可、fence 和 revision 保证，不由两个应用自己的进程内锁保证。
 
@@ -377,7 +377,7 @@ interface ProtocolRouteDescriptor {
 
 API 协议类型、业务操作和服务商必须正交：OpenAI Chat Completions 与 Responses 是不同协议；同一服务商可以同时暴露多种协议；同一协议也可以由多个服务商实现。`providerId` 因此不能再兼任 `apiType`，模型选择也不能只保存服务商和模型名。
 
-公开 route 描述可选择的协议能力。用户在接入页为账号的每条 route 设置 base URL，受限编辑接口只回显允许展示的配置。目录与快照只投影 route 标识和能力，执行端在本次请求中解析地址、认证头及适用的映射规则。协议路径拼接与配置校验见[供应商接入与模型目录](./provider-connections-and-model-catalog.md)。
+公开 route 描述可选择的协议能力。用户在接入页为账号的每条 route 设置 base URL，受限编辑接口只回显允许展示的配置。目录与快照只投影 route 标识和能力，执行端在本次请求中解析地址、认证头及适用的映射规则。协议路径拼接与配置校验见[供应商接入与模型目录](./connections-and-models.md)。
 
 ### 6.5 模型目录
 
@@ -437,7 +437,7 @@ interface ModelCatalogSnapshot {
 
 模型目录把 OmniRoute `RegistryModel` 中已经证明必要的能力提升为共享契约，包括模型级目标协议、上下文限制、工具调用、结构化输出、推理状态、模态和不支持参数，但不在当前阶段复制其全部字段。GraphAgent 使用结构化 `ModelCapabilityRequirement` 过滤候选，不能把能力重新退化成约定俗成的字符串标签。静态声明与远端发现可以合并，必须保留来源和 revision；远端刷新暂时失败时，现有租约不能因为目录瞬时缺失而被悄悄改绑。
 
-目录按账号和路由发现，并校验其 provider 与 offering。一次刷新只向读取时的 `bindingRevision` 提交结果。绑定变更后，旧响应丢弃。模型参数包括缓存能力和输入、输出、缓存的价格，预置按同名模型逐字段补充。字段来源、覆盖顺序、刷新与失效规则见[供应商接入与模型目录](./provider-connections-and-model-catalog.md)。
+目录按账号和路由发现，并校验其 provider 与 offering。一次刷新只向读取时的 `bindingRevision` 提交结果。绑定变更后，旧响应丢弃。模型参数包括缓存能力和输入、输出、缓存的价格，预置按同名模型逐字段补充。字段来源、覆盖顺序、刷新与失效规则见[供应商接入与模型目录](./connections-and-models.md)。
 
 ### 6.6 能力化运行实现
 
@@ -560,7 +560,7 @@ OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 和 Gemini Gener
 
 ### 6.8 内部认证开始结果
 
-已按[认证服务抽取设计](../../polyquota/auth-service-extraction-design.md)落地为 core 的 flow 形态：
+已按[认证服务抽取设计](../../../polyquota/auth-service-extraction-design.md)落地为 core 的 flow 形态：
 
 ```ts
 type AuthFlowStart =
@@ -852,9 +852,9 @@ interface IPolyQuotaService {
 
 ### 10.2 宿主传输
 
-两个产品分别组装自己的 Hono 应用，通用 API 挂载同一契约的方法和相对路径。每个产品的 Web 与 Electron 使用同一份前端经 fetch/SSE 访问这些路由，由服务端完成输入校验、调用 Core 或产品服务、公开 DTO 投影与错误处理。GraphAgent 独立 Node/Web 和 Electron 均需正式验收，PolyQuota 的独立 Web 用于开发测试。具体宿主装配见[项目架构](../../architecture.md)。
+两个产品分别组装自己的 Hono 应用，通用 API 挂载同一契约的方法和相对路径。每个产品的 Web 与 Electron 使用同一份前端经 fetch/SSE 访问这些路由，由服务端完成输入校验、调用 Core 或产品服务、公开 DTO 投影与错误处理。GraphAgent 独立 Node/Web 和 Electron 均需正式验收，PolyQuota 的独立 Web 用于开发测试。具体宿主装配见[项目架构](../../../architecture.md)。
 
-PolyQuota 已实现回环 HTTP 和 Electron 内部协议进入 Hono。GraphAgent A6—A8 以受限 preload 承载凭据设置，迁移时将这些业务操作接入 GraphAgent 的 Hono 路由，系统对话框和密钥保管留给宿主。[PolyQuota 服务模式](./service-mode/development.md) · [GraphAgent 最小宿主实施记录](../../graph-agent/minimal-host.md)
+PolyQuota 已实现回环 HTTP 和 Electron 内部协议进入 Hono。GraphAgent A6—A8 以受限 preload 承载凭据设置，迁移时将这些业务操作接入 GraphAgent 的 Hono 路由，系统对话框和密钥保管留给宿主。[PolyQuota 服务模式](../service-mode/development.md) · [GraphAgent 最小宿主实施记录](../credential-sharing/a6-a8-sharing-implementation.md#graphagent-最小宿主)
 
 ### 10.3 前端注入与测试
 
@@ -872,7 +872,7 @@ PolyQuota 正式 Vue 入口注入 fetch 客户端，连接失败时显示服务�
 - OAuth refresh token 轮换继续遵守服务商自己的跨账号串行规则；
 - `finishAuth` 和 `cancelAuth` 对同一 session 至多一个成功；
 - 应用退出时先停止新调用，再取消认证会话和刷新，最后关闭存储与注册实现；
-- 共享凭据服务落地后，应用执行 token 刷新前须按[凭据共享设计](./credential-sharing/design.md)取得有界更新许可；broker 不执行供应商逻辑。短暂掉线不立即释放，可续期但有绝对占用上限，到期允许一个等待者接替；结果未知不构成永久锁。operationId 负责提交幂等，revision/fence/有效期拒绝旧提交。超时后供应商可能重复刷新的风险按可用性优先策略接受，应用有限重试或提示授权；私有副本独立刷新规则不变。
+- 共享凭据服务落地后，应用执行 token 刷新前须按[凭据共享设计](../credential-sharing/design.md)取得有界更新许可；broker 不执行供应商逻辑。短暂掉线不立即释放，可续期但有绝对占用上限，到期允许一个等待者接替；结果未知不构成永久锁。operationId 负责提交幂等，revision/fence/有效期拒绝旧提交。超时后供应商可能重复刷新的风险按可用性优先策略接受，应用有限重试或提示授权；私有副本独立刷新规则不变。
 - 应用已判断本次刷新失败时主动 abortUpdate，broker 原子记录 failed-released 并立即释放，凭据内容与修订不变；失败方重试需重新申请许可，或由其他等待客户端接替。网络错误无法证明上游未变化也不阻止释放；发送释放失败时才由租约到期兜底。迟到 abort 不能释放别人的新许可或覆盖已有成功回执。
 
 ## 12. 安全边界
@@ -889,7 +889,7 @@ PolyQuota 正式 Vue 入口注入 fetch 客户端，连接失败时显示服务�
 
 ### 12.2 输入约束
 
-共享迁移向导允许一次性显示系统生成的迁移密钥，并由用户填入接受方后台；这是显式设计的迁移交互，不开放供应商 token 或存储主密钥读取。加密包只在后台解密，UI 取得脱敏预览；迁移密钥不进入普通查询、事件、缓存或日志，具体规则见[凭据共享设计](./credential-sharing/design.md)。
+共享迁移向导允许一次性显示系统生成的迁移密钥，并由用户填入接受方后台；这是显式设计的迁移交互，不开放供应商 token 或存储主密钥读取。加密包只在后台解密，UI 取得脱敏预览；迁移密钥不进入普通查询、事件、缓存或日志，具体规则见[凭据共享设计](../credential-sharing/design.md)。
 
 - 所有标识使用长度和字符集受限的 schema；
 - `offeringId`、`authMethodId` 必须从注册表交叉验证；
@@ -1021,11 +1021,11 @@ UI 测试直接注入 `FakePolyQuotaService`：
 ### 阶段 D：PolyQuota 应用服务、目录与展示收敛
 
 - 建立应用服务契约、带修订的快照与失效通知，收敛 descriptor 展示事实、套餐匹配和重置额度结构。
-- 结果：快照与失效事件、`iconKey`/CLI 提示、套餐目录及重置额度聚合/分体结构均已落地；后续业务入口迁移为 Hono + fetch/SSE，当前契约与运行方式见[项目架构](../../architecture.md)和[运行流程与通信说明](../../polyquota/runtime-and-communication-review.md)。
+- 结果：快照与失效事件、`iconKey`/CLI 提示、套餐目录及重置额度聚合/分体结构均已落地；后续业务入口迁移为 Hono + fetch/SSE，当前契约与运行方式见[项目架构](../../../architecture.md)和[运行流程与通信说明](../../../polyquota/runtime-and-communication-review.md)。
 
 ### 阶段 E：扩展接入与模型目录，固定推理骨架
 
-GraphAgent 最小宿主已经运行。普通 API Key、多协议地址、模型发现与预置、请求映射及页面归属见[供应商接入与模型目录设计](./provider-connections-and-model-catalog.md)。工作区结构调整与 UI 抽离在同一阶段先后完成，Core 改造、双端页面适配与联调按[三阶段实施方案](./provider-platform-implementation-plan.md)推进。凭据 SDK 合包由[凭据共享专项](./credential-sharing/implementation-plan.md)安排。以下完整推理契约供后续接入业务执行时使用。
+GraphAgent 最小宿主已经运行。普通 API Key、多协议地址、模型发现与预置、请求映射及页面归属见[供应商接入与模型目录设计](./connections-and-models.md)。工作区结构调整与 UI 抽离在同一阶段先后完成，Core 改造、双端页面适配与联调按[三阶段实施方案](./implementation-plan.md)推进。凭据 SDK 合包由[凭据共享专项](../credential-sharing/implementation-plan.md)安排。以下完整推理契约供后续接入业务执行时使用。
 
 1. 实现 `ApiProtocol`、`ProtocolRouteDescriptor`、`ModelDescriptor` 和 `ProviderRouteSelection` schema；
 2. 建立 codec registry、规范请求 envelope 与最小 `ModelStreamEvent` 分类；
@@ -1039,7 +1039,7 @@ GraphAgent 最小宿主已经运行。普通 API Key、多协议地址、模型�
 
 1. 以固定上游 commit 审核 registry model、format、translator 和 Executor 的最小依赖闭包；
 2. 优先抽取纯类型、纯转换器和 fixture，宿主编排留在产品层；
-3. 每批搬运以 `tools/omniroute-sync` 清单条目的形式登记来源路径、上游 commit、规则与补丁，并更新基线文档；闭包、拒绝路径和幂等门禁按[同步工具形态设计](./omniroute-sync-tool-design.md)执行；
+3. 每批搬运以 `tools/omniroute-sync` 清单条目的形式登记来源路径、上游 commit、规则与补丁，并更新基线文档；闭包、拒绝路径和幂等门禁按[同步工具形态设计](../omniroute-sync-tool-design.md)执行；
 4. 不让 `references/omniroute` 成为运行时依赖，也不机械复制 `chatCore`、数据库和代理宿主；
 5. 若 OmniRoute 的 OpenAI 中转语义与本项目规范 IR 冲突，以无损能力和 GraphAgent 工具循环需求为准，而不是维持源码形状。
 
@@ -1080,5 +1080,5 @@ GraphAgent 最小宿主已经运行。普通 API Key、多协议地址、模型�
 - 不原样复制 OmniRoute 的完整 `chatCore`、代理宿主、数据库或 UI；
 - 不用一个万能 `Record<string, unknown>` 代替共同领域模型；
 - 共用 UI 通过统一的 API 契约访问当前产品的 Hono 应用，专属页面和服务归对应产品。
-- 凭据代理的进程、物理存储与共享切换统一遵循[凭据共享设计](./credential-sharing/design.md)，实施范围见 [A6—A8 实施记录](./credential-sharing/a6-a8-sharing-implementation.md)。
+- 凭据代理的进程、物理存储与共享切换统一遵循[凭据共享设计](../credential-sharing/design.md)，实施范围见 [A6—A8 实施记录](../credential-sharing/a6-a8-sharing-implementation.md)。
 - 不为了消除所有条件分支而隐藏真实服务商差异。

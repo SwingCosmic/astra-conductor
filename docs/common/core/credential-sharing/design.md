@@ -6,7 +6,7 @@
 | 更新日期 | 2026-11-07                                                                                         |
 | 范围     | 同机、同一系统用户；产品业务数据库独立                                                             |
 | 实施入口 | [两阶段实施方案](./implementation-plan.md)、[A1/A2 实施详细设计](./broker-a1-a2-detailed-design.md)、[A3—A5 导出侧实施](./a3-a5-export-implementation.md)、[A6—A8 接收与共享实施](./a6-a8-sharing-implementation.md)       |
-| 关联     | [项目架构](../../../architecture.md)、[Provider 协议](../cross-provider-service-protocol-design.md)、[服务模式](../service-mode/plan.md) |
+| 关联     | [项目架构](../../../architecture.md)、[Provider 协议](../provider/design.md)、[服务模式](../service-mode/design.md) |
 
 ## 1. 目标与阶段边界
 
@@ -22,7 +22,7 @@
 | 组件交付        | A1—A8 使用本地自包含产物完成安装与单向共享验收         | 双向共享验收通过后，B4 发布 Release 并接入生产下载 |
 | GraphAgent 界面 | 一个空白主页、一个设置页                               | 仅扩展设置中的共享管理                          |
 
-一阶段 GraphAgent 只承担导入与共享接入验证，其聊天、Agent Loop、任务、工具与用量能力按独立计划推进。后续供应商配置格式和共用页面见[供应商接入与模型目录设计](../provider-connections-and-model-catalog.md)，broker 继续按本文约定处理不透明记录。双向共享、存储切换和元数据升级重新导出的步骤与验收见[凭据共享实施方案](./implementation-plan.md#双向导出与存储切换)。
+一阶段 GraphAgent 只承担导入与共享接入验证，其聊天、Agent Loop、任务、工具与用量能力按独立计划推进。后续供应商配置格式和共用页面见[供应商接入与模型目录设计](../provider/connections-and-models.md)，broker 继续按本文约定处理不透明记录。双向共享、存储切换和元数据升级重新导出的步骤与验收见[凭据共享实施方案](./implementation-plan.md#双向导出与存储切换)。
 
 ## 2. 不透明凭据服务
 
@@ -370,7 +370,7 @@ A3 先约定下载暂存目录及版本/平台布局，由开发者手动放置�
 2. **进入共享业务前**：只读检查安装登记、清单和完整性，不启动服务、不读 payload。通信协议不受支持、缺失 API 声明或 API level 不足时，立即要求安装具备所需 API 的组件；组件 SemVer 较旧本身不会阻止业务。导入、确认、导出、接管、重试和重入在产生共享业务副作用前执行检查。明确选择离线私有副本仍按第 5 节处理。
 3. **发送业务 RPC 前**：握手确认实际运行服务的协议，并按其实际 API level 判断能力。服务 level 较高或组件版本与清单不同本身不构成拒绝理由；不能以请求新方法后捕获 `method-not-found` 代替检查。通过前置判断后仍须完成双向认证，未认证 greeting 不作为可信状态。
 
-接口字段暂沿用 `apiRevision`，但其类型和语义为十进制 API level。在线 JSON 使用 number；.NET 使用 decimal，TypeScript 的专用解析保留十进制原文，精确比较系数和小数位，不先转换成 IEEE-754 浮点再比较。支持 .NET decimal 的非负精确范围，拒绝需要舍入的值；`2`、`2.0`、`2e0` 规范化为同一数值。普通凭据/迁移包 JSON 的既有整数约束不因此放宽。界面通过精确十进制文本展示 API level。
+接口字段暂沿用 `apiRevision`，但其类型和语义为十进制 API level。在线 JSON 使用 number；.NET 使用 decimal，TypeScript 的专用解析保留十进制原文，精确比较系数和小数位，不先转换成 IEEE-754 浮点再比较。支持 .NET decimal 的非负精确范围，拒绝需要舍入的值；`2`、`2.0`、`2e0` 规范化为同一数值。普通凭据/迁移包 JSON 的既有整数约束不因此放宽。两端公开状态通过 `requiredApiLevel` 和 `installedApiLevel` 的精确十进制文本展示所需/已提供 API；实际兼容判断在 SDK 执行，界面不自行比较组件版本或将 API level 当作 SemVer。
 
 认证证明继续覆盖协议、API、组件版本等握手声明，以防篡改；绑定组件版本不等于将其用于兼容判断。两个 API 位置用归一化的十进制 JSON 数字 token，整数 API `2` 的认证字节保持原样；不把数字改为引号字符串。服务在授予会话前确认客户端需要的 API 不超过自身能力。
 

@@ -85,7 +85,7 @@ src/
 
 ## 4. core 侧的结构问题汇总
 
-1. **解析点错位**：目录匹配（`matchOfferingPlan`）的正确位置是主进程构造用量快照时；现状把 match 下发给 renderer 用契约包的副本重新匹配（§2 第 1 项）。协议设计文档（`cross-provider-service-protocol-design.md` "已解决"清单）记录了这是刻意选择（"`planLabel` 删除，QuotaCard 直接使用契约包的 `publicPlanDisplayName`"）——它消除的是 UI 内的重复标签逻辑，代价是把匹配语义复制进了前端，该记录需随实施修订。
+1. **解析点错位**：目录匹配（`matchOfferingPlan`）的正确位置是主进程构造用量快照时；现状把 match 下发给 renderer 用契约包的副本重新匹配（§2 第 1 项）。协议设计文档（`docs/common/core/provider/design.md` "已解决"清单）记录了这是刻意选择（"`planLabel` 删除，QuotaCard 直接使用契约包的 `publicPlanDisplayName`"）——它消除的是 UI 内的重复标签逻辑，代价是把匹配语义复制进了前端，该记录需随实施修订。
 2. **匹配语义双实现**：core `normalizePlanMatch` / `matchOfferingPlan` 与契约包同名函数族并行（§2 第 1 项），解析点上移后契约副本退役，core 成为唯一实现。
 3. **`providerIds` 供源方向反转**：core `models.ts` 目前 re-export 契约词表；按 §3.1 确认的方向，core 改为从注册 descriptors 收集派生并导出，`validateProviderCatalog` 的"未知 provider"检查转为对目录自身的结构性校验。
 4. **DTO 双定义**（§2 第 5 项）：usage / account 家族照 ResetCredits 的既有做法收敛为契约单源 re-export。

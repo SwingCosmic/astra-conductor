@@ -76,7 +76,7 @@ git -c core.safecrlf=false diff --no-index --ignore-space-at-eol --no-ext-diff -
 | `open-sse/services/tokenRefresh.ts`                 | 声明裁剪     | 提前量、全部厂商 lead 成员、废弃 provider 表和 `getRefreshLeadMs` |
 | `open-sse/services/tokenRefresh/providers/codex.ts` | 宿主依赖替换 | Codex 刷新请求、旋转 refresh token 和不可恢复错误分类 |
 
-这一范围只包含稳定授权与用量协议，不包含页面、数据库、桌面宿主或同步工具自身。当前 49 个产物是手工维护的事实基线（含第 3.7 节闭包扩展模块），不是共享 Core 的永久能力上限；阶段 6 的目标是把它们全部纳入同步清单，GraphAgent 所需的 provider/model registry、协议 codec 和 Executor 必须按[跨服务商服务协议设计](./cross-provider-service-protocol-design.md)另立清单分节、固定来源并选择性抽取，不能无记录地扩进本基线。
+这一范围只包含稳定授权与用量协议，不包含页面、数据库、桌面宿主或同步工具自身。当前 49 个产物是手工维护的事实基线（含第 3.7 节闭包扩展模块），不是共享 Core 的永久能力上限；阶段 6 的目标是把它们全部纳入同步清单，GraphAgent 所需的 provider/model registry、协议 codec 和 Executor 必须按[跨服务商服务协议设计](./provider/design.md)另立清单分节、固定来源并选择性抽取，不能无记录地扩进本基线。
 
 ### 3.3 GLM Coding Plan
 

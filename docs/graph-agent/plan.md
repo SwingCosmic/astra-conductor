@@ -8,9 +8,9 @@
 
 ## 0. 前置共享依赖
 
-GraphAgent 已为凭据共享 A6—A8 建立 Electron 最小壳。设置页支持 PolyQuota 导出数据的密钥输入、实际解密验证、脱敏确认、共享接入及状态恢复。[最小宿主](./minimal-host.md)
+GraphAgent 已为凭据共享 A6—A8 建立 Electron 最小壳。设置页支持 PolyQuota 导出数据的密钥输入、实际解密验证、脱敏确认、共享接入及状态恢复。[最小宿主](../common/core/credential-sharing/a6-a8-sharing-implementation.md#graphagent-最小宿主)
 
-下列产品业务阶段 1–4 使用独立编号。实现时须覆盖可独立启动的 Web 产品和 Electron 桌面产品，启动形态与统一业务入口遵循[项目架构](../architecture.md)。两端共用页面与供应商服务由[供应商平台实施方案](../common/core/provider-platform-implementation-plan.md)交付，双向存储管理与版本更新按[凭据共享实施方案](../common/core/credential-sharing/implementation-plan.md)推进。
+下列产品业务阶段 1–4 使用独立编号。实现时须覆盖可独立启动的 Web 产品和 Electron 桌面产品，启动形态与统一业务入口遵循[项目架构](../architecture.md)。两端共用页面与供应商服务由[供应商平台实施方案](../common/core/provider/implementation-plan.md)交付，双向存储管理与版本更新按[凭据共享实施方案](../common/core/credential-sharing/implementation-plan.md)推进。
 
 模型、账号、provider、协议 route、codec 和推理执行属于共享 Core，不在本计划中重复实施。GraphAgent 开始真实模型调用前，共享平台至少需要提供：
 
@@ -66,7 +66,7 @@ GraphAgent 已为凭据共享 A6—A8 建立 Electron 最小壳。设置页支�
 - 模板不可原地修改，实例不能引用不存在的修订；
 - 不包含模型调用、任务图或工具执行。
 
-**关联文档**：[01_Agent 模板与实例](./01_agent-template-and-instance.md)。
+**关联文档**：[01_Agent 模板与实例](./design/01_agent-template-and-instance.md)。
 
 ### 步骤 1.2 私聊与群聊机制
 
@@ -89,7 +89,7 @@ GraphAgent 已为凭据共享 A6—A8 建立 Electron 最小壳。设置页支�
 - 同一消息重复投递不重复响应；
 - 挂起/恢复/停止仍只保留应用管理入口，不作为聊天命令实现。
 
-**关联文档**：[02_消息聊天](./02_conversation-and-messaging.md)。
+**关联文档**：[02_消息聊天](./design/02_conversation-and-messaging.md)。
 
 ## 3. 阶段 2：最小可用
 
@@ -115,7 +115,7 @@ GraphAgent 已为凭据共享 A6—A8 建立 Electron 最小壳。设置页支�
 - 工作目录、编码、shell 和进程取消行为在 Windows 样本上可验证；
 - 不要求任务图、派发、记忆或拦截器。
 
-**关联文档**：[03_Agent Loop、派发与任务执行](./03_agent-loop-dispatch-and-execution.md)、[04_工具调用](./04_tool-execution.md)、[tools/](./tools/README.md)。
+**关联文档**：[03_Agent Loop、派发与任务执行](./design/03_agent-loop-dispatch-and-execution.md)、[04_工具调用](./design/04_tool-execution.md)、[tools/](./design/tools/README.md)。
 
 ### 步骤 2.2 简单派发与任意层级 subagent
 
@@ -140,7 +140,7 @@ GraphAgent 已为凭据共享 A6—A8 建立 Electron 最小壳。设置页支�
 - 预算只做占位或简单上限，不做完整预留、软限额和亲和；
 - 不要求跨设备，所有实例在本机运行。
 
-**关联文档**：[03_Agent Loop、派发与任务执行](./03_agent-loop-dispatch-and-execution.md)。
+**关联文档**：[03_Agent Loop、派发与任务执行](./design/03_agent-loop-dispatch-and-execution.md)。
 
 ## 4. 阶段 3：强化
 
@@ -165,7 +165,7 @@ GraphAgent 已为凭据共享 A6—A8 建立 Electron 最小壳。设置页支�
 - 长期记忆按预算注入，实际采用版本可从调用快照回查；
 - 原始消息不被压缩、recap 或记忆更新覆写。
 
-**关联文档**：[05_拦截器、记忆、整理与技能](./05_interception-memory-and-skills.md)。
+**关联文档**：[05_拦截器、记忆、整理与技能](./design/05_interception-memory-and-skills.md)。
 
 ### 步骤 3.2 技能加载与生成
 
@@ -186,7 +186,7 @@ GraphAgent 已为凭据共享 A6—A8 建立 Electron 最小壳。设置页支�
 - 外部导入技能默认不可信；
 - 技能正文不提升为宿主规则。
 
-**关联文档**：[05_拦截器、记忆、整理与技能](./05_interception-memory-and-skills.md)。
+**关联文档**：[05_拦截器、记忆、整理与技能](./design/05_interception-memory-and-skills.md)。
 
 ### 步骤 3.3 跨设备多客户端派发与完整策略
 
@@ -216,9 +216,9 @@ GraphAgent 已为凭据共享 A6—A8 建立 Electron 最小壳。设置页支�
 - start 应答丢失不重复执行，断线暂停/取消区分 pending 与 applied；
 - 远端文件未传输时显示所属设备，不能声称目标设备已收到。
 
-**实施切分**：按[跨设备专项设计](./cross-device-dispatch-design.md)依次完成 3.3a 身份与注册、3.3b 放置与执行、3.3c 产物与恢复、3.3d 工作台与加固；保留本节预算、模型和亲和交付，与各子阶段共同验收。不依赖阶段 4.4 厂商适配来实现自主 Worker。
+**实施切分**：按[跨设备专项设计](./design/cross-device-dispatch-design.md)依次完成 3.3a 身份与注册、3.3b 放置与执行、3.3c 产物与恢复、3.3d 工作台与加固；保留本节预算、模型和亲和交付，与各子阶段共同验收。不依赖阶段 4.4 厂商适配来实现自主 Worker。
 
-**关联文档**：[03_Agent Loop、派发与任务执行](./03_agent-loop-dispatch-and-execution.md)、[跨设备任务派发设计](./cross-device-dispatch-design.md)、[dots 设备连接实测报告](./dots-device-connection-report.md)、[共享 Provider Platform](../common/core/cross-provider-service-protocol-design.md)。
+**关联文档**：[03_Agent Loop、派发与任务执行](./design/03_agent-loop-dispatch-and-execution.md)、[跨设备任务派发设计](./design/cross-device-dispatch-design.md)、[dots 设备连接实测报告](../common/exploration/dots.md)、[共享 Provider Platform](../common/core/provider/design.md)。
 
 ### 步骤 3.4 剩余工具
 
@@ -244,7 +244,7 @@ GraphAgent 已为凭据共享 A6—A8 建立 Electron 最小壳。设置页支�
 - 网页结果区分搜索摘要、抽取正文和抓取覆盖；
 - 工具存在不代表已授权，远端声明能力默认待验证。
 
-**关联文档**：[04_工具调用](./04_tool-execution.md)、[tools/](./tools/README.md)。
+**关联文档**：[04_工具调用](./design/04_tool-execution.md)、[tools/](./design/tools/README.md)。
 
 ### 步骤 3.5 拦截器
 
@@ -267,7 +267,7 @@ GraphAgent 已为凭据共享 A6—A8 建立 Electron 最小壳。设置页支�
 - 拦截不能扩大权限或直接完成 Task；
 - 用户暂停/停止不被拦截器或 Agent 绕过。
 
-**关联文档**：[05_拦截器、记忆、整理与技能](./05_interception-memory-and-skills.md)。
+**关联文档**：[05_拦截器、记忆、整理与技能](./design/05_interception-memory-and-skills.md)。
 
 ## 5. 阶段 4：优化与额外功能
 
@@ -292,7 +292,7 @@ GraphAgent 已为凭据共享 A6—A8 建立 Electron 最小壳。设置页支�
 - 临时会话不自动恢复原工作，原资源和工具结果正确配对；
 - 高级工作流不破坏单一交付责任人、版本化输入和预算归因。
 
-**关联文档**：[02_消息聊天](./02_conversation-and-messaging.md)、[03_Agent Loop、派发与任务执行](./03_agent-loop-dispatch-and-execution.md)、[06_工作台与外部对接](./06_workspace-and-integrations.md)。
+**关联文档**：[02_消息聊天](./design/02_conversation-and-messaging.md)、[03_Agent Loop、派发与任务执行](./design/03_agent-loop-dispatch-and-execution.md)、[06_工作台与外部对接](./design/06_workspace-and-integrations.md)。
 
 ### 步骤 4.2 定时任务、Recap、做梦与记忆整理
 
@@ -316,7 +316,7 @@ GraphAgent 已为凭据共享 A6—A8 建立 Electron 最小壳。设置页支�
 - 整理失败不改变任务终态；
 - 无可用批量候选时按配置回退或明确排队。
 
-**关联文档**：[05_拦截器、记忆、整理与技能](./05_interception-memory-and-skills.md)、[06_工作台与外部对接](./06_workspace-and-integrations.md)。
+**关联文档**：[05_拦截器、记忆、整理与技能](./design/05_interception-memory-and-skills.md)、[06_工作台与外部对接](./design/06_workspace-and-integrations.md)。
 
 ### 步骤 4.3 A2A 协议适配
 
@@ -340,7 +340,7 @@ GraphAgent 已为凭据共享 A6—A8 建立 Electron 最小壳。设置页支�
 - 取消请求被接受不等于远端已终止；
 - 内部 PAUSED/WAITING/UNKNOWN 不伪装成 A2A 新枚举。
 
-**关联文档**：[06_工作台与外部对接](./06_workspace-and-integrations.md)。
+**关联文档**：[06_工作台与外部对接](./design/06_workspace-and-integrations.md)。
 
 ### 步骤 4.4 外部 Agent 与 Coding Agent 远程调用
 
@@ -363,7 +363,7 @@ GraphAgent 已为凭据共享 A6—A8 建立 Electron 最小壳。设置页支�
 - 远端事件不重复，progress 不被当作本地终态；
 - 适配器版本、授权和沙箱行为有固定 fixture。
 
-**关联文档**：[06_工作台与外部对接](./06_workspace-and-integrations.md)。
+**关联文档**：[06_工作台与外部对接](./design/06_workspace-and-integrations.md)。
 
 ### 步骤 4.5 管理看板
 
@@ -385,7 +385,7 @@ GraphAgent 已为凭据共享 A6—A8 建立 Electron 最小壳。设置页支�
 - 凭据和原始秘密不进入看板；
 - 关键阻塞和失败原因可定位到对象与命令。
 
-**关联文档**：[06_工作台与外部对接](./06_workspace-and-integrations.md)。
+**关联文档**：[06_工作台与外部对接](./design/06_workspace-and-integrations.md)。
 
 ## 6. 验证层次
 
@@ -411,7 +411,7 @@ GraphAgent 已为凭据共享 A6—A8 建立 Electron 最小壳。设置页支�
 - 首个真实推理 route、usage/费用来源及跨协议 fixture。
 - Markdown MemoryStore 与 SQLite 原始消息档案的发布/恢复协议；工作/辅助模型组合。
 - 选择执行图布局并分别在 Web 与 Electron 的产品前端验证工作台交互。
-- 跨设备领域边界按[专项设计](./cross-device-dispatch-design.md)落实；工程选型仍需确定控制面宿主、认证与密钥轮换、心跳/租约期限、中继内容库、配额与保留策略，并验证离线恢复。
+- 跨设备领域边界按[专项设计](./design/cross-device-dispatch-design.md)落实；工程选型仍需确定控制面宿主、认证与密钥轮换、心跳/租约期限、中继内容库、配额与保留策略，并验证离线恢复。
 - A2A 规范版本、外部 coding agent 适配器的固定版本与沙箱行为。
 
 这些选择不阻塞当前功能设计；实施到对应阶段时，以可审查样本和完成信号确认，不把草案当作已选定工程结构。

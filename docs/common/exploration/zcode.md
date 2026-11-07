@@ -163,4 +163,4 @@ ZCode 在应用组合根创建配置源、账号源、解析器、注册表和 f
 - 完整模型规则解析器；
 - 运行时从外部目录装载第三方实现。
 
-最终方案见[跨服务商服务协议设计](./cross-provider-service-protocol-design.md)。
+最终方案见[跨服务商服务协议设计](../core/provider/design.md)。

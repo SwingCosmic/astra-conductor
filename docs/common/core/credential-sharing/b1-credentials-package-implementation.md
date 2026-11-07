@@ -54,4 +54,4 @@ pnpm --filter @astra-conductor/polyquota test:credential-sharing-loop --publish 
 
 ## 后续接口
 
-后续架构调整直接使用上述两个入口，无须维护 `credential-host` 兼容包。供应商平台的 contract/UI/Hono/启动形式迁移仍按[其实施方案](../provider-platform-implementation-plan.md)推进。B2—B6 的双向导出、双端存储切换、生产下载、重新导出和换钥未在 B1 实现。
+后续架构调整直接使用上述两个入口，无须维护 `credential-host` 兼容包。供应商平台的 contract/UI/Hono/启动形式迁移仍按[其实施方案](../provider/implementation-plan.md)推进。B2—B6 的双向导出、双端存储切换、生产下载、重新导出和换钥未在 B1 实现。

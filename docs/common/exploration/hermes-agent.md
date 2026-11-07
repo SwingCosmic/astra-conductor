@@ -172,4 +172,4 @@ Hermes 主要面向 CLI 和 Gateway。Profile 包含展示字段，但没有形�
 - 未注册服务商退回通用兼容实现；
 - 把内部 Profile 直接当成前端 API。
 
-最终方案见[跨服务商服务协议设计](./cross-provider-service-protocol-design.md)。
+最终方案见[跨服务商服务协议设计](../core/provider/design.md)。

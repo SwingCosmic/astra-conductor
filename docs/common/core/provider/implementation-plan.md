@@ -1,6 +1,6 @@
 # 供应商平台与双产品 UI 三阶段实施方案
 
-2026-11-07 · 待实施。阶段一先调整项目结构，再抽离 UI，让现有供应商管理在两个产品可用。阶段二在 Core 实现模型配置与请求映射，阶段三接入共用界面并联调。包依赖、API 归属、请求路径和启动形式以[项目架构](../../architecture.md)为准。各阶段按[供应商接入与模型目录设计](./provider-connections-and-model-catalog.md)验收。
+2026-11-07 · 待实施。阶段一先调整项目结构，再抽离 UI，让现有供应商管理在两个产品可用。阶段二在 Core 实现模型配置与请求映射，阶段三接入共用界面并联调。包依赖、API 归属、请求路径和启动形式以[项目架构](../../../architecture.md)为准。各阶段按[供应商接入与模型目录设计](./connections-and-models.md)验收。
 
 | 阶段 | 交给下一阶段的结果 | 退出条件 |
 | --- | --- | --- |
@@ -8,13 +8,13 @@
 | 二 · 改造 Core，完成模型配置 | 可持久化的账号路由、目录与参数、请求映射、凭据格式兼容和元数据转换 | 离线协议夹具通过服务入口验证保存、发现、合并、刷新、预览及实际出站请求 |
 | 三 · 适配新 UI，完成双产品联调 | 供应商与凭据共用页接入正式服务，GraphAgent 提供模型配置页，PolyQuota 按订阅资格展示用量 | 两端通过页面交互回归，并按文末凭据专项完成共享场景联调 |
 
-凭据 SDK 合包已由凭据共享专项二期 B1 完成：原 `credential-host` 合入 `credentials/host/windows`，对应调用方和构建脚本已迁移。本方案后续结构调整直接复用 `@astra-conductor/credentials` 主入口与 `/host/windows` 子入口；Core 只依赖主入口，平台宿主按需装配 Windows 子入口。凭据页面以 A6—A8 已交付的本地单向共享闭环为基线。[凭据共享实施方案](./credential-sharing/implementation-plan.md) · [B1 实施记录](./credential-sharing/b1-credentials-package-implementation.md) · [A6—A8 实施记录](./credential-sharing/a6-a8-sharing-implementation.md)
+凭据 SDK 合包已由凭据共享专项二期 B1 完成：原 `credential-host` 合入 `credentials/host/windows`，对应调用方和构建脚本已迁移。本方案后续结构调整直接复用 `@astra-conductor/credentials` 主入口与 `/host/windows` 子入口；Core 只依赖主入口，平台宿主按需装配 Windows 子入口。凭据页面以 A6—A8 已交付的本地单向共享闭环为基线。[凭据共享实施方案](../credential-sharing/implementation-plan.md) · [B1 实施记录](../credential-sharing/b1-credentials-package-implementation.md) · [A6—A8 实施记录](../credential-sharing/a6-a8-sharing-implementation.md)
 
 ## 阶段一 · 先调整项目结构，再抽离 UI
 
 ### 1.1 先迁移契约、产品目录和构建入口
 
-以现有两个产品的启动、构建和测试结果为迁移基线，按[项目架构的迁移表](../../architecture.md#5-从当前仓库迁移)逐项就位，每步保持可运行入口。
+以现有两个产品的启动、构建和测试结果为迁移基线，按[项目架构的迁移表](../../../architecture.md#5-从当前仓库迁移)逐项就位，每步保持可运行入口。
 
 1. **统一契约。** 建立 `contract` 的三个子入口并迁入现有 DTO、方法、事件与纯格式校验。旧 `polyquota-contract` 在消费方迁移前继续转发，随后依次切换 Core、两个产品及测试的 import。
 2. **归位产品。** 将两个产品的前端、服务端和宿主代码迁到 `apps/<product>/{ui,src/server,src/platform}`，建立各自的 Hono 装配入口，并安排 `shared-ui` 的工作区位置。
@@ -24,7 +24,7 @@
 
 ### 1.2 再抽离共用 UI 并接通宿主
 
-从已归位的 PolyQuota 供应商页、认证弹窗、凭据设置和 GraphAgent 导入设置提取共用实现。组件接口与认证恢复见[共用 UI 组件详细设计](../ui/shared-ui-and-workspace-detailed-design.md)。[迁移前的 PolyQuota 前端](../../../packages/polyquota-ui/src) · [当前 GraphAgent 宿主](../../graph-agent/minimal-host.md)
+从已归位的 PolyQuota 供应商页、认证弹窗、凭据设置和 GraphAgent 导入设置提取共用实现。组件接口与认证恢复见[共用 UI 组件详细设计](../../ui/design.md)。[迁移前的 PolyQuota 前端](../../../../packages/polyquota-ui/src) · [当前 GraphAgent 宿主](../credential-sharing/a6-a8-sharing-implementation.md#graphagent-最小宿主)
 
 | 工作项 | 实施内容 |
 | --- | --- |
@@ -33,13 +33,13 @@
 | GraphAgent 补齐宿主 | 在本产品 UI 中接入共用页面。将当前导入设置和供应商管理操作接到 GraphAgent Hono 应用，再切换旧 renderer。正式 Web 使用独立 Node 服务并能加密保存、解锁和恢复私有账号，Electron 使用同组 API、页面与服务，桌面密钥保护、文件导入和回调由宿主提供 |
 | 凭据管理与操作能力 | 在同一页面挂接已有安装检查、导出/导入、预览、进度、错误与重试。阶段一保留 A6—A8 的操作范围，私有、共享、冻结状态按宿主能力显示操作。供应商管理在两端私有模式均可写，现有共享模式的操作沿用当前授权与接管状态 |
 
-GraphAgent 当前在 `runtime.ts` 使用内存仓储，文件读取、回调与私有凭据写入仍待接线。为两种正式宿主补齐这些端口，绑定同一套供应商服务。待新页面通过 Hono 完成原有导入设置操作，再清理 GraphAgent 过渡期的业务 preload 接线。[GraphAgent 凭据运行时](../../../apps/graph-agent/src/runtime.ts)
+GraphAgent 当前在 `runtime.ts` 使用内存仓储，文件读取、回调与私有凭据写入仍待接线。为两种正式宿主补齐这些端口，绑定同一套供应商服务。待新页面通过 Hono 完成原有导入设置操作，再清理 GraphAgent 过渡期的业务 preload 接线。[GraphAgent 凭据运行时](../../../../apps/graph-agent/src/runtime.ts)
 
-**阶段一验收**：两个独立产品在各自私有 profile 中，从同一供应商管理页接入账号，验证脱敏、启停、重启持久化和删除隔离；回归七家供应商的目录与认证方式，以及 OAuth、设备码、CLI、Key 的取消和会话恢复；GraphAgent Web/Electron 使用同组业务 API，PolyQuota 分别验证桌面与 Web 开发入口。完整页面用例见[共用 UI 详细设计 · 构建、资源和验证](../ui/shared-ui-and-workspace-detailed-design.md#6-构建资源和验证)。
+**阶段一验收**：两个独立产品在各自私有 profile 中，从同一供应商管理页接入账号，验证脱敏、启停、重启持久化和删除隔离；回归七家供应商的目录与认证方式，以及 OAuth、设备码、CLI、Key 的取消和会话恢复；GraphAgent Web/Electron 使用同组业务 API，PolyQuota 分别验证桌面与 Web 开发入口。完整页面用例见[共用 UI 详细设计 · 构建、资源和验证](../../ui/design.md#6-构建资源和验证)。
 
 ## 阶段二 · 改造 Core，完成模型信息与请求配置
 
-本阶段交付可由宿主直接调用的服务。输入边界、持久化和协议行为先用受控 HTTP 端口验证，第三阶段页面直接消费同一份契约。[供应商平台 Core 详细设计](./provider-platform-core-detailed-design.md) · [连接、目录与映射规则](./provider-connections-and-model-catalog.md) · [当前 ProviderRegistry](../../../packages/core/src/providers/registry.ts)
+本阶段交付可由宿主直接调用的服务。输入边界、持久化和协议行为先用受控 HTTP 端口验证，第三阶段页面直接消费同一份契约。[供应商平台 Core 详细设计](./core-design.md) · [连接、目录与映射规则](./connections-and-models.md) · [当前 ProviderRegistry](../../../../packages/core/src/providers/registry.ts)
 
 | 顺序 | Core 与存储改造 | 可观察结果 |
 | --- | --- | --- |
@@ -51,13 +51,13 @@ GraphAgent 当前在 `runtime.ts` 使用内存仓储，文件读取、回调与�
 
 连接、模型目录、请求映射与应用记录的编解码归 `packages/core`。产品通过存储端口保存各自的目录、模型选择和参数覆盖，给 renderer 的快照只包含脱敏 DTO。模型缓存和报价不进入 broker 迁移包。
 
-**阶段二验收**：按 [Core 详细设计 · 交付和验证](./provider-platform-core-detailed-design.md#6-交付和验证) 的样本验证连接持久化、用途判定、目录缓存、参数合并和请求编译。旧格式夹具至少包含一条缺少新版用途字段的已知识别、一条未知用途记录和未知扩展键；转换器只派生有依据的字段，重复执行结果一致。夹具与预期转换结果同时交付凭据共享专项，用于 B5 升级验收。
+**阶段二验收**：按 [Core 详细设计 · 交付和验证](./core-design.md#6-交付和验证) 的样本验证连接持久化、用途判定、目录缓存、参数合并和请求编译。旧格式夹具至少包含一条缺少新版用途字段的已知识别、一条未知用途记录和未知扩展键；转换器只派生有依据的字段，重复执行结果一致。夹具与预期转换结果同时交付凭据共享专项，用于 B5 升级验收。
 
 ## 阶段三 · 接入新 UI，完成双产品联调
 
 1. 在阶段一的供应商页增加普通 Key、多协议地址、用途和受限的连接编辑。凭据页按当前角色、后端和授权呈现导出、导入、交接、切回、重入与升级。共用页面通过统一契约和 fetch/SSE 调用所属产品的 Hono 应用。
 2. GraphAgent 注册模型配置页，接入按路由刷新、手工模型、参数与价格来源、覆盖/恢复、别名和出站预览。PolyQuota 的通用管理能看见普通 Key，正式用量快照、定时与手动刷新、评分、通知及托盘均按订阅资格筛选。
 
-**阶段三验收**：覆盖 PolyQuota Electron、GraphAgent Web/Electron 和 PolyQuota Web 开发入口。普通 Key 在 GraphAgent 可查看各协议目录、参数来源与出站预览，在 PolyQuota 可管理且用量请求数为零；凭据页显示实际后端、可执行操作与恢复结果。双向共享与升级按[凭据共享实施方案 · 双端验收矩阵](./credential-sharing/implementation-plan.md#双端验收矩阵)执行。
+**阶段三验收**：覆盖 PolyQuota Electron、GraphAgent Web/Electron 和 PolyQuota Web 开发入口。普通 Key 在 GraphAgent 可查看各协议目录、参数来源与出站预览，在 PolyQuota 可管理且用量请求数为零；凭据页显示实际后端、可执行操作与恢复结果。双向共享与升级按[凭据共享实施方案 · 双端验收矩阵](../credential-sharing/implementation-plan.md#双端验收矩阵)执行。
 
-阶段三联调时，从两端共用页面验证双向导出、私有与共享存储往返，以及元数据升级后的重新导出。实施步骤和通过条件见[凭据共享实施方案 · 双向导出与存储切换](./credential-sharing/implementation-plan.md#双向导出与存储切换)。
+阶段三联调时，从两端共用页面验证双向导出、私有与共享存储往返，以及元数据升级后的重新导出。实施步骤和通过条件见[凭据共享实施方案 · 双向导出与存储切换](../credential-sharing/implementation-plan.md#双向导出与存储切换)。

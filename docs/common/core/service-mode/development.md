@@ -37,7 +37,7 @@ curl.exe -N http://127.0.0.1:4877/api/v1/polyquota/events
 
 后端测试使用临时数据目录、真实 SQLite、真实回环 HTTP、OAuth 回调监听和受控代理。验证设置保存后的事件和持久化、同目录互斥、停止时拒绝新工作及排空、原 CLI 文件只读解析、错误与参数校验。认证回调闭环只替换上游响应和测试 cipher，监听和存储流程仍实际执行，不表示完成真实服务商账号验收。
 
-逻辑路由由 [设计路由表](./plan.md#82-业务路由与方法映射) 定义。Node 只在入口剥离一次 `/api`，Hono 内部路由不包含该前缀。业务响应统一为 `ServiceResult`；void 成功实际 JSON 为 `{"ok":true,"value":null}`。
+逻辑路由由 [设计路由表](./design.md#82-业务路由与方法映射) 定义。Node 只在入口剥离一次 `/api`，Hono 内部路由不包含该前缀。业务响应统一为 `ServiceResult`；void 成功实际 JSON 为 `{"ok":true,"value":null}`。
 
 ## 3. 前端单独验证与联调
 

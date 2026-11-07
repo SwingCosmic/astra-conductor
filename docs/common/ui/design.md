@@ -1,6 +1,6 @@
 # PolyQuota 与 GraphAgent 共用 UI、组件和项目结构详细设计
 
-2026-11-07 · 目标设计，待实施。本文细化共用页面、交互和渲染端接线。包边界、产品启动形式与业务请求路径遵循[项目架构](../../architecture.md)。GraphAgent 注册模型配置页，PolyQuota 注册用量页。[三阶段实施方案](../core/provider-platform-implementation-plan.md) · [Core 详细设计](../core/provider-platform-core-detailed-design.md)
+2026-11-07 · 目标设计，待实施。本文细化共用页面、交互和渲染端接线。包边界、产品启动形式与业务请求路径遵循[项目架构](../../architecture.md)。GraphAgent 注册模型配置页，PolyQuota 注册用量页。[三阶段实施方案](../core/provider/implementation-plan.md) · [Core 详细设计](../core/provider/core-design.md)
 
 ## 1. 从现有入口拆什么
 

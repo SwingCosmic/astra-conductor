@@ -6,7 +6,7 @@
 | 更新日期 | 2026-10-25                                             |
 | 覆盖范围 | 开发、构建、打包、进程边界、通信、网络、认证与生命周期 |
 
-本文记录 2026-10-25 已交付的 PolyQuota 服务模式及当时的代码路径。目标包边界与产品启动形态以[项目架构](../architecture.md)为准。宿主实现、开发命令与验收分别见[服务模式设计](../common/core/service-mode/plan.md)、[开发说明](../common/core/service-mode/development.md)和[验收记录](../common/core/service-mode/acceptance.md)。
+本文记录 2026-10-25 已交付的 PolyQuota 服务模式及当时的代码路径。目标包边界与产品启动形态以[项目架构](../architecture.md)为准。宿主实现、开发命令与验收分别见[服务模式设计](../common/core/service-mode/design.md)、[开发说明](../common/core/service-mode/development.md)和[验收记录](../common/core/service-mode/acceptance.md)。
 
 ## 1. 运行结构
 
@@ -38,7 +38,7 @@ flowchart LR
 
 `polyquota-contract` 统一 DTO、`IPolyQuotaService`、宿主/通知接口和请求校验，当前 schemaVersion 为 6。Hono 内部只定义 `/v1/...` 逻辑路由；请求字段在入站校验，未知异常转换为安全的 `PublicError`，凭据和供应商原始响应不进入 UI。
 
-HTTP 返回 `ServiceResult`，void 成功编码为 `value: null`，客户端恢复为 undefined。供应商刷新失败仍是业务 DTO，不等同于请求失败。完整方法与参数见[业务路由表](../common/core/service-mode/plan.md#82-业务路由与方法映射)。
+HTTP 返回 `ServiceResult`，void 成功编码为 `value: null`，客户端恢复为 undefined。供应商刷新失败仍是业务 DTO，不等同于请求失败。完整方法与参数见[业务路由表](../common/core/service-mode/design.md#82-业务路由与方法映射)。
 
 SSE 先安装监听，再发送带 schemaVersion、instanceId、revision 的 ready 首包。UI 等 ready 后读取快照，合并重读以追上最高 revision；重连全量读取，后端实例变化后丢弃旧响应。队列有界，取消、窗口销毁和退出均释放订阅与心跳，不对写操作自动重试。
 

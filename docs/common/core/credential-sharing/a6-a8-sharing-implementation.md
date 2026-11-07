@@ -15,22 +15,29 @@
 | `packages/core/src/refresh-coordinator.ts` | 手动凭据刷新、正常用量刷新和鉴权失败后的强制刷新统一经过凭据服务 |
 | `apps/graph-agent/src/import-service.ts` | 迁移包验证、脱敏预览、确认导入、加密主密钥缓存、准备证明和重启恢复 |
 | `apps/graph-agent/src/runtime.ts` | 共享描述/事件、已导入凭据的本地 provider 手动刷新 |
-| `apps/graph-agent/src/main.ts`、`preload.ts`、`renderer/` | 独立 Electron 宿主、受限 IPC、空白主页与凭据设置页 |
+| `apps/graph-agent/src/main.ts`、`preload.ts`、`renderer.ts`，以及 `apps/graph-agent/renderer/` | 独立 Electron 宿主、受限 IPC、空白主页与凭据设置页 |
+| `apps/graph-agent/src/contract.ts` | 最小宿主的公开状态、脱敏预览和 preload 接口，不包含供应商秘密 |
 | `apps/polyquota/src/credential-sharing/service.ts` | 来源交接、活动共享接线、账号同步、私有快照、解绑/忘记密钥与本次共享重入 |
 | `packages/polyquota-contract`、`packages/polyquota-ui` | 脱敏共享状态、共享启用、返回内置风险确认与重入输入 |
 
-GraphAgent 选择独立 Electron 最小宿主，以复用 Windows 安全存储和共享 provider 能力。其界面、入口和 IPC 独立于 PolyQuota UI，不提供独立账号授权、导出、活动私有凭据库、聊天、Agent Loop、任务、工具或用量页面。GraphAgent 不打开 `polyquota.db`；两侧都不打开 broker 的 SQLite 数据库。
+### GraphAgent 最小宿主
 
-两个产品继续使用各自的运行身份和 userData。GraphAgent 仅持久保存加密主密钥、绑定及脱敏描述；共享供应商凭据只存在于请求期间。PolyQuota 原有加密私有数据保留为历史私有副本，不随共享刷新持续镜像；显式返回内置时才写入获准的当前共享快照。
+该宿主由凭据共享 A6 引入，用于验证接收方导入与共享刷新。GraphAgent 选择独立 Electron 最小宿主，以复用 Windows 安全存储和共享 provider 能力。其界面使用轻量 HTML/CSS/TypeScript，入口和 IPC 独立于 PolyQuota UI，不提供独立账号授权、导出、活动私有凭据库、聊天、Agent Loop、任务、工具或用量页面。GraphAgent 不打开 `polyquota.db`；两侧都不打开 broker 的 SQLite 数据库。
+
+`main.ts` 装配共享服务并校验 IPC 来自主窗口主 frame；`preload.ts` 只暴露明确的共享操作。窗口启用 sandbox/contextIsolation，关闭 renderer Node 集成，以固定 CSP 限制资源，禁止新窗口和页面导航。后续 Web/Electron 的 Hono 与共用页面迁移遵循[项目架构](../../../architecture.md)，本节记录 A6—A8 的宿主实现。
+
+两个产品继续使用各自的运行身份和 userData。GraphAgent 在自身 `credential-sharing/binding.json` 保存绑定、版本和脱敏描述，主密钥经 safeStorage 加密写入对应 `.key`，普通客户端授权使用 broker 当前用户保护的 `.dpapi` 文件。迁移密钥不落盘，共享供应商凭据只存在于请求期间。PolyQuota 原有加密私有数据保留为历史私有副本，不随共享刷新持续镜像；显式返回内置时才写入获准的当前共享快照。
+
+表中的 Windows 宿主包名对应 A6—A8 实施时的落点，现已在 [B1 合包](./b1-credentials-package-implementation.md)中迁入 `credentials/host/windows`。组件管理沿用 A3 的安装与目录能力校验；版本兼容规则统一见[设计第 7.5 节](./design.md#75-组件与-api-兼容性前置校验)，本记录第 9 节保留具体接线与验收证据。
 
 ## 2. A6：验证、确认与导入就绪
 
 1. 用户在 GraphAgent 设置页选择已经导出的目录，并输入迁移密钥。未安装时使用 A3 的本地包安装入口；只读安装检测不拉起服务。
 2. 宿主从独立安装登记连接 broker，核对目录 manifest 与当前版本身份。`getSharingState` 提供当前版本、来源水位与准备参与者，不返回 payload 或密钥。
 3. 应用自己读取当前版本的迁移包与版本清单，执行摘要、密码参数、HKDF/AES-GCM、版本身份及主密钥 key-check 校验，并校验已识别账号 payload。错误密钥或篡改数据不会写入导入绑定、主密钥缓存或账号数据。
-4. 验证成功只返回脱敏预览和有时效的确认标识。待确认主密钥保留在短期缓冲区；取消、超时和退出会清理缓冲区。迁移密钥不写入绑定、普通状态或日志。
+4. 验证成功只返回脱敏预览和有时效的确认标识。待确认主密钥最多在缓冲区保留五分钟；取消、超时和退出会清理缓冲区。迁移密钥不写入绑定、普通状态或日志。
 5. 用户确认后，主密钥经 GraphAgent 自己的 Electron safeStorage 加密保存并回读核对，随后写入准备状态和来源水位。应用通过一次性挑战证明持有主密钥，完成 `prepareClient` 后进入 `import-ready`。
-6. broker 已由来源交接时可直接进入共享接线；否则等待 PolyQuota 启用共享。导入准备和连接失败可重试，重启恢复原绑定。缓存不可解密时需重新输入迁移密钥验证，不以空库或明文缓存代替。
+6. broker 已由来源交接时可直接进入共享接线；否则等待 PolyQuota 启用共享。导入准备和连接失败可重试，重启恢复原绑定。缓存不可解密时需重新输入迁移密钥验证，保留原共享目录绑定，不跨库切换，也不以空库或明文缓存代替。
 
 预览只暴露账号标识、provider、脱敏名称、修订与本地刷新能力。未知 opaque payload 可以保留为协议记录，但不会因为声明一个 provider 名称就获得本地供应商执行能力。
 
@@ -100,6 +107,7 @@ pnpm format:check
 pnpm typecheck
 pnpm test
 pnpm build
+pnpm --filter @astra-conductor/graph-agent test:desktop
 pnpm package
 pnpm package:graph-agent
 pnpm test:credential-sharing-loop --publish <完整自包含 publish 目录>
@@ -108,6 +116,8 @@ pnpm test:credential-sharing-loop --publish <完整自包含 publish 目录>
 `pnpm package` 保持生成 PolyQuota 安装包；`pnpm package:graph-agent` 生成 GraphAgent 独立安装包。两个包均不携带 broker。共享闭环验收使用隔离的产品 profile、服务 home 与共享目录，输入虚构凭据；实际 provider 网络请求和生产 Release 下载需要单独证据。
 
 SDK 单元测试覆盖许可先行、stale 避免重复上游、失败/无更改释放、丢失提交回复与回执查询、未知提交结果、队列取消、10 秒续期/固定截止/迟到结果、分页筛选、事件重连和最终解绑顺序。broker 独立测试补充当前准备名单过滤、权限拒绝、排队取消幂等与授予竞争保护。
+
+GraphAgent 的[导入服务单测](../../../../apps/graph-agent/test/import-service.test.ts)覆盖错误密钥、脱敏预览、加密回读、取消、准备失败后的恢复、只读检测和退出清理；[桌面 smoke](../../../../apps/graph-agent/test/desktop-smoke.mjs)使用真实 sandbox/preload 验证页面与输入清空，IPC 响应使用 fixture。真实导入和跨产品协议仍由双进程共享闭环验证，历史结果见下节。
 
 ## 7. 验收记录
 

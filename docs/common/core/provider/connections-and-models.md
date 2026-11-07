@@ -1,6 +1,6 @@
 # 供应商接入、模型目录与双产品共用界面
 
-2026-11-07 · 产品需求与验收设计，待实施。本文定义跨服务商协议阶段 E 的产品行为：在任一产品保存一个无订阅的中转站 API Key，为 OpenAI 与 Anthropic 分别填地址，在 GraphAgent 查看可用模型，PolyQuota 只监控有订阅用量的账号。包边界、请求路径和启动形式见[项目架构](../../architecture.md)；接口与持久化见 [Core 详细设计](./provider-platform-core-detailed-design.md)；页面组件见[共用 UI 详细设计](../ui/shared-ui-and-workspace-detailed-design.md)；实施顺序见[三阶段实施方案](./provider-platform-implementation-plan.md)。
+2026-11-07 · 产品需求与验收设计，待实施。本文定义跨服务商协议阶段 E 的产品行为：在任一产品保存一个无订阅的中转站 API Key，为 OpenAI 与 Anthropic 分别填地址，在 GraphAgent 查看可用模型，PolyQuota 只监控有订阅用量的账号。包边界、请求路径和启动形式见[项目架构](../../../architecture.md)；接口与持久化见 [Core 详细设计](./core-design.md)；页面组件见[共用 UI 详细设计](../../ui/design.md)；实施顺序见[三阶段实施方案](./implementation-plan.md)。
 
 ## 1. 一个账号可绑定多个协议地址
 
@@ -15,7 +15,7 @@
 
 例如，一条 OpenAI Chat 路由填 `https://relay.example/oai/v1`，另一条 Anthropic Messages 路由填 `https://relay.example/claude/v1`，分别向各自前缀下的 `models` 发请求。OpenAI Responses 可显式复用 OpenAI 地址，但与 Chat Completions 各自声明可用操作。未配置的路由不参与发现或选择。
 
-`baseUrl` 是含可选路径前缀的 API 根地址。宿主接受自建域名、局域网、localhost 与非默认端口，保留路径前缀并统一尾部斜线；协议操作以相对路径拼接。URL 不接受用户信息、查询串、片段或密钥，请求与重定向都不能把凭据带到未绑定地址。完整校验与路径拼接规则见 [Core 详细设计 · 连接、记录与并发写入](./provider-platform-core-detailed-design.md#2-连接记录与并发写入)。
+`baseUrl` 是含可选路径前缀的 API 根地址。宿主接受自建域名、局域网、localhost 与非默认端口，保留路径前缀并统一尾部斜线；协议操作以相对路径拼接。URL 不接受用户信息、查询串、片段或密钥，请求与重定向都不能把凭据带到未绑定地址。完整校验与路径拼接规则见 [Core 详细设计 · 连接、记录与并发写入](./core-design.md#2-连接记录与并发写入)。
 
 ### PolyQuota 如何判断是否监控
 
@@ -27,17 +27,17 @@ Core 按接入点声明和账号适用性计算“可查询订阅用量”，供
 | GLM Coding Plan 等有订阅用量的 Key | 按原账号管理 | 继续发现、刷新并展示现有用量 |
 | 共享记录用途变更 | 按权限重读描述并更新操作 | 精确筛选 `metadata.supportsUsage === "true"`，再核对本地实现、offering、认证和账号用途。失去资格时移出用量视图并取消调度 |
 
-现有共享读取已有第一道筛选。实施时合并 `sharedCredentialMetadata` 与 PolyQuota 导出侧重复的 provider 级判定，并补齐私有模式和直接调用入口。判定函数、刷新接线与快照范围见 [Core 详细设计 · 如何判定订阅用量](./provider-platform-core-detailed-design.md#3-如何判定订阅用量)；切回与导出的范围见[凭据共享实施方案](./credential-sharing/implementation-plan.md#双向导出与存储切换)。
+现有共享读取已有第一道筛选。实施时合并 `sharedCredentialMetadata` 与 PolyQuota 导出侧重复的 provider 级判定，并补齐私有模式和直接调用入口。判定函数、刷新接线与快照范围见 [Core 详细设计 · 如何判定订阅用量](./core-design.md#3-如何判定订阅用量)；切回与导出的范围见[凭据共享实施方案](../credential-sharing/implementation-plan.md#双向导出与存储切换)。
 
 ### 配置如何随凭据迁移
 
 将使 Key 可用的路由、认证绑定和中转规则随账号存入加密记录；模型缓存、参数覆盖和产品设置由两个产品各自保存。开启共享后修改路由会产生记录修订事件，另一端重读并使旧绑定失效。日常调用按需读取当前凭据，目录缓存和请求预览不保存解密信封。
 
-新连接使用独立的应用层 content type 和带版本的 payload 编解码器；旧账号继续使用 v1，未知记录按 opaque 处理。当前缺口是 GraphAgent 尚无持久私有 vault 与账号写入端口，共享客户端登记也缺少 `create` 和 `delete` 授权。补全后两端的共享新增、替换和删除走已接管的 broker，具体步骤归[凭据共享实施方案](./credential-sharing/implementation-plan.md)的 B2/B3。编码器、分派规则和迁移边界见 [Core 详细设计 · 数据放在哪里](./provider-platform-core-detailed-design.md#数据放在哪里)。
+新连接使用独立的应用层 content type 和带版本的 payload 编解码器；旧账号继续使用 v1，未知记录按 opaque 处理。当前缺口是 GraphAgent 尚无持久私有 vault 与账号写入端口，共享客户端登记也缺少 `create` 和 `delete` 授权。补全后两端的共享新增、替换和删除走已接管的 broker，具体步骤归[凭据共享实施方案](../credential-sharing/implementation-plan.md)的 B2/B3。编码器、分派规则和迁移边界见 [Core 详细设计 · 数据放在哪里](./core-design.md#数据放在哪里)。
 
 ## 2. 从协议目录得到可用模型
 
-当前注册表会拒绝声明 `model-catalog` 或 `inference` 的贡献。扩展后，目录发现由可选的 `models` facet 提供，请求准备与执行由 `inference` facet 提供，注册表分别校验能力声明与实现的归属。发现请求携带账号、offering、路由、绑定版本和取消信号，在请求作用域内取得凭据。有些网关可执行模型请求却不提供模型列表：接入页允许保存有效配置、标出失败原因，并允许 GraphAgent 手工登记模型。[当前注册表](../../../packages/core/src/providers/registry.ts)
+当前注册表会拒绝声明 `model-catalog` 或 `inference` 的贡献。扩展后，目录发现由可选的 `models` facet 提供，请求准备与执行由 `inference` facet 提供，注册表分别校验能力声明与实现的归属。发现请求携带账号、offering、路由、绑定版本和取消信号，在请求作用域内取得凭据。有些网关可执行模型请求却不提供模型列表：接入页允许保存有效配置、标出失败原因，并允许 GraphAgent 手工登记模型。[当前注册表](../../../../packages/core/src/providers/registry.ts)
 
 | 目录来源 | 适配规则 |
 | --- | --- |
@@ -45,11 +45,11 @@ Core 按接入点声明和账号适用性计算“可查询订阅用量”，供
 | Anthropic 兼容路由 | 使用该路由的认证和协议版本。根据 `has_more`、`last_id` 和 `after_id` 完成分页。按实际版本和返回值提取输入上限、输出上限、视觉及思考档位。[Claude API · List Models](https://platform.claude.com/docs/en/api/models/list) |
 | 无列表或部署名不同 | 用户可以录入精确的上游模型 ID 或部署名，标记来源为手工。发现成功后按完整 ID 对齐，保留用户覆盖和来源 |
 
-刷新采用“完整成功才替换、失败保留旧快照、换绑定丢弃迟到结果”；TTL、并发合并、分页上限与失效细节见 [Core 详细设计 · 发现与刷新](./provider-platform-core-detailed-design.md#发现与刷新)。模型能力与价格按“用户覆盖 → 账号路由明确值 → 精确预置 → 未知”逐字段合并，界面显示来源；字段定义与预置示例见 [Core 详细设计 · 参数事实与合并规则](./provider-platform-core-detailed-design.md#参数事实与合并规则)。
+刷新采用“完整成功才替换、失败保留旧快照、换绑定丢弃迟到结果”；TTL、并发合并、分页上限与失效细节见 [Core 详细设计 · 发现与刷新](./core-design.md#发现与刷新)。模型能力与价格按“用户覆盖 → 账号路由明确值 → 精确预置 → 未知”逐字段合并，界面显示来源；字段定义与预置示例见 [Core 详细设计 · 参数事实与合并规则](./core-design.md#参数事实与合并规则)。
 
 ## 3. 中转站请求映射
 
-在 Core 的请求准备阶段执行声明式规则，保存时按账号、路由、操作和模型集合校验。名称解析、别名、模型名模板、Body 合并与安全限制的实现规则见 [Core 详细设计 · 从模型选择到协议请求](./provider-platform-core-detailed-design.md#5-从模型选择到协议请求)。配置预览与实际发送共用同一解析器。
+在 Core 的请求准备阶段执行声明式规则，保存时按账号、路由、操作和模型集合校验。名称解析、别名、模型名模板、Body 合并与安全限制的实现规则见 [Core 详细设计 · 从模型选择到协议请求](./core-design.md#5-从模型选择到协议请求)。配置预览与实际发送共用同一解析器。
 
 下面是一个虚构的网关规则。用户为网关的 `atlas-pro` 和 `atlas-mini` 系列登记了可用变体，包括 `vendor/atlas-pro-high-128k`。上下文选项 `131072` 对应该网关的 `128k` 标签。
 
@@ -71,4 +71,4 @@ Core 按接入点声明和账号适用性计算“可查询订阅用量”，供
 
 从现有 PolyQuota Vue 3 界面抽取共用页面到 `shared-ui`，提供同一份壳、导航、面板、表单、弹窗、状态提示和响应式布局。两个产品注入名称、品牌图标和主题色，在各自 UI 入口注册专属页面；供应商图标按同一套 `iconKey` 解析。
 
-共用范围是供应商接入页和凭据管理页，GraphAgent 的模型配置页、PolyQuota 的用量页分别由所属产品实现。页面职责、组件接口与宿主差异见[共用 UI 详细设计](../ui/shared-ui-and-workspace-detailed-design.md)；共用页面通过统一契约和 fetch/SSE 访问所属产品的 Hono 应用。既有 PolyQuota 服务模式和 GraphAgent A6—A8 导入宿主分别作为迁移起点。[PolyQuota 服务模式](./service-mode/development.md) · [GraphAgent 最小宿主实施记录](../../graph-agent/minimal-host.md)
+共用范围是供应商接入页和凭据管理页，GraphAgent 的模型配置页、PolyQuota 的用量页分别由所属产品实现。页面职责、组件接口与宿主差异见[共用 UI 详细设计](../../ui/design.md)；共用页面通过统一契约和 fetch/SSE 访问所属产品的 Hono 应用。既有 PolyQuota 服务模式和 GraphAgent A6—A8 导入宿主分别作为迁移起点。[PolyQuota 服务模式](../service-mode/development.md) · [GraphAgent 最小宿主实施记录](../credential-sharing/a6-a8-sharing-implementation.md#graphagent-最小宿主)

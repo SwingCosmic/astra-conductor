@@ -2,8 +2,8 @@
 
 | 项目         | 内容                                                         |
 | ------------ | ------------------------------------------------------------ |
-| 状态         | 业务启动设计草案；凭据共享最小壳已单独实现，见[最小宿主](./minimal-host.md) |
-| 输入         | [概念设计](./concept-design.md)、[参考源码映射](./reference-code-map.md) |
+| 状态         | 业务启动设计草案；凭据共享最小壳已单独实现，见[最小宿主](../../common/core/credential-sharing/a6-a8-sharing-implementation.md#graphagent-最小宿主) |
+| 输入         | [概念设计](../concept-design.md)、[参考源码映射](../reference-code-map.md) |
 | 首个验收目标 | 用户提交目标后，多个员工可动态协作，执行图可观察、可干预、可恢复，预算与信息边界受控 |
 
 ## 1. 产品范围
@@ -12,7 +12,7 @@ GraphAgent 是以执行图为中心的智能体协作产品。用户提交目标
 
 “没有数量和顺序的限制”指业务拓扑不限定为固定层级或固定流水线。任何获准员工可以向符合条件的职位池或员工派单，同一员工可以收到多个来源的邀请；实际规模仍受预算、实例容量、权限、队列上限和循环终止条件约束。
 
-本阶段包含：任务图与协作、职位模板与实例、Agent Loop 与提示词组合、调度与恢复、模型与工具执行、拦截器、预算、分层记忆、recap/做梦、技能管理和工作台。实现按[启动计划](./plan.md)逐步形成闭环。
+本阶段包含：任务图与协作、职位模板与实例、Agent Loop 与提示词组合、调度与恢复、模型与工具执行、拦截器、预算、分层记忆、recap/做梦、技能管理和工作台。实现按[启动计划](../plan.md)逐步形成闭环。
 
 首页下方的 2.5D 办公室、Q 版人物、动作、表情气泡和点击人物互动属于概念宣传内容，**不属于本阶段产品功能，也不进入排期与验收**。普通员工头像、名称和状态标签仍可作为执行图的信息元素。
 
@@ -38,6 +38,8 @@ GraphAgent 是以执行图为中心的智能体协作产品。用户提交目标
 所有产品对象带 Workspace 归属、创建来源和版本信息。历史实例、模板、任务和产物引用不可被删除后重新指向另一实体。展示名称可以调整，稳定 ID 不随之改变。
 
 ## 3. 六层文档结构
+
+本目录按“从底层身份到外部交互”的顺序组织设计文档：编号越小越接近核心模型，编号越大越接近用户与外部系统。
 
 | 层级 | 主题                 | 设计入口                                                         |
 | ---- | -------------------- | ---------------------------------------------------------------- |
@@ -103,16 +105,23 @@ flowchart TD
 
 ## 6. 共享能力与实现边界
 
-GraphAgent 的 Hono 应用将产品业务路由接到本产品服务，模型选择策略、ModelLease、预算、回退、亲和与工具循环均在该侧执行。服务商认证、模型目录、协议编码、推理执行与用量基础事实由共享 Core 提供。[项目架构](../architecture.md) · [共享 Provider Platform](../common/core/cross-provider-service-protocol-design.md)
+GraphAgent 的 Hono 应用将产品业务路由接到本产品服务，模型选择策略、ModelLease、预算、回退、亲和与工具循环均在该侧执行。服务商认证、模型目录、协议编码、推理执行与用量基础事实由共享 Core 提供。[项目架构](../../architecture.md) · [共享 Provider Platform](../../common/core/provider/design.md)
 
-凭据遵循[共享与迁移设计](../common/core/credential-sharing/design.md)。GraphAgent 独立存储本产品的任务、设置和私有凭据。共享模式下通过 broker 访问获准凭据。已实现能力与后续验证范围见[凭据共享实施方案](../common/core/credential-sharing/implementation-plan.md)。
+凭据遵循[共享与迁移设计](../../common/core/credential-sharing/design.md)。GraphAgent 独立存储本产品的任务、设置和私有凭据。共享模式下通过 broker 访问获准凭据。已实现能力与后续验证范围见[凭据共享实施方案](../../common/core/credential-sharing/implementation-plan.md)。
 
 ## 7. 技术决策边界
 
 建议先在现有 TypeScript/Node 工具链上验证独立、无 UI 的本机运行内核，提供 fake 端口和可取消 Activity。采用 Actor 的身份、顺序邮箱和持久恢复语义，不以 Kubernetes、Orleans 或分布式 Worker 为首版前提。
 
-记忆模块采用 Markdown 文件/真实目录后端，以及独立 SQLite 原始消息档案与派生索引。产品前端采用共用 Vue 组件，图布局库与 Task Ledger 存储在业务实施时选型。凭据共享阶段已有的 Electron 最小宿主和 Windows 命名管道接入记录见[最小宿主](./minimal-host.md)。
+记忆模块采用 Markdown 文件/真实目录后端，以及独立 SQLite 原始消息档案与派生索引。产品前端采用共用 Vue 组件，图布局库与 Task Ledger 存储在业务实施时选型。凭据共享阶段已有的 Electron 最小宿主和 Windows 命名管道接入记录见[最小宿主](../../common/core/credential-sharing/a6-a8-sharing-implementation.md#graphagent-最小宿主)。
 
 工具专项默认选择原生结构化调用、按平台解析的 ripgrep、直接 argv 与 Windows pwsh 7/UTF-8，以及实时搜索/排除、正则替换和版本化提交。网页研究提供 search/extract/crawl，首版优先适配 Tavily 且不实现本地浏览器渲染；browser use 采用按需安装的 Chrome DevTools MCP；桌面能力另做扩展样本。细分设计统一进入 [tools 目录](./tools/README.md)。
 
 本轮可固定的是事实归属、协作语义、信息边界和验收场景。各文档中的字段和端口是候选契约，实施时需转为共享 schema 并验证；不应把草案接口当作已完成实现。
+
+## 阅读约定
+
+- 所有编号文档都是目标设计，不是已实现能力；接口字段与技术选型仍需实施样本验证。
+- 模型、账号、provider、协议 route 和模型目录属于共享 Core；本目录只描述 GraphAgent 的策略和使用方式。
+- 工具能力的详细参数与验收矩阵放在 `tools/`，主文档只保留协议、目录与边界。
+- 每篇文档只在本层展开职责，跨层规则链接到对应归属，不复制整段设计。

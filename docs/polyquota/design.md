@@ -101,7 +101,7 @@ OmniRoute 放在 `references/omniroute`，以 Git 子模块记录固定提交。
 | Claude Code     | `~/.claude/.credentials.json` OAuth 凭据只读导入                  | 旋转刷新、账号身份、5 小时/周/模型范围用量                   |
 | OpenCode Go     | API Key                                                           | 官方 5 小时、周、月三窗口用量与密钥校验                      |
 
-Codex 所需上游文件先由手工样板和逐文件 diff 确认，真实闭环通过后再纳入同步清单。文件选择和耦合拆分的依据见 [OmniRoute 探索报告](../common/core/omniroute-exploration.md)。新增服务前应先确认 OmniRoute 中存在可独立抽取且可验证的实现。
+Codex 所需上游文件先由手工样板和逐文件 diff 确认，真实闭环通过后再纳入同步清单。文件选择和耦合拆分的依据见 [OmniRoute 探索报告](../common/exploration/omniroute.md)。新增服务前应先确认 OmniRoute 中存在可独立抽取且可验证的实现。
 
 ### 6.2 认证
 
@@ -132,7 +132,7 @@ Codex 所需上游文件先由手工样板和逐文件 diff 确认，真实闭�
 
 ### 6.5 用量展示与通知
 
-界面使用 Vue 3 重新实现。`docs/common/core/omniroute.png` 只确认卡片、套餐、配额、重置时间和刷新这些信息层级。可见文案以本节为准。
+界面使用 Vue 3 重新实现。`docs/common/exploration/omniroute.png` 只确认卡片、套餐、配额、重置时间和刷新这些信息层级。可见文案以本节为准。
 
 每张卡片呈现服务名称、套餐、打码账号、配额、重置时间、更新时间、状态开关和刷新反馈。套餐展示名从 core 套餐配置的 `displayName` 经快照 `providers[].plans` 下发，命中 `match` 后显示配置名，未命中则原样显示 `usage.plan`。前端不得再维护套餐名称映射表。档位名画成圆头标签（四角半径为高度的 50%），放在供应商名称右侧；打码账号单独在名称下方，避免邮箱过长截断档位。配额剩余量位于进度条右侧，重置时间位于进度条下方。停用账号仍保留最近一次用量卡片，使用弱化状态和关闭的右上角开关表示，不参与自动刷新和通知。用量概览页头与标题+说明、刷新按钮同一行并排展示 session（5h）与 week 两个小环形进度，得分来自快照里的 `compositeRemaining`，不在前端重算。托盘换色和 Windows 任务栏进度使用同一口径的综合剩余 R，详见[产品信息与图标方案](./product-identity-and-runtime-icon-plan.md)第 5 节。
 
@@ -221,8 +221,8 @@ Node 与 Electron 使用彼此隔离的原生二进制。workspace 中的 `bette
 ## 11. 参考资料
 
 - [OmniRoute](https://github.com/diegosouzapw/OmniRoute)，MIT；本地固定源码见 `references/omniroute`
-- [OmniRoute 探索报告](../common/core/omniroute-exploration.md)
+- [OmniRoute 探索报告](../common/exploration/omniroute.md)
 - [实施计划](./plan.md)
-- [OmniRoute 用量页面截图](../common/core/omniroute.png)
+- [OmniRoute 用量页面截图](../common/exploration/omniroute.png)
 - [monaco-editor 的源码抽取思路](https://github.com/microsoft/monaco-editor/blob/main/CONTRIBUTING.md)
 - [CodexBar](https://github.com/steipete/CodexBar)，仅作为通知体验参考

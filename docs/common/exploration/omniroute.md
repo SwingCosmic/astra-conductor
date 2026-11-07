@@ -13,7 +13,7 @@
 
 阅读范围限于首批四个服务的认证、刷新、用量归一化和只读额外额度。对已经指定的厂商，认证范围取固定上游中全部稳定机制的并集；默认入口只影响产品交互，不缩小源码抽取范围。推理执行、路由、兑换、MITM、Next.js 页面、完整代理栈，以及依赖 Cookie 或 Web 登录状态的方式只用于划定拒绝边界。
 
-这里的范围和拒绝边界只约束当时面向 PolyQuota 的首批手工抽取，不代表共享 Core 永久排除模型协议与推理能力。OmniRoute 的 provider/model registry、translator、format、Executor 和 `chatCore` 原始结构，以及 GraphAgent 所需的后续选择性抽取位置，统一见[跨服务商服务协议设计](./cross-provider-service-protocol-design.md)。
+这里的范围和拒绝边界只约束当时面向 PolyQuota 的首批手工抽取，不代表共享 Core 永久排除模型协议与推理能力。OmniRoute 的 provider/model registry、translator、format、Executor 和 `chatCore` 原始结构，以及 GraphAgent 所需的后续选择性抽取位置，统一见[跨服务商服务协议设计](../core/provider/design.md)。
 
 ## 1. 结论
 

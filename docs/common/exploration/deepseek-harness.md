@@ -162,4 +162,4 @@ DSH 的动态适配器可以在设置变化后调整所拥有的路由，但 `pr
 - 通用 Profile/Bundle/Patch 配置语言；
 - 把 Core 的每个内部对象都提升成可替换服务。
 
-最终方案见[跨服务商服务协议设计](./cross-provider-service-protocol-design.md)。
+最终方案见[跨服务商服务协议设计](../core/provider/design.md)。

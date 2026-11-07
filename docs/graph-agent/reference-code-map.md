@@ -44,11 +44,11 @@
 
 ## 3. 设计新增部分
 
-Agent Loop 与提示词组合专项核对了 DSH 的 turn/step/request、输入边界和动态提示投影，Hermes 的 conversation loop 与 stable/context/volatile 组合，以及 OpenClaw 的分段提示与用途裁剪。执行循环源码与取舍见[03 Agent Loop](./03_agent-loop-dispatch-and-execution.md#4-agent-loop)，提示投影与组合源码见[03 提示词组合](./03_agent-loop-dispatch-and-execution.md#5-提示词组合)，不据此声称运行 Loop 已实现。
+Agent Loop 与提示词组合专项核对了 DSH 的 turn/step/request、输入边界和动态提示投影，Hermes 的 conversation loop 与 stable/context/volatile 组合，以及 OpenClaw 的分段提示与用途裁剪。执行循环源码与取舍见[03 Agent Loop](./design/03_agent-loop-dispatch-and-execution.md#4-agent-loop)，提示投影与组合源码见[03 提示词组合](./design/03_agent-loop-dispatch-and-execution.md#5-提示词组合)，不据此声称运行 Loop 已实现。
 
-会话设计进一步采用消息平台适配模型：核对 Hermes 的 platforms/base.py MessageEvent 与 session.py 私聊/群/线程键，OpenClaw 的 chat-type、resolve-route、session-key 和 prompt-session-context。内置 IM 也走归一消息→session 路由→既有邮箱/Loop→原路回复；只额外保留 @/通知、作业屏蔽和挂起临时聊天。入口与采用边界见[02 消息聊天](./02_conversation-and-messaging.md)，不照搬自动群历史回填或整个平台 Gateway。
+会话设计进一步采用消息平台适配模型：核对 Hermes 的 platforms/base.py MessageEvent 与 session.py 私聊/群/线程键，OpenClaw 的 chat-type、resolve-route、session-key 和 prompt-session-context。内置 IM 也走归一消息→session 路由→既有邮箱/Loop→原路回复；只额外保留 @/通知、作业屏蔽和挂起临时聊天。入口与采用边界见[02 消息聊天](./design/02_conversation-and-messaging.md)，不照搬自动群历史回填或整个平台 Gateway。
 
-记忆系统第二轮核对增加了 Hermes 的原始消息 SQLite、session_search 与增量写入，以及 OpenClaw 的日期工作笔记、会话捕获、压缩前 flush、派生索引和整理游标。完整源码入口与取舍统一留在[05 拦截器、记忆、整理与技能](./05_interception-memory-and-skills.md)，避免重复维护公共数据结构。
+记忆系统第二轮核对增加了 Hermes 的原始消息 SQLite、session_search 与增量写入，以及 OpenClaw 的日期工作笔记、会话捕获、压缩前 flush、派生索引和整理游标。完整源码入口与取舍统一留在[05 拦截器、记忆、整理与技能](./design/05_interception-memory-and-skills.md)，避免重复维护公共数据结构。
 
 本轮提出的单一交付责任人、多来源共享消费者、TaskRevision/Attempt 分离、Goal 预算树、未知效果核对、图边配置到执行 Gate 的 binding、不可变做梦 journal 与 CAS 变更集，均为 GraphAgent 的设计决策，不宣称上述参考仓库已提供相同闭环。
 
@@ -58,7 +58,7 @@ Hermes 的 `hermes_cli/session_recap.py` 是会话展示摘要生成入口，不
 
 2026-10-03 核对了 [A2A 官方规范](https://a2a-protocol.org/latest/specification/)。AgentCard 服务发现、Task/Message/Artifact 的互操作仍按既有模板稿处理；内部暂停、排队、轮次与预算保留为本地语义。正式接入须固定规范版本与 SDK fixture，不以浮动 latest 作为运行 schema 来源。
 
-共享平台目标见[跨服务商设计](../common/core/cross-provider-service-protocol-design.md)，实际目录见 [Core providerCatalog](../../packages/core/src/providers/catalog.ts)。本轮只核对设计与当前源码边界；新增 OpenClaw 研究 checkout，不搬运 vendor 或修改服务商适配器。
+共享平台目标见[跨服务商设计](../common/core/provider/design.md)，实际目录见 [Core providerCatalog](../../packages/core/src/providers/catalog.ts)。本轮只核对设计与当前源码边界；新增 OpenClaw 研究 checkout，不搬运 vendor 或修改服务商适配器。
 
 后续每批源码提取记录固定 commit、源路径、目标路径、许可证、依赖闭包、调整理由和离线 fixture；OmniRoute 继续按[手工抽取基线](../common/core/omniroute-manual-extraction-baseline.md)维护，同步工具实现落地后（形态见[同步工具形态设计](../common/core/omniroute-sync-tool-design.md)）转为清单化管理。其他项目也须单独记录，不能把研究路径直接写入运行 imports。
 
@@ -72,16 +72,16 @@ Hermes 的 `hermes_cli/session_recap.py` 是会话展示摘要生成入口，不
 | [Hermes terminal_tool.py](../../references/hermes-agent/tools/terminal_tool.py)、[process_registry.py](../../references/hermes-agent/tools/process_registry.py) | 后台 process handle、读写/等待/取消与退出记录                      | 采用统一资源生命周期；补独立监督器、账本核对、Windows argv/pwsh 与挂起边界               |
 | [Hermes install.ps1](../../references/hermes-agent/scripts/install.ps1)、[README](../../references/hermes-agent/README.md)                                      | Windows 安装检查 rg 并配置便携 Git Bash                            | 借鉴依赖准备；GraphAgent 选择受管 pwsh 7/UTF-8，不照搬 Bash 默认                         |
 
-公开资料另核对了 Anthropic/OpenAI 原生工具协议与文本编辑、Cline 原生调用迁移说明、Gemini CLI 文件工具、ripgrep JSON 输出、Microsoft PowerShell/Job/UIA 和 Playwright 官方资料。出处与具体判断分别留在[工具协议](./tools/README.md)、[终端与脚本](./tools/terminal-and-scripts.md)、[文件操作与 Git](./tools/file-operations-and-git.md)，不把滚动网页视为固定实现版本。
+公开资料另核对了 Anthropic/OpenAI 原生工具协议与文本编辑、Cline 原生调用迁移说明、Gemini CLI 文件工具、ripgrep JSON 输出、Microsoft PowerShell/Job/UIA 和 Playwright 官方资料。出处与具体判断分别留在[工具协议](./design/tools/README.md)、[终端与脚本](./design/tools/terminal-and-scripts.md)、[文件操作与 Git](./design/tools/file-operations-and-git.md)，不把滚动网页视为固定实现版本。
 
-网页专项进一步核对 [Hermes web_tools.py](../../references/hermes-agent/tools/web_tools.py) 的 search/extract/crawl、按能力选择后端与辅助内容处理入口；公开资料补充 Tavily、Firecrawl 和 RFC 9309。具体出处与采用边界见[网页与网络](./tools/web-and-network.md)。工具细分设计统一位于 tools 目录，不继续占用主设计文档编号。
+网页专项进一步核对 [Hermes web_tools.py](../../references/hermes-agent/tools/web_tools.py) 的 search/extract/crawl、按能力选择后端与辅助内容处理入口；公开资料补充 Tavily、Firecrawl 和 RFC 9309。具体出处与采用边界见[网页与网络](./design/tools/web-and-network.md)。工具细分设计统一位于 tools 目录，不继续占用主设计文档编号。
 
-文件工具补充核对 VS Code 固定提交 `e7789ad24cee6c17f0a2fbfb7fc110a2f6851d50` 的搜索模型更新、结果排除、替换模板、bulk edit 与保存冲突路径，以及 JetBrains 的预览/排除和文件缓存冲突说明，见[文件操作与 Git 的 IDE 调研](./tools/file-operations-and-git.md#8-ide-查找替换调研)。据此改为实时结果/逐项排除与固定提交预览两层，并将 `$1` 模板纳入首版；不宣称 IDE 会对所有外部修改自动重搜或完成跨文件原子保存。
+文件工具补充核对 VS Code 固定提交 `e7789ad24cee6c17f0a2fbfb7fc110a2f6851d50` 的搜索模型更新、结果排除、替换模板、bulk edit 与保存冲突路径，以及 JetBrains 的预览/排除和文件缓存冲突说明，见[文件操作与 Git 的 IDE 调研](./design/tools/file-operations-and-git.md#8-ide-查找替换调研)。据此改为实时结果/逐项排除与固定提交预览两层，并将 `$1` 模板纳入首版；不宣称 IDE 会对所有外部修改自动重搜或完成跨文件原子保存。
 
-browser use 首版改选按需安装的 Chrome DevTools MCP。临时下载 1.11.0 研究包，使用现有 Electron 42.11.6 在 Windows 独立样本中验证已有 WebContentsView 的快照/点击/截图/导航和 new_page 不支持，见[网页与网络中的 Browser use](./tools/web-and-network.md#7-browser-use)。初版网页工具优先 Tavily，不实现本地浏览器渲染；原 Playwright 资料仅为前期对比输入。
+browser use 首版改选按需安装的 Chrome DevTools MCP。临时下载 1.11.0 研究包，使用现有 Electron 42.11.6 在 Windows 独立样本中验证已有 WebContentsView 的快照/点击/截图/导航和 new_page 不支持，见[网页与网络中的 Browser use](./design/tools/web-and-network.md#7-browser-use)。初版网页工具优先 Tavily，不实现本地浏览器渲染；原 Playwright 资料仅为前期对比输入。
 
-本轮使用反馈进一步核对 Hermes 固定 [code_execution_tool.py](../../references/hermes-agent/tools/code_execution_tool.py)的 Python 入口、子进程、受控工具 RPC 与 Windows TCP 分支，并区分文件旧平台注释和实际路径；官方滚动文档的 session kernel 也不当作该固定版本的运行验收。GraphAgent 首批仅选择[一次性 Node/Python](./tools/terminal-and-scripts.md#5-execute_code)，不搬运工具编排、不据此预留内部 API。
+本轮使用反馈进一步核对 Hermes 固定 [code_execution_tool.py](../../references/hermes-agent/tools/code_execution_tool.py)的 Python 入口、子进程、受控工具 RPC 与 Windows TCP 分支，并区分文件旧平台注释和实际路径；官方滚动文档的 session kernel 也不当作该固定版本的运行验收。GraphAgent 首批仅选择[一次性 Node/Python](./design/tools/terminal-and-scripts.md#5-execute_code)，不搬运工具编排、不据此预留内部 API。
 
-[文件操作、Patch 与 Git](./tools/file-operations-and-git.md)、[HTTP 请求下载](./tools/web-and-network.md#9-http_download)和[媒体查看](./tools/media-view.md)分别核对 Git 官方 diff/merge-file、RFC 9110 与 Gemini 媒体说明；前期 FFmpeg 资料只作为资源操作研究，不构成首批内置工具/组件依赖。独立文件计算 API、收据/继续读取和多模态投影边界是设计新增。当前未实现这些工具、运行任意仓库提交或完成真实模型/API 兼容验收。
+[文件操作、Patch 与 Git](./design/tools/file-operations-and-git.md)、[HTTP 请求下载](./design/tools/web-and-network.md#9-http_download)和[媒体查看](./design/tools/media-view.md)分别核对 Git 官方 diff/merge-file、RFC 9110 与 Gemini 媒体说明；前期 FFmpeg 资料只作为资源操作研究，不构成首批内置工具/组件依赖。独立文件计算 API、收据/继续读取和多模态投影边界是设计新增。当前未实现这些工具、运行任意仓库提交或完成真实模型/API 兼容验收。
 
 上述协议与核心目录仍是设计决策；未搬运运行代码或修改产品依赖。离线 rg 展开与临时 Electron/MCP 探测是局部能力证据，不是 GraphAgent 实现、真实 Tavily API 或模型成功率验收。
