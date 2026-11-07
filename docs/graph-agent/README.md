@@ -2,6 +2,8 @@
 
 GraphAgent 是以执行图为中心的智能体协作产品。本目录按“从底层身份到外部交互”的顺序组织设计文档：编号越小越接近核心模型，编号越大越接近用户与外部系统。
 
+GraphAgent 的交付目标包括可独立启动的 Node/Web 产品和 Electron 桌面产品。两种入口使用同一份前端和 GraphAgent Hono 应用。工作区包边界、API 路径与各入口的启动要求以[项目架构](../architecture.md)为准。
+
 ## 文档顺序
 
 1. [01_Agent 模板与实例](./01_agent-template-and-instance.md)：职位模板、员工实例、雇佣与生命周期、用工请求。
@@ -13,8 +15,8 @@ GraphAgent 是以执行图为中心的智能体协作产品。本目录按“从
 
 配套文档：
 
-- [凭据共享实施方案](../common/core/credential-sharing/implementation-plan.md)：当前最小启动范围，只做空白主页和设置页，承接 PolyQuota 单向导出的凭据；其余业务后续实施。
-- [最小宿主与凭据导入](./minimal-host.md)：A6/A7 的独立 Electron 壳、设置页、安全缓存、共享刷新与验证入口。
+- 凭据共享 A6—A8 通过空白主页和设置页验证 GraphAgent 接收 PolyQuota 单向导出的凭据，见[凭据共享实施方案](../common/core/credential-sharing/implementation-plan.md)。
+- [最小宿主与凭据导入](./minimal-host.md)：A6—A8 的独立 Electron 壳、设置页、安全缓存、共享刷新与验证入口。
 - [功能模块设计总览](./design.md)：领域对象、模块边界、运行主路径与跨模块不变量。
 - [概念设计](./concept-design.md)：产品构想与范围；首页 2.5D 办公室只属于概念宣传，不进入排期。
 - [启动与验收计划](./plan.md)：阶段 1–4 的目标、步骤、交付与退出条件。
@@ -28,8 +30,8 @@ GraphAgent 是以执行图为中心的智能体协作产品。本目录按“从
 
 - GraphAgent 与 PolyQuota 共用 [Provider Platform 契约](../common/core/cross-provider-service-protocol-design.md)中的 provider、账号、API 协议、模型目录、推理和用量基础类型。模型与账号管理不在本目录重复设计。
 - GraphAgent 自己负责 `ModelPolicy`、模型选择、`ModelLease`、预算、回退、亲和与工具循环；不调用 `IPolyQuotaService`，也不让 PolyQuota 决定模型路由。
-- GraphAgent 不复用 `packages/polyquota-ui`，也不以 PolyQuota 的 Vue/Electron 结构作为默认方案。
-- `apps/graph-agent` 已按凭据共享 A6/A7 建立独立 Electron 最小壳，只包含空白主页和设置页；不把下面的完整业务设计作为本阶段交付。
+- 模型配置页属于 GraphAgent 产品 UI，目标位置为 `apps/graph-agent/ui/`。供应商接入页和凭据管理页由两个产品共用。[共用 UI 详细设计](../common/ui/shared-ui-and-workspace-detailed-design.md)
+- `apps/graph-agent` 已按凭据共享 A6—A8 建立独立 Electron 最小壳，只包含空白主页和设置页；不把下面的完整业务设计作为本阶段交付。
 - 两个产品共用的设计材料进入 `docs/common`；GraphAgent 独有的设计、计划和探索结果留在本目录。
 - `references/` 下仓库只用于研究，不成为运行依赖。
 

@@ -2,15 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This pnpm workspace has two desktop applications and five shared or product packages:
-
-- `packages/core` (`@astra-conductor/core`): models, protocol adapters, and the curated OmniRoute subset shared by PolyQuota and GraphAgent.
-- `packages/credentials` (`@astra-conductor/credentials`): product-independent broker protocol, transfer validation, record leases, and event synchronization.
-- `packages/credential-host` (`@astra-conductor/credential-host`): Windows local broker component validation, installation, discovery, and authenticated connections; no Electron or product UI dependency.
-- `packages/polyquota-contract` (`@astra-conductor/polyquota-contract`): the PolyQuota IPC contract (DTOs, service interface, channels, runtime validation) shared by the renderer, preload, and main process.
-- `packages/polyquota-ui` (`@astra-conductor/polyquota-ui`): PolyQuota-only Vue 3 components, styles, fixtures, and browser tests.
-- `apps/polyquota` (`@astra-conductor/polyquota`): PolyQuota Electron main/preload code and NSIS packaging.
-- `apps/graph-agent` (`@astra-conductor/graph-agent`): independent Electron shell, blank home, and credential-sharing settings/import/refresh. It does not depend on PolyQuota UI or open the PolyQuota database; chat, agent loops, tasks, and tools remain out of scope.
+[Project architecture](./docs/architecture.md) owns the target workspace layout, permitted dependency directions, Web/Electron business request path, and supported product launch modes. Use its migration table to locate current implementations. Place new features in an existing package, product directory, or subpath. When changing a package boundary, business transport, or launch mode, update the architecture document with the reason and the impact on both products. Link to that decision from implementation plans.
 
 Tests live in each runnable module's `test/` directory as `*.test.ts`; keep test helpers and fixtures there as well. Shared TypeScript settings are in `tsconfig.base.json`. Product and shared documentation is indexed by `docs/README.md`. All repositories under `references/` are reference inputs, not runtime dependencies. Only `references/omniroute` is required for development; initialize it with `git submodule update --init references/omniroute` and fetch the other reference repositories individually only when needed.
 
@@ -30,7 +22,7 @@ $env:Path = "$env:NODE24_HOME;$env:Path"
 - `pnpm build`: build shared packages, PolyQuota UI, and both desktop applications in dependency order.
 - `pnpm package`: create the NSIS installer in `apps/polyquota/release/`.
 - `pnpm package:graph-agent`: create the independent GraphAgent NSIS installer in `apps/graph-agent/release/`.
-- `pnpm test:credential-sharing-loop --publish <complete-publish-directory>`: validate the A6–A8 product sharing loop with isolated profiles, a local self-contained broker, and fictional credentials.
+- `pnpm test:credential-sharing-loop --publish <complete-publish-directory>`: validate the A6—A8 product sharing loop with isolated profiles, a local self-contained broker, and fictional credentials.
 - `pnpm format:check`: verify formatting without edits.
 
 ## Coding Style & Naming Conventions
@@ -47,4 +39,4 @@ Keep commit subjects short; any language is acceptable. Prefer `feat:`, `fix:`, 
 
 ## Security & Vendor Boundaries
 
-Never log or expose tokens through UI or renderer IPC. PolyQuota defaults to its encrypted private SQLite vault; shared mode uses the independent broker through `packages/credentials` and `packages/credential-host`. Follow `docs/common/core/credential-sharing/design.md` and the adjacent `a6-a8-sharing-implementation.md`: shared provider refreshes require a record lease, payloads are request-scoped, and returning to private storage requires an explicit verified snapshot and master-key cleanup. Never make either product open the other's database. The broker is independently built and installed; A9 production download/release integration is not yet implemented. Do not import runtime code from any repository under `references/`; changes to the curated vendor subset must retain source traceability and update its baseline tests or documentation.
+Never log tokens or expose them in UI state, API responses, renderer events, or IPC replies. PolyQuota defaults to its encrypted private SQLite vault. Shared mode uses the independent broker via the backend SDK and host adapter. Follow [credential sharing design](./docs/common/core/credential-sharing/design.md) and the adjacent A6—A8 implementation record. Shared provider refreshes require a record lease, payloads are request-scoped, and returning to private storage requires an explicit verified snapshot and master-key cleanup. Never make either product open the other's database. The broker is independently built and installed. B4 production download/release integration is pending. Do not import runtime code from any repository under `references/`. Changes to the curated vendor subset must retain source traceability and update its baseline tests or documentation.

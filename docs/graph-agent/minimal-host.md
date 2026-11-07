@@ -1,6 +1,6 @@
 # GraphAgent 最小宿主与凭据导入
 
-更新日期：2026-11-06。范围：[凭据共享实施方案](../common/core/credential-sharing/implementation-plan.md) A6/A7，不启动完整 GraphAgent 业务阶段。
+2026-11-06 的 A6—A8 实施记录。下文的 Electron preload、`src/contract.ts` 与包名均描述凭据共享最小壳。后续业务 UI 通过 fetch/SSE 访问 GraphAgent 的 Hono 应用，宿主与契约迁移遵循[项目架构](../architecture.md)。[凭据共享实施方案](../common/core/credential-sharing/implementation-plan.md)
 
 ## 宿主选择
 
@@ -27,7 +27,7 @@ GraphAgent 的 userData 与 PolyQuota 独立。`credential-sharing/binding.json`
 
 默认发行包版本由 `BROKER_DISTRIBUTION.version` 单独配置，决定本地暂存目录，与通信协议及应用要求的 API level 分离。公开状态的 `requiredApiLevel` 和 `installedApiLevel` 使用精确十进制文本，仅用于展示；底层按协议中的 API 数值校验，界面不自行比较组件版本或把 API level 当作 SemVer。
 
-卸载会暂停该安装下全部客户端，UI 明确确认；数据、主密钥与绑定保留。产品安装包不携带 broker 或 .NET runtime。生产下载继续属于 A9。
+卸载会暂停该安装下全部客户端，UI 明确确认；数据、主密钥与绑定保留。产品安装包不携带 broker 或 .NET runtime。生产下载继续属于 B4。
 
 ## 验证
 

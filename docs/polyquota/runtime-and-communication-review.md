@@ -6,7 +6,7 @@
 | 更新日期 | 2026-10-25                                             |
 | 覆盖范围 | 开发、构建、打包、进程边界、通信、网络、认证与生命周期 |
 
-本文描述当前实现。架构约定见[服务模式设计](../common/core/service-mode/plan.md)，命令见[开发说明](../common/core/service-mode/development.md)，验证证据见[验收记录](../common/core/service-mode/acceptance.md)。
+本文记录 2026-10-25 已交付的 PolyQuota 服务模式及当时的代码路径。目标包边界与产品启动形态以[项目架构](../architecture.md)为准。宿主实现、开发命令与验收分别见[服务模式设计](../common/core/service-mode/plan.md)、[开发说明](../common/core/service-mode/development.md)和[验收记录](../common/core/service-mode/acceptance.md)。
 
 ## 1. 运行结构
 
@@ -24,7 +24,7 @@ flowchart LR
   C --> HOST[按宿主注册的 HTTP / 文件 / 回调 / 凭据服务]
 ```
 
-两种宿主分别创建自己的应用级容器。Core 不依赖 Electron、Hono 或 UI；PolyQuota 的窗口、SQLite 实现、托盘与打包留在应用层。GraphAgent 当前仍为文档占位，不复用 PolyQuota UI。
+两种宿主分别创建自己的应用级容器。Core 通过端口取得宿主能力，PolyQuota 的窗口、SQLite 实现、托盘与打包留在应用层。
 
 ## 2. 进程与页面边界
 

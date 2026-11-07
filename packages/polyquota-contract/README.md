@@ -1,6 +1,6 @@
 # PolyQuota service contract
 
-`@astra-conductor/polyquota-contract` 是 PolyQuota UI、Electron 内嵌服务和独立 Node server 共用的轻量契约包，不依赖 Vue、Electron、Hono、SQLite 或 Node 运行时。
+本文说明当前 `@astra-conductor/polyquota-contract` 的服务契约及兼容行为。双产品统一契约的归属和本包的迁移目标见[项目架构](../../docs/architecture.md#5-从当前仓库迁移)。当前包供 PolyQuota UI、Electron 内嵌服务和开发用 Node server 使用，不依赖 Vue、Electron、Hono、SQLite 或 Node 运行时。
 
 - `src/service.ts`：`IPolyQuotaService` 的公开业务方法与同步订阅门面。
 - `src/dto/`：目录、账号、用量、认证会话、快照、操作、宿主能力、通知与 `ServiceResult`。

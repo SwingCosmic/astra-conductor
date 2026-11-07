@@ -2,17 +2,17 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 状态 | 目标设计，供共享 Core、PolyQuota 与 GraphAgent 后续实施；阶段 A–D 的 PolyQuota 部分已落地（能力注册表、接入点化认证、目录与展示收敛、重置额度一等结构），进展见第 15 节各阶段记录 |
-| 更新日期 | 2026-10-13 |
+| 状态 | 本文阶段 A–D 的 PolyQuota 部分已落地。凭据共享独立计划的 A1–A8 已完成本地闭环，B4 生产发行待实施。阶段 E 的账号协议绑定、模型目录、请求映射与共用 UI 进入设计阶段 |
+| 更新日期 | 2026-11-07 |
 | 适用范围 | 服务商目录、认证、账号、凭据刷新、用量、模型目录、API 协议族、推理执行边界与产品服务 |
-| 暂缓细节 | 统一消息 IR 的全部字段、完整流事件表、路由算法、第三方可执行插件、共享凭据代理物理实现 |
+| 暂缓细节 | 统一消息 IR 的全部字段、完整流事件表、路由算法、第三方可执行插件 |
 | 参考输入 | [OmniRoute 原始协议探索](./omniroute-exploration.md)、[当前搬运基线](./omniroute-manual-extraction-baseline.md)、[同步工具形态设计](./omniroute-sync-tool-design.md)、[ZCode](./zcode-provider-architecture-exploration.md)、[DSH](./deepseek-harness-provider-architecture-exploration.md)、[Hermes Agent](./hermes-agent-provider-architecture-exploration.md)、[认证服务抽取设计](../../polyquota/auth-service-extraction-design.md) |
 
-> 2026-10-25 通信边界更新：PolyQuota 的正式业务入口已统一为 Hono + fetch/SSE，旧业务 preload/IPC/channel 与自动演示兜底已删除。本文关于 IPC 的阶段记录保留历史含义；当前运行入口、数据和凭据边界见[服务模式开发说明](./service-mode/development.md)。GraphAgent 的后续运行时未纳入本次实现。
+> 2026-10-25，PolyQuota 正式入口统一为 Hono + fetch/SSE，第 15 节保留当时的 IPC 迁移记录。现行传输见[服务模式开发说明](./service-mode/development.md)。
 
-> 2026-10-31 凭据设计更新：[跨产品凭据共享与迁移](./credential-sharing/design.md)已细化私有/共享两种后端、主动迁移与导入、固定目录、跨平台参数明确的加密格式及唯一凭据服务。用户在接受方填写迁移密钥，实际解密校验后确认导入；不要求密文固定。该方案尚未实施；现有 DI 注册不等于凭据写入已全部收口。
+> 2026-10-31 至 11-01，[凭据共享设计](./credential-sharing/design.md)确定私有与共享后端、迁移密钥验证、交接与切回流程。11-06，本机闭环已验证 PolyQuota 导出、GraphAgent 导入、双方共享刷新以及 PolyQuota 返回内置与重入。GraphAgent 当前使用独立沙箱宿主和受限 preload。验收范围见 [A6—A8 实施记录](./credential-sharing/a6-a8-sharing-implementation.md)。
 
-> 2026-11-01 补充：存储位置允许用户选择并切回内置；导出成功与 broker 接管分别记录，切换失败保留主密钥以便重试。更新导出/换钥采用新 storageVersion，验证成功后才发布 currentVersion；主动切回后删除本客户端记住的主密钥，再次进入须重新输入迁移密钥。以下新增边界均为设计，尚未实施。
+> 2026-11-07，普通 API Key、多协议地址、模型发现与预置、请求映射和共用页面的下一阶段设计见[供应商接入与模型目录](./provider-connections-and-model-catalog.md)。目标包归属、对称 Hono 请求路径和产品启动形式遵循[项目架构](../../architecture.md)。
 
 ## 1. 目标
 
@@ -27,7 +27,7 @@
 
 设计不追求把所有差异压成最小公分母。统一的是注册、能力发现、调用生命周期、错误、安全边界和可序列化形状；差异通过协议判别联合、能力、原生状态和带版本扩展显式保留。
 
-`IPolyQuotaService` 是 PolyQuota 的产品应用服务，不是共享 Provider Platform 本身，也不是 GraphAgent 的调用接口。两个产品复用 Core 的服务商能力端口，但分别拥有自己的应用服务、状态快照和 UI 契约。
+`IPolyQuotaService` 是 PolyQuota 的产品应用服务。两个产品复用 Core 能力端口，分别拥有应用服务与业务快照。共用 UI 通过 fetch/SSE 访问本产品 Hono 应用，两端按同一契约挂载供应商与凭据操作。
 
 ## 2. OmniRoute 原始架构与当前搬运基线
 
@@ -76,7 +76,7 @@ OmniRoute 并不存在一个包办所有职责的 `ProviderAdapter`。它的完�
 | OAuth、设备码、CLI 解析 | `ProviderAccountCapability` 内部协议叶子 | 保留原始请求语义，由 Codex contribution 组合 |
 | token refresh 与串行器 | 凭据生命周期与共享凭据服务 | 保留服务商专属旋转规则，不进入 UI 协议 |
 | Codex/GLM usage 叶子 | `ProviderUsageCapability` | 继续输出 `groups + extras`，不与推理执行耦合 |
-| `CodexAdapter` / `GlmAdapter` 等六家 adapter（含 Grok Build、Antigravity、Claude、OpenCode Go） | 现有过渡 facade | 分阶段拆成 account、usage 等能力实现 |
+| `CodexAdapter` / `GlmAdapter` 等七家 adapter（含 Grok Build、Antigravity、Claude、OpenCode Go、GitHub Copilot） | 现有过渡 facade | 分阶段拆成 account、usage 等能力实现 |
 | `RefreshCoordinator` | PolyQuota 应用协调层 | 通过 ProviderRegistry 取 usage/account 能力 |
 | 尚未搬运的 translator | `ProtocolCodecRegistry` 候选来源 | 先确定 IR 和状态保真规则，再选择性抽取 |
 | 尚未搬运的 Executor | `ProviderInferenceCapability` 候选来源 | 只抽纯协议/执行叶子，宿主策略由本项目实现 |
@@ -110,7 +110,7 @@ OmniRoute 并不存在一个包办所有职责的 `ProviderAdapter`。它的完�
 - `AuthService.start()` 直接判断 `provider === "glm"`（已解决：认证分派由 core 各 `auth-flow.ts` 与无分支的 `AuthCoordinator` 承担）；
 - `RefreshCoordinator` 构造 `Map` 时重复实现会静默覆盖（已解决：`ProviderRegistry` 构造期校验唯一所有权，任一冲突使整个注册表构造失败）；
 - 账号公开元数据使用无命名空间的 primitive map（部分解决：GLM 的 region/presentationId/product 已删除；codex/grok/claude 的 workspace、组织等事实仍在 `publicMetadata`，待 §6.1 `PublicExtension` 机制落地后转换）；
-- `window.llmUsage`、preload、IPC 与 UI 类型分别维护（已解决：preload 全局为 `window.polyQuotaElectronService`，channel 与校验由 `polyquota-contract` 单一来源提供）；
+- `window.llmUsage`、preload、IPC 与 UI 类型曾分别维护。阶段 D 收口契约后，PolyQuota 已进一步迁移至 Hono + fetch/SSE（§10.2）。
 - 账号与用量逐项读取（已解决：`getSnapshot()` 提供带 `revision` 的单一快照与失效事件）；
 - BigModel 与 Z.ai 共享 `glm` 实现，却靠 `publicMetadata.presentationId` 和页面判断恢复展示入口（已解决：账号按 `offeringId` 分组与展示）。
 - 共享 Core 当前只有认证、凭据刷新、用量和套餐目录评分能力，没有模型目录、API 协议类型、推理请求与流式结果契约；
@@ -137,9 +137,9 @@ OmniRoute 并不存在一个包办所有职责的 `ProviderAdapter`。它的完�
 
 接入点（而不是地区枚举）才是差异的正确粒度。以 OpenAI 为例，ChatGPT Codex 订阅（OAuth、订阅配额与档位）、OpenAI 平台 API（API Key、按量计费）与 Azure OpenAI（独立端点、部署级凭据）的订阅方式、接口地址、模型目录和计费模式天差地别，应建模为同一供应商下的不同接入点；若凭据所有权域确实不同（如 Azure 部署密钥与 ChatGPT 账号），也可以实施为独立 provider——两种判定都被本机制支持，共同点是接入点级差异必须显式声明，不能靠实现内部的枚举字段暗中选择。
 
-`modelId` 只在所属 provider 或目录命名空间中唯一。GraphAgent 的持久选择使用 `{ providerId, accountId, modelId, protocolRouteId? }`，不能只保存一条可变 URL 或展示名称。
+`accountId` 标识一次实际接入，账号保存既有 `offeringId`。同一账号的不同协议可分别配置 base URL。`modelId` 在账号的协议路由目录内解析，GraphAgent 持久保存 `{ providerId, accountId, protocolRouteId, modelId }`。账号内配置的 `bindingRevision` 用于目录失效和固定一次请求的配置版本。
 
-别名只用于迁移或外部输入归一化，不作为 offering，也不写入新账号。
+服务商与接入点的别名只用于迁移或外部输入归一化，新账号保存规范标识。模型别名属于用户配置，可在指定账号与协议路由内持久映射到上游模型名。
 
 ### 5.2 目录、实现、账号和产品投影
 
@@ -161,7 +161,10 @@ flowchart LR
   G --> GE[GraphAgent Model Runtime]
   U --> GE
   M --> GE
-  PE --> V[Vue IPolyQuotaService]
+  PE --> PH[PolyQuota Hono]
+  PH --> V[PolyQuota Vue]
+  GE --> GH[GraphAgent Hono]
+  GH --> GV[GraphAgent Vue]
   GE --> GA[Agent ModelLease / Execution]
 ```
 
@@ -172,7 +175,7 @@ flowchart LR
 - 账号保存 `providerId`、`offeringId` 和认证方式；
 - PolyQuota 快照把它需要的目录、账号、用量和状态投影为同一修订；
 - GraphAgent 通过共享模型目录与推理服务取得 `ModelLease`，不读取 PolyQuota 快照；
-- `IPolyQuotaService` 只是 PolyQuota 前端入口，不暴露注册表或 IPC 通道；GraphAgent 后续定义自己的应用服务。
+- `IPolyQuotaService` 是 PolyQuota 前端入口，GraphAgent 已有自己的凭据设置契约，模型配置将使用 GraphAgent 的应用服务。
 
 ### 5.3 共享平台与产品服务边界
 
@@ -187,24 +190,26 @@ flowchart LR
 
 PolyQuota 自己提供：
 
-- `IPolyQuotaService`、Electron IPC、状态快照和变更通知；
+- `IPolyQuotaService`、Hono 业务路由、状态快照和 SSE 变更通知；
 - 账号管理、轮询、额度通知、设置和展示投影；
-- 普通浏览器的空白实现及 Vue 注入。
+- 桌面与 Web 共用的 fetch 客户端及 Vue 注入。
 
 GraphAgent 自己提供：
 
 - 模型选择、ModelLease、调用预算、任务归因、并发和回退策略；
 - Agent 上下文构建、工具执行循环、任务图与 Artifact；
 - Policy Gate 在模型请求前后的拦截；
-- 面向其 UI 或控制面的应用服务。
+- 面向 Web 与 Electron 共用前端的 Hono 路由、应用服务和 SSE 变更通知。
 
 GraphAgent 不重新定义 provider、protocol、model capability、credential 或 usage 的基础类型；PolyQuota 也不决定 GraphAgent 的模型路由和执行策略。
+
+两个产品共用 Vue 布局、组件与样式，按产品配置主题图标和配色。供应商接入页和凭据管理页复用同一业务 API。GraphAgent 的模型配置页和 PolyQuota 的用量页分别由各自应用装配。
 
 类型和协议复用不意味着数据共享。GraphAgent 无需读取 PolyQuota 的用量、通知或设置，也不通过共享凭据服务取得这些信息；自己的推理 usage/成本记录归自己的业务存储。两个产品的数据库保持独立。
 
 ### 5.4 凭据后端与共享服务
 
-默认使用产品内置凭据服务，共享模式注册同一 Credential Broker 的客户端。共享身份通过 credentialId 与产品 localAccountId 绑定，产品业务数据库保持独立。broker 只保存不透明 payload，提供刷新互斥许可、修订提交与事件；token 刷新由取得许可的应用端 provider 执行，provider 不直接写共享库。
+PolyQuota 默认使用内置凭据服务，GraphAgent 的当前最小宿主支持导入并启用共享后端。共享模式下两个产品分别连接同一 Credential Broker。共享身份通过 credentialId 与产品 localAccountId 绑定，产品业务数据库保持独立。broker 只保存不透明 payload，提供刷新互斥许可、修订提交与事件；token 刷新由取得许可的应用端 provider 执行，provider 不直接写共享库。
 
 记录外壳增加由 broker 认证身份填写的 createdByClientId、lastUpdatedByClientId，以及 `Record<string, string>` metadata。客户端用 `"true"`/`"false"` 字符串声明 supportsUsage 等用途能力，broker 提供权限范围内、不含 payload 的描述列表与字符串精确筛选，不接受嵌套元数据；PolyQuota 按用量能力及本地 provider 支持发现凭据，不按创建产品或是否 API Key 判断。元数据不包含用量结果，broker 不解释供应商语义；归属、原子更新、容量限制及筛选变更规则见凭据共享设计第 2.2 节。
 
@@ -212,7 +217,7 @@ GraphAgent 不重新定义 provider、protocol、model capability、credential �
 
 导出成功不等于服务接管，切换失败保留主密钥用于重试；主动切回则忘记本客户端主密钥，再次进入需要输入迁移密钥。版本准备与 currentVersion 发布、凭据更新权交接、客户端接线分别记录，不把跨库操作宣称为单个事务。
 
-共享服务面向任意获准的第三方客户端，独立安装、运行和升级；不依赖产品 apps、contract/UI、Electron 或 provider。中立存储协议独立于当前 core/polyquota-contract，供应商类型与刷新逻辑继续由应用复用，不需要移植进 broker。公开协议使用 clientId、实例授权与能力协商，不硬编码产品；刷新许可覆盖读取、外部调用与提交全过程，细节见凭据共享设计第 2 节。
+共享服务面向任意获准的第三方客户端，独立安装、运行和升级。其存储协议属于 broker，产品前后端 API 属于 `contract`，供应商类型与刷新逻辑属于应用复用的 Core。broker 协议使用 clientId、实例授权与能力协商。刷新许可覆盖读取、外部调用与提交全过程，细节见[凭据共享设计](./credential-sharing/design.md)第 2 节。
 
 共享模式的 broker 是唯一凭据来源，应用不长期缓存 token，每次业务使用/刷新按服务当前修订读取。提交后立即通知订阅者自动读取最新内容，断线重连补取；短期请求快照与主密钥安全缓存不属于长期 token 副本。C1→C2→C3 的顺序由许可、fence 和 revision 保证，不由两个应用自己的进程内锁保证。
 
@@ -292,7 +297,7 @@ interface ProviderPlanDescriptor {
 }
 ```
 
-除 `protocolRoutes`、`extensions` 与接入点的 `protocolRouteIds` 外，上述形状已在 core `providers/<id>/descriptor.ts` 落地（六家：codex、glm、grok-build、antigravity、claude、opencode-go），`capabilities` 当前全部声明 `["account", "usage"]`，`plans` 已随账号持久化 `offeringId` 迁至接入点级（GLM 两个接入点各持一份相同目录，允许独立演进），offering 不再有 `region` 字段。`providers/catalog.ts` 聚合为唯一目录端点并构造期校验：provider id 格式（slug）与重复、offering 归属与 id 格式、offering 内认证方式 id 格式与重复、iconKey 与 sourcePathHint 合法性、capability 取值、接入点内 plan 的 id/multiplier/match 合法性（2026-10 结构侧批次：供应商/认证方式集合改为从注册 descriptors 收集导出，"未知 provider"检查转为结构性校验）。快照经 `PublicProviderDescriptor` 透出 provider/displayName、offerings 全部展示字段（含 iconKey 与 sourcePathHint）与各接入点的 plans（仅 id/displayName——match 键是 core 内部数据层标识，不过 IPC，套餐展示标签由主进程解析固化进 `PublicUsage.planLabel` 下发）；倍率与 `source` 属于运行期评分事实，不进公开目录。
+除 `protocolRoutes`、`extensions` 与接入点的 `protocolRouteIds` 外，上述形状已在 core `providers/<id>/descriptor.ts` 落地（七家：codex、glm、grok-build、antigravity、claude、opencode-go、github-copilot），`capabilities` 当前全部声明 `["account", "usage"]`，`plans` 已随账号持久化 `offeringId` 迁至接入点级（GLM 两个接入点各持一份相同目录，允许独立演进），offering 不再有 `region` 字段。`providers/catalog.ts` 聚合为唯一目录端点并构造期校验：provider id 格式（slug）与重复、offering 归属与 id 格式、offering 内认证方式 id 格式与重复、iconKey 与 sourcePathHint 合法性、capability 取值、接入点内 plan 的 id/multiplier/match 合法性（2026-10 结构侧批次：供应商/认证方式集合改为从注册 descriptors 收集导出，"未知 provider"检查转为结构性校验）。快照经 `PublicProviderDescriptor` 透出 provider/displayName、offerings 全部展示字段（含 iconKey 与 sourcePathHint）与各接入点的 plans（仅 id/displayName——match 键是 core 内部数据层标识，不过 IPC，套餐展示标签由主进程解析固化进 `PublicUsage.planLabel` 下发）；倍率与 `source` 属于运行期评分事实，不进公开目录。
 
 `displayName` 与 `description` 是 core 持有的标准表述（语言中立或与产品 UI 语言一致，一份即可）；UI 可以按 `offeringId` 覆盖更适合产品的名称与图标，但不得改变能力或可执行状态，也不得再保存一份供应商事实副本（本地化现阶段不做，归属边界见 §6.9）。
 
@@ -372,13 +377,19 @@ interface ProtocolRouteDescriptor {
 
 API 协议类型、业务操作和服务商必须正交：OpenAI Chat Completions 与 Responses 是不同协议；同一服务商可以同时暴露多种协议；同一协议也可以由多个服务商实现。`providerId` 因此不能再兼任 `apiType`，模型选择也不能只保存服务商和模型名。
 
-公开 route 只描述可选择的协议能力，不暴露真实密钥、请求头或内部基础地址。执行时使用的 endpoint、重试策略和认证材料属于主进程或受信 Worker 的私有绑定。
+公开 route 描述可选择的协议能力。用户在接入页为账号的每条 route 设置 base URL，受限编辑接口只回显允许展示的配置。目录与快照只投影 route 标识和能力，执行端在本次请求中解析地址、认证头及适用的映射规则。协议路径拼接与配置校验见[供应商接入与模型目录](./provider-connections-and-model-catalog.md)。
 
 ### 6.5 模型目录
 
 ```ts
-interface ModelRef {
+interface ModelCatalogScope {
   providerId: ProviderId;
+  offeringId: string;
+  accountId: AccountId;
+  protocolRouteId: ProtocolRouteId;
+}
+
+interface ModelRef extends ModelCatalogScope {
   modelId: ModelId;
 }
 
@@ -415,7 +426,8 @@ type ModelCapabilityRequirement =
   | { kind: "extension"; namespace: string; requirement: JsonValue };
 
 interface ModelCatalogSnapshot {
-  providerId: ProviderId;
+  scope: ModelCatalogScope;
+  bindingRevision: BindingRevision;
   revision: string;
   observedAt: string;
   source: "static" | "remote" | "merged";
@@ -424,6 +436,8 @@ interface ModelCatalogSnapshot {
 ```
 
 模型目录把 OmniRoute `RegistryModel` 中已经证明必要的能力提升为共享契约，包括模型级目标协议、上下文限制、工具调用、结构化输出、推理状态、模态和不支持参数，但不在当前阶段复制其全部字段。GraphAgent 使用结构化 `ModelCapabilityRequirement` 过滤候选，不能把能力重新退化成约定俗成的字符串标签。静态声明与远端发现可以合并，必须保留来源和 revision；远端刷新暂时失败时，现有租约不能因为目录瞬时缺失而被悄悄改绑。
+
+目录按账号和路由发现，并校验其 provider 与 offering。一次刷新只向读取时的 `bindingRevision` 提交结果。绑定变更后，旧响应丢弃。模型参数包括缓存能力和输入、输出、缓存的价格，预置按同名模型逐字段补充。字段来源、覆盖顺序、刷新与失效规则见[供应商接入与模型目录](./provider-connections-and-model-catalog.md)。
 
 ### 6.6 能力化运行实现
 
@@ -462,7 +476,11 @@ interface ProviderUsageCapability {
 interface ProviderModelCatalogCapability {
   readonly providerId: ProviderId;
 
-  getModelCatalog(context: ProviderContext): Promise<ModelCatalogSnapshot>;
+  getModelCatalog(
+    context: ProviderContext,
+    scope: ModelCatalogScope,
+    bindingRevision: BindingRevision,
+  ): Promise<ModelCatalogSnapshot>;
 }
 
 interface ProviderInferenceCapability {
@@ -476,6 +494,7 @@ interface ProviderInferenceCapability {
 
 interface PreparedProviderCall {
   readonly selection: ProviderRouteSelection;
+  readonly bindingRevision: BindingRevision;
   readonly implementationGeneration: string;
   readonly modelCatalogRevision: string;
   execute(signal: AbortSignal): AsyncIterable<ModelStreamEvent>;
@@ -498,7 +517,7 @@ interface ProviderContribution {
 
 `redeemResetCard` 是用量侧用户动作（已落地为 usage facet 的可选方法）：获得侧统一随 `fetchUsage` 的 `resetCredits` 一等字段返回（§9.3），消耗侧以判别联合表达两种形态——聚合不传卡 id、按类型消耗（多桶时指定类型，由服务端挑选），分体传对应重置卡 id；glm 分体，codex 常规分体（明细端点暂不可用时如实退回聚合计数），兑换协议在 core `providers/<id>/reset-card-redemption.ts`。应用服务经 `ProviderRegistry.requireUsage(provider).redeemResetCard` 通用分派，组合根不再维护按供应商的映射（§8.1 已达成）。
 
-`prepareCall` 在一次调用开始前固定 provider、account、model、protocol route、实现代次和目录 revision；得到的 `PreparedProviderCall` 在完成或取消前不重新查注册表。GraphAgent 的 `ModelLease` 可以在此基础上增加预算、过期时间和任务归因，但不能把正在执行的流静默切换到另一实现。
+`prepareCall` 在一次调用开始前固定账号、模型、协议路由、实现代次、`bindingRevision` 与目录 revision。执行期间持续使用该版本的地址与映射规则。GraphAgent 的 `ModelLease` 可以在此基础上增加预算、过期时间和任务归因。
 
 ### 6.7 规范消息与协议编解码边界
 
@@ -621,8 +640,8 @@ interface ProviderAuthFlow {
 ### 7.3 查找规则
 
 - 新增认证：先由 `offeringId` 找声明，再取得其唯一 `providerId` 和实现；
-- 已有账号操作：只按账号保存的 `providerId` 找 account 或 usage facet，`offeringId` 只影响展示与该账号的公开默认事实；
-- 模型选择：按 `providerId + modelId + protocolRouteId` 解析模型与推理 facet，并验证账号属于同一 provider；
+- 已有账号操作按账号保存的 `providerId` 找对应 facet，再校验 `offeringId` 与账号用途，以决定可执行的认证、用量或协议操作。
+- 模型选择先核对账号归属及其 offering 下的路由，再在该账号与路由的目录内解析 `modelId`。执行前校验目录绑定版本与当前 `bindingRevision` 一致。
 - 缺少实现：账号进入 `provider-unavailable` 状态，保留本地数据，禁止刷新和认证；
 - 未知 offering：拒绝新增认证，不按 provider 的第一个 offering 猜测；
 - 未知账号 provider：拒绝执行并保留可诊断错误，不迁移到相似标识。
@@ -631,7 +650,7 @@ interface ProviderAuthFlow {
 
 ### 8.1 唯一组合根与供应商组合工厂
 
-桌面只负责创建宿主端口；供应商的组合细节（adapter、provisioner、auth-flow、用量侧动作如何用端口拼装）属于各供应商自己的知识，收在 core `providers/<id>/` 的组合工厂里：
+Node 和 Electron 宿主创建平台端口，注入当前产品的服务。各供应商在 Core 的 `providers/<id>/` 组合工厂中装配 adapter、provisioner、auth-flow 和用量侧动作。
 
 ```ts
 // core：每家供应商一个组合工厂，宿主端口全部经参数注入
@@ -672,7 +691,7 @@ const modelService = new ModelService(providerRegistry, credentialService);
 
 同一个 `providerRegistry` 同时交给认证、刷新、模型目录、推理准备、公共快照和诊断服务。不得为每个子系统重新构造服务商表。
 
-当前落地形态（阶段 B 完成）：六家供应商的 adapter、provisioner、auth-flow 与重置卡兑换协议全部位于 core `providers/<id>/`，各供应商的组合细节收在 `providers/<id>/bundle.ts` 组合工厂并由 `createProviderContributions(ports)` 聚合；桌面组合根只创建宿主端口（http/browser/callbackServer/storage/vault）并构造唯一 `ProviderRegistry`，无任何按供应商命名的构造与映射。`RefreshCoordinator` 与 `AuthCoordinator` 均从注册表取得对应 facet，重复 provider 或 facet 与能力声明不符在注册表构造期即失败。
+当前落地形态（阶段 B 完成）：七家供应商的 adapter、provisioner、auth-flow 与重置卡兑换协议全部位于 core `providers/<id>/`，各供应商的组合细节收在 `providers/<id>/bundle.ts` 组合工厂并由 `createProviderContributions(services)` 聚合；产品服务端组合根只创建宿主端口（http/browser/callbackServer/storage/vault）并构造唯一 `ProviderRegistry`，无任何按供应商命名的构造与映射。`RefreshCoordinator` 与 `AuthCoordinator` 均从注册表取得对应 facet，重复 provider 或 facet 与能力声明不符在注册表构造期即失败。
 
 ### 8.2 Codex 绑定
 
@@ -801,7 +820,7 @@ type ResetCreditRedemption =
 
 ### 10.1 IPolyQuotaService
 
-公共契约位于 UI、preload 与主进程都能依赖的轻量包 `packages/polyquota-contract` 中（已落地，见第 15 节阶段 D 进展记录）。该包只能包含类型、schema 和纯序列化辅助函数，不依赖 Vue、Electron、数据库或 Node API。
+当前 PolyQuota 的 API 类型和校验位于 `packages/polyquota-contract`。迁移后，跨产品 API 取自 `contract/common`，PolyQuota 专属操作取自 `contract/polyquota`。下列方法展示应用服务签名，前端订阅由 fetch/SSE 适配器实现。契约只声明数据形状、方法、路径、事件和纯格式校验。
 
 ```ts
 interface IPolyQuotaService {
@@ -831,38 +850,15 @@ interface IPolyQuotaService {
 
 公开接口不提供“取得某服务商实现”“发送任意 IPC”“传入 URL 后代请求”等通用逃生口。
 
-### 10.2 Electron 实现
+### 10.2 宿主传输
 
-preload 只在 `window.polyQuotaElectronService` 暴露 `IPolyQuotaService`。每个方法调用固定 IPC 通道，订阅只监听固定状态变更事件，并在 disposer 中移除对应 listener。
+两个产品分别组装自己的 Hono 应用，通用 API 挂载同一契约的方法和相对路径。每个产品的 Web 与 Electron 使用同一份前端经 fetch/SSE 访问这些路由，由服务端完成输入校验、调用 Core 或产品服务、公开 DTO 投影与错误处理。GraphAgent 独立 Node/Web 和 Electron 均需正式验收，PolyQuota 的独立 Web 用于开发测试。具体宿主装配见[项目架构](../../architecture.md)。
 
-主进程 IPC 层负责：
+PolyQuota 已实现回环 HTTP 和 Electron 内部协议进入 Hono。GraphAgent A6—A8 以受限 preload 承载凭据设置，迁移时将这些业务操作接入 GraphAgent 的 Hono 路由，系统对话框和密钥保管留给宿主。[PolyQuota 服务模式](./service-mode/development.md) · [GraphAgent 最小宿主实施记录](../../graph-agent/minimal-host.md)
 
-1. 用共享 schema 校验输入；
-2. 调用应用服务；
-3. 把领域错误转换为 `ServiceResult`；
-4. 对输出再次执行公开 schema 校验；
-5. 不向 renderer 暴露 Core 实现或秘密对象。
+### 10.3 前端注入与测试
 
-IPC 层不判断具体服务商，也不解析配额响应。
-
-### 10.3 空白实现与测试实现
-
-前端提供三种实现角色：
-
-- `ElectronPolyQuotaService`：实际由 preload 暴露；
-- `EmptyPolyQuotaService`：普通浏览器默认实现；
-- `FakePolyQuotaService`：仅在 UI 测试中使用，可显式设置快照和操作结果。
-
-空白实现返回修订号为 0 的空快照和有效默认设置；订阅返回无副作用 disposer；所有写操作返回明确的 `service-unavailable`，不得伪造成功。相比“写方法什么都不做并返回成功”，明确失败可以避免浏览器预览误导用户，同时仍保持页面可运行。
-
-固定前端入口完成一次实例选择，并在 Vue 初始化时注入：
-
-```ts
-const service = resolvePolyQuotaService(window.polyQuotaElectronService);
-createApp(App).provide(polyQuotaServiceKey, service).mount("#app");
-```
-
-组件只通过 `usePolyQuotaService()` 获取接口。不得再读取 `window`，也不得各自判断 Electron、开发或生产环境。
+PolyQuota 正式 Vue 入口注入 fetch 客户端，连接失败时显示服务错误。测试和显式演示入口可以注入夹具。新共用页面沿用依赖注入，两种宿主用同一组页面交互用例验证。
 
 ## 11. 变更通知与并发
 
@@ -1001,68 +997,35 @@ UI 测试直接注入 `FakePolyQuotaService`：
 - 可以独立模拟空状态、多个服务商、认证等待、刷新失败和差异扩展；
 - 可以断言组件只发送 `offeringId`、`authMethodId`、`accountId` 和声明字段。
 
-### 14.6 Electron 边界测试
+### 14.6 产品宿主边界测试
 
-Electron 测试只覆盖共享 schema、固定通道、订阅释放、CSP、preload 暴露名以及一次端到端绑定。不重复测试每个服务商的协议解析。
+同一套通用 API 用例覆盖两产品的 Web 与 Electron，核对方法、相对路径、DTO、错误和 SSE 订阅释放。Electron 验证沙箱及宿主桥对系统能力的限制。GraphAgent 另从独立 Node/Web 启动，验证无需 Electron 的私有凭据写入及重启恢复。PolyQuota 的独立 Web 用例验证开发测试入口。
 
 ## 15. 分阶段迁移
 
 ### 阶段 A：盘点基线并建立共享类型
 
-1. 以 OmniRoute 探索文档和 vendor 产物清单（成文时 24 个，现为 49 个）固定“上游原始结构/当前已搬运/尚未搬运”三种事实；
-2. 建立 provider、offering、account、protocol route、model、operation 和 capability 的轻量公共类型及运行时 schema；
-3. 明确当前 Codex、GLM 实现只覆盖 account/usage，不伪装成已支持 inference；
-4. 为 GraphAgent 的 `ModelPolicy` 和未来 `ModelLease` 引用共享标识，不再自建 provider/apiType 字符串体系。
-
-这一阶段只建立可演进边界，不要求立即搬运 OmniRoute 的 translator、Executor 或完整模型表。
-
-进展记录（2026-09-30）：provider / offering / 认证方式的轻量声明与统一目录端点已落地——core 按供应商建立 `src/providers/<id>/` 目录（adapter 与 descriptor 同处一目录），`providers/catalog.ts` 聚合全部声明并在重复 provider、offering 或认证方式时构造失败；快照 `providers` 字段（`PublicProviderDescriptor[]`）经 IPC 提供给前端，schemaVersion 升至 2（其后随快照契约演进，当前 `POLYQUOTA_SCHEMA_VERSION` 为 3）；UI 接入页的结构改为目录驱动。capability 类型与声明已随阶段 B 落地（当前全部为 account/usage）；protocol route、model 与 operation 类型属于阶段 E，仍未落地。
+- 固定 OmniRoute 的“原始结构 / 已搬运 / 未搬运”基线，建立 provider、offering、认证方式与 capability 的轻量声明和运行时校验。
+- 结果（2026-09-30）：统一目录端点上线，重复 provider、offering 或认证方式在构造期失败；protocol route、model 与 operation 类型归入阶段 E。
 
 ### 阶段 B：能力注册表包装现有实现
 
-1. 各 `providers/<id>/` 提供组合工厂并聚合为 `createProviderBundles(ports)`：adapter、provisioner、auth-flow 与重置卡兑换的构造全部收进 core，桌面组合根删除按供应商展开的构造与 `resetCreditRedeemers` 映射，只注入端口（§8.1 过渡形态，可先于注册表独立落地）；
-2. 定义 descriptor、capability facet、contribution 和严格注册表；
-3. 用 account/usage facade 包装各家 adapter 与 provisioner，bundle 升级为 contribution；
-4. 在组合根注册全部 contribution；
-5. 让 RefreshCoordinator 从注册表取得对应 facet；
-6. 增加重复注册、缺失实现和 offering 绑定测试。
-
-进展记录（2026-10-13）：第 1—6 条全部落地。每家供应商的 `providers/<id>/bundle.ts` 组合工厂以 `ProviderPorts`（http/browser/callbackServer/storage/vault/clock）注入端口并产出 `ProviderContribution`，`providers/contributions.ts` 的 `createProviderContributions(ports)` 聚合六家；由于与注册表同批实施，§8.1 的 ProviderBundle 过渡形态被跳过，工厂直接产出 contribution。`providers/registry.ts` 的 `ProviderRegistry` 构造期校验 facet 与 descriptor 的 providerId 绑定、providerId 唯一、capability 声明与 facet 完整相符（声明 `model-catalog`/`inference` 即失败，防止伪装推理能力），任一错误整体失败；`AuthCoordinator` 与 `RefreshCoordinator` 改为注册表驱动，`refreshCredentials` 成为 account facet 的可选方法（glm/opencode-go 的 API Key 无效果刷新已删除）。注册表测试覆盖重复贡献、facet 错绑、能力缺声明/多声明、GLM 双接入点同一 facet、跨 provider 不互换、`createProviderContributions` 与 `providerCatalog` 聚合一致。保存归属（provisioner 统一收口到 accountRepository/credentialService）仍按 §6.8 差异清单留待后续。
+- 用组合工厂和严格注册表包装现有 adapter、provisioner 与认证流；未实现的 `model-catalog` / `inference` 声明直接失败。
+- 结果（2026-10-13）：七家 provider 通过 contribution 注册，注册表校验 facet 绑定、唯一所有权与能力声明；AuthCoordinator 与 RefreshCoordinator 改为注册表驱动。
 
 ### 阶段 C：认证分派收敛
 
-1. 将 Codex 与 GLM 的认证分支移入各自 account facet；
-2. AuthCoordinator 只管理 session、保存、取消和公开结果；
-3. 账号正式保存 `offeringId`，`plans` 随之具备迁至接入点级的条件；
-4. 退休 `region`：认证输入以 `offeringId` 取代 `AuthStartOptions.region`，GLM 实现内部按 `offeringId` 选择端点与展示事实，删除 descriptor 的 `region` 字段及 `publicMetadata.region` / `presentationId`（接入点差异由双 offering 声明承载，见 §6.2、§8.3）；
-5. 删除 UI 与 IPC 中按服务商校验具体字段的分支，改为共享 schema 与实现校验。
-
-第 1、2 条先行落地：桌面 `auth-service.ts` 的认证分支按供应商拆进 core `providers/<id>/auth-flow.ts`，回调处理逻辑（校验、超时、应答页）抽为 core 回调处理器而监听启动由桌面端口执行，CLI 凭据读取与解析全部收进 core，无分支的 `AuthCoordinator` 只管会话表并与 providerCatalog 对账——方案与边界见[认证服务抽取设计](../../polyquota/auth-service-extraction-design.md)。
-
-进展记录（2026-10-13）：第 3—5 条全部落地。`Account` 增加必填 `offeringId`（SQLite migration 4：`offering_id` 列，GLM 旧账号按 `presentationId`/`region` 回填两个接入点，其余回填 provider 同名接入点），全部 provisioner 结果携带接入点；`plans` 随之迁至接入点级，评分查表键改为 `matchOfferingPlan(offeringId, plan)`（`composite-remaining` 与快照投影同步）。`region` 退休：descriptor 与公开 DTO 无 region，`AuthStartOptions` 仅剩 `apiKey`，契约 `StartAuthRequest` 改为 `{ offeringId, method, apiKey? }`，GLM 实现内部经 `glmRegionForOffering` 选择端点（`zcode-credentials` 同步改按 offeringId 读凭据），`publicMetadata.region`/`presentationId`/`product` 与 UI 的 `accountPresentationId` 恢复逻辑删除。IPC 的 `parseStartAuthRequest` 不再按 provider 分支校验字段，方法与接入点合法性由 `AuthCoordinator` 对目录交叉验证、由各 flow 实现二次校验；AuthModal 的按供应商白名单分支删除，表单行为由方法 `interaction`（`secret-form` 显示 API Key 输入）驱动。
+- 认证分支移入各 provider，账号保存 `offeringId`，退休 `region` 与 `presentationId` 展示恢复逻辑。
+- 结果（2026-10-13）：OAuth、回调、CLI 与设备码流程归 Core；`offeringId` 成为账号必填；UI 与契约不再按 provider 校验具体字段。
 
 ### 阶段 D：PolyQuota 应用服务、目录与展示收敛
 
-1. 实现 `IPolyQuotaService`、空白实现和类型化 Vue 注入；
-2. 将 `window.llmUsage` 重命名为 `window.polyQuotaElectronService`；
-3. 用带 revision 的 `getSnapshot()` 与状态失效通知替代分散读取；
-4. descriptor 补齐展示事实：`iconKey` 与 cli-import 的 `sourcePathHint`（清单见 §6.9）；
-5. 删除 `presentation.ts` 中的供应商事实副本：`cliImportPath`、四张标签映射表、目录缺失时的名称/描述/网站回退、硬编码 `available` 与 `presentationRegistry[0]` 兜底，只保留图标资产、视觉回退与内置枚举文本映射（plan 文案映射已随 `plans` 目录化完成；本地化现阶段不做）；
-6. 重置额度从 extras 升级为一等 `resetCredits` 判别结构（§9.3）：聚合按类型分桶、消耗请求带类型（多桶必填），分体消耗带 id；codex 迁移为分体——用量刷新合并拉取明细端点，删除伪造的常量 `actionToken` 与"未提供有效期"显示；对账按形态区分（聚合计数以服务端刷新为准），UI 消耗入口按 `kind` 渲染，schemaVersion 随之升级；
-7. 删除 Core 与 UI 重复的 `ProviderId`、`AuthMethod` 定义；
-8. 清理旧 `publicMetadata` 和逐账号读取 API。
+- 建立应用服务契约、带修订的快照与失效通知，收敛 descriptor 展示事实、套餐匹配和重置额度结构。
+- 结果：快照与失效事件、`iconKey`/CLI 提示、套餐目录及重置额度聚合/分体结构均已落地；后续业务入口迁移为 Hono + fetch/SSE，当前契约与运行方式见[项目架构](../../architecture.md)和[运行流程与通信说明](../../polyquota/runtime-and-communication-review.md)。
 
-进展记录：第 1—3 条已完成；当前 `packages/polyquota-contract` 为 UI 与宿主的共同契约来源，`getSnapshot()` 与失效事件承载状态同步，业务通信使用 Hono + fetch/SSE。实现见[运行流程与通信说明](../../polyquota/runtime-and-communication-review.md)。2026-10-12 修订：第 4、5 条按 §6.9 的归属清单细化为可执行项；2026-10-13 增补第 6 条（重置额度结构升级：聚合按类型分桶、codex 迁移为分体、修正聚合形态对账错位）。
+### 阶段 E：扩展接入与模型目录，固定推理骨架
 
-进展记录（2026-10-13，第 4—8 条全部落地）：descriptor 补齐 `iconKey`（七枚：codex/bigmodel/zai/grok/antigravity/claude/opencode）与 cli-import 的 `sourcePathHint`（与各 auth-flow 的真实路径解析同源维护并透传到公开 DTO）；`presentation.ts` 收缩为图标资产映射、iconKey 字符回退、内置枚举文本映射（认证方式 + 重置额度类型词汇 `resetCreditTypeLabel`）与窗口时长等纯展示计算，四张标签映射表、目录缺失副本、硬编码 `available` 与 `presentationRegistry[0]` 兜底全部删除，配额/附加项标签回退顺序为原生 `displayName` → 窗口时长计算 → key 原样。重置额度升级为 `UsageSnapshot` 与 `PublicUsage` 的一等 `resetCredits` 判别结构（schemaVersion 4）：codex 常规路径合并拉取明细端点输出分体（逐卡 id/类型/过期时间），明细暂不可用时如实退回聚合计数（单桶 banked），消耗侧 `ResetCreditRedemption` 分体带 `itemId`（兑换协议重新校验列表）、聚合按类型且由服务端挑选，伪造的常量 `actionToken` 与 extras 内的 reset-credits 展示删除，对账按形态区分（分体按 itemId 本地移除直至上游停止报告，聚合计数不做本地扣减），UI 按 `kind` 渲染分桶/逐卡两种消耗入口，grok 的计数展示暂留 extras（升级分体另行评估）。封闭标识（providerIds/authMethods/ProviderId/AuthMethod 等）的唯一来源改为契约包，core re-export（core → contract 为新增依赖方向，GraphAgent 契约出现时应上移共享协议层）；`UsageExtraItem.actionToken` 删除。旧 `publicMetadata` 的退休键（region/presentationId/product）已清理，codex/grok/claude 的工作区与组织事实待 §6.1 PublicExtension 机制落地后转换；逐账号读取 API 此前已随快照完成。
-
-进展记录（2026-10-15，[2026-10 漂移排查](./2026-10-drift-review/README.md)第一批·结构侧落地，schemaVersion 4 → 5）：上条记录的"封闭标识唯一来源改为契约包"已被单源反转取代——供应商/认证方式是随目录扩张的动态集合，契约 DTO 放宽为 slug 格式 `string` 且不封闭 TS 类型，`providerIds` / `authMethods` 改由 core `providers/catalog.ts` 从注册 descriptors 收集导出，契约包 `parseStartAuthRequest` 只做结构校验、方法可用性由主进程交叉查目录（AuthCoordinator 既有校验）。套餐匹配上移主进程：`match` 键退出公开目录（`PublicPlanDescriptor` 只剩 id/displayName），主进程构造公开快照时经 core 唯一实现（`matchOfferingPlan`）解析出 `planId` / `planLabel` 固化进 `PublicUsage`（回退顺序：目录 `displayName` → 原始标识串；上游原始展示名的附带待数据侧叶子改造），契约包的 `normalizePlanMatch` / `matchPublicPlan` / `publicPlanDisplayName` 退役，未识别态（`planId: null`）倍率仍走默认 5 但 UI 套餐标签带可见提示。校验归属迁移：主进程自产快照的 `parseSnapshot` 自检取消，preload 收包解析全部退役、只留 schemaVersion 比对与传输错误映射（错误消息正则抠 path 的 hack 随之消失），请求侧维持 main `ipc.ts` 一道校验。usage/account DTO 家族照 ResetCredits 先例收敛为契约单源 re-export（core `models.ts` 删除 `PublicAccountDto` / `PublicUsageDto` 与 quota 族副本定义）；契约包单文件按域拆分为 vocabularies / channels / dto/* / validation（约 611 行，原 1031 行）。
-
-进展记录（2026-10-15，[2026-10 漂移排查](./2026-10-drift-review/README.md)第二批·数据侧落地）：`ProviderPlanDescriptor.match` 扩展为 `readonly (string | RegExp)[]`（结构侧 match 退出 IPC 后正则字面量才可用），求值先精确后正则——先按声明顺序扫全部字符串键做全词精确匹配，全部未中再按条目声明顺序试正则（作用于规范化小写串），宽泛模式抢不走精确命中；目录校验拒绝空匹配/全匹配正则（探测串判定 `/^/`、`/./` 一类），并新增 `legacy` / `legacyUntil`（配对 + ISO 日期，V8 越界日期滚动需按往返一致判合法）与 `sourceUrl` / `verifiedAt`（URL/日期格式；核心内部事实，不进公开目录快照，published 条目已回填）。目录数据按目标表刷新：grok 新增 Plus/Premium/Super/Ultra（1/4/15/50，字符串键为推测形态、单词边界正则兜底），旧 SuperGrok 两档标 legacy；codex 裸 `pro` 改 10x（Pro 200 新订口径）、`pro-20x` 标 legacy 至 2026-10-29、新增 `promax`(25)、B 端变体按 `/^self serve business/` / `ent26` / `/^enterprise cbp/` / `/^edu/` 归并；copilot `pro-plus` 5→4.6（AI Credits 合计口径）、新增 `copilot-max`(13.3)、实测免费档 `free_limited` 键维持 0.1 倍率；antigravity `pro` 改 1（官方基线）、Ultra 拆 5x/20x 两档（ultra-5x 声明在 ultra 前）、`/starter/` 子串正则接住长 tier 名。vendor 叶子四处修复（`.diff` 全部重生成，`github.ts` 的 diff 系接入遗漏本次补建）：antigravity 停止关键词折叠（`(Restricted)` 合成标记除外）、copilot 原始 `access_type_sku` / `copilot_plan` 透传为标识 + 合成标签降级 `planLabel` 回退 + 补 MAX 分支、glm 附带原始 `planName`、grokBuild 客户端版本 0.2.106 → 1.0.41（随上游 origin/main）。`UsageSnapshot` 新增可选 `rawPlanLabel`（上游原始展示名），`toPublicUsage` 回退链补全为 目录 `displayName` → `rawPlanLabel` → 原始标识串；公开 DTO 无形态变化（schemaVersion 维持 5）。真实账号抽查、grok 防御性正则收敛与 inferred 条目出处回填留待统一验收。
-
-进展记录（2026-10-15 晚，copilot 凭据协议跟进真实账号反馈）：真实账号新接入持续报"GitHub 授权已失效"，根因是 `copilot_internal/v2/token` 会话令牌交换已被 GitHub 收紧拒斥（openclaw 同步弃用，原话 "The retired `/v2/token` exchange rejects supported fine-grained PATs"；未认证探针仍 401，拒斥发生在带令牌请求上）。对齐现行 Copilot CLI/SDK 口径迁移：长期 OAuth 令牌直接使用（用量链路本就如此），接入时以一次 `/user` 探测校验令牌可访问 Copilot（401/403 → "请重新接入"），不再铸造会话令牌；凭据形态改为 `expiresAt: null` + 仅 `accessToken`。`refreshCredentials` 相应退化为存量信封迁移（清除跟踪会话过期的 `expiresAt`、剥离 `copilotToken` 密钥，幂等 no-op、零网络），`copilotToken` 保留在 `credentialSecretKeys` 词表内让存量加密信封继续可读。同日数据侧回填：真实账号观测 copilot 免费档 `copilot_plan: "individual"`（收进 `copilot-free` 键，消除 `Copilot Free?` 误报）、grok 存量 `subscriptionTier: "GrokPro"`（命中 legacy `grokpro` 键）、antigravity 长 tier 名被 `/starter/` 正则按预期接住；UI 配额标签去重改为分隔符无关比较（GLM `5 Hours Quota` 不再追加冗余 `· 5-hour`）。
-
-### 阶段 E：在 GraphAgent 可运行前固定推理骨架
+GraphAgent 最小宿主已经运行。普通 API Key、多协议地址、模型发现与预置、请求映射及页面归属见[供应商接入与模型目录设计](./provider-connections-and-model-catalog.md)。工作区结构调整与 UI 抽离在同一阶段先后完成，Core 改造、双端页面适配与联调按[三阶段实施方案](./provider-platform-implementation-plan.md)推进。凭据 SDK 合包由[凭据共享专项](./credential-sharing/implementation-plan.md)安排。以下完整推理契约供后续接入业务执行时使用。
 
 1. 实现 `ApiProtocol`、`ProtocolRouteDescriptor`、`ModelDescriptor` 和 `ProviderRouteSelection` schema；
 2. 建立 codec registry、规范请求 envelope 与最小 `ModelStreamEvent` 分类；
@@ -1070,7 +1033,7 @@ Electron 测试只覆盖共享 schema、固定通道、订阅释放、CSP、prel
 4. 至少为 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 和 Gemini GenerateContent 建立协议黄金夹具，即使首版只执行其中一种；
 5. 将 GraphAgent `ModelPolicy -> selection -> ModelLease` 路径绑定到共享契约。
 
-这一阶段不要求完成通用路由器或所有字段转换，但必须在 GraphAgent 业务代码出现前固定职责和稳定标识，避免以后从 PolyQuota 用量 runtime 反向拆架构。
+模型配置与共享端口先在独立页面和离线协议夹具上验收，通用路由与完整消息转换随后按实际推理需要演进。
 
 ### 阶段 F：选择性继续搬运 OmniRoute
 
@@ -1082,13 +1045,9 @@ Electron 测试只覆盖共享 schema、固定通道、订阅释放、CSP、prel
 
 ### 阶段 G：以新服务商验证扩展性
 
-选择一个同时具有账号/用量和至少一种推理 route 的服务商，用固定夹具完成其声明能力的协议与绑定测试，再进行最小真实烟测。只有它无需修改通用协调器、PolyQuota IPC 分派、GraphAgent provider 基础类型和已有页面组件时，才认为共享服务商平台成立。
+选择一个同时具有账号/用量和至少一种推理 route 的服务商，用固定夹具完成其声明能力的协议与绑定测试，再进行最小真实烟测。通过既有通用协调器、Hono API、GraphAgent provider 基础类型和页面组件即可接入时，完成本阶段。
 
-进展记录（2026-10-14，账号/用量侧提前演练）：以 GitHub Copilot 手工接入验证阶段 B–D 模式的表达能力——`providers/github-copilot/` 四件套（descriptor/adapter/auth-flow/bundle）+ contributions/catalog/UI 图标各登记一行，桌面组合根零修改；认证为 GitHub 设备码流（`read:user`），凭据形态是"长期 OAuth 令牌 + 短期 Copilot 会话令牌"，信封 `expiresAt` 跟踪会话令牌、`refreshCredentials` 只轮换会话令牌；用量走 vendor 叶子 `open-sse/services/usage/github.ts`（同源 commit 3ee283b，含 #2876 免费档"剩余计数"语义固化测试），付费/免费两种形态映射为月度窗口配额，档位（Pro/Pro+/Business/Enterprise/Student/Free）进 offering plans 目录。发现的模式限制仅一处：`CredentialSecrets` 是封闭的可选字段集合，新密钥形态（`copilotToken`）需要改共享 models 一行——与 providerIds 的封闭枚举同级、可接受（后续已把运行时校验词表与类型统一为单一来源 `credentialSecretKeys`）；其余（新 providerId、plan 目录、设备码交互、图标键、可选 redeem/refresh facet）均在既有模式内表达，无需触碰协调器、IPC 分派与页面组件。
-
-进展记录（2026-10-14，用量包含性统一）：真实免费 Copilot 账号暴露"订阅未包含的表被渲染为 0% 耗尽并触发告警"问题（上游只带 `percent_remaining: 0` 的高级请求表被 vendor 百分比合成放大）。对齐 OmniRoute 的展示闸门后统一为 `includedQuotas`（`providers/quota-inclusion.ts`）：无正额度、非 unlimited、却带百分比读数的表不进快照；unlimited 表保留（UI 显示"无限"、按 100% 计、`notificationCandidates` 跳过）；百分比未上报的零总额哨兵（如 antigravity 的 fractionReported=false，显示"未提供"）保留。全部七个 adapter 在组装 groups 前过闸；codex/claude 的窗口"缺席即不产出"、grok/opencode 的固定总额结构本就不会产生该形态，GLM 的 `mcp_monthly`（TIME_LIMIT 无额度）与 Copilot 免费档为真实修复点。
-
-进展记录（2026-10-14，原始量展示标记）：`UsageQuota` 新增可选 `rawAmounts`，区分"上游真实上报的 used/total 原始量（credit/token/请求数）"与"百分比合成刻度（total=100/1000）"；UI 在重置时间行右对齐展示 `使用量 / 总量`，仅对 `rawAmounts` 为真的配额生效。全量审计结论：真实原始量只存在于 GLM 的 CREDIT_LIMIT/TIME_LIMIT 计数、Copilot 付费档 entitlement 与免费档 monthly/limited 计数；claude/codex/grok/opencode 全部为百分比合成（total=100），antigravity 为分数合成（total=1000），grok 的美元余额走 extras 通道而非配额表。vendor 叶子 `glm.ts`/`github.ts` 以 `[astra]` 注释在合成分支处标注（偏差族记入 omniroute-vendor 基线测试头注）；其余 provider 不设该字段，缺省视为 false，旧快照因此不展示原始量，刷新后自然带出，无需适配逻辑。
+进展（2026-10-14）：以 GitHub Copilot 验证账号/用量侧接入无需修改协调器、Hono API 或页面组件；同期完成用量包含性闸门 `includedQuotas` 与原始量展示标记 `rawAmounts`，避免未包含配额被渲染为耗尽并区分真实用量与百分比合成值。
 
 ## 16. 完成标准
 
@@ -1098,7 +1057,7 @@ Electron 测试只覆盖共享 schema、固定通道、订阅释放、CSP、prel
 - 前端业务代码不直接访问 `window` 或 IPC；
 - `presentation.ts` 只保留图标资产、视觉回退与内置枚举文本映射；CLI 导入路径提示与可用性来自 descriptor 或注册状态，套餐与用量展示直接使用 core 的官方表述或上游原生事实，未知 offering 不回退到第一个展示条目；
 - 应用只有一个 ProviderRegistry 实例；
-- 供应商组合由 core 组合工厂提供（含重置卡兑换等用量侧动作），桌面组合根只注入端口，不出现按供应商命名的构造与映射；
+- 供应商组合由 Core 组合工厂提供（含重置卡兑换等用量侧动作），产品各自的服务端组合根注入所需平台端口；
 - Codex 与 GLM 都通过 contribution 注册，AuthService 不再按服务商分支；
 - BigModel 与 Z.ai 共享 GLM 实现，但作为两个接入点各自差异完整显示，`region` 字段与按 region / presentationId 的恢复逻辑删除；
 - 重复或错误绑定在启动时失败，未知实现不会回退；
@@ -1120,6 +1079,6 @@ Electron 测试只覆盖共享 schema、固定通道、订阅释放、CSP、prel
 - 不在本稿一次性定稿全部规范消息字段、路由评分、故障转移算法和第三方插件 ABI；
 - 不原样复制 OmniRoute 的完整 `chatCore`、代理宿主、数据库或 UI；
 - 不用一个万能 `Record<string, unknown>` 代替共同领域模型；
-- 不要求 GraphAgent 采用 PolyQuota 的 Vue、Electron 或 IPC 结构；
-- 不在本文重复定义共享凭据代理的进程和物理存储；统一遵循[凭据共享设计](./credential-sharing/design.md)，该设计的细化不代表运行实现已完成；
+- 共用 UI 通过统一的 API 契约访问当前产品的 Hono 应用，专属页面和服务归对应产品。
+- 凭据代理的进程、物理存储与共享切换统一遵循[凭据共享设计](./credential-sharing/design.md)，实施范围见 [A6—A8 实施记录](./credential-sharing/a6-a8-sharing-implementation.md)。
 - 不为了消除所有条件分支而隐藏真实服务商差异。

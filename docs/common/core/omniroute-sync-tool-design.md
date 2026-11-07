@@ -18,7 +18,7 @@
 
 ### 2.1 产物现状
 
-- vendor 共 49 个协议与许可证产物，覆盖基础协议叶子以及 Codex、GLM、Grok Build、Antigravity、Claude Code 与 OpenCode Go 六家；
+- vendor 共 49 个协议与许可证产物，覆盖基础协议叶子以及 Codex、GLM、Grok Build、Antigravity、Claude Code、OpenCode Go 与 GitHub Copilot 七家；
 - 每个产物有一份本地再生成的 `.diff`，`.diff/` 目录被 git 忽略，属于审查产物而非提交物；
 - vendor 的外部依赖只有 Node 内置模块（`crypto` 等）和 `zod` 4.5.4（`@astra-conductor/core` 现有运行时依赖）。
 

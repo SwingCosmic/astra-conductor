@@ -1,17 +1,17 @@
 # AstraConductor
 
-AstraConductor 用于统一利用大模型与智能体，并管理相关控制流和数据流。本仓库同时承载 PolyQuota、GraphAgent 最小桌面壳，以及两者共用的协议、认证与账号核心能力。
+AstraConductor 承载 PolyQuota、GraphAgent，以及两者共用的供应商、认证和账号能力。包边界、依赖方向、业务通信和产品启动形式统一见[项目架构](./docs/architecture.md)，其中列出了当前实现到目标结构的迁移关系。
 
 - **PolyQuota** 是面向本地桌面的 LLM 订阅用量聚合工具，以 Windows 托盘应用为首要形态。
-- **GraphAgent** 当前提供独立 Electron 壳、空白主页与设置页，可导入 PolyQuota 导出的凭据、接入共享并手动刷新受支持凭据；聊天与 Agent 功能尚未启动，不复用 PolyQuota UI。
-- `packages/credentials` 提供独立 broker 协议客户端、迁移包校验和记录许可；`packages/credential-host` 提供 Windows 本地组件管理；`packages/core` 由两个产品共享；`packages/polyquota-contract` 是 PolyQuota UI、Electron 与 Node 宿主共享的服务契约包；`packages/polyquota-ui` 仅属于 PolyQuota。
+- **GraphAgent** 的正式交付目标包括独立 Web 和 Electron。当前代码提供凭据共享验证所需的 Electron 最小壳，可导入 PolyQuota 导出的凭据并刷新受支持账号。
 - 工作区包统一使用 `@astra-conductor/*` 命名空间；产品运行身份仍相互独立。
 
-PolyQuota 当前已接入六家服务商：Codex、GLM Coding Plan、Grok Build、Antigravity、Claude Code 与 OpenCode Go，且均已通过真实账号测试确认可用。其中 Codex（CLI 凭据导入、浏览器 OAuth PKCE、设备码）、GLM（国内与国际 API Key、只读导入 ZCode v2 凭据）、Grok Build 与 Antigravity 完成真实账号用量闭环，Claude Code（CLI 凭据只读导入）与 OpenCode Go（API Key）随后接入并通过真实账号验证。
+PolyQuota 当前已接入七家服务商：Codex、GLM Coding Plan、Grok Build、Antigravity、Claude Code、OpenCode Go 与 GitHub Copilot，且均已通过真实账号测试确认可用。其中 Codex（CLI 凭据导入、浏览器 OAuth PKCE、设备码）、GLM（国内与国际 API Key、只读导入 ZCode v2 凭据）、Grok Build 与 Antigravity 完成真实账号用量闭环，Claude Code（CLI 凭据只读导入）、OpenCode Go（API Key）与 GitHub Copilot（GitHub 设备码授权）随后接入并通过真实账号验证。
 
 ## 文档
 
 - [文档总览](./docs/README.md)
+- [项目架构与迁移对照](./docs/architecture.md)
 - [PolyQuota](./docs/polyquota/README.md)
 - [GraphAgent](./docs/graph-agent/README.md)
 - [共享资料](./docs/common/README.md)
@@ -90,15 +90,6 @@ pnpm data:reset
 
 共享流程为 PolyQuota 首次导出并保存迁移密钥 → GraphAgent 选择共享目录、验证并确认导入 → PolyQuota 启用共享。PolyQuota 可在确认独立刷新风险后返回内置存储；恢复本次共享时必须重新输入迁移密钥。两个产品始终只通过独立 broker 协议共享凭据，不读取彼此的业务数据库。
 
-本地验收使用 `pnpm test:credential-sharing-loop --publish <完整自包含 publish 目录>`。本地组件包与安装流程继续沿用 A3，生产 Release、自动下载与发行校验仍属于待实施的 A9；主应用安装包不携带 broker/runtime。阶段说明及验收边界见 [A6—A8 实施说明](./docs/common/core/credential-sharing/a6-a8-sharing-implementation.md)。
+本地验收使用 `pnpm test:credential-sharing-loop --publish <完整自包含 publish 目录>`，沿用 A3 的本地组件安装流程。broker 及其 runtime 独立安装。二期 B4 在双向共享验收通过后发布 broker 并接入生产下载。当前闭环与后续排期分别见 [A6—A8 实施说明](./docs/common/core/credential-sharing/a6-a8-sharing-implementation.md)和[凭据共享实施方案](./docs/common/core/credential-sharing/implementation-plan.md)。
 
-## 边界约定
-
-- `packages/core` 不依赖 Electron，也不直接引用 `references/` 下的仓库。
-- `packages/polyquota-ui` 只负责 PolyQuota 界面，不访问上游，不读取凭证，也不是 GraphAgent 的 UI 基础。
-- `apps/polyquota` 负责 PolyQuota 的窗口和系统能力，不写服务商协议。
-- `apps/graph-agent` 使用独立 Electron 主进程、受限 preload 与自己的静态设置页；它不依赖 `packages/polyquota-ui`，也不打开 PolyQuota 数据库。
-- 两个产品的渲染进程均关闭 Node 集成，开启上下文隔离和沙箱。PolyQuota 业务访问使用 fetch/SSE：Electron 通过 `polyquota-app://app/v1/...` 接入主进程内嵌服务，独立 Web 通过回环 HTTP `/api/v1/...` 接入；不注入业务 preload 或注册业务 IPC。PolyQuota 默认 UI 保留原打包加载路径，仅登记的动态资源使用 `polyquota-app://resources/<resourceId>`。GraphAgent 最小壳通过自己的受限 IPC 操作共享设置，普通响应不返回供应商凭据或主密钥。
-- Node 与 Electron 使用彼此隔离的 `better-sqlite3` 二进制；Electron 版本存放在 `apps/polyquota/lib/better-sqlite3` 并通过 `nativeBinding` 显式加载。
-
-凭据共享导出侧的本地包目录与历史验收见 [A3—A5 实施说明](./docs/common/core/credential-sharing/a3-a5-export-implementation.md)；导入、活动共享、返回内置与重入见 [A6—A8 实施说明](./docs/common/core/credential-sharing/a6-a8-sharing-implementation.md)。
+包与通信边界的变更规则见[项目架构](./docs/architecture.md#4-新功能落点与变更规则)。当前 PolyQuota 的内部协议、动态资源与原生模块装配见[服务模式开发说明](./docs/common/core/service-mode/development.md)。凭据共享导出侧的本地包目录与历史验收见 [A3—A5 实施说明](./docs/common/core/credential-sharing/a3-a5-export-implementation.md)。

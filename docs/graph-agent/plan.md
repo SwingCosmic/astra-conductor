@@ -8,9 +8,9 @@
 
 ## 0. 前置共享依赖
 
-当前先执行[凭据共享实施方案](../common/core/credential-sharing/implementation-plan.md)的一阶段：GraphAgent 只建立最小可运行壳，保留空白主页和设置页；设置页完成 PolyQuota 导出数据的密钥输入、实际解密验证、脱敏确认、共享接入及状态恢复。不提供导出、独立账号授权、聊天、Agent Loop、任务、工具或用量页面。
+GraphAgent 已为凭据共享 A6—A8 建立 Electron 最小壳。设置页支持 PolyQuota 导出数据的密钥输入、实际解密验证、脱敏确认、共享接入及状态恢复。[最小宿主](./minimal-host.md)
 
-这一前置工作不要求下面的业务阶段 1–4 完成，也不等于它们已启动。凭据专项的“一/二阶段”与本文产品业务“阶段 1–4”分别编号；当前页面范围以凭据专项为准。双向导出切换、重新导出和密钥更新在凭据专项二阶段推进。
+下列产品业务阶段 1–4 使用独立编号。实现时须覆盖可独立启动的 Web 产品和 Electron 桌面产品，启动形态与统一业务入口遵循[项目架构](../architecture.md)。两端共用页面与供应商服务由[供应商平台实施方案](../common/core/provider-platform-implementation-plan.md)交付，双向存储管理与版本更新按[凭据共享实施方案](../common/core/credential-sharing/implementation-plan.md)推进。
 
 模型、账号、provider、协议 route、codec 和推理执行属于共享 Core，不在本计划中重复实施。GraphAgent 开始真实模型调用前，共享平台至少需要提供：
 
@@ -410,7 +410,7 @@
 - 共享凭据代理的宿主、传输与跨产品迁移验证。
 - 首个真实推理 route、usage/费用来源及跨协议 fixture。
 - Markdown MemoryStore 与 SQLite 原始消息档案的发布/恢复协议；工作/辅助模型组合。
-- UI 框架、图布局和桌面/本机服务宿主，完成真实原型评估。
+- 选择执行图布局并分别在 Web 与 Electron 的产品前端验证工作台交互。
 - 跨设备领域边界按[专项设计](./cross-device-dispatch-design.md)落实；工程选型仍需确定控制面宿主、认证与密钥轮换、心跳/租约期限、中继内容库、配额与保留策略，并验证离线恢复。
 - A2A 规范版本、外部 coding agent 适配器的固定版本与沙箱行为。
 

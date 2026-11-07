@@ -1,6 +1,6 @@
 # A6—A8 GraphAgent 导入、统一共享与返回内置
 
-更新日期：2026-11-06。A6—A8 已实现并通过本机共享闭环；本轮检查与实机证据分别记录在本文末尾。范围为 Windows x64 本地组件接入、GraphAgent 最小宿主与导入、两侧统一共享及 PolyQuota 返回内置/重入。A9 Release、生产下载与发行签名校验仍待实施。
+更新日期：2026-11-06。A6—A8 已实现并通过本机共享闭环；本轮检查与实机证据分别记录在本文末尾。范围为 Windows x64 本地组件接入、GraphAgent 最小宿主与导入、两侧统一共享及 PolyQuota 返回内置/重入。独立 Release、生产下载与发行签名校验现列为二期 B4，仍待实施。
 
 设计依据为[凭据共享设计](./design.md)与[实施方案](./implementation-plan.md)。A3—A5 的本地包约定、首次导出和历史验证保留在[原阶段说明](./a3-a5-export-implementation.md)，不以新增阶段结果改写历史验收。
 
@@ -90,7 +90,7 @@ PolyQuota 在原 `/v1/polyquota/credential-sharing/` 下新增以下操作，沿
 | `getSharingState` | `import` 或 `handoff`；返回 `vaultId/storageVersion/attemptId/keyId/sourceWatermark/sourceClientId/preparedClientIds/ownership`，准备名单只包含当前版本和水位匹配且未撤销的客户端 |
 | `cancelQueuedUpdate` | 已认证更新身份；以 operationId 取消自身 queued 票据，已授予或终结时返回原状态，不能释放其他实例或接替者 |
 
-结构 schema 由 broker DTO 重新生成，包含两项新方法。仅有旧 A3—A5 本地产物的环境需通过本地组件重装使用本轮产物；相同协议主版本不代表旧二进制已经具备新增方法。A9 将在产品本地闭环验收后发布验证过的资产，并配置可信下载、兼容清单与发行校验。
+结构 schema 由 broker DTO 重新生成，包含两项新方法。仅有旧 A3—A5 本地产物的环境需通过本地组件重装使用本轮产物；相同协议主版本不代表旧二进制已经具备新增方法。凭据专项二期在双向共享验收通过后执行 B4，发布验证过的资产，并配置可信下载、兼容清单与发行校验。[凭据共享实施方案](./implementation-plan.md)
 
 ## 6. 开发与验证入口
 

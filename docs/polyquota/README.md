@@ -1,6 +1,6 @@
 # PolyQuota
 
-PolyQuota 是当前已实现的本地桌面 LLM 订阅用量聚合产品。
+PolyQuota 是本地桌面 LLM 订阅用量聚合产品，正式交付 Electron。独立 Node/Web 入口使用同一套前端与业务 API，供开发和测试使用。产品启动形态、包依赖和页面归属以[项目架构](../architecture.md)为准。
 
 - [设计说明](./design.md)
 - [实施计划](./plan.md)

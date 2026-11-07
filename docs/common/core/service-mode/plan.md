@@ -7,7 +7,7 @@
 | 目的     | 统一 PolyQuota 业务与传输入口，通过职责服务和依赖注入准备可复用边界                          |
 | 当前范围 | 正式产品采用 Electron 内嵌 Hono 与内部协议；独立 Web/server 用于开发验证，真实能力按依赖提供 |
 
-本文维护已实施的架构与功能边界。代码落点见[实施结果](./implementation-plan.md)，运行方法见[开发说明](./development.md)，验证结果见[验收记录](./acceptance.md)。
+本文记录 PolyQuota 已实施的服务模式及当时的包和入口。双产品的目标架构与启动形式以[项目架构](../../../architecture.md)为准。代码落点见[实施结果](./implementation-plan.md)，运行方法见[开发说明](./development.md)，验证结果见[验收记录](./acceptance.md)。
 
 > 2026-10-31 设计补充：第 6.2 节说明后续凭据共享如何接入现有服务注册；属于待实施方案，不改变本文服务模式已完成的验收范围。
 

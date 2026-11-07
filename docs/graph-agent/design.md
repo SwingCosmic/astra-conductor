@@ -103,15 +103,15 @@ flowchart TD
 
 ## 6. 共享能力与实现边界
 
-服务商、认证、账号、模型目录、API 协议、codec、推理执行和用量基础类型遵循[共享 Provider Platform](../common/core/cross-provider-service-protocol-design.md)。GraphAgent 拥有 ModelPolicy、ModelLease、预算、回退、亲和、工具循环和自己的应用服务；不调用 `IPolyQuotaService`，不复用 `packages/polyquota-ui`。
+GraphAgent 的 Hono 应用将产品业务路由接到本产品服务，模型选择策略、ModelLease、预算、回退、亲和与工具循环均在该侧执行。服务商认证、模型目录、协议编码、推理执行与用量基础事实由共享 Core 提供。[项目架构](../architecture.md) · [共享 Provider Platform](../common/core/cross-provider-service-protocol-design.md)
 
-凭据遵循[共享与迁移设计](../common/core/credential-sharing/design.md)。两个产品的任务和设置独立存储；GraphAgent 不打开 PolyQuota 私有数据库。共享凭据代理的物理实现仍须专项验证。
+凭据遵循[共享与迁移设计](../common/core/credential-sharing/design.md)。GraphAgent 独立存储本产品的任务、设置和私有凭据。共享模式下通过 broker 访问获准凭据。已实现能力与后续验证范围见[凭据共享实施方案](../common/core/credential-sharing/implementation-plan.md)。
 
 ## 7. 技术决策边界
 
 建议先在现有 TypeScript/Node 工具链上验证独立、无 UI 的本机运行内核，提供 fake 端口和可取消 Activity。采用 Actor 的身份、顺序邮箱和持久恢复语义，不以 Kubernetes、Orleans 或分布式 Worker 为首版前提。
 
-记忆模块已确定默认 Markdown 文件/真实目录后端，以及独立 SQLite 原始消息档案与派生索引。凭据共享最小壳已选择独立 Electron 宿主和 Windows 命名管道，见[最小宿主](./minimal-host.md)；完整业务的 UI 框架、图布局库与 Task Ledger 存储仍在实施前做专项选择。
+记忆模块采用 Markdown 文件/真实目录后端，以及独立 SQLite 原始消息档案与派生索引。产品前端采用共用 Vue 组件，图布局库与 Task Ledger 存储在业务实施时选型。凭据共享阶段已有的 Electron 最小宿主和 Windows 命名管道接入记录见[最小宿主](./minimal-host.md)。
 
 工具专项默认选择原生结构化调用、按平台解析的 ripgrep、直接 argv 与 Windows pwsh 7/UTF-8，以及实时搜索/排除、正则替换和版本化提交。网页研究提供 search/extract/crawl，首版优先适配 Tavily 且不实现本地浏览器渲染；browser use 采用按需安装的 Chrome DevTools MCP；桌面能力另做扩展样本。细分设计统一进入 [tools 目录](./tools/README.md)。
 

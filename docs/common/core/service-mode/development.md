@@ -1,6 +1,6 @@
 # Service mode 开发与分侧验证
 
-服务模式已完成，现有数据真实验证通过。Electron 与独立 Web 共用 `HttpPolyQuotaService`，分别接入内部协议和回环 HTTP。验证结果与覆盖范围见[验收记录](./acceptance.md)。
+本文的命令仅适用于 PolyQuota。Electron 桌面产品与开发测试用独立 Web 入口共用 `HttpPolyQuotaService`，分别接入内部协议和回环 HTTP。两个产品的启动形式以[项目架构](../../../architecture.md)为准。PolyQuota 当前实现的验证范围见[验收记录](./acceptance.md)。
 
 ## 1. 分开启动
 
@@ -13,7 +13,7 @@
 | `pnpm dev:ui`     | 显式启用演示数据的独立界面预览                        | 不需要后端                               |
 | `pnpm dev`        | 保留原 Electron 开发入口，页面直接加载 Vite           | 主进程内嵌 runtime，不另开业务 HTTP 端口 |
 
-Web 和演示预览默认地址均为 `http://127.0.0.1:5173`，不能同时占用同一端口。正式 Web 入口不会在连接失败时自动切成演示数据。Node 服务修改 `apps/polyquota/src` 后会先编译，再通知旧进程排空和释放数据锁，然后启动新实例；Core 改动需要重新构建 Core 并重启宿主。
+Web 联调与演示预览默认使用同一地址 `http://127.0.0.1:5173`，启动一个即可。Web 联调入口在后端连接失败时显示错误。Node 服务修改 `apps/polyquota/src` 后会先编译，再通知旧进程排空和释放数据锁，然后启动新实例；Core 改动需要重新构建 Core 并重启宿主。
 
 可显式配置：
 
