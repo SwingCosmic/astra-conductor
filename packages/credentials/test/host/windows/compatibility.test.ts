@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 import { spawn } from "node:child_process";
-import { WindowsBrokerHost, verifyComponent } from "../src/index.js";
+import { WindowsBrokerHost, verifyComponent } from "../../../src/host/windows/index.js";
 
 vi.mock("node:child_process", () => ({ spawn: vi.fn() }));
 const directories: string[] = [];

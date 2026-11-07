@@ -14,7 +14,7 @@ import {
   encodeSharedCredential,
 } from "@astra-conductor/core/internal";
 import { SharedBrokerClient, BrokerError } from "@astra-conductor/credentials";
-import { WindowsBrokerHost } from "@astra-conductor/credential-host";
+import { WindowsBrokerHost } from "@astra-conductor/credentials/host/windows";
 import { SqliteStorage } from "../dist/sqlite-storage.js";
 import { ElectronSafeStorageCipher } from "../dist/safe-storage-cipher.js";
 import {

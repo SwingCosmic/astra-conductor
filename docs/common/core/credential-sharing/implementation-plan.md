@@ -2,7 +2,7 @@
 
 | 项目       | 内容                                                                                             |
 | ---------- | ------------------------------------------------------------------------------------------------ |
-| 状态       | 一阶段 A1—A8 已实现并通过本机共享闭环。二阶段 B1—B6 待实施，B4 生产发布排在双向共享验收之后 |
+| 状态       | 一阶段 A1—A8 已实现并通过本机共享闭环。二阶段 B1 已完成，B2—B6 待实施，B4 生产发布排在双向共享验收之后 |
 | 更新日期   | 2026-11-07                                                                                       |
 | 设计依据   | [凭据共享设计](./design.md)、[项目架构](../../../architecture.md)                               |
 | 一阶段目标 | .NET 自包含 broker；PolyQuota 单向导出、GraphAgent 单向导入、统一共享、PolyQuota 可切回内置     |
@@ -17,7 +17,7 @@ A1—A8 已实施的代码落点如下。迁移后的包名和宿主边界遵循
 1. `packages/core/src/services/contracts.ts`、`ports.ts`：语义化 CredentialService，凭据存储与产品业务存储分离。
 2. `credential-vault.ts`、`providers/*/adapter.ts`、`refresh-coordinator.ts`：收口 provisioner 提交、刷新与读取时重加密，保留私有后端兼容。
 3. `apps/polyquota/src/runtime/`、`sqlite-storage.ts`：后端选择、产品绑定、导出/切换回执与安全缓存引用。
-4. `packages/credentials`：无产品依赖的模型、密码格式、版本化协议客户端、记录许可与事件 SDK；`packages/credential-host`：无 Electron/UI 依赖的 Windows 本地组件管理与连接宿主。
+4. `packages/credentials`：无产品依赖的模型、密码格式、版本化协议客户端、记录许可与事件 SDK；Windows 本地组件管理与连接宿主已在 B1 从原 `packages/credential-host` 合入同包 `/host/windows` 子入口，无 Electron/UI 依赖。
 5. `packages/core` 的认证/刷新子集：刷新前申请跨进程许可，调用供应商后提交不透明结果。
 6. 独立 `astra-credential-broker` 仓库：服务入口、brokerctl/控制器、安装产物、自有密钥保管与凭据存储；产品只消费独立产物与协议，不引用其源码作为运行时依赖。
 7. `apps/graph-agent`：最小可运行宿主、空白主页、设置页与共享客户端。
@@ -108,22 +108,24 @@ A1 交付 broker 侧的归属、字符串 metadata 与描述筛选；A5 由 Poly
 
 ## 3. 二阶段：双向管理与版本更新
 
-本阶段待实施。B1 可以直接用一期代码和本地 broker 开始。B2/B3 在供应商平台第一阶段提供共用凭据页面、两款产品的 Hono 入口和 GraphAgent 可写的私有后端后即可接线。最终双向验收中的普通 Key、路由编辑及缓存失效使用平台第二阶段的 Core 能力和第三阶段的页面入口，在相关入口可用时与平台第三阶段并行联调。B5 使用平台第二阶段交付的元数据转换器及旧格式夹具。其它项目结构调整和共用页面建设归[供应商平台三阶段实施方案](../provider-platform-implementation-plan.md)。
+B1 已完成合包，并用一期本地 broker 通过安装/重装及 17 项单向共享闭环回归，作为后续项目架构调整的前置。B2—B6 待实施。B2/B3 在供应商平台第一阶段提供共用凭据页面、两款产品的 Hono 入口和 GraphAgent 可写的私有后端后即可接线。最终双向验收中的普通 Key、路由编辑及缓存失效使用平台第二阶段的 Core 能力和第三阶段的页面入口，在相关入口可用时与平台第三阶段并行联调。B5 使用平台第二阶段交付的元数据转换器及旧格式夹具。其它项目结构调整和共用页面建设归[供应商平台三阶段实施方案](../provider-platform-implementation-plan.md)。
 
 | 顺序 | 工作 | 交付判据 |
 | --- | --- | --- |
-| 1 · B1 | 将 `credential-host` 合入 `credentials` | 两产品使用新子入口，原有 SDK 和本地安装、单向共享闭环通过 |
+| 1 · B1（已完成） | 将 `credential-host` 合入 `credentials` | 两产品使用新子入口，独立 JS/声明消费、原有 SDK 和本地安装/重装、17 项单向共享闭环通过；见 [B1 实施记录](./b1-credentials-package-implementation.md) |
 | 2 · B2 | 双向导出、导入、交接与共享增删改 | 两款产品能互换来源和接收方角色，共享变更跨端可见 |
 | 3 · B3 | 双端存储切换、重入与双向共享验收 | 用完整本地 broker 跑通正反向、分别与交替切回、离线恢复和两端重启 |
 | 4 · B4 | 独立 broker Release 与生产下载接入（原一期 A9） | B3 验收通过后，发布对应产物，两端通过真实渠道下载、校验并安装 |
 | 5 · B5 | 元数据升级触发重新导出 | 在已发布库 N 上生成并原子发布 N+1，验证并发、故障恢复和客户端重新接入 |
 | 6 · B6 | 独立换钥与版本回收 | 基于 B5 的版本发布机制完成换钥、离线重入和无引用旧版本清理 |
 
-### B1 合并凭据包
+### B1 合并凭据包（已完成）
 
 1. 保留 `@astra-conductor/credentials` 主入口的协议客户端、迁移包、许可与事件导出。将 `packages/credential-host` 的 Windows 组件管理、发现、认证连接及测试迁入 `packages/credentials`，通过 `@astra-conductor/credentials/host/windows` 导出对应 JS 和类型声明。Core 和通用客户端继续只依赖主入口。合并边界见[项目架构](../../../architecture.md#5-从当前仓库迁移)。
 2. 将两款产品的 Windows 适配器及测试切到新子入口。更新 workspace 依赖、lockfile、根级和产品的构建/启动/测试/打包脚本。独立构建验证两个入口在产物中可解析后，移除旧包目录与对旧包名的依赖。
 3. 使用与一期相同的本地 broker 验证兼容性。SDK 根入口可独立导入，新 Windows 子入口通过组件检测、安装、发现、连接与重装回归。复测已有迁移包、vault、客户端登记和 A6—A8 双进程闭环。合包只迁移 TypeScript 模块，不触发 broker 版本发布、换钥或共享库重建。
+
+2026-11-07 完成上述迁移。SDK 通过临时外部 consumer 独立构建与类型消费验证，436 项测试、类型检查、全量构建和两产品 NSIS 打包通过；0.2.0 本地 broker（协议 1、API level 2）通过安装/重装和 17 项双进程闭环。具体落点、命令及打包结果见 [B1 实施记录](./b1-credentials-package-implementation.md)。
 
 ### 双向导出与存储切换
 
@@ -185,4 +187,6 @@ B5/B6 另验并发重新导出与换钥、版本写入及提交边界崩溃、�
 - **2026-11-07 复测**：0.2.0 本地 broker（协议 1、API level 2）、两个隔离 Electron 进程和真实系统密钥存储，17 项全部通过，实际供应商网络请求为 0。覆盖 PolyQuota 导出、GraphAgent 导入、双方刷新、PolyQuota 切回和重新加入。[闭环用例](../../../../apps/polyquota/test/credential-sharing-loop-electron.mjs)
 - 当前发行候选为 `0.2.0`，协议 `1`，所需 API level `2`；兼容性规则见[设计第 7.5 节](./design.md#75-组件与-api-兼容性前置校验)。
 
-二阶段完成后在此按 B1—B6 汇总结果，具体步骤与实测证据保留在各阶段记录中。
+- **B1（2026-11-07）**：原 `credential-host` 实现与测试并入 `credentials`，两产品改用 `/host/windows`，移除旧包及依赖并同步构建/启动/验证脚本。独立入口与声明消费、436 项测试、类型检查、构建、两产品 NSIS 打包、本地安装/重装及 17 项双进程闭环通过；包内入口与当前构建一致，无旧包或 broker/runtime。全仓格式检查仍有 92 个既有未修改文件的问题，本次改动代码格式通过。[B1 实施记录](./b1-credentials-package-implementation.md)
+
+B2—B6 后续按实际结果汇总，具体步骤与实测证据保留在各阶段记录中。

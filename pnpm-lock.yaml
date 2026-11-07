@@ -70,9 +70,6 @@ importers:
       "@astra-conductor/core":
         specifier: workspace:*
         version: link:../../packages/core
-      "@astra-conductor/credential-host":
-        specifier: workspace:*
-        version: link:../../packages/credential-host
       "@astra-conductor/credentials":
         specifier: workspace:*
         version: link:../../packages/credentials
@@ -101,9 +98,6 @@ importers:
       "@astra-conductor/core":
         specifier: workspace:*
         version: link:../../packages/core
-      "@astra-conductor/credential-host":
-        specifier: workspace:*
-        version: link:../../packages/credential-host
       "@astra-conductor/credentials":
         specifier: workspace:*
         version: link:../../packages/credentials
@@ -166,22 +160,6 @@ importers:
       esbuild:
         specifier: "catalog:"
         version: 0.21.5
-      typescript:
-        specifier: "catalog:"
-        version: 5.6.3
-      vitest:
-        specifier: "catalog:"
-        version: 2.1.8(@types/node@22.20.4)(happy-dom@15.11.7)
-
-  packages/credential-host:
-    dependencies:
-      "@astra-conductor/credentials":
-        specifier: workspace:*
-        version: link:../credentials
-    devDependencies:
-      "@types/node":
-        specifier: "catalog:"
-        version: 22.20.4
       typescript:
         specifier: "catalog:"
         version: 5.6.3

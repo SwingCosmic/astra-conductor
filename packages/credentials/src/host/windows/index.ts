@@ -14,8 +14,8 @@ import {
   requireValue,
   text,
   type BrokerIdentity,
-} from "@astra-conductor/credentials";
-export { BROKER_COMPATIBILITY, BROKER_DISTRIBUTION } from "@astra-conductor/credentials";
+} from "../../index.js";
+export { BROKER_COMPATIBILITY, BROKER_DISTRIBUTION } from "../../index.js";
 
 export interface ComponentInstallation {
   installState: "not-installed" | "installed" | "damaged" | "incompatible" | "unknown";

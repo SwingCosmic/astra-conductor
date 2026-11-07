@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, net, safeStorage } from "electron"
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { BrokerError, object, requireValue, text } from "@astra-conductor/credentials";
-import { BROKER_DISTRIBUTION, WindowsBrokerHost } from "@astra-conductor/credential-host";
+import { BROKER_DISTRIBUTION, WindowsBrokerHost } from "@astra-conductor/credentials/host/windows";
 import { GraphSharingService } from "./import-service.js";
 import { GraphCredentialRuntime } from "./runtime.js";
 

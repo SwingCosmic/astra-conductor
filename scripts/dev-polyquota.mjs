@@ -110,15 +110,6 @@ if (contractBuildCode !== 0) {
   process.exit();
 }
 
-const credentialHostBuildCode = await exitCode(
-  run(["--filter", "@astra-conductor/credential-host", "run", "build"]),
-);
-if (credentialHostBuildCode !== 0) {
-  await stopAll();
-  process.exitCode = credentialHostBuildCode;
-  process.exit();
-}
-
 const coreBuildCode = await exitCode(run(["--filter", "@astra-conductor/core", "run", "build"]));
 if (coreBuildCode !== 0) {
   await stopAll();

@@ -16,7 +16,7 @@ import {
   requireValue,
   type CredentialDescription,
 } from "@astra-conductor/credentials";
-import type { BrokerHost } from "@astra-conductor/credential-host";
+import type { BrokerHost } from "@astra-conductor/credentials/host/windows";
 import type { AccountPreview } from "./contract.js";
 
 /** Provider adapters run here in the receiver process; broker payloads never become a local vault. */

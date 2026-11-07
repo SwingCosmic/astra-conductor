@@ -17,7 +17,7 @@ import {
   BROKER_COMPATIBILITY,
   type BrokerConnection,
   type BrokerHost,
-} from "@astra-conductor/credential-host";
+} from "@astra-conductor/credentials/host/windows";
 import {
   decodeSharedCredential,
   sharedCredentialContentType,

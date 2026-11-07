@@ -16,8 +16,7 @@
   },
   "dependencies": {
     "@astra-conductor/core": "workspace:*",
-    "@astra-conductor/credentials": "workspace:*",
-    "@astra-conductor/credential-host": "workspace:*"
+    "@astra-conductor/credentials": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

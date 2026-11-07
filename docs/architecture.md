@@ -76,14 +76,14 @@ GraphAgent 独立 Web 的基础交付是可单独运行的本地服务。宿主�
 
 ## 5. 从当前仓库迁移
 
-截至 2026-11-07，仓库实际有两个应用和五个 `packages/*` 包。以下是迁移关系，当前可运行命令以[根 README](../README.md)和[工作区脚本](../package.json)为准。
+截至 2026-11-07，凭据专项 B1 已将 Windows 宿主合入凭据 SDK，仓库实际有两个应用和四个 `packages/*` 包。此次合包使协议客户端和本机宿主在同一 SDK 中维护，以子入口保留按平台加载的边界；PolyQuota 和 GraphAgent 均使用新入口，Core 继续只使用主入口。其余目标包尚待迁移，当前四包不等同于第 1 节的四个目标包。以下是迁移关系，当前可运行命令以[根 README](../README.md)和[工作区脚本](../package.json)为准。
 
 | 当前落点或行为 | 目标 |
 | --- | --- |
 | `polyquota-contract`，以及 GraphAgent 最小宿主自己的 `src/contract.ts` | 归并为 `contract` 的通用与产品子入口。维持旧调用方所需的 DTO 和路径兼容，待消费方迁移后移除旧入口 |
-| `credentials` 和 `credential-host` | 合成一个 `credentials` 包，Windows 管理和连接能力移到 `/host/windows`。独立 broker 协议、数据格式与发行身份不因移动 TS 模块改变 |
+| `credentials`（B1 已完成，原 `credential-host` 已移除） | 主入口保留协议 SDK，Windows 管理和连接能力通过 `/host/windows` 导出 JS 与声明。宿主内部使用相对模块引用，可独立构建；主入口不加载平台宿主。独立 broker 协议、数据格式与发行身份不因移动 TS 模块改变 |
 | `polyquota-ui`，以及 GraphAgent 的 `renderer/index.html`、`renderer/style.css`、`src/renderer.ts` | 先将现有前端入口归入各自的 `apps/<product>/ui/` 并接通构建，再从可运行的产品页面中提取 `shared-ui`。GraphAgent 现有页面为空白主页和凭据设置，模型配置页待实现 |
 | PolyQuota Web 已通过回环 HTTP `/api/v1/...` 接入 Hono，Electron 已通过 `polyquota-app://app/v1/...` 转入 Hono | 复用现有 Hono/fetch/SSE 链路，向两端提供统一的逻辑路径及共用 API。旧前缀的兼容转换留在传输适配层 |
 | GraphAgent 当前以 Electron 的 `graph-agent:sharing` IPC 做导入与刷新，尚无正式 Node/Web 入口 | 先接产品 Hono 与可持久的 Node 私有凭据后端，再让 Web 和 Electron 使用同一 API 客户端。旧 IPC 退出业务路径 |
 
-迁移分属两个计划。凭据 SDK 与 Windows 宿主合包是[凭据共享实施方案](./common/core/credential-sharing/implementation-plan.md)二期的第一步。其余工作区结构调整归[供应商平台三阶段实施方案](./common/core/provider-platform-implementation-plan.md)一期，在同一阶段内先调整结构、再抽离共用 UI。Core 与 UI 的实现细节分别见[Core 详细设计](./common/core/provider-platform-core-detailed-design.md)和[UI 详细设计](./common/ui/shared-ui-and-workspace-detailed-design.md)。
+迁移分属两个计划。凭据 SDK 与 Windows 宿主合包已完成[凭据共享实施方案](./common/core/credential-sharing/implementation-plan.md)二期第一步，落点与验证见 [B1 实施记录](./common/core/credential-sharing/b1-credentials-package-implementation.md)。其余工作区结构调整归[供应商平台三阶段实施方案](./common/core/provider-platform-implementation-plan.md)一期，在同一阶段内先调整结构、再抽离共用 UI。Core 与 UI 的实现细节分别见[Core 详细设计](./common/core/provider-platform-core-detailed-design.md)和[UI 详细设计](./common/ui/shared-ui-and-workspace-detailed-design.md)。

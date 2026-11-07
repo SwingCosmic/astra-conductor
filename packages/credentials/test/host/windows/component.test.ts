@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { runPrivate, verifyComponent } from "../src/credential-sharing/broker-host.js";
+import { runPrivate, verifyComponent } from "../../../src/host/windows/index.js";
 const directories: string[] = [];
 afterEach(async () => {
   await Promise.all(

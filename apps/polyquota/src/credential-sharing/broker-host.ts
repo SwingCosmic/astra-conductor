@@ -1,1 +1,1 @@
-export * from "@astra-conductor/credential-host";
+export * from "@astra-conductor/credentials/host/windows";

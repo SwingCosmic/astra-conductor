@@ -5,7 +5,7 @@ import path from "node:path";
 import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "node:crypto";
 import { BrokerError, canonical, type TransferSnapshot } from "@astra-conductor/credentials";
 import type { CredentialCipherPort } from "@astra-conductor/core/internal";
-import type { ComponentInstallation } from "@astra-conductor/credential-host";
+import type { ComponentInstallation } from "@astra-conductor/credentials/host/windows";
 import { GraphSharingService, type GraphSharingOptions } from "../src/import-service.js";
 import { transferFixture } from "./transfer-fixture.js";
 

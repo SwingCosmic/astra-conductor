@@ -8,7 +8,7 @@
 | 二 · 改造 Core，完成模型配置 | 可持久化的账号路由、目录与参数、请求映射、凭据格式兼容和元数据转换 | 离线协议夹具通过服务入口验证保存、发现、合并、刷新、预览及实际出站请求 |
 | 三 · 适配新 UI，完成双产品联调 | 供应商与凭据共用页接入正式服务，GraphAgent 提供模型配置页，PolyQuota 按订阅资格展示用量 | 两端通过页面交互回归，并按文末凭据专项完成共享场景联调 |
 
-凭据 SDK 合包由凭据共享专项二期首步负责，将 `credential-host` 合入 `credentials/host/windows`，并迁移对应调用方和构建脚本。本方案的结构调整可独立开始；两个产品在迁移期间使用当时可用的 SDK 入口，待专项完成后复用其结果。凭据页面以 A6—A8 已交付的本地单向共享闭环为基线。[凭据共享实施方案](./credential-sharing/implementation-plan.md) · [A6—A8 实施记录](./credential-sharing/a6-a8-sharing-implementation.md)
+凭据 SDK 合包已由凭据共享专项二期 B1 完成：原 `credential-host` 合入 `credentials/host/windows`，对应调用方和构建脚本已迁移。本方案后续结构调整直接复用 `@astra-conductor/credentials` 主入口与 `/host/windows` 子入口；Core 只依赖主入口，平台宿主按需装配 Windows 子入口。凭据页面以 A6—A8 已交付的本地单向共享闭环为基线。[凭据共享实施方案](./credential-sharing/implementation-plan.md) · [B1 实施记录](./credential-sharing/b1-credentials-package-implementation.md) · [A6—A8 实施记录](./credential-sharing/a6-a8-sharing-implementation.md)
 
 ## 阶段一 · 先调整项目结构，再抽离 UI
 

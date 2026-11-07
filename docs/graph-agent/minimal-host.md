@@ -23,7 +23,7 @@
 
 GraphAgent 的 userData 与 PolyQuota 独立。`credential-sharing/binding.json` 不保存 token、迁移密钥或未加密主密钥；`.key` 使用 Electron safeStorage，普通接入授权 `.dpapi` 使用 broker 当前用户保护。内存只保留公开描述和请求期间凭据。
 
-`packages/credential-host` 为中立 Windows 安装与连接宿主，不依赖产品 contract。PolyQuota 旧导入路径保持 re-export 兼容。它沿用 A3 的完整本地包校验、组件锁、独立安装登记与按需启动，不把用户目录 ACL/属主作为导入条件。
+Windows 安装与连接宿主在 A6—A8 时位于 `packages/credential-host`，已在二期 B1 迁至 `packages/credentials/src/host/windows/index.ts`，通过 `@astra-conductor/credentials/host/windows` 导出，不依赖产品 contract。PolyQuota 产品内的 `broker-host.ts` 保持 re-export 兼容。它沿用 A3 的完整本地包校验、组件锁、独立安装登记与按需启动，不把用户目录 ACL/属主作为导入条件。[B1 实施记录](../common/core/credential-sharing/b1-credentials-package-implementation.md)
 
 默认发行包版本由 `BROKER_DISTRIBUTION.version` 单独配置，决定本地暂存目录，与通信协议及应用要求的 API level 分离。公开状态的 `requiredApiLevel` 和 `installedApiLevel` 使用精确十进制文本，仅用于展示；底层按协议中的 API 数值校验，界面不自行比较组件版本或把 API level 当作 SemVer。
 
