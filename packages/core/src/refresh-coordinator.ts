@@ -77,6 +77,11 @@ export class RefreshCoordinator {
     return this.serialize(accountId, () => this.runCredentialRefresh(accountId));
   }
 
+  /** Account edits share the provider queue so a late refresh cannot restore a deleted account. */
+  runAccountOperation<T>(accountId: string, operation: () => T | Promise<T>): Promise<T> {
+    return this.serialize(accountId, async () => operation());
+  }
+
   async refreshAll(): Promise<RefreshOutcome[]> {
     return Promise.all(this.storage.accounts.list().map((account) => this.refresh(account.id)));
   }

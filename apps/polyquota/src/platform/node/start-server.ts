@@ -3,9 +3,9 @@ import { mkdirSync, realpathSync, existsSync } from "node:fs";
 import path from "node:path";
 import { homedir } from "node:os";
 import type { CredentialCipherPort } from "@astra-conductor/core/internal";
-import { createHonoApp } from "../../http/create-hono-app.js";
-import { rewriteRequest, withPageBoundary } from "../../http/inbound-adapter.js";
-import { startRuntime } from "../../runtime/start-runtime.js";
+import { createHonoApp } from "../../server/http/create-hono-app.js";
+import { withPageBoundary } from "../../server/http/inbound-adapter.js";
+import { startRuntime } from "../../server/runtime/start-runtime.js";
 import { NodeHttpService } from "./http-service.js";
 import { registerNodeServices } from "./register-node-services.js";
 
@@ -76,8 +76,9 @@ export async function startServer(options: ServerOptions = {}) {
             if (url.hostname !== "127.0.0.1" || request.headers.get("host") !== url.host)
               return new Response(null, { status: 403 });
             return withPageBoundary(request, origins, () => {
-              const rewritten = rewriteRequest(request, "/api");
-              return rewritten ? app.fetch(rewritten) : new Response(null, { status: 404 });
+              return url.pathname.startsWith("/api/")
+                ? app.fetch(request)
+                : new Response(null, { status: 404 });
             });
           },
         },

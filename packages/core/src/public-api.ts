@@ -1,4 +1,4 @@
-import type { PublicAccount, PublicUsage } from "@astra-conductor/polyquota-contract";
+import type { PublicAccount, PublicUsage } from "@astra-conductor/contract/common";
 import type { Account, ResetCredits, UsageSnapshot } from "./models.js";
 import { matchOfferingPlan } from "./providers/catalog.js";
 

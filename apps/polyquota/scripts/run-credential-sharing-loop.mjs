@@ -18,6 +18,7 @@ const child = spawn(
     root,
     "--publish",
     path.resolve(process.argv[index + 1]),
+    ...(process.argv.includes("--restart-export") ? ["--restart-export"] : []),
   ],
   { cwd: product, env, windowsHide: true, stdio: "inherit" },
 );

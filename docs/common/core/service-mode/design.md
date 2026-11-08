@@ -9,9 +9,11 @@
 
 本文记录 PolyQuota 已实施的服务模式及当时的包和入口。双产品的目标架构与启动形式以[项目架构](../../../architecture.md)为准。代码落点见[实施结果](./implementation-plan.md)，运行方法见[开发说明](./development.md)，验证结果见[验收记录](./acceptance.md)。
 
-> 2026-10-31 设计补充：第 6.2 节说明后续凭据共享如何接入现有服务注册；属于待实施方案，不改变本文服务模式已完成的验收范围。
+> 2026-10-31 设计补充：第 6.2 节说明凭据共享如何接入现有服务注册。
 
-> 2026-11-01 设计补充：凭据位置可切换，导出与服务启用分阶段，主密钥按客户端记住/忘记，导出更新和换钥按新版本提交；仍属于第 6.2 节的待实施范围。
+> 2026-11-01 设计补充：凭据位置可切换，导出与服务启用分阶段，主密钥按客户端记住/忘记，导出更新和换钥按新版本提交。
+
+> 2026-11-08 状态更新：第 6.2 节的私有/共享后端接入已随凭据共享 A6—A8 与供应商阶段一落地；完整双向写权限仍按 B2/B3 推进，结果见[阶段一交付结果](../provider/stage-one-implementation.md)。
 
 ## 1. 功能边界与运行场景
 
@@ -38,10 +40,10 @@ Electron 默认打包的 UI 内容继续使用原有 `loadFile` 和打包资源�
 | ------------------------------------ | -------------------------------------------------------------------------------------------- |
 | DI、职责契约与供应商协议             | Core `services/`、`providers/`                                                               |
 | CLI 路径与解析、OAuth 编排和回调处理 | Core `providers/*/auth-flow.ts`、`auth/`，按职责使用文件、环境、HTTP 与回调服务              |
-| 共享产品业务、注册与生命周期         | `apps/polyquota/src/runtime/` 及 application/polling/scheduler                               |
-| 入站路由、错误和 SSE                 | `apps/polyquota/src/http/`                                                                   |
+| 共享产品业务、注册与生命周期         | `apps/polyquota/src/server/runtime/` 及 application/polling/scheduler                               |
+| 入站路由、错误和 SSE                 | `apps/polyquota/src/server/http/`                                                                   |
 | 宿主实现                             | `apps/polyquota/src/platform/node/`、`platform/electron/`；复用原 SQLite、回调监听与代理检测 |
-| 公共契约与界面客户端                 | `packages/polyquota-contract`、`packages/polyquota-ui/src/services/`                         |
+| 公共契约与界面客户端                 | `packages/contract`、`packages/shared-ui/src/services/` 与产品 `ui/src/services/`                         |
 
 Node 与 Electron 共用业务实现，仅注册宿主差异。具体文件与阶段结果统一见[实施结果](./implementation-plan.md)。
 
@@ -196,9 +198,9 @@ SQLite 可复用现有实现与迁移，分别加载匹配 Node/Electron 运行�
 
 可用性只限制实际依赖凭据读写的步骤，不统一禁止文件读取、回调监听或授权协议执行。敏感操作的结果明确区分完成、待交互、凭据存储失败等真实状态；不把未保存的结果声明为完整导入成功。
 
-后续凭据共享与迁移按[专门设计](../credential-sharing/design.md)推进。当前后端包装与 DI 注册不代表已完成共享凭据方案。
+凭据共享与迁移按[专门设计](../credential-sharing/design.md)实施；PolyQuota 的导出、共享接入与返回内置已交付，完整双向写权限仍按 B2/B3 推进。
 
-### 6.2 后续私有/共享后端接入（待实施）
+### 6.2 私有/共享后端接入
 
 默认继续注册内置 safeStorage 后端；共享时注册 BrokerCredentialClient，应用服务与产品数据库仍独立。实施前先将 CoreServices.vault 收敛为语义契约，消除 provisioner、RefreshCoordinator 和读取时重加密的直接写库路径；只替换 cipher 不足以保证唯一更新者。
 
@@ -210,7 +212,7 @@ SQLite 可复用现有实现与迁移，分别加载匹配 Node/Electron 运行�
 
 应用遇到网络错误等并决定本次刷新失败时，主动报告 failed-released 并释放许可，不等 TTL；可重新申请许可重试或让其他客户端接替。若只是成功结果的提交回执丢失，则查询原 operationId，不把它错误地标成失败；失败释放送不到服务时才使用租约到期兜底。
 
-[设计](../credential-sharing/design.md)规定加密、存储选择、密钥记忆、版本发布与恢复，[实施方案](../credential-sharing/implementation-plan.md)规定两阶段范围：首阶段 PolyQuota 导出、GraphAgent 导入后统一共享，PolyQuota 可返回内置；GraphAgent 仅新增空白主页和设置页。双向导出/切换、重新导出和换钥后续实施。
+[设计](../credential-sharing/design.md)规定加密、存储选择、密钥记忆、版本发布与恢复，[实施方案](../credential-sharing/implementation-plan.md)规定两阶段范围：首阶段 PolyQuota 导出、GraphAgent 导入后统一共享，PolyQuota 可返回内置；GraphAgent 使用共用供应商与凭据页。取消后的恢复和新目录重新导出已在阶段一交付，双向导出/切换和换钥仍后续实施。
 
 导出成功、broker 接管和客户端 DI 切换分别提交。失败重试保留主密钥；主动切回内置清理本客户端缓存，重入须输入迁移密钥。共享服务不可达不自动启用旧内置副本。产品 Hono 只提供管理状态与专用迁移密钥交互，供应商秘密和主密钥不进入 UI，broker 使用独立本机通道。
 
@@ -282,63 +284,34 @@ API 按业务对象和实际操作命名，不照搬狭义 RESTful 的资源增�
 
 ### 8.2 业务路由与方法映射
 
-下表列出 Hono 内部实际路由，`/v1` 为接口版本，`/polyquota` 为业务域；均不包含接入前缀。沿用现有公开服务方法与 DTO，路由命名不要求同步修改现有方法名或 IPC channel。
+2026-11-08 阶段一已将公共管理接口移入 `contract/common` 与 `core/http`，两产品复用同一套路由。公共账号、认证及凭据操作见[公共 API 与 DTO](../../contract/common-api.md#1-供应商与凭据管理-api)，写操作另带读取时的实例/后端上下文，删除另带记录修订。旧 PolyQuota 公共路径与独立产品 SSE 已移除。
 
-| 能力 / 公开方法              | HTTP 与实际路由                                    | 路径对象与 body                                                                         |
-| ---------------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| 就绪状态                     | GET /v1/status                                     | 无 body                                                                                 |
-| 宿主公开能力                 | GET /v1/host/capabilities                          | 无 body                                                                                 |
-| getSnapshot                  | GET /v1/polyquota/snapshot                         | 无 body，返回统一快照                                                                   |
-| subscribe                    | GET /v1/polyquota/events                           | 无 body，返回 SSE 流                                                                    |
-| setAccountEnabled            | POST /v1/polyquota/accounts/:accountId/set-enabled | 唯一对象为账户；body 为 `{ enabled }`                                                   |
-| deleteAccount                | POST /v1/polyquota/accounts/:accountId/delete      | 唯一对象为账户；无业务 body                                                             |
-| refreshAccount               | POST /v1/polyquota/accounts/:accountId/refresh     | 唯一对象为账户；无业务 body                                                             |
-| refreshAll                   | POST /v1/polyquota/accounts/refresh-all            | 无路径参数；按现有设置刷新全部适用账户                                                  |
-| refreshCredentials           | POST /v1/polyquota/credentials/refresh             | 无凭据公开 id；body 为 `{ accountId }`，账户用于定位待刷新的凭据                        |
-| redeemResetCredit            | POST /v1/polyquota/reset-credits/redeem            | body 为现有 `RedeemResetCreditRequest`：`{ accountId, redemption }`                     |
-| startAuth                    | POST /v1/polyquota/auth/sessions/start             | body 为现有 `StartAuthRequest`：`{ offeringId, method, apiKey? }`                       |
-| finishAuth                   | POST /v1/polyquota/auth/sessions/:sessionId/finish | 唯一对象为认证会话；无业务 body                                                         |
-| cancelAuth                   | POST /v1/polyquota/auth/sessions/:sessionId/cancel | 唯一对象为认证会话；无业务 body                                                         |
-| 认证会话详情（新增公开查询） | GET /v1/polyquota/auth/sessions/:sessionId         | 返回所属会话的公开状态、授权 URL/设备码等展示信息；按第 5.2 节补充只读 DTO 与客户端方法 |
-| saveSettings                 | POST /v1/polyquota/settings/save                   | body 为现有完整 `Settings`；沿用当前校验，不隐含部分合并语义                            |
-| getSystemStatus              | GET /v1/polyquota/system-status                    | 无 body，返回当前代理等公开状态                                                         |
+| 能力 | 当前方法与路径 |
+| --- | --- |
+| 就绪状态 / 宿主能力 | `GET /api/v1/status`、`GET /api/v1/host/capabilities` |
+| 共用供应商管理 | `GET /api/v1/providers`，以及公共 `auth/sessions`、`accounts`、`credential-sharing` 操作 |
+| 唯一混合事件流 | `GET /api/v1/events`，承载公共与产品 scope |
+| 用量快照 | `GET /api/v1/polyquota/snapshot` |
+| 单账号 / 批量用量刷新 | `POST /api/v1/polyquota/accounts/:accountId/refresh`、`POST /api/v1/polyquota/accounts/refresh-all` |
+| 重置额度兑换 | `POST /api/v1/polyquota/reset-credits/redeem` |
+| 产品设置 / 系统状态 | `POST /api/v1/polyquota/settings/save`、`GET /api/v1/polyquota/system-status` |
+| 桌面窗口 / 通知回执 | `POST /api/v1/host/window/show`、`POST /api/v1/notifications/:notificationId/acknowledge` |
 
-桌面动作与通知回执路由沿用同一规则：以实际窗口、通知等对象和动作命名；缺少唯一对象标识时使用无路径参数的动作接口，将业务参数完整放入 body。可用性仍由注入服务决定，不在路由名中加入 Electron/Web 分支。
-
-2026-11-06 凭据专项接入后的路由补充如下，路径保持已发布客户端使用的动作名称。共享状态与安装状态分开，安装/导出/接管的业务前提由凭据共享服务校验；普通状态不返回凭据、主密钥或迁移密钥。
-
-| 能力 / 公开方法 | HTTP 与实际路由 | body |
-| --- | --- | --- |
-| 显示桌面窗口 | POST /v1/host/window/show | 无业务 body |
-| 通知回执 | POST /v1/notifications/:notificationId/acknowledge | `{ status }`：delivered / failed / denied |
-| 共享存储状态 | GET /v1/polyquota/credential-sharing/status | 无 body |
-| 选择导出目录 | POST /v1/polyquota/credential-sharing/selectDirectory | 无业务 body |
-| 安装本地组件 | POST /v1/polyquota/credential-sharing/install | 无业务 body |
-| 卸载组件 | POST /v1/polyquota/credential-sharing/uninstall | 无业务 body |
-| 首次导出 / 恢复交付 | POST /v1/polyquota/credential-sharing/export | `{ vaultDirectory }` |
-| 确认密钥交付 | POST /v1/polyquota/credential-sharing/acknowledgeDelivery | 无业务 body |
-| 接管前取消 | POST /v1/polyquota/credential-sharing/cancel | 无业务 body |
-| 统一启用共享 | POST /v1/polyquota/credential-sharing/enableShared | 无业务 body |
-| 返回内置存储 | POST /v1/polyquota/credential-sharing/returnToPrivate | 仅接受 `{ acceptIndependentRefreshRisk: true }` |
-| 恢复本次共享 | POST /v1/polyquota/credential-sharing/rejoinShared | 仅接受 `{ migrationKey }`；字符串格式为 `acm1_` 加 43 位 base64url，实际解密校验由服务完成 |
-
-上述操作拒绝额外字段；未确认独立刷新风险、错误类型或格式的迁移密钥在调用业务服务前返回 `400/validation`。迁移密钥仅经本次请求传递，响应使用 `Cache-Control: no-store`，错误响应不回显输入。
-
-认证会话详情仅返回面向当前 UI 的交互与结果状态，不返回供应商访问令牌、刷新令牌、PKCE verifier 或凭据后端数据。认证开始、详情和事件中引用同一 sessionId；会话所有权与结束后可查询期限由共同认证契约定义。
+业务响应统一使用 `ServiceResult`；void 在线上为 `null`，输入拒绝额外字段。秘密仅经本次专用请求传递，查询、事件和错误不回显。两产品通过同一 Core 公共服务与公开错误投影保留权限和共享状态语义。[阶段一交付结果](../provider/stage-one-implementation.md)
 
 ### 8.3 操作参数与校验
 
 重置额度的两种调用使用同一路由，不因某个 provider 提供 itemId 就增加另一套按卡路径：
 
 ```http
-POST /v1/polyquota/reset-credits/redeem
+POST /api/v1/polyquota/reset-credits/redeem
 Content-Type: application/json
 
 {"accountId":"account-1","redemption":{"kind":"item","itemId":"credit-1"}}
 ```
 
 ```http
-POST /v1/polyquota/reset-credits/redeem
+POST /api/v1/polyquota/reset-credits/redeem
 Content-Type: application/json
 
 {"accountId":"account-1","redemption":{"kind":"aggregate","type":"weekly"}}
@@ -352,23 +325,21 @@ Content-Type: application/json
 
 ### 8.4 接入前缀与传输适配
 
-浏览器访问惯例 `/api` 属于 HTTP 入口适配层，不写入 Hono 路由定义、业务路由表或共同客户端的方法路径。Electron 内部协议以 `app` host 分派业务请求，直接使用 `/v1/...` 逻辑路径，不再叠加 `/app` 路径前缀。UI 客户端持有逻辑路径，由接入配置拼接 base URL；进程内测试直接使用逻辑路径。
+浏览器、Electron 内部协议与进程内测试都使用契约描述的 `/api/v1/...` 逻辑路径。Node 不剥离前缀，Electron 只根据固定协议与 `app` host 分派，transport 统一处理来源基址，不建立第二套路由。
 
-| 接入方式               | 接入请求路径                                                                | 交给 Hono 的实际路径                     |
-| ---------------------- | --------------------------------------------------------------------------- | ---------------------------------------- |
-| 独立 Web + HTTP server | /api/v1/polyquota/accounts/account-1/refresh                                | /v1/polyquota/accounts/account-1/refresh |
-| Electron 内部协议      | polyquota-app://app/v1/polyquota/accounts/account-1/refresh                 | /v1/polyquota/accounts/account-1/refresh |
-| 进程内 Hono 测试       | app.request("/v1/polyquota/accounts/account-1/refresh", { method: "POST" }) | /v1/polyquota/accounts/account-1/refresh |
+| 接入方式 | 请求 |
+| --- | --- |
+| 独立 Web | `http://127.0.0.1:4877/api/v1/polyquota/accounts/account-1/refresh` |
+| Electron 内部协议 | `polyquota-app://app/api/v1/polyquota/accounts/account-1/refresh` |
+| 进程内 Hono | `app.request("/api/v1/polyquota/accounts/account-1/refresh", { method: "POST" })` |
 
-Electron 校验固定协议及 host：`app` host 下的 `/v1/` 请求直接交给 Hono，`resources` host 交给资源服务。Node HTTP 适配仅剥离一次起始 `/api` 前缀，不做任意字符串替换，也不要求 Hono 同时兼容两套前缀路由。
-
-协议适配器保留请求的逻辑路径、query、method、headers、body 和取消信号，返回 Hono 的 Response 与流。`polyquota-app://resources/<resourceId>` 直接交给专用资源服务，不进入 Hono。来源校验、流清理与实际 Electron 传输均已纳入[验收](./acceptance.md)。
+适配器保留 query、method、headers、body、取消信号及响应流。`polyquota-app://resources/<resourceId>` 仍由独立资源服务处理，不进入 Hono，也不回退为任意 renderer 文件读取。正式入口的当前验证结果见[阶段一交付结果](../provider/stage-one-implementation.md)。
 
 ## 9. 内部协议与页面边界
 
 正式应用使用专用 session 的内部 scheme，ready 前声明实际需要的 standard、secure、supportFetchAPI 能力，并保留 CSP、sandbox、context isolation、关闭 renderer Node integration 及 webSecurity。
 
-该 session 只装载应用拥有的资源和可信页面；正式 UI 继续 `loadFile`，开发 UI 继续直接访问 Vite，默认打包内容的路径和加载链路保持原样。固定协议 host：`polyquota-app://app/v1/...` 进入 Hono，`polyquota-app://resources/<resourceId>` 进入专用 Electron 读取服务，其他地址返回 404。动态资源按应用登记的资源标识解析并限制读取范围，不提供任意文件路径读取，也不作为 renderer 静态文件的通用回退。
+该 session 只装载应用拥有的资源和可信页面；正式 UI 继续 `loadFile`，开发 UI 继续直接访问 Vite，默认打包内容的路径和加载链路保持原样。固定协议 host：`polyquota-app://app/api/v1/...` 进入 Hono，`polyquota-app://resources/<resourceId>` 进入专用 Electron 读取服务，其他地址返回 404。动态资源按应用登记的资源标识解析并限制读取范围，不提供任意文件路径读取，也不作为 renderer 静态文件的通用回退。
 
 原页面来源访问内部 API/SSE 与动态资源时，分别配置所需的 CSP、跨来源访问及资源类型限制，并通过真实 renderer 验证；不能用迁移整个 UI 到内部 scheme 或关闭 webSecurity 代替验证。protocol Request 不携带 IPC senderFrame，页面边界在 session、装载、导航与 frame 管理时建立；外部页面使用系统浏览器或独立受限载体。
 
@@ -397,7 +368,7 @@ A1—C4 已完成，包含职责服务、Hono/内部协议、独立 Node 入口�
 - [实施结果](./implementation-plan.md)：代码落点、完成情况与实现约定。
 - [验收记录](./acceptance.md)：最终结果、验证范围与回归用例。
 - [跨服务商服务协议设计](../provider/design.md)：共享能力与产品边界。
-- [跨产品凭据共享与迁移](../credential-sharing/design.md)：默认私有后端、主动迁移/导入、固定目录与唯一凭据服务的待实施方案；当前仍保留原后端。
+- [跨产品凭据共享与迁移](../credential-sharing/design.md)：默认私有后端、主动迁移/导入、固定目录与唯一凭据服务；一阶段共享后端与取消恢复已实施，完整双向写权限按 B2/B3 推进。
 - [Core 与 contract 结构](../2026-10-drift-review/core-contract-structure.md)：公开 DTO、校验与展示归属。
 - [认证服务抽取设计](../../../polyquota/auth-service-extraction-design.md)：Core 已有 CLI、OAuth 与回调编排。
 - [运行与通信现状](../../../polyquota/runtime-and-communication-review.md)：当前宿主、通信与生命周期。

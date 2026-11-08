@@ -1,0 +1,30 @@
+{
+  "name": "@astra-conductor/contract",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./common": {
+      "types": "./dist/common/index.d.ts",
+      "import": "./dist/common/index.js"
+    },
+    "./polyquota": {
+      "types": "./dist/polyquota/index.d.ts",
+      "import": "./dist/polyquota/index.js"
+    },
+    "./graph-agent": {
+      "types": "./dist/graph-agent/index.d.ts",
+      "import": "./dist/graph-agent/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

@@ -11,6 +11,10 @@
     "./internal": {
       "types": "./dist/internal.d.ts",
       "import": "./dist/internal.js"
+    },
+    "./http": {
+      "types": "./dist/http/index.d.ts",
+      "import": "./dist/http/index.js"
     }
   },
   "scripts": {
@@ -26,7 +30,8 @@
   },
   "dependencies": {
     "@astra-conductor/credentials": "workspace:*",
-    "@astra-conductor/polyquota-contract": "workspace:*",
-    "zod": "4.5.4"
+    "@astra-conductor/contract": "workspace:*",
+    "zod": "4.5.4",
+    "hono": "^4.13.13"
   }
 }

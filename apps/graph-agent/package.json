@@ -2,21 +2,28 @@
   "name": "@astra-conductor/graph-agent",
   "version": "0.1.1",
   "private": true,
-  "description": "GraphAgent desktop application",
+  "description": "GraphAgent Web and desktop application",
   "type": "module",
-  "main": "dist/main.js",
+  "main": "dist/platform/electron/main.js",
   "scripts": {
     "icons:generate": "node scripts/run-icon-generator.mjs",
-    "build": "tsc -p tsconfig.build.json && node scripts/build.mjs",
-    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json && vite build --config ui/vite.config.ts && node scripts/build.mjs",
+    "typecheck": "tsc --noEmit && vue-tsc --noEmit -p ui/tsconfig.json",
     "test": "vitest run",
     "test:desktop": "node scripts/run-desktop-smoke.mjs",
     "dev": "pnpm build && node scripts/run.mjs",
+    "start:web": "node dist/platform/node/main.js",
+    "dev:web": "vite --config ui/vite.config.ts",
     "package": "electron-builder --win nsis --x64 --config electron-builder.json"
   },
   "dependencies": {
     "@astra-conductor/core": "workspace:*",
-    "@astra-conductor/credentials": "workspace:*"
+    "@astra-conductor/credentials": "workspace:*",
+    "@astra-conductor/contract": "workspace:*",
+    "@astra-conductor/shared-ui": "workspace:*",
+    "@hono/node-server": "^1.19.17",
+    "hono": "^4.13.13",
+    "vue": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
@@ -24,6 +31,9 @@
     "electron-builder": "catalog:",
     "esbuild": "catalog:",
     "typescript": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "vite": "catalog:",
+    "@vitejs/plugin-vue": "catalog:",
+    "vue-tsc": "catalog:"
   }
 }

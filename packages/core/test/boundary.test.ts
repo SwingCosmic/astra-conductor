@@ -27,7 +27,7 @@ describe("core boundary", () => {
   });
 
   it("keeps Electron and the OmniRoute reference checkout out of runtime code", () => {
-    for (const packageDir of ["packages/core", "packages/polyquota-ui"]) {
+    for (const packageDir of ["packages/core", "packages/shared-ui", "packages/contract"]) {
       const manifest = JSON.parse(
         readFileSync(path.join(repoRoot, packageDir, "package.json"), "utf8"),
       ) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
@@ -42,9 +42,21 @@ describe("core boundary", () => {
         const text = readFileSync(file, "utf8");
         expect(text, file).not.toMatch(/["']electron["']/);
         expect(text, file).not.toMatch(/references\/omniroute/);
-        if (packageDir === "packages/polyquota-ui") {
+        if (packageDir !== "packages/core") {
           expect(text, file).not.toMatch(/@omniroute\//);
+          expect(text, file).not.toMatch(/@astra-conductor\/(?:core|credentials)(?:\/|["'])/);
         }
+      }
+    }
+  });
+
+  it("keeps product frontends out of host and runtime code", () => {
+    for (const product of ["polyquota", "graph-agent"]) {
+      for (const file of sourceFiles(path.join(repoRoot, "apps", product, "ui", "src"))) {
+        const text = readFileSync(file, "utf8");
+        expect(text, file).not.toMatch(
+          /(?:["']electron["']|@astra-conductor\/(?:core|credentials)(?:\/|["'])|references\/omniroute)/,
+        );
       }
     }
   });

@@ -102,7 +102,7 @@ if (credentialsBuildCode !== 0) {
 }
 
 const contractBuildCode = await exitCode(
-  run(["--filter", "@astra-conductor/polyquota-contract", "run", "build"]),
+  run(["--filter", "@astra-conductor/contract", "run", "build"]),
 );
 if (contractBuildCode !== 0) {
   await stopAll();
@@ -121,9 +121,11 @@ let rendererReady = false;
 await assertPortAvailable("127.0.0.1", port);
 const vite = run([
   "--filter",
-  "@astra-conductor/polyquota-ui",
+  "@astra-conductor/polyquota",
   "exec",
   "vite",
+  "--config",
+  "ui/vite.config.ts",
   "--host",
   "127.0.0.1",
   "--port",

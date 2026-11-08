@@ -4,8 +4,8 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Account, UsageSnapshot } from "@astra-conductor/core/internal";
-import { currentSchemaVersion, migrations } from "../src/migrations.js";
-import { SqliteStorage } from "../src/sqlite-storage.js";
+import { currentSchemaVersion, migrations } from "../src/platform/common/migrations.js";
+import { SqliteStorage } from "../src/platform/common/sqlite-storage.js";
 
 const tempDirectories: string[] = [];
 

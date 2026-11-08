@@ -262,7 +262,7 @@ Grok Build 与 Antigravity 曾按此原则停留在“预告”状态，如今�
 
 ### 身份与路由
 
-创建普通 Key 时生成随机 `accountId`，并以该 ID 构造通用接入点的 `stableIdentity`。现有 SQLite 约束为 `UNIQUE(provider, stable_identity)`。用户可在同一地址建立两把 Key，明确编辑已有账号时沿用账号 ID。名称、URL 和密钥指纹均不参与自动合并。存量供应商保留各自已落盘的身份策略。[账号表](../../../../apps/polyquota/src/migrations.ts)
+创建普通 Key 时生成随机 `accountId`，并以该 ID 构造通用接入点的 `stableIdentity`。现有 SQLite 约束为 `UNIQUE(provider, stable_identity)`。用户可在同一地址建立两把 Key，明确编辑已有账号时沿用账号 ID。名称、URL 和密钥指纹均不参与自动合并。存量供应商保留各自已落盘的身份策略。[账号表](../../../../apps/polyquota/src/platform/common/migrations.ts)
 
 拟议的宿主内部类型如下。`ModelCatalogScope`、`ProviderRouteSelection` 和 `ModelSelection` 直接使用[公共模型契约](../../contract/common-api.md#22-来源目录与选择)的定义，公开配置读取另做脱敏投影。
 
@@ -310,7 +310,7 @@ interface ConnectionRecordStore {
 
 ### 数据放在哪里
 
-2026-11-07 的隔离选型检查已验证 Windows Electron 42.11.6 中 SQLite 短事务的提交、回滚及重开。GraphAgent 正式 Web 的 broker 接入、业务数据恢复和两个入口的 Hono/SSE 联调仍待实施验证；该检查不代表目标持久后端已经交付。
+2026-11-07 的隔离选型检查已验证 Windows Electron 42.11.6 中 SQLite 短事务的提交、回滚及重开。GraphAgent 正式 Web 的 broker 接入、业务数据恢复和两个入口的 Hono/SSE 联调已随供应商阶段一交付，见[阶段一交付结果](./stage-one-implementation.md)；该检查不代表阶段二的连接与模型持久化已经交付。
 
 | 数据           | 持有者与格式                                                                                                                                                                | 读取与迁移                                                                                                                                                                                        |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -319,13 +319,13 @@ interface ConnectionRecordStore {
 | 描述、事件     | broker 的用途与身份等有限字符串字段，本地保存获准的脱敏事实                                                                                                                 | 支持字符串精确筛选。用途变更后重新列描述。事件只用于失效，不携带或长期镜像秘密                                                                                                                    |
 | 目录、本地参数 | 产品自己的目录缓存、手工条目、预置关联、模型覆盖和选择                                                                                                                      | 迁移/切回只传使连接可用的路由与请求映射。两个产品独立保留目录、覆盖和业务偏好。模型名称到上游名称的出站映射随连接；仅用于挑选预置的本地关联随产品保存                                             |
 
-原共享 decoder 对旧 content type 直接执行 v1 白名单校验。新连接若沿用该 content type，旧 GraphAgent 的混合包预览会尝试解码并失败。新类型由老客户端按未知记录处理。新实现先按 content type 和版本分派，未知记录只可显示获准的描述，已知且损坏的记录返回校验错误。只有能完整解码并编码的记录允许写回。按版本迁移的纯函数依输入产生同样的用途字段，保留未知扩展和陌生 payload。双向导出及库级升级另由凭据专项实施。[现有私有校验](../../../../packages/core/src/credential-vault.ts) · [共享编解码](../../../../packages/core/src/shared-credential-service.ts) · [导入预览](../../../../apps/graph-agent/src/import-service.ts) · [凭据专项](../credential-sharing/implementation-plan.md#双向导出与存储切换)
+原共享 decoder 对旧 content type 直接执行 v1 白名单校验。新连接若沿用该 content type，旧 GraphAgent 的混合包预览会尝试解码并失败。新类型由老客户端按未知记录处理。新实现先按 content type 和版本分派，未知记录只可显示获准的描述，已知且损坏的记录返回校验错误。只有能完整解码并编码的记录允许写回。按版本迁移的纯函数依输入产生同样的用途字段，保留未知扩展和陌生 payload。双向导出及库级升级另由凭据专项实施。[现有私有校验](../../../../packages/core/src/credential-vault.ts) · [共享编解码](../../../../packages/core/src/shared-credential-service.ts) · [导入预览](../../../../apps/graph-agent/src/server/import-service.ts) · [凭据专项](../credential-sharing/implementation-plan.md#双向导出与存储切换)
 
 ## 6. 如何判定订阅用量
 
 给每个 offering 显式声明订阅用量用途。Core 提供一个纯函数，输入经校验的账号归属、offering 声明及已知账号级资格，得到 `eligible | ineligible | unknown`。已知的订阅 offering 在本地存在对应 usage 实现时可刷新。账号级事实明确排除时退出监控。通用按量 offering 为 `ineligible`。未知身份或未知记录格式按 `unknown` 处理。缺套餐名、免费档、首次刷新、网络故障和禁用开关都不改写凭据的固有用途，禁用开关仅影响本地操作许可。
 
-导出与共享元数据使用同一个函数生成 `supportsUsage`，前两种分别写字符串 `"true"`、`"false"`，未知省略。已有已知 v1 账号按原 offering 计算。共享用量发现先按 `"true"` 查询，再核对本地 provider/offering/method、用途和使用权限。将这一判断同时接入 PolyQuota 的可见用量快照、批量/定时/单账号刷新、兑换、托盘、评分和告警。记录失去资格时取消未启动任务并移出用量视图。通用凭据列表、导出和切回快照有各自的获准范围。[导出侧现状](../../../../apps/polyquota/src/credential-sharing/service.ts) · [当前刷新协调器](../../../../packages/core/src/refresh-coordinator.ts)
+导出与共享元数据使用同一个函数生成 `supportsUsage`，前两种分别写字符串 `"true"`、`"false"`，未知省略。已有已知 v1 账号按原 offering 计算。共享用量发现先按 `"true"` 查询，再核对本地 provider/offering/method、用途和使用权限。将这一判断同时接入 PolyQuota 的可见用量快照、批量/定时/单账号刷新、兑换、托盘、评分和告警。记录失去资格时取消未启动任务并移出用量视图。通用凭据列表、导出和切回快照有各自的获准范围。[导出侧现状](../../../../apps/polyquota/src/server/credential-sharing/service.ts) · [当前刷新协调器](../../../../packages/core/src/refresh-coordinator.ts)
 
 ## 7. 模型发现、缓存和参数
 

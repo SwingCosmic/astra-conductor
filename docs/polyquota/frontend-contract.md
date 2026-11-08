@@ -1,6 +1,6 @@
 # PolyQuota 前端服务契约
 
-2026-11-07 · 本文只定义 PolyQuota 产品 Service、用量快照与产品事件。现有 API 位于 [polyquota-contract](../../packages/polyquota-contract/src/service.ts)，迁入 `contract/polyquota` 及下述组合门面是待实施目标。
+2026-11-08 · 本文只定义 PolyQuota 产品 Service、用量快照与产品事件。产品 Service 与下述组合门面已在阶段一落地，当前 API 位于 [contract/polyquota](../../packages/contract/src/polyquota/service.ts)；模型相关扩展按阶段二交付。
 
 公共管理、DTO、错误与事件遵循[公共契约](../common/contract/common-api.md)，共享传输与客户端组合遵循[Service 组合设计](../common/contract/service-composition.md)，包迁移见[契约包设计](../common/contract/design.md#5-从现有契约迁移)。
 
@@ -55,7 +55,7 @@ interface PolyQuotaSnapshot {
 
 ## 3. 产品事件与并发
 
-`PolyQuotaChangedEvent` 保留 `schemaVersion`、`instanceId`、`revision`、`reasons`、`occurredAt` 和重连 `resync` 语义。产品订阅只触发快照重读，握手与重连按[公共 SSE 协定](../common/contract/common-api.md#4-sse-事件与同步规则)执行；现有事件形状见[快照契约](../../packages/polyquota-contract/src/dto/snapshot.ts)。
+`PolyQuotaChangedEvent` 保留 `schemaVersion`、`instanceId`、`revision`、`reasons`、`occurredAt` 和重连 `resync` 语义。产品订阅只触发快照重读，握手与重连按[公共 SSE 协定](../common/contract/common-api.md#4-sse-事件与同步规则)执行；现有事件形状见[快照契约](../../packages/contract/src/polyquota/dto/snapshot.ts)。
 
 同账号用量刷新合并重复请求，不同账号可并行。账号删除、凭据刷新、额度兑换和用量刷新通过同一账号队列协调；提交后发布产品失效事件。供应商 OAuth 轮换、认证会话互斥和 broker 许可继续由 [Core 能力](../common/core/provider/protocol-design.md#3-能力化运行实现)与[凭据共享设计](../common/core/credential-sharing/design.md)约束，不在产品契约另设规则。
 

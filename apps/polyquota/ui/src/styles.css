@@ -1,0 +1,546 @@
+/* 评分环与标题区域等高（标题块约 60px），数值居中于环内、caption 在环
+   左侧；与标题及两环之间都留出明显间距。 */
+.content-header .usage-score-rings {
+  margin-right: auto;
+  margin-left: 24px;
+}
+
+.usage-score-rings {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 30px;
+}
+
+.usage-score-ring {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.usage-score-dial {
+  position: relative;
+  width: 58px;
+  height: 58px;
+}
+
+.usage-score-dial svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.usage-score-track,
+.usage-score-fill {
+  fill: none;
+  stroke-width: 3.5;
+}
+
+.usage-score-track {
+  stroke: #e6ebf2;
+}
+
+.usage-score-fill {
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.2s ease;
+}
+
+.usage-score-fill.score-band-healthy {
+  stroke: #16b364;
+}
+
+.usage-score-fill.score-band-attention {
+  stroke: #f59e0b;
+}
+
+.usage-score-fill.score-band-critical {
+  stroke: #ef4444;
+}
+
+.usage-score-fill.score-band-unknown {
+  stroke: transparent;
+}
+
+.usage-score-value {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #334155;
+  font-size: 15px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.usage-score-caption {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.empty-state p,
+.empty-usage {
+  color: #718096;
+  font-size: 13px;
+}
+
+/* 自动列数网格：卡片最小 420px，容器放不下时自然回退单列（min 防溢出）。
+   两列阈值 = 2×420 + 16 间距 = 856px；默认 1280px 窗口扣除 190px 侧栏、
+   2×30px 页面留白与滚动条后内容区约 1015px，稳定两列并留有余量；更窄窗口
+   回落单列。每行卡片撑满行高，避免同行高矮卡之间出现大片空白。 */
+.quota-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 1fr));
+  gap: 16px;
+}
+
+.quota-card {
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: white;
+}
+
+.quota-card.card-tone-ok {
+  border-color: #52c991;
+}
+
+.quota-card.card-tone-warning {
+  border-color: #f4b442;
+}
+
+.quota-card.card-tone-danger,
+.quota-card.card-tone-critical {
+  border-color: #fb7185;
+}
+
+.quota-card.is-disabled {
+  border-color: #cbd5e1;
+  filter: saturate(0.42);
+  opacity: 0.72;
+}
+
+.quota-card-head {
+  display: flex;
+  gap: 13px;
+  align-items: center;
+  padding: 16px 18px;
+  background: #f8fafc;
+}
+
+.card-tone-ok .quota-card-head {
+  background: linear-gradient(90deg, #effcf6, #f9fffc);
+}
+
+.card-tone-warning .quota-card-head {
+  background: linear-gradient(90deg, #fff8e8, #fffdf8);
+}
+
+.card-tone-danger .quota-card-head,
+.card-tone-critical .quota-card-head {
+  background: linear-gradient(90deg, #fff0f2, #fffafa);
+}
+
+.provider-identity {
+  min-width: 0;
+  flex: 1;
+}
+
+.provider-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.provider-title h2 {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 17px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.plan-tag {
+  flex: 0 0 auto;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #fff;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+/* 未识别档位：目录未命中的 plan 回退原文展示，虚线描边 + 问号提示权重失真。 */
+.plan-tag.is-unrecognized {
+  border-style: dashed;
+  border-color: #f59e0b;
+  color: #92400e;
+}
+
+/* 旧版套餐：目录 legacy 条目（存量档位）随套餐标签右侧展示的次级标记。 */
+.plan-tag-legacy {
+  border-color: #e2e8f0;
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.plan-tag-mark {
+  margin-left: 3px;
+  cursor: help;
+  font-weight: 700;
+}
+
+.provider-identity p {
+  margin: 5px 0 0;
+  overflow: hidden;
+  color: #52627b;
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.switch-field {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  align-items: center;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.switch-field input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.switch {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  border-radius: 99px;
+  background: #cbd5e1;
+  transition: background 0.2s;
+}
+
+.switch::after {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 1px 3px #47556966;
+  content: "";
+  transition: transform 0.2s;
+}
+
+.switch-field input:checked + .switch {
+  background: #1475f7;
+}
+
+.switch-field input:checked + .switch::after {
+  transform: translateX(16px);
+}
+
+.quota-group {
+  padding: 0 18px;
+}
+
+.quota-window {
+  padding-top: 13px;
+}
+
+.quota-window h3 {
+  margin: 0 0 7px;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.progress-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.progress-track {
+  height: 9px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: #e6ebf2;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: inherit;
+}
+
+.tone-ok {
+  background: #16b364;
+}
+
+.tone-warning {
+  background: #f59e0b;
+}
+
+.tone-danger {
+  background: #ef4444;
+}
+
+.tone-critical {
+  background: #dc2626;
+  box-shadow: 0 0 0 1px #991b1b inset;
+}
+
+.tone-unknown {
+  background: #94a3b8;
+}
+
+.remaining {
+  min-width: 72px;
+  font-size: 12px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.text-ok {
+  color: #0f9f58;
+}
+
+.text-warning {
+  color: #d97706;
+}
+
+.text-danger,
+.text-critical {
+  color: #dc2626;
+}
+
+.text-unknown {
+  color: #64748b;
+}
+
+.reset-time {
+  display: flex;
+  gap: 12px;
+  margin: 5px 0 0;
+  color: #8794aa;
+  font-size: 11px;
+}
+
+.quota-detail {
+  margin: 3px 0 0;
+  color: #8794aa;
+  font-size: 11px;
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+
+.quota-amounts {
+  margin-left: auto;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.extra-list {
+  margin: 15px 18px 0;
+  border-top: 1px solid #e7ebf0;
+  border-bottom: 1px solid #e7ebf0;
+}
+
+.extra-button {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  padding: 11px 0;
+  border: 0;
+  background: transparent;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.extra-detail {
+  color: #1475f7;
+}
+
+.disabled-note {
+  margin: 13px 18px 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.quota-card-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 0 18px;
+  padding: 13px 0;
+  color: #8794aa;
+  font-size: 11px;
+}
+
+.quota-card-foot button {
+  border: 0;
+  color: #1475f7;
+  background: transparent;
+  cursor: pointer;
+}
+
+.empty-usage {
+  margin: 18px;
+}
+
+.detail-modal {
+  width: min(440px, 100%);
+  /* 限制在视口内（backdrop 上下留白各 24px）；条目多时由列表内部滚动。 */
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  border-radius: 12px;
+  background: white;
+  box-shadow: 0 22px 60px #0f172a55;
+  overflow: hidden;
+}
+
+.detail-modal > header {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.detail-modal h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.detail-modal header p,
+.detail-note {
+  margin: 5px 0 0;
+  color: #718096;
+  font-size: 12px;
+}
+
+.credit-items {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  /* 弹框限高后此列表承担滚动，头部、汇总与操作区保持可见。 */
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.credit-items li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  font-size: 12px;
+}
+
+.credit-item-details {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.credit-items strong {
+  color: #52627b;
+  font-weight: 500;
+}
+
+.credit-redeem-action {
+  padding: 6px 10px;
+  border: 1px solid #1475f7;
+  border-radius: 6px;
+  color: #1475f7;
+  background: white;
+  cursor: pointer;
+}
+
+.credit-redeem-action:hover:not(:disabled) {
+  color: white;
+  background: #1475f7;
+}
+
+.credit-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid #dbe5f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  font-size: 13px;
+}
+
+.credit-summary strong {
+  color: #1475f7;
+  font-size: 20px;
+}
+
+.detail-note {
+  line-height: 1.6;
+}
+
+.detail-modal footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  margin-top: 18px;
+}
+
+.detail-modal footer button,
+.detail-modal footer a {
+  padding: 8px 13px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  color: inherit;
+  background: white;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.detail-modal footer a {
+  border-color: #1475f7;
+  color: white;
+  background: #1475f7;
+}
+
+.save-message {
+  margin-left: 10px;
+  color: #0f9f58;
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .usage-score-dial {
+    width: 48px;
+    height: 48px;
+  }
+
+  .auth-modal,
+  .detail-modal {
+    max-height: calc(100vh - 24px);
+    overflow-y: auto;
+    padding: 16px;
+  }
+}

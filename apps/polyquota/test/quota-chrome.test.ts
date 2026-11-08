@@ -2,8 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   emptyCompositeRemaining,
   type PublicCompositeRemaining,
-} from "@astra-conductor/polyquota-contract";
-import { taskbarProgress, trayIconFilename, trayTooltip, trayTone } from "../src/quota-chrome.js";
+} from "@astra-conductor/contract/polyquota";
+import {
+  taskbarProgress,
+  trayIconFilename,
+  trayTooltip,
+  trayTone,
+} from "../src/platform/electron/quota-chrome.js";
 
 function remaining(
   partial: Partial<PublicCompositeRemaining> &

@@ -1,5 +1,8 @@
 import { Notification, type Event } from "electron";
-import type { SystemNotificationPort, SystemNotificationOptions } from "../../polling-service.js";
+import type {
+  SystemNotificationPort,
+  SystemNotificationOptions,
+} from "../../server/polling-service.js";
 const NOTIFICATION_DELIVERY_TIMEOUT_MS = 3_000;
 export class ElectronSystemNotificationPort implements SystemNotificationPort {
   async deliver(options: SystemNotificationOptions): Promise<boolean> {

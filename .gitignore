@@ -4,6 +4,7 @@ out/
 release/
 coverage/
 apps/polyquota/renderer/
+apps/graph-agent/renderer/
 apps/polyquota/lib/
 *.log
 .env

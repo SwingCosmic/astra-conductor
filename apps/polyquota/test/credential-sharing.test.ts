@@ -22,8 +22,9 @@ import {
   CredentialSharingService,
   sharingFrozenKey,
   sharingStateKey,
-} from "../src/credential-sharing/service.js";
-import type { BrokerHost } from "../src/credential-sharing/broker-host.js";
+  sharingHistoryKey,
+} from "../src/server/credential-sharing/service.js";
+import type { BrokerHost } from "../src/platform/common/credential-broker-host.js";
 
 const directories: string[] = [];
 const services: CredentialSharingService[] = [];
@@ -74,6 +75,7 @@ async function setup() {
     secrets: { apiKey: "FICTIONAL-ONLY" },
   });
   let initialized: Record<string, unknown> | undefined;
+  let connectedVaultDirectory = vaultDirectory;
   let sourceClientId = "";
   let owner = "uninitialized";
   let loseResponse = false;
@@ -155,7 +157,7 @@ async function setup() {
         tag: cipher.getAuthTag().toString("base64url"),
       }),
     );
-    const versionPath = path.join(vaultDirectory, "versions", "version");
+    const versionPath = path.join(connectedVaultDirectory, "versions", "version");
     await mkdir(versionPath, { recursive: true });
     await writeFile(path.join(versionPath, "migration.json"), bytes);
     const keyCheckCipher = createCipheriv("aes-256-gcm", Buffer.alloc(32, 9), Buffer.alloc(12, 4));
@@ -279,7 +281,13 @@ async function setup() {
     }),
     install: async () => undefined,
     uninstall: async () => undefined,
-    connect: async (_vault, clientId) => {
+    connect: async (selectedVault, clientId) => {
+      if (selectedVault !== connectedVaultDirectory) {
+        connectedVaultDirectory = selectedVault;
+        initialized = undefined;
+        owner = "uninitialized";
+        ack = false;
+      }
       sourceClientId = clientId;
       return { call, close: () => undefined };
     },
@@ -374,18 +382,19 @@ describe("PolyQuota first export", () => {
     await service.exportCredentials(c.vaultDirectory);
     expect(c.initialize).toHaveBeenCalledTimes(1);
   });
-  it("explains directory permission failures while preserving the pending export for retry", async () => {
+  it.each([
+    ["directory-permissions-too-broad", "重新安装新版本地组件"],
+    ["access-denied", "请更新或重新安装凭据共享组件后重试原导出"],
+  ])("explains %s while preserving the pending export for retry", async (code, message) => {
     const c = await setup();
     const connect = vi
       .spyOn(c.options.host, "connect")
-      .mockRejectedValueOnce(new BrokerError("directory-permissions-too-broad"));
-    await expect(c.service.exportCredentials(c.vaultDirectory)).rejects.toThrow(
-      "重新安装新版本地组件",
-    );
+      .mockRejectedValueOnce(new BrokerError(code));
+    await expect(c.service.exportCredentials(c.vaultDirectory)).rejects.toThrow(message);
     expect(await c.service.getStatus()).toMatchObject({
       exportState: "pending",
       frozen: true,
-      lastError: "directory-permissions-too-broad",
+      lastError: code,
     });
     connect.mockRestore();
     await c.service.exportCredentials(c.vaultDirectory);
@@ -527,6 +536,139 @@ describe("PolyQuota first export", () => {
   });
 });
 
+describe("PolyQuota cancelled export recovery", () => {
+  it("recovers an unchanged cancelled export and its unacknowledged delivery without creating another version", async () => {
+    const c = await setup();
+    const contextId = c.service.getBackendContext().contextId;
+    const original = await c.service.exportCredentials(c.vaultDirectory);
+    expect(c.service.getBackendContext().contextId).toBe(contextId);
+    await c.service.cancel();
+    expect((await c.service.getStatus()).capabilities?.resumeExport.state).toBe("enabled");
+    expect(await c.service.resumeExport()).toEqual(original);
+    expect(await c.service.getStatus()).toMatchObject({
+      exportState: "exported",
+      frozen: true,
+      deliveryAcknowledged: false,
+      activeBackend: "private",
+    });
+    expect(c.initialize).toHaveBeenCalledOnce();
+    expect(c.service.getBackendContext().contextId).toBe(contextId);
+  });
+  it("resumes a confirmed delivery without returning or recovering the migration key again", async () => {
+    const c = await setup();
+    await c.service.exportCredentials(c.vaultDirectory);
+    await c.service.acknowledgeDelivery();
+    await c.service.cancel();
+    expect(await c.service.resumeExport()).toBeNull();
+    expect(c.call.mock.calls.filter(([method]) => method === "recoverDelivery")).toHaveLength(0);
+    expect(await c.service.getStatus()).toMatchObject({
+      exportState: "exported",
+      frozen: true,
+      deliveryAcknowledged: true,
+    });
+    expect(c.initialize).toHaveBeenCalledOnce();
+  });
+  it("keeps changed private credentials writable and starts a new export only in a new empty directory", async () => {
+    const c = await setup();
+    await c.service.exportCredentials(c.vaultDirectory);
+    await c.service.acknowledgeDelivery();
+    await c.service.cancel();
+    const oldTransfer = await readFile(
+      path.join(c.vaultDirectory, "versions/version/migration.json"),
+    );
+    const oldState = c.storage.settings.get(sharingStateKey);
+    const contextId = c.service.getBackendContext().contextId;
+    await c.credentials.saveAccount(account, {
+      version: 1,
+      accountId: account.id,
+      provider: account.provider,
+      authMethod: account.authMethod,
+      expiresAt: null,
+      secrets: { apiKey: "UPDATED-FICTIONAL-ONLY" },
+    });
+    expect((await c.service.getStatus()).capabilities?.resumeExport).toMatchObject({
+      state: "disabled",
+    });
+    await expect(c.service.resumeExport()).rejects.toThrow("内置凭据已更新");
+    expect(await c.service.getStatus()).toMatchObject({
+      exportState: "cancelled",
+      frozen: false,
+      deliveryAcknowledged: true,
+    });
+    expect(c.mutations.isFrozen).toBe(false);
+    await expect(c.service.restartExport(c.vaultDirectory)).rejects.toThrow("请选择新的空目录");
+    expect(c.storage.settings.get(sharingStateKey)).toBe(oldState);
+    const next = path.join(c.directory, "new-vault");
+    const delivery = await c.service.restartExport(next);
+    expect(delivery.migrationKey).toMatch(/^acm1_/);
+    expect(c.initialize).toHaveBeenCalledTimes(2);
+    const request = c.initialize.mock.calls[1]![0] as { records: InitialRecord[] };
+    expect(Buffer.from(request.records[0]!.payload, "base64url").toString()).toContain(
+      "UPDATED-FICTIONAL-ONLY",
+    );
+    expect(await readFile(path.join(c.vaultDirectory, "versions/version/migration.json"))).toEqual(
+      oldTransfer,
+    );
+    expect(JSON.parse(c.storage.settings.get(sharingHistoryKey) as string)).toMatchObject([
+      { state: JSON.parse(oldState as string) },
+    ]);
+    expect(await c.service.getStatus()).toMatchObject({
+      exportState: "exported",
+      vaultDirectory: next,
+      frozen: true,
+      deliveryAcknowledged: false,
+    });
+    expect(c.service.getBackendContext().contextId).toBe(contextId);
+  });
+  it("permits selecting a new empty directory after cancellation without changing the saved export", async () => {
+    const c = await setup();
+    await c.service.exportCredentials(c.vaultDirectory);
+    await c.service.cancel();
+    const state = c.storage.settings.get(sharingStateKey);
+    const target = path.join(c.directory, "new-target");
+    const selector = new CredentialSharingService({
+      ...c.options,
+      selectDirectory: async () => target,
+    });
+    expect(await selector.selectDirectory()).toBe(target);
+    expect(c.storage.settings.get(sharingStateKey)).toBe(state);
+    expect(c.mutations.isFrozen).toBe(false);
+  });
+  it("recovers a restarted export's lost response using its new operation and keeps the old export archived", async () => {
+    const c = await setup();
+    await c.service.exportCredentials(c.vaultDirectory);
+    await c.service.cancel();
+    const oldState = c.storage.settings.get(sharingStateKey);
+    c.loseResponse();
+    const next = path.join(c.directory, "new-vault");
+    await expect(c.service.restartExport(next)).rejects.toThrow("broker-disconnected");
+    expect(await c.service.getStatus()).toMatchObject({
+      vaultDirectory: next,
+      exportState: "pending",
+      frozen: true,
+    });
+    expect(JSON.parse(c.storage.settings.get(sharingHistoryKey) as string)).toMatchObject([
+      { state: JSON.parse(oldState as string) },
+    ]);
+    expect((await c.service.exportCredentials(next)).migrationKey).toMatch(/^acm1_/);
+    expect(c.initialize).toHaveBeenCalledTimes(2);
+  });
+  it("rejects both recovery paths after broker ownership changes and preserves cancellation", async () => {
+    const c = await setup();
+    await c.service.exportCredentials(c.vaultDirectory);
+    await c.service.cancel();
+    c.transferOwnership();
+    const state = c.storage.settings.get(sharingStateKey);
+    await expect(c.service.resumeExport()).rejects.toThrow("共享凭据已由服务接管");
+    await expect(c.service.restartExport(path.join(c.directory, "new-vault"))).rejects.toThrow(
+      "共享凭据已由服务接管",
+    );
+    expect(c.storage.settings.get(sharingStateKey)).toBe(state);
+    expect(c.storage.settings.get(sharingHistoryKey)).toBeNull();
+    expect(c.mutations.isFrozen).toBe(false);
+  });
+});
+
 describe("PolyQuota shared activation and return to private", () => {
   async function exported() {
     const context = await setup();
@@ -573,8 +715,16 @@ describe("PolyQuota shared activation and return to private", () => {
     const c = await setup();
     await c.service.exportCredentials(c.vaultDirectory);
     await c.service.acknowledgeDelivery();
-    await expect(c.service.enableShared()).rejects.toThrow("client-not-prepared");
+    await expect(c.service.enableShared()).rejects.toThrow(
+      "请在接收应用核对本次导出目录，并点击“确认导入”后重试启用共享",
+    );
     expect(c.handoffs()).toBe(0);
+    expect(await c.service.getStatus()).toMatchObject({
+      exportState: "exported",
+      activeBackend: "private",
+      frozen: true,
+      lastError: "client-not-prepared",
+    });
     const original = c.storage.credentials.get(account.id);
     c.receiverReady();
     await c.service.enableShared();

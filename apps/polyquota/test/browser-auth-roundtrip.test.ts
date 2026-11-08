@@ -11,7 +11,7 @@ import {
   type CredentialCipherPort,
   type StartOAuthCallbackServer,
 } from "@astra-conductor/core/internal";
-import { startOAuthCallbackServer } from "../src/auth/callback-server.js";
+import { startOAuthCallbackServer } from "../src/platform/common/auth/callback-server.js";
 
 const now = new Date("2026-09-30T08:00:00.000Z");
 

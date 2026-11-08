@@ -8,11 +8,11 @@ import {
   type LoggerPort,
   type ServiceRegistry,
 } from "@astra-conductor/core/internal";
-import { startOAuthCallbackServer } from "../../auth/callback-server.js";
-import { detectProxyStatus } from "../../proxy-detection.js";
-import { ElectronSafeStorageCipher } from "../../safe-storage-cipher.js";
-import { SqliteStorage } from "../../sqlite-storage.js";
-import { Services } from "../../runtime/register-common-services.js";
+import { startOAuthCallbackServer } from "../common/auth/callback-server.js";
+import { detectProxyStatus } from "../common/proxy-detection.js";
+import { ElectronSafeStorageCipher } from "./safe-storage-cipher.js";
+import { SqliteStorage } from "../common/sqlite-storage.js";
+import { Services } from "../../server/runtime/register-common-services.js";
 import { acquireDataOwner } from "../node/data-owner.js";
 import { ElectronSystemNotificationPort } from "./notifications.js";
 

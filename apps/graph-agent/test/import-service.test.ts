@@ -6,7 +6,7 @@ import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "node:
 import { BrokerError, canonical, type TransferSnapshot } from "@astra-conductor/credentials";
 import type { CredentialCipherPort } from "@astra-conductor/core/internal";
 import type { ComponentInstallation } from "@astra-conductor/credentials/host/windows";
-import { GraphSharingService, type GraphSharingOptions } from "../src/import-service.js";
+import { GraphSharingService, type GraphSharingOptions } from "../src/server/import-service.js";
 import { transferFixture } from "./transfer-fixture.js";
 
 const roots: string[] = [];
@@ -193,12 +193,106 @@ async function fixture() {
     handoff: () => {
       ownership = "broker";
     },
+    sourceOwns: () => {
+      ownership = "source";
+    },
     failPrepare: (value: boolean) => {
       failPrepare = value;
     },
   };
 }
 describe("GraphAgent import", () => {
+  it("can replace a pending import with a newly exported location only after confirmation", async () => {
+    const f = await fixture();
+    const selectShared = vi.fn();
+    const service = f.make({ selectShared });
+    const first = await service.verifyImport({
+      vaultDirectory: f.vault,
+      migrationKey: f.transfer.migrationKey,
+    });
+    await service.confirmImport(first.previewId);
+    const before = await readFile(path.join(f.directory, "binding.json"));
+    const secondVault = path.join(f.root, "new-vault");
+    await mkdir(path.join(secondVault, "versions", "version"), { recursive: true });
+    await writeFile(path.join(secondVault, "manifest.json"), JSON.stringify({ vaultId: "vault" }));
+    await writeFile(
+      path.join(secondVault, "versions", "version", "migration.json"),
+      f.transfer.bytes,
+    );
+    await writeFile(
+      path.join(secondVault, "versions", "version", "version.json"),
+      f.transfer.versionBytes,
+    );
+    const next = await service.verifyImport({
+      vaultDirectory: secondVault,
+      migrationKey: f.transfer.migrationKey,
+    });
+    expect(await readFile(path.join(f.directory, "binding.json"))).toEqual(before);
+    await service.confirmImport(next.previewId);
+    const after = JSON.parse(await readFile(path.join(f.directory, "binding.json"), "utf8"));
+    expect(after.vaultDirectory).toBe(secondVault);
+    expect(after.clientId).not.toBe(JSON.parse(before.toString()).clientId);
+    expect(selectShared).not.toHaveBeenCalled();
+    f.handoff();
+    await service.retry();
+    await expect(
+      service.verifyImport({ vaultDirectory: f.vault, migrationKey: f.transfer.migrationKey }),
+    ).rejects.toMatchObject({ code: "import-location-fixed" });
+    f.sourceOwns();
+    const sharedBinding = await readFile(path.join(f.directory, "binding.json"));
+    await expect(
+      service.verifyImport({ vaultDirectory: secondVault, migrationKey: f.transfer.migrationKey }),
+    ).rejects.toMatchObject({ code: "sharing-not-active" });
+    expect(await readFile(path.join(f.directory, "binding.json"))).toEqual(sharedBinding);
+  });
+  it("keeps a prepared or restored pending import out of the selected shared backend", async () => {
+    const f = await fixture();
+    const selectShared = vi.fn();
+    const first = f.make({ selectShared });
+    const preview = await first.verifyImport({
+      vaultDirectory: f.vault,
+      migrationKey: f.transfer.migrationKey,
+    });
+    await first.confirmImport(preview.previewId);
+    expect(await first.status()).toMatchObject({
+      state: "import-ready",
+      connected: false,
+      accounts: [{ id: "account" }],
+    });
+    expect(selectShared).not.toHaveBeenCalled();
+    expect(f.activate).not.toHaveBeenCalled();
+    await first.dispose();
+    const restored = f.make({ selectShared });
+    await restored.restore();
+    expect((await restored.status()).state).toBe("import-ready");
+    expect(selectShared).not.toHaveBeenCalled();
+    f.handoff();
+    await restored.retry();
+    expect((await restored.status()).state).toBe("shared");
+    expect(f.activate).toHaveBeenCalledOnce();
+  });
+
+  it("preserves a previously shared selection when its owner becomes unavailable", async () => {
+    const f = await fixture();
+    const deactivate = vi.fn(async () => undefined);
+    const selectShared = vi.fn();
+    const service = f.make({ deactivate, selectShared });
+    const preview = await service.verifyImport({
+      vaultDirectory: f.vault,
+      migrationKey: f.transfer.migrationKey,
+    });
+    await service.confirmImport(preview.previewId);
+    f.handoff();
+    await service.retry();
+    f.sourceOwns();
+    await expect(service.retry()).rejects.toMatchObject({ code: "sharing-not-active" });
+    expect(await service.status()).toMatchObject({ state: "shared", connected: false });
+    await service.dispose();
+    const restored = f.make({ selectShared });
+    await restored.restore();
+    expect(selectShared).toHaveBeenCalledOnce();
+    expect(await restored.status()).toMatchObject({ state: "shared", connected: false });
+  });
   it("rejects insufficient API capability even when the component version is newer", async () => {
     const f = await fixture();
     f.setComponentInfo("9.9.9", "1.9");

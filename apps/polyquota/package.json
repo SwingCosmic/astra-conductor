@@ -4,16 +4,16 @@
   "private": true,
   "description": "PolyQuota desktop application",
   "type": "module",
-  "main": "dist/main.js",
+  "main": "dist/platform/electron/main.js",
   "scripts": {
     "icons:generate": "node ./scripts/run-icon-generator.mjs",
     "native:prepare": "node ./scripts/prepare-native.mjs",
     "prebuild": "pnpm run native:prepare",
     "build:main": "tsc -p tsconfig.build.json && node ./scripts/clean-legacy-output.mjs",
     "dev:electron": "node ./scripts/run-electron-mode.mjs dev",
-    "build": "pnpm run build:main && node ./scripts/copy-renderer.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
+    "build": "pnpm run build:main && pnpm run build:ui && node ./scripts/copy-renderer.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && pnpm run typecheck:ui",
+    "test": "vitest run && pnpm run test:ui",
     "package": "node ./scripts/package.mjs",
     "data:reset": "node ./scripts/run-electron-mode.mjs reset",
     "test:codex-cli": "node ./scripts/run-electron-mode.mjs codex-cli-smoke",
@@ -23,16 +23,23 @@
     "test:desktop": "node ./scripts/run-electron-mode.mjs desktop-smoke",
     "test:distribution": "node scripts/run-distribution-smoke.mjs",
     "test:credential-sharing": "node ./scripts/run-credential-sharing-smoke.mjs",
-    "test:credential-sharing-loop": "node scripts/run-credential-sharing-loop.mjs"
+    "test:credential-sharing-loop": "node scripts/run-credential-sharing-loop.mjs",
+    "build:ui": "vite build --config ui/vite.config.ts",
+    "dev:ui": "vite --config ui/vite.config.ts",
+    "typecheck:ui": "vue-tsc --noEmit -p ui/tsconfig.json",
+    "test:ui": "vitest run --config ui/vitest.config.ts",
+    "test:private-ui": "node scripts/run-private-ui-smoke.mjs"
   },
   "dependencies": {
     "@astra-conductor/core": "workspace:*",
-    "@astra-conductor/polyquota-contract": "workspace:*",
     "@hono/node-server": "^1.19.17",
     "better-sqlite3": "catalog:",
     "hono": "^4.13.13",
     "undici": "^7.29.1",
-    "@astra-conductor/credentials": "workspace:*"
+    "@astra-conductor/credentials": "workspace:*",
+    "@astra-conductor/contract": "workspace:*",
+    "@astra-conductor/shared-ui": "workspace:*",
+    "vue": "catalog:"
   },
   "devDependencies": {
     "@electron/rebuild": "catalog:",
@@ -42,6 +49,11 @@
     "electron-builder": "catalog:",
     "esbuild": "catalog:",
     "typescript": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "vite": "catalog:",
+    "@vitejs/plugin-vue": "catalog:",
+    "vue-tsc": "catalog:",
+    "@vue/test-utils": "catalog:",
+    "happy-dom": "catalog:"
   }
 }

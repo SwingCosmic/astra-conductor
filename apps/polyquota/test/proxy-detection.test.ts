@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { CommandRunner } from "../src/proxy-detection.js";
-import { detectProxyStatus } from "../src/proxy-detection.js";
+import type { CommandRunner } from "../src/platform/common/proxy-detection.js";
+import { detectProxyStatus } from "../src/platform/common/proxy-detection.js";
 
 const windowsRegistryKey = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings";
 

@@ -18,7 +18,7 @@ function exited(process) {
 }
 
 function launch() {
-  child = spawn(process.execPath, ["dist/server-main.js"], {
+  child = spawn(process.execPath, ["dist/platform/node/main.js"], {
     cwd: root,
     stdio: ["inherit", "inherit", "inherit", "ipc"],
     windowsHide: true,

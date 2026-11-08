@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApplicationEvents } from "../src/runtime/application-events.js";
-import { BrowserNotificationService } from "../src/runtime/notification-service.js";
-import type { NotificationRequest } from "@astra-conductor/polyquota-contract";
+import { ApplicationEvents } from "../src/server/runtime/application-events.js";
+import { BrowserNotificationService } from "../src/server/runtime/notification-service.js";
+import type { NotificationRequest } from "@astra-conductor/contract/polyquota";
 
 afterEach(() => vi.useRealTimers());
 

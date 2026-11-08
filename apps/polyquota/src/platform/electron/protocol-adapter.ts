@@ -1,5 +1,5 @@
 import type { Hono } from "hono";
-import { withPageBoundary } from "../../http/inbound-adapter.js";
+import { withPageBoundary } from "../../server/http/inbound-adapter.js";
 import type { ElectronDynamicResourceService } from "./dynamic-resources.js";
 
 export const BUSINESS_SCHEME = "polyquota-app";
@@ -26,7 +26,11 @@ export class ElectronProtocolAdapter {
       signal: AbortSignal.any([request.signal, this.controller.signal]),
     });
     return withPageBoundary(scoped, this.origins, () => {
-      if (url.host === "app" && url.pathname.startsWith("/v1/")) return this.app.fetch(scoped);
+      if (
+        url.host === "app" &&
+        (url.pathname.startsWith("/v1/") || url.pathname.startsWith("/api/v1/"))
+      )
+        return this.app.fetch(scoped);
       if (url.host === "resources") return this.resources.fetch(scoped);
       return new Response(null, { status: 404 });
     });

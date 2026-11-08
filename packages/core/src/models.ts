@@ -1,9 +1,9 @@
 /**
- * 协议 DTO 的单源是 `@astra-conductor/polyquota-contract`（UI 与宿主
+ * 协议 DTO 的单源是 `@astra-conductor/contract/common`（UI 与宿主
  * 共用的轻量契约包）；core 在此 re-export，禁止再建副本。供应商 /
  * 认证方式是随目录扩张的动态集合：类型不封闭为字面量联合，已知集合由
  * `providers/catalog.ts` 从注册 descriptors 收集导出（providerIds / authMethods）。
- * 未来 GraphAgent 契约出现时，这一组标识应上移到共享协议层。
+ * 公共 DTO 与产品投影分别由 contract/common 和对应产品子入口维护。
  */
 import type {
   CredentialState,
@@ -18,7 +18,7 @@ import type {
   UsageExtraItem,
   UsageQuota,
   UsageQuotaGroup,
-} from "@astra-conductor/polyquota-contract";
+} from "@astra-conductor/contract/common";
 
 export type {
   CredentialState,

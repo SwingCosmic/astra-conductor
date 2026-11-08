@@ -29,6 +29,9 @@ await build({
   outbase: sourceRoot,
   outdir: outputRoot,
   bundle: true,
+  // Optional entrypoints must share AppError and service class identities.
+  splitting: true,
+  chunkNames: "chunks/[name]-[hash]",
   entryNames: "[dir]/[name]",
   format: "esm",
   platform: "node",

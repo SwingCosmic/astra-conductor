@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { RefreshBatchOutcomeDto } from "@astra-conductor/polyquota-contract";
-import { RefreshScheduler } from "../src/refresh-scheduler.js";
+import type { RefreshBatchOutcomeDto } from "@astra-conductor/contract/polyquota";
+import { RefreshScheduler } from "../src/server/refresh-scheduler.js";
 
 function timerHarness() {
   let nextId = 0;

@@ -28,6 +28,7 @@
 - [Core 功能详细设计](./core/provider/core-design.md)
 - [协议、模型与推理端口详细设计](./core/provider/protocol-design.md)
 - [三阶段实施方案](./core/provider/implementation-plan.md)
+- [阶段一结构、共用 UI 与正式宿主交付结果](./core/provider/stage-one-implementation.md)
 - [参考取舍与 A–G 迁移沿革](./core/provider/migration-history.md)
 
 ## 凭据共享
@@ -38,6 +39,7 @@
 - [A3—A5 本地安装与 PolyQuota 导出侧实施](./core/credential-sharing/a3-a5-export-implementation.md)
 - [A6—A8 GraphAgent 导入、统一共享与返回内置](./core/credential-sharing/a6-a8-sharing-implementation.md)
 - [B1 凭据 SDK 与 Windows 宿主合包](./core/credential-sharing/b1-credentials-package-implementation.md)
+- [凭据共享恢复交付结果](./core/credential-sharing/cancelled-export-recovery.md)
 
 ## 服务模式
 

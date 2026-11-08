@@ -5,7 +5,7 @@ import {
   type RefreshCoordinator,
   type RefreshOutcome,
 } from "@astra-conductor/core/internal";
-import { PollingService, type SystemNotificationPort } from "../src/polling-service.js";
+import { PollingService, type SystemNotificationPort } from "../src/server/polling-service.js";
 
 const account: Account = {
   id: "account-1",

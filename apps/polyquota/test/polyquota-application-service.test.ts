@@ -14,11 +14,11 @@ import {
 import {
   type PolyQuotaChangedEvent,
   type PolyQuotaSnapshot,
-} from "@astra-conductor/polyquota-contract";
+} from "@astra-conductor/contract/polyquota";
 import type { AuthCoordinator } from "@astra-conductor/core/internal";
-import { PolyQuotaApplicationService } from "../src/polyquota-application-service.js";
-import type { PollingService } from "../src/polling-service.js";
-import { RefreshScheduler } from "../src/refresh-scheduler.js";
+import { PolyQuotaApplicationService } from "../src/server/polyquota-application-service.js";
+import type { PollingService } from "../src/server/polling-service.js";
+import { RefreshScheduler } from "../src/server/refresh-scheduler.js";
 
 const account: Account = {
   id: "account-1",

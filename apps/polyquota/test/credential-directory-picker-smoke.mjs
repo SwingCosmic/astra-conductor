@@ -3,7 +3,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { registerElectronServices } from "../dist/platform/electron/register-electron-services.js";
-import { Services } from "../dist/runtime/register-common-services.js";
+import { Services } from "../dist/server/runtime/register-common-services.js";
 
 // Interactive smoke: select a directory or cancel the native picker; no data is exported.
 app

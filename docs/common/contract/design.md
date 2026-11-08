@@ -1,6 +1,6 @@
 # 统一契约包与前后端公共协定设计
 
-2026-11-07 · 目标设计，待实施。`@astra-conductor/contract` 定义 PolyQuota 与 GraphAgent 的前后端公共协定及各产品专属接口。包边界、依赖方向与产品启动形式以[项目架构](../../architecture.md)为准；本文维护契约包的内容归属、子入口和迁移规则。
+2026-11-08 · 阶段一统一契约与既有操作已实施；模型契约按阶段二继续扩展。`@astra-conductor/contract` 定义 PolyQuota 与 GraphAgent 的前后端公共协定及各产品专属接口。包边界、依赖方向与产品启动形式以[项目架构](../../architecture.md)为准；本文维护契约包的内容归属、子入口和迁移规则。
 
 ## 1. 文档职责
 
@@ -64,19 +64,19 @@ HTTP 方法、逻辑相对路径、请求/响应、错误与事件由同一操�
 
 ## 5. 从现有契约迁移
 
-当前 PolyQuota API 与校验在 `packages/polyquota-contract`；GraphAgent 最小宿主自己的 `src/contract.ts` 只覆盖凭据接收设置。统一 `contract` 包及新的产品 Service 尚待实施。迁移保持现有可运行入口与旧 DTO 行为，不把文档中的目标形状当成当前实现。
+阶段一已将旧 `packages/polyquota-contract` 与 GraphAgent 导入契约归并到 `packages/contract`。旧契约包及临时客户端转发已移除，Core 仅依赖公共子入口；两个产品服务导出公共分组与各自已交付的方法。迁移保留既有 DTO 行为，模型操作在阶段二交付。[阶段一交付结果](../core/provider/stage-one-implementation.md)
 
 原 Core 详细设计中的公共类型迁移按以下顺序在本专项维护：
 
-1. 将 `PublicAccount`、`CredentialState`、`JsonPrimitive`、`PublicMetadata`、`UsageQuota(Group)`、extras 及 `ResetCredits/ResetCreditRedemption` 等共用 API 类型迁入 `contract/common`。脱敏用量事实保留已解析的套餐 ID、标签、窗口及重置信息。迁移期间可从原入口重导出旧名称。
+1. 已将 `PublicAccount`、`CredentialState`、`JsonPrimitive`、`PublicMetadata`、`UsageQuota(Group)`、extras 及 `ResetCredits/ResetCreditRedemption` 等共用 API 类型迁入 `contract/common`。脱敏用量事实保留已解析的套餐 ID、标签、窗口及重置信息；旧入口的重导出已随旧包移除。
 2. Core 的 `toPublicAccount` 与 `toPublicUsage(snapshot, offeringId)` 保留现有参数和输出结构，继续处理旧快照、套餐标签回退及 reset credits。产品快照、用量评分、通知和轮询 API 类型归 `contract/polyquota`，GraphAgent 模型配置专用 API 归 `contract/graph-agent`。评分计算、应用服务和产品展示投影留在业务实现中。
-3. 将 Core 的契约引用由 `polyquota-contract` 切到 `contract/common`，同步编译产物与宿主调用方。旧包保留临时转发，待消费方迁移后移除；回归现有 PolyQuota 快照、刷新入口与历史用量夹具。
-4. 将已有公共操作绑定到公共接口并组合两个产品 Service。PolyQuota 原扁平公共方法及 `credentialSharing` 临时转发到 `.providers` / `.credentials`，新页面只消费目标门面，清理兼容层时不保留第二份实现。
+3. Core 的契约引用已由 `polyquota-contract` 切到 `contract/common`，编译产物与宿主调用方同步完成。旧包已移除；回归现有 PolyQuota 快照、刷新入口与历史用量夹具。
+4. 公共操作已绑定到公共接口并组合两个产品 Service。PolyQuota 原扁平公共方法及 `credentialSharing` 临时转发已移除，新页面只消费 `.providers` / `.credentials`，不保留第二份实现。
 
-现有来源：[Core 类型依赖](../../../packages/core/src/models.ts) · [公开用量投影](../../../packages/core/src/public-api.ts) · [PolyQuota 服务接口](../../../packages/polyquota-contract/src/service.ts) · [产品调用方](../../../apps/polyquota/src/polyquota-application-service.ts) · [历史快照用例](../../../packages/core/test/stage3-core.test.ts) · [GraphAgent 当前契约](../../../apps/graph-agent/src/contract.ts)
+现有来源：[Core 类型依赖](../../../packages/core/src/models.ts) · [公开用量投影](../../../packages/core/src/public-api.ts) · [PolyQuota 服务接口](../../../packages/contract/src/polyquota/service.ts) · [产品调用方](../../../apps/polyquota/src/server/polyquota-application-service.ts) · [历史快照用例](../../../packages/core/test/stage3-core.test.ts) · [GraphAgent 契约](../../../packages/contract/src/graph-agent/index.ts)
 
 ## 6. 交付与验收
 
 包迁移与 Service 接线仍由[供应商平台三阶段实施方案](../core/provider/implementation-plan.md)统一安排，本目录不另建重复排期。阶段一归位契约与既有操作；阶段二交付模型 DTO、校验器和 handler；阶段三接入产品页面与正式入口联调。
 
-验证包括浏览器/Node 双侧构建、公共入口不反向依赖产品、契约产物不含 Core/Node/Electron 实现、旧入口兼容转发，以及同组样本通过格式校验器、Hono handler 和产品 Service。方法到 HTTP 路径、空结果、公开错误、事件 scope、握手重连、未知扩展和旧修订冲突都须保持一致。UI 组件验收和 Core 业务用例分别回到所属文档。
+验证包括浏览器/Node 双侧构建、公共入口不反向依赖产品、契约产物不含 Core/Node/Electron 实现、旧入口移除后无残留转发，以及同组样本通过格式校验器、Hono handler 和产品 Service。方法到 HTTP 路径、空结果、公开错误、事件 scope、握手重连、未知扩展和旧修订冲突都须保持一致。UI 组件验收和 Core 业务用例分别回到所属文档。

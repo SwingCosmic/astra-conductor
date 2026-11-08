@@ -3,7 +3,7 @@ import {
   createOAuthCallbackHandler,
   type OAuthCallbackHandler,
 } from "@astra-conductor/core/internal";
-import { startOAuthCallbackServer } from "../src/auth/callback-server.js";
+import { startOAuthCallbackServer } from "../src/platform/common/auth/callback-server.js";
 
 interface TestListener {
   handler: OAuthCallbackHandler;

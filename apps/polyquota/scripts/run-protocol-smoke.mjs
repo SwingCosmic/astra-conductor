@@ -9,8 +9,8 @@ import electron from "electron";
 import { startServer } from "../dist/platform/node/start-server.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const ui = path.resolve(root, "../../packages/polyquota-ui");
-const require = createRequire(path.join(ui, "package.json"));
+const ui = path.resolve(root, "../../apps/polyquota/ui");
+const require = createRequire(path.join(root, "package.json"));
 const viteRoot = path.dirname(require.resolve("vite/package.json"));
 const { createServer } = await import(pathToFileURL(path.join(viteRoot, "dist/node/index.js")));
 const bundles = [
@@ -30,7 +30,12 @@ try {
     packages: "external",
   });
   await build({
-    entryPoints: [path.join(ui, "src/services/http-polyquota-service.ts")],
+    stdin: {
+      contents:
+        'export { HttpPolyQuotaService } from "./http-polyquota-service.ts"; export { FetchServiceTransport } from "@astra-conductor/shared-ui/services";',
+      resolveDir: path.join(ui, "src/services"),
+      loader: "ts",
+    },
     outfile: bundles[1],
     bundle: true,
     platform: "browser",

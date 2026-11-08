@@ -10,7 +10,7 @@
     });
     return response.json();
   };
-  const stream = await fetch(base + "/v1/polyquota/events");
+  const stream = await fetch(base + "/api/v1/events");
   const reader = stream.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -30,11 +30,17 @@
     }
   };
   await nextEvent();
+  const management = await request("/api/v1/providers");
+  if (!management.ok) throw new Error(management.error.code);
+  const context = {
+    instanceId: management.value.instanceId,
+    contextId: management.value.backend.contextId,
+  };
   const service = {
-    getSnapshot: () => request("/v1/polyquota/snapshot"),
+    getSnapshot: () => request("/api/v1/polyquota/snapshot"),
     deleteAccount: (id) =>
-      request("/v1/polyquota/accounts/" + encodeURIComponent(id) + "/delete", undefined, true),
-    saveSettings: (settings) => request("/v1/polyquota/settings/save", settings, true),
+      request("/api/v1/accounts/" + encodeURIComponent(id) + "/delete", context, true),
+    saveSettings: (settings) => request("/api/v1/polyquota/settings/save", settings, true),
   };
   const initialResult = await service.getSnapshot();
   if (!initialResult.ok) throw new Error(initialResult.error.code);
@@ -70,7 +76,7 @@
     if (Date.now() > deadline) throw new Error("UI-not-mounted");
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
-  const caps = await request("/v1/host/capabilities");
+  const caps = await request("/api/v1/host/capabilities");
   if (!caps.ok || !caps.value.desktop || caps.value.notifications !== "host")
     throw new Error("host-capabilities");
   const icon = await fetch("polyquota-app://resources/product-icon");

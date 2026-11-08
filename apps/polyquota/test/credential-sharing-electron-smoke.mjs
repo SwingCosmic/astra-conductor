@@ -6,10 +6,13 @@ import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import { CredentialVault, CredentialMutationGate } from "@astra-conductor/core/internal";
 import { BROKER_DISTRIBUTION } from "@astra-conductor/credentials";
-import { SqliteStorage } from "../dist/sqlite-storage.js";
-import { ElectronSafeStorageCipher } from "../dist/safe-storage-cipher.js";
-import { WindowsBrokerHost, runPrivate } from "../dist/credential-sharing/broker-host.js";
-import { CredentialSharingService, sharingFrozenKey } from "../dist/credential-sharing/service.js";
+import { SqliteStorage } from "../dist/platform/common/sqlite-storage.js";
+import { ElectronSafeStorageCipher } from "../dist/platform/electron/safe-storage-cipher.js";
+import { WindowsBrokerHost, runPrivate } from "../dist/platform/common/credential-broker-host.js";
+import {
+  CredentialSharingService,
+  sharingFrozenKey,
+} from "../dist/server/credential-sharing/service.js";
 
 const args = process.argv.slice(2);
 const option = (name) => args[args.indexOf(name) + 1];
@@ -119,11 +122,11 @@ app
         assert.equal(previous.storageVersion, state.storageVersion);
         await service.acknowledgeDelivery();
         assert.equal((await service.getStatus()).deliveryAcknowledged, true);
-        const { startRuntime } = await import("../dist/runtime/start-runtime.js");
+        const { startRuntime } = await import("../dist/server/runtime/start-runtime.js");
         const { registerElectronServices } = await import(
           "../dist/platform/electron/register-electron-services.js"
         );
-        const { createHonoApp } = await import("../dist/http/create-hono-app.js");
+        const { createHonoApp } = await import("../dist/server/http/create-hono-app.js");
         const { ElectronProtocolAdapter } = await import(
           "../dist/platform/electron/protocol-adapter.js"
         );

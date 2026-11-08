@@ -1,12 +1,12 @@
 # GraphAgent 前端服务契约
 
-2026-11-07 · 目标设计，待实施。本文只定义 GraphAgent 的产品 Service、模型页投影、命令与事件。当前[GraphApi](../../../apps/graph-agent/src/contract.ts)仅支持凭据接收设置；模型配置按[三阶段实施方案](../../common/core/provider/implementation-plan.md)交付，聊天与任务 API 随 [02 消息聊天](./02_conversation-and-messaging.md)和 [03 执行层](./03_agent-loop-dispatch-and-execution.md)另行细化。
+2026-11-08 · 公共管理门面已在供应商阶段一落地，模型页契约待实施。本文只定义 GraphAgent 的产品 Service、模型页投影、命令与事件。导入契约位于 [contract/graph-agent 兼容入口](../../../packages/contract/src/graph-agent/legacy-import.ts)，公共分组复用 `contract/common`；模型配置按[三阶段实施方案](../../common/core/provider/implementation-plan.md)阶段二、三交付，聊天与任务 API 随 [02 消息聊天](./02_conversation-and-messaging.md)和 [03 执行层](./03_agent-loop-dispatch-and-execution.md)另行细化。
 
 ## 1. 契约归属与入口
 
 本文接口从 `contract/graph-agent` 导出，公共类型来自 `contract/common`。包职责、共享传输及 Hono 组合统一见[契约包设计](../../common/contract/design.md)和[Service 组合设计](../../common/contract/service-composition.md)；发现、参数合并与请求编译由 [Core](../../common/core/provider/core-design.md)实现。
 
-宿主能力遵循[项目架构](../../architecture.md#3-产品启动与交付)：Web 凭据仅经 broker，Electron 可使用私有存储或 broker。未接入时仍可浏览获准的本地设置，依赖凭据的操作显示禁用原因。旧 `GraphApi` 在原操作迁移并通过回归后退役。
+宿主能力遵循[项目架构](../../architecture.md#3-产品启动与交付)：Web 凭据仅经 broker，Electron 可使用私有存储或 broker。未接入时仍可浏览获准的本地设置，依赖凭据的操作显示禁用原因。导入相关的 `GraphApi` 保留在 `contract/graph-agent` 兼容入口，页面业务操作已改走 `IGraphAgentService`；模型方法补齐并通过回归后退役旧入口。
 
 ### 1.1 IGraphAgentService 产品门面
 

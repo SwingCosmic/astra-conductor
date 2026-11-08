@@ -1,10 +1,10 @@
 # 供应商平台与双产品 UI 三阶段实施方案
 
-2026-11-07 · 待实施。阶段一先调整项目结构，再抽离 UI，让现有供应商管理在两个产品可用。阶段二在 Core 实现模型配置与请求映射，阶段三接入共用界面并联调。包依赖、API 归属、请求路径和启动形式以[项目架构](../../../architecture.md)为准。各阶段按[供应商接入与模型目录设计](./connections-and-models.md)验收。总体边界见[供应商平台设计](./design.md)，接口归属分别见 [GraphAgent 前端契约](../../../graph-agent/design/frontend-contract.md)与 [PolyQuota 前端契约](../../../polyquota/frontend-contract.md)；旧 A—G 阶段记录见[迁移历史](./migration-history.md)。
+2026-11-08 · 阶段一代码已实施，整仓与正式入口验证结果见[阶段一交付结果](./stage-one-implementation.md)；真实供应商授权的人工联调单独跟踪。阶段一先调整项目结构，再抽离 UI，让现有供应商管理在两个产品可用。阶段二在 Core 实现模型配置与请求映射，阶段三接入共用界面并联调。包依赖、API 归属、请求路径和启动形式以[项目架构](../../../architecture.md)为准。各阶段按[供应商接入与模型目录设计](./connections-and-models.md)验收。总体边界见[供应商平台设计](./design.md)，接口归属分别见 [GraphAgent 前端契约](../../../graph-agent/design/frontend-contract.md)与 [PolyQuota 前端契约](../../../polyquota/frontend-contract.md)；旧 A—G 阶段记录见[迁移历史](./migration-history.md)。
 
 | 阶段 | 交给下一阶段的结果 | 退出条件 |
 | --- | --- | --- |
-| 一 · 项目结构调整 → UI 抽离 | 先迁移统一契约、产品目录和构建入口，再抽出共用 Vue 壳与管理页，接通 GraphAgent Hono、业务仓储及 broker 后端，Electron 另接可写私有凭据存储 | 结构迁移后现有入口可运行。PolyQuota Electron 与 GraphAgent Electron 从空私有配置完成账号接入和重启恢复；GraphAgent Web 验证 broker 既有授权范围及受限状态；PolyQuota Web 通过开发联调 |
+| 一 · 项目结构调整 → UI 抽离（已交付） | 已迁移统一契约、产品目录和构建入口，抽出共用 Vue 壳与管理页，接通 GraphAgent Hono、业务仓储及 broker 后端，Electron 另接可写私有凭据存储 | 结构迁移后现有入口可运行。PolyQuota Electron 与 GraphAgent Electron 从空私有配置完成账号接入和重启恢复；GraphAgent Web 验证 broker 既有授权范围及受限状态；PolyQuota Web 通过开发联调 |
 | 二 · 改造 Core，完成模型配置 | 可持久化的账号路由、目录与参数、请求映射、凭据格式兼容和元数据转换 | 离线协议夹具通过服务入口验证保存、发现、合并、刷新、预览及实际出站请求 |
 | 三 · 适配新 UI，完成双产品联调 | 供应商与凭据共用页接入正式服务，GraphAgent 提供模型配置页，PolyQuota 按订阅资格展示用量 | 两端通过页面交互回归，并按文末凭据专项完成共享场景联调 |
 
@@ -12,36 +12,19 @@
 
 ## 阶段一 · 先调整项目结构，再抽离 UI
 
-### 1.1 先迁移契约、产品目录和构建入口
+**实现进度（2026-11-08）**：下列代码工作已交付，最终结果与验收边界见[阶段一交付结果](./stage-one-implementation.md)。用户已确认两端共享状态正常；七家真实账号的最终授权联调仍单独跟踪。
 
-以现有两个产品的启动、构建和测试结果为迁移基线，按[项目架构的迁移表](../../../architecture.md#5-从当前仓库迁移)逐项就位，每步保持可运行入口。
+- [x] 统一 `contract` 的三个子入口，迁移公共 DTO/领域接口与产品 Service，移除旧契约包。
+- [x] 两产品归位 `ui`、`server`、`platform`，同步开发、构建、测试与打包入口，移除旧 UI 包及 GraphAgent 业务 preload。
+- [x] Core 公共应用服务与可选 `core/http`，两产品组合公共/专属路由和唯一事件流。
+- [x] 共用 Vue 壳、供应商管理、认证弹窗和凭据页；两产品注入品牌、菜单及产品服务。
+- [x] 共享 transport、基类、泛型 mixin 与公共切片，产品专属切片独立；保留单 SSE、上下文和生命周期约束。
+- [x] GraphAgent 正式 Node/Web、持久业务仓储和既有授权 broker 接线；Electron 另接 safeStorage 私有凭据。
+- [x] 双端私有及共享受限能力、认证取消/恢复、敏感输入清空与迟到结果丢弃，保留 A6—A8 操作范围。
 
-1. **统一契约。** 建立 `contract` 的三个子入口并迁入现有 DTO、领域接口、产品 Service、事件与纯格式校验。按[契约专项](../../contract/design.md)固定公共 API、Service 与传输抽象，按 [GraphAgent 前端契约](../../../graph-agent/design/frontend-contract.md)固定模型页专属方法、DTO 和事件；本阶段迁移既有操作，新增模型功能在阶段二交付。旧 `polyquota-contract` 在消费方迁移前继续转发，随后依次切换 Core、两个产品及测试的 import。
-2. **归位产品与组合后端。** 将两个产品的前端、服务端和宿主代码迁到 `apps/<product>/{ui,src/server,src/platform}`。按[架构决策](../../../architecture.md#22-公共与专属-hono-子应用)从现有 Hono handler 拆出 Core 公共应用服务与 `core/http` 公共路由工厂，产品组合公共与专属子应用、统一中间件和唯一事件流；安排 `shared-ui` 的工作区位置。[Service 与传输组合](../../contract/service-composition.md)
-3. **切换构建。** 同步调整 workspace 依赖、Vite root、静态资源、桌面加载路径和开发/测试/打包脚本。新入口通过且所有消费方迁移后，移除旧包与临时转发。
+阶段一已交付统一契约、产品目录、共用页面与正式宿主。两产品 Electron 支持各自私有账号管理和重启恢复；GraphAgent Web 使用已有 broker 授权读取与刷新凭据。取消导出恢复、新空目录重新导出与待接管导入均已完成，用户已确认两端共享状态正常。
 
-**进入 1.2 的条件**：干净构建通过，两端从新产品入口加载原页面，契约兼容、资源加载与 A6—A8 既有行为无回归。
-
-在 1.2 接线前后，从现有 `HttpPolyQuotaService` 提取共享 transport、客户端基类、泛型 mixin 辅助方法与公共功能切片至 `shared-ui/services`。两产品按快照、刷新、模型配置等方向拆分专属切片，通过[切片组合约定](../../contract/service-composition.md#11-通过泛型-mixin-合成功能切片类)合成最终类，客户端工厂只实例化。共用页取 `.providers` / `.credentials`，产品页取专属方法。旧接口只做临时转发，调用方迁移后移除兼容层。所有切片共用一个 transport 和一条 SSE。
-
-### 1.2 再抽离共用 UI 并接通宿主
-
-从已归位的 PolyQuota 供应商页、认证弹窗、凭据设置和 GraphAgent 导入设置提取共用实现。组件接口与认证恢复见[共用 UI 组件详细设计](../../ui/design.md)。[迁移前的 PolyQuota 前端](../../../../packages/polyquota-ui/src) · [当前 GraphAgent 宿主](../credential-sharing/a6-a8-sharing-implementation.md#graphagent-最小宿主)
-
-| 工作项 | 实施内容 |
-| --- | --- |
-| 共用壳与页面 | 将壳、表单、弹窗、供应商管理和凭据管理提取到 `shared-ui`，消费 1.1 已就位的公共契约。两个产品注入品牌、菜单和业务页面，导航布局、交互状态与错误提示共用一份实现 |
-| PolyQuota 接回原服务 | Web 开发测试与 Electron 正式入口接同一 Hono 应用，使用产品 UI 的 fetch/SSE 客户端。保留目录驱动的 OAuth、设备码、CLI 导入、订阅 Key 接入、等待/取消/恢复及账号操作。用量页和产品设置沿用 1.1 的应用内入口 |
-| GraphAgent 补齐宿主 | 在本产品 UI 中接入共用页面。将当前导入设置和供应商管理操作接到 GraphAgent Hono 应用，再切换旧 renderer。正式 Web 使用独立 Node 服务和持久业务仓储，账号凭据只经已启用 broker 访问；Electron 使用同组 API、页面与服务，并可由 `safeStorage` 保护本端私有凭据。文件导入和回调由宿主提供 |
-| 凭据管理与操作能力 | 在同一页面挂接已有安装检查、导出/导入、预览、进度、错误与重试。阶段一保留 A6—A8 的操作范围，私有、共享、冻结状态按宿主能力显示操作。PolyQuota 与 GraphAgent Electron 私有模式可写；GraphAgent Web 不提供私有后端，现有共享操作沿用当前授权与接管状态，新增/替换/删除依赖凭据专项 B2/B3 的记录权限 |
-
-GraphAgent 当前在 `runtime.ts` 使用内存仓储，业务持久化、文件读取和回调仍待接线。为两种正式宿主补齐业务仓储及 broker 端口，Electron 另接私有凭据写入，绑定同一套供应商服务。Web 未接入 broker 时仍可启动 UI、保留本产品设置与模型配置，但依赖凭据的新增账号、发现和执行按能力禁用。待新页面通过 Hono 完成原有导入设置操作，再清理 GraphAgent 过渡期的业务 preload 接线。[GraphAgent 凭据运行时](../../../../apps/graph-agent/src/runtime.ts)
-
-**阶段一验收**：PolyQuota 与 GraphAgent Electron 在各自私有 profile 中，从同一供应商管理页接入账号，验证脱敏、启停、重启持久化和删除隔离，回归七家供应商的认证、取消与会话恢复。GraphAgent Web 使用同组业务 API，验证已有 broker 导入、读取与刷新，以及未接入、断连和记录权限不足时的操作禁用；完整共享 CRUD 留待 B2/B3 接线后验收。PolyQuota 分别验证桌面与 Web 开发入口。完整页面用例见[共用 UI 详细设计 · 构建、资源和验证](../../ui/design.md#6-构建资源和验证)。
-
-Service 与装配另验：两产品导出明确产品门面，fake Service 可直接注入页面；公共与专属客户端共享传输，混合订阅只建立一条 SSE，页面释放不关闭其他订阅。两产品公共 Hono 子应用通过相同测试，专属方法只存在于所属产品；Core 主入口不加载 Hono，`core/http` 才加载公共 HTTP 适配。
-
-客户端切片另验泛型组合后的类型完整性、成员冲突拒绝、方法绑定与单次传输释放；最终类只含组合和实例化，功能代码分别落在独立切片文件。
+最终验证包括整仓 498 项测试、构建和双应用打包，以及真实 broker 的 26 项共享闭环和 10 项重新导出专项。宿主范围与验收边界见[阶段一交付结果](./stage-one-implementation.md)，状态与恢复规则见[凭据共享恢复交付结果](../credential-sharing/cancelled-export-recovery.md)。
 
 ## 阶段二 · 改造 Core，完成模型信息与请求配置
 
@@ -67,3 +50,4 @@ Service 与装配另验：两产品导出明确产品门面，fake Service 可�
 **阶段三验收**：覆盖 PolyQuota Electron、GraphAgent Web/Electron 和 PolyQuota Web 开发入口。GraphAgent Electron 验证私有与共享模式；Web 在凭据专项 B2/B3 权限到位后，经 broker 验证完整账号新增、替换、删除及重启恢复。普通 Key 在 GraphAgent 可查看各协议目录、参数来源与出站预览，在 PolyQuota 可管理且用量请求数为零；GraphAgent Web 未接入或断连时不得发供应商请求，凭据页显示实际后端、可执行操作与恢复结果。双向共享与升级按[凭据共享实施方案 · 双端验收矩阵](../credential-sharing/implementation-plan.md#双端验收矩阵)执行。
 
 阶段三联调时，从两端共用页面按宿主支持范围验证双向导出、私有与共享存储往返，以及元数据升级后的重新导出。GraphAgent Web 只验证 broker 接入与获准的共享操作，不提供切回私有凭据库的入口；私有/共享往返由支持私有存储的 Electron 宿主验收。实施步骤和通过条件见[凭据共享实施方案 · 双向导出与存储切换](../credential-sharing/implementation-plan.md#双向导出与存储切换)。
+

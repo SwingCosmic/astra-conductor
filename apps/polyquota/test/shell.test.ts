@@ -8,7 +8,7 @@ const hostSource = readFileSync(
   "utf8",
 );
 const runtimeSource = readFileSync(
-  new URL("../src/runtime/start-runtime.ts", import.meta.url),
+  new URL("../src/server/runtime/start-runtime.ts", import.meta.url),
   "utf8",
 );
 
@@ -17,11 +17,14 @@ const securitySource = readFileSync(
   "utf8",
 );
 const mainSource = readFileSync(
-  path.join(path.dirname(fileURLToPath(import.meta.url)), "../src/main.ts"),
+  path.join(path.dirname(fileURLToPath(import.meta.url)), "../src/platform/electron/main.ts"),
   "utf8",
 );
 const proxyDetectionSource = readFileSync(
-  path.join(path.dirname(fileURLToPath(import.meta.url)), "../src/proxy-detection.ts"),
+  path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../src/platform/common/proxy-detection.ts",
+  ),
   "utf8",
 );
 const developmentRunnerSource = readFileSync(

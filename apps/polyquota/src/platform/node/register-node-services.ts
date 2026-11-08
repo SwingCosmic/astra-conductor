@@ -9,9 +9,9 @@ import {
   type CredentialCipherPort,
   type ServiceRegistry,
 } from "@astra-conductor/core/internal";
-import { SqliteStorage } from "../../sqlite-storage.js";
-import { startOAuthCallbackServer } from "../../auth/callback-server.js";
-import { Services } from "../../runtime/register-common-services.js";
+import { SqliteStorage } from "../common/sqlite-storage.js";
+import { startOAuthCallbackServer } from "../common/auth/callback-server.js";
+import { Services } from "../../server/runtime/register-common-services.js";
 import { acquireDataOwner } from "./data-owner.js";
 import { NodeHttpService } from "./http-service.js";
 

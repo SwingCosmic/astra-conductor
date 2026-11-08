@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { eventStream } from "../src/http/event-stream.js";
-import { ApplicationEvents } from "../src/runtime/application-events.js";
-import type { PolyQuotaRuntime } from "../src/runtime/start-runtime.js";
-import { POLYQUOTA_SCHEMA_VERSION } from "@astra-conductor/polyquota-contract";
+import { eventStream } from "../src/server/http/event-stream.js";
+import { ApplicationEvents } from "../src/server/runtime/application-events.js";
+import type { PolyQuotaRuntime } from "../src/server/runtime/start-runtime.js";
+import { POLYQUOTA_SCHEMA_VERSION } from "@astra-conductor/contract/polyquota";
 
 function fixture() {
   const events = new ApplicationEvents();

@@ -2,17 +2,17 @@ import type {
   PolyQuotaSnapshot,
   HostCapabilities,
   PublicError,
-} from "@astra-conductor/polyquota-contract";
+} from "@astra-conductor/contract/polyquota";
 import { request as httpRequest } from "node:http";
 import { mkdtemp, rm, readFile, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { startServer } from "../src/platform/node/start-server.js";
-import { rewriteRequest } from "../src/http/inbound-adapter.js";
+import { rewriteRequest } from "../src/server/http/inbound-adapter.js";
 import { ElectronProtocolAdapter } from "../src/platform/electron/protocol-adapter.js";
 import { ElectronDynamicResourceService } from "../src/platform/electron/dynamic-resources.js";
-import { errorStatus, publicError } from "../src/http/public-error.js";
+import { errorStatus, publicError } from "../src/server/http/public-error.js";
 
 const stops: (() => Promise<void>)[] = [];
 const directories: string[] = [];
@@ -39,34 +39,41 @@ describe("service mode backend", () => {
       .map((route) => `${route.method} ${route.path}`);
     expect(routes.sort()).toEqual(
       [
-        "GET /v1/status",
-        "GET /v1/host/capabilities",
-        "POST /v1/host/window/show",
-        "GET /v1/polyquota/snapshot",
-        "GET /v1/polyquota/events",
-        "POST /v1/polyquota/accounts/:accountId/set-enabled",
-        "POST /v1/polyquota/accounts/:accountId/delete",
-        "POST /v1/polyquota/accounts/:accountId/refresh",
-        "POST /v1/polyquota/accounts/refresh-all",
-        "POST /v1/polyquota/credentials/refresh",
-        "POST /v1/polyquota/reset-credits/redeem",
-        "POST /v1/polyquota/auth/sessions/start",
-        "GET /v1/polyquota/auth/sessions/:sessionId",
-        "POST /v1/polyquota/auth/sessions/:sessionId/finish",
-        "POST /v1/polyquota/auth/sessions/:sessionId/cancel",
-        "POST /v1/polyquota/settings/save",
-        "GET /v1/polyquota/system-status",
-        "GET /v1/polyquota/credential-sharing/status",
-        "POST /v1/polyquota/credential-sharing/export",
-        "POST /v1/polyquota/credential-sharing/selectDirectory",
-        "POST /v1/polyquota/credential-sharing/install",
-        "POST /v1/polyquota/credential-sharing/uninstall",
-        "POST /v1/polyquota/credential-sharing/acknowledgeDelivery",
-        "POST /v1/polyquota/credential-sharing/cancel",
-        "POST /v1/polyquota/credential-sharing/enableShared",
-        "POST /v1/polyquota/credential-sharing/returnToPrivate",
-        "POST /v1/polyquota/credential-sharing/rejoinShared",
-        "POST /v1/notifications/:notificationId/acknowledge",
+        "GET /api/v1/status",
+        "GET /api/v1/host/capabilities",
+        "POST /api/v1/host/window/show",
+        "GET /api/v1/polyquota/snapshot",
+        "GET /api/v1/events",
+        "GET /api/v1/providers",
+        "POST /api/v1/accounts/:accountId/set-enabled",
+        "POST /api/v1/accounts/:accountId/delete",
+        "POST /api/v1/accounts/:accountId/refresh-credentials",
+        "POST /api/v1/polyquota/accounts/:accountId/refresh",
+        "POST /api/v1/polyquota/accounts/refresh-all",
+        "POST /api/v1/polyquota/reset-credits/redeem",
+        "POST /api/v1/auth/sessions/start",
+        "GET /api/v1/auth/sessions/:sessionId",
+        "POST /api/v1/auth/sessions/:sessionId/finish",
+        "POST /api/v1/auth/sessions/:sessionId/cancel",
+        "POST /api/v1/polyquota/settings/save",
+        "GET /api/v1/polyquota/system-status",
+        "GET /api/v1/credential-sharing/status",
+        "POST /api/v1/credential-sharing/export",
+        "POST /api/v1/credential-sharing/select-directory",
+        "POST /api/v1/credential-sharing/install",
+        "POST /api/v1/credential-sharing/uninstall",
+        "POST /api/v1/credential-sharing/acknowledge-delivery",
+        "POST /api/v1/credential-sharing/export/cancel",
+        "POST /api/v1/credential-sharing/export/resume",
+        "POST /api/v1/credential-sharing/export/restart",
+        "POST /api/v1/credential-sharing/enable-shared",
+        "POST /api/v1/credential-sharing/return-to-private",
+        "POST /api/v1/credential-sharing/rejoin-shared",
+        "POST /api/v1/credential-sharing/import/verify",
+        "POST /api/v1/credential-sharing/import/confirm",
+        "POST /api/v1/credential-sharing/import/cancel",
+        "POST /api/v1/credential-sharing/retry",
+        "POST /api/v1/notifications/:notificationId/acknowledge",
       ].sort(),
     );
     const refresh = vi.spyOn(instance.runtime.application, "refreshAccount").mockResolvedValue({
@@ -74,7 +81,7 @@ describe("service mode backend", () => {
       accountId: "account-1",
       error: { code: "network", message: "public failure", retryable: true },
     });
-    const response = await instance.app.request("/v1/polyquota/accounts/account-1/refresh", {
+    const response = await instance.app.request("/api/v1/polyquota/accounts/account-1/refresh", {
       method: "POST",
     });
     expect(response.status).toBe(200);
@@ -87,7 +94,7 @@ describe("service mode backend", () => {
       remainingResetCredits: null,
     });
     for (const redemption of [{ kind: "aggregate" }, { kind: "item", itemId: "item-1" }]) {
-      const response = await instance.app.request("/v1/polyquota/reset-credits/redeem", {
+      const response = await instance.app.request("/api/v1/polyquota/reset-credits/redeem", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ accountId: "account-1", redemption }),
@@ -103,23 +110,25 @@ describe("service mode backend", () => {
     const enable = vi.spyOn(sharing, "enableShared").mockResolvedValue();
     const returnToPrivate = vi.spyOn(sharing, "returnToPrivate").mockResolvedValue();
     const rejoin = vi.spyOn(sharing, "rejoinShared").mockResolvedValue();
+    const snapshot = await instance.runtime.providers.getSnapshot();
+    const context = { instanceId: snapshot.instanceId, contextId: snapshot.backend.contextId };
     const migrationKey = `acm1_${Buffer.alloc(32, 7).toString("base64url")}`;
     const invalidBodies = [
-      ["enableShared", { unexpected: true }],
-      ["returnToPrivate", {}],
-      ["returnToPrivate", { acceptIndependentRefreshRisk: false }],
-      ["returnToPrivate", { acceptIndependentRefreshRisk: "true" }],
-      ["returnToPrivate", { acceptIndependentRefreshRisk: true, unexpected: true }],
-      ["rejoinShared", {}],
-      ["rejoinShared", { migrationKey: false }],
-      ["rejoinShared", { migrationKey: "wrong-key" }],
-      ["rejoinShared", { migrationKey, masterKey: "must-not-be-accepted" }],
+      ["enable-shared", { unexpected: true }],
+      ["return-to-private", {}],
+      ["return-to-private", { acceptIndependentRefreshRisk: false }],
+      ["return-to-private", { acceptIndependentRefreshRisk: "true" }],
+      ["return-to-private", { acceptIndependentRefreshRisk: true, unexpected: true }],
+      ["rejoin-shared", {}],
+      ["rejoin-shared", { migrationKey: false }],
+      ["rejoin-shared", { migrationKey: "wrong-key" }],
+      ["rejoin-shared", { migrationKey, masterKey: "must-not-be-accepted" }],
     ] as const;
     for (const [action, body] of invalidBodies) {
-      const response = await fetch(`${instance.url}/v1/polyquota/credential-sharing/${action}`, {
+      const response = await fetch(`${instance.url}/v1/credential-sharing/${action}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ ...context, ...body }),
       });
       expect(response.status).toBe(400);
       expect(response.headers.get("cache-control")).toBe("no-store");
@@ -131,14 +140,14 @@ describe("service mode backend", () => {
     expect(returnToPrivate).not.toHaveBeenCalled();
     expect(rejoin).not.toHaveBeenCalled();
     for (const [action, body] of [
-      ["enableShared", {}],
-      ["returnToPrivate", { acceptIndependentRefreshRisk: true }],
-      ["rejoinShared", { migrationKey }],
+      ["enable-shared", {}],
+      ["return-to-private", { acceptIndependentRefreshRisk: true }],
+      ["rejoin-shared", { migrationKey }],
     ] as const) {
-      const response = await fetch(`${instance.url}/v1/polyquota/credential-sharing/${action}`, {
+      const response = await fetch(`${instance.url}/v1/credential-sharing/${action}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ ...context, ...body }),
       });
       expect(response.status).toBe(200);
       expect(await response.json()).toEqual({ ok: true, value: null });
@@ -160,7 +169,7 @@ describe("service mode backend", () => {
     await Promise.resolve();
     const stop = instance.stop();
     expect(instance.runtime.state).toBe("stopping");
-    expect((await instance.app.request("/v1/status")).status).toBe(503);
+    expect((await instance.app.request("/api/v1/status")).status).toBe(503);
     await expect(instance.runtime.track(() => undefined)).rejects.toThrow("停止");
     await expect(
       startServer({ port: 0, dataDirectory: instance.dataDirectory, env: {} }),
@@ -191,7 +200,7 @@ describe("service mode backend", () => {
       startServer({ port: 0, dataDirectory: instance.dataDirectory, env: {} }),
     ).rejects.toThrow("owned");
     const abort = new AbortController();
-    const response = await fetch(`${instance.url}/v1/polyquota/events`, { signal: abort.signal });
+    const response = await fetch(`${instance.url}/v1/events`, { signal: abort.signal });
     const reader = response.body!.getReader();
     expect(new TextDecoder().decode((await reader.read()).value)).toContain("event: ready");
     const settings = {
@@ -228,19 +237,19 @@ describe("service mode backend", () => {
   it("rejects untrusted origins, Host headers, extra ids, malformed JSON and business bodies before mutation", async () => {
     const instance = await server();
     const save = vi.spyOn(instance.runtime.application, "saveSettings");
-    const set = vi.spyOn(instance.runtime.application, "setAccountEnabled");
+    const set = vi.spyOn(instance.runtime.providers, "setAccountEnabled");
     for (const [route, body, type] of [
       [
-        "accounts/account-1/set-enabled",
+        "/v1/accounts/account-1/set-enabled",
         '{"accountId":"account-2","enabled":true}',
         "application/json",
       ],
-      ["accounts/account-1/delete", '{"unexpected":1}', "application/json"],
-      ["settings/save", "{", "application/json"],
-      ["settings/save", '{"pollingEnabled":false}', "text/plain"],
-      ["auth/sessions/session-1/cancel", '{"sessionId":"session-2"}', "application/json"],
+      ["/v1/accounts/account-1/delete", '{"unexpected":1}', "application/json"],
+      ["/v1/polyquota/settings/save", "{", "application/json"],
+      ["/v1/polyquota/settings/save", '{"pollingEnabled":false}', "text/plain"],
+      ["/v1/auth/sessions/session-1/cancel", '{"sessionId":"session-2"}', "application/json"],
     ]) {
-      const response = await fetch(`${instance.url}/v1/polyquota/${route}`, {
+      const response = await fetch(`${instance.url}${route}`, {
         method: "POST",
         headers: { "Content-Type": type },
         body,
@@ -280,7 +289,7 @@ describe("service mode backend", () => {
     expect((await fetch(`${instance.url}/v1/host/window/show`, { method: "POST" })).status).toBe(
       501,
     );
-    expect((await fetch(`${instance.url}/v1/polyquota/auth/sessions/unknown`)).status).toBe(404);
+    expect((await fetch(`${instance.url}/v1/auth/sessions/unknown`)).status).toBe(404);
     expect((await fetch(`${instance.url}/api/v1/status`)).status).toBe(404);
   });
 
@@ -305,10 +314,15 @@ describe("service mode backend", () => {
       env: { CODEX_HOME: cli },
     });
     stops.push(() => instance.stop());
-    const result = await fetch(`${instance.url}/v1/polyquota/auth/sessions/start`, {
+    const result = await fetch(`${instance.url}/v1/auth/sessions/start`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ offeringId: "codex", method: "cli-import" }),
+      body: JSON.stringify({
+        offeringId: "codex",
+        method: "cli-import",
+        instanceId: instance.runtime.providers.instanceId,
+        contextId: instance.runtime.providers.getBackend().contextId,
+      }),
     });
     expect(result.status).toBe(503);
     expect(((await result.json()) as { error: PublicError }).error.code).toBe("secure-storage");
@@ -351,7 +365,7 @@ describe("service mode backend", () => {
     );
     expect(response.headers.get("content-type")).toBe("image/png");
     expect((await response.arrayBuffer()).byteLength).toBe(3);
-    const status = await adapter.handle(new Request("polyquota-app://app/v1/status"));
+    const status = await adapter.handle(new Request("polyquota-app://app/api/v1/status"));
     expect(status.status).toBe(200);
     expect(await status.json()).toMatchObject({ ok: true });
     for (const url of [
@@ -373,7 +387,7 @@ describe("service mode backend", () => {
     expect(
       (
         await adapter.handle(
-          new Request("polyquota-app://app/v1/status", {
+          new Request("polyquota-app://app/api/v1/status", {
             headers: { Origin: "https://bad.test" },
           }),
         )
@@ -385,6 +399,8 @@ describe("service mode backend", () => {
     ["validation", 400],
     ["not-found", 404],
     ["conflict", 409],
+    ["stale-context", 409],
+    ["capability-unavailable", 409],
     ["desktop-unavailable", 501],
     ["secure-storage", 503],
     ["service-unavailable", 503],

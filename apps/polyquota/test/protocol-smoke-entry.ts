@@ -1,15 +1,16 @@
-import type { ServiceResult, PolyQuotaSnapshot } from "@astra-conductor/polyquota-contract";
+import type { ServiceResult, PolyQuotaSnapshot } from "@astra-conductor/contract/polyquota";
 import { app, BrowserWindow, protocol, session } from "electron";
 import path from "node:path";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { silentLogger } from "@astra-conductor/core/internal";
-import { startRuntime } from "../src/runtime/start-runtime.js";
+import { startRuntime } from "../src/server/runtime/start-runtime.js";
 import { registerElectronServices } from "../src/platform/electron/register-electron-services.js";
 import { ElectronDynamicResourceService } from "../src/platform/electron/dynamic-resources.js";
 import { ElectronProtocolAdapter } from "../src/platform/electron/protocol-adapter.js";
 import { installPageCsp, guardPage } from "../src/platform/electron/page-security.js";
-import { createHonoApp } from "../src/http/create-hono-app.js";
+import { createHonoApp } from "../src/server/http/create-hono-app.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dataDirectory = process.env.POLYQUOTA_PROTOCOL_DATA!;
@@ -52,10 +53,10 @@ void app
       () => outgoing.abort(),
     );
     const hono = createHonoApp(runtime);
-    hono.get("/v1/probe", (c) =>
+    hono.get("/api/v1/probe", (c) =>
       c.json({ query: c.req.query("q"), method: c.req.method }, 202, { "X-Probe": "preserved" }),
     );
-    hono.post("/v1/probe", async (c) =>
+    hono.post("/api/v1/probe", async (c) =>
       c.json({
         body: await c.req.json(),
         contentType: c.req.header("content-type"),
@@ -163,18 +164,39 @@ void app
           console.info("POLYQUOTA_WEB_NOTIFICATION_OK");
           console.info("POLYQUOTA_WEB_UI_SAVE_OK");
         }
+        if (mode === "file") {
+          await window.webContents.executeJavaScript(`(async () => {
+            [...document.querySelectorAll("nav button")].find(button => button.textContent.includes("服务商")).click();
+            const limit = Date.now() + 5000;
+            while (document.querySelectorAll(".provider-row").length !== 8) { if (Date.now() > limit) throw new Error("Shared provider page did not load"); await new Promise(r => setTimeout(r, 20)); }
+          })()`);
+          await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true });
+          await new Promise((resolve) => setTimeout(resolve, 150));
+          const artifactDirectory =
+            process.env.POLYQUOTA_SMOKE_ARTIFACTS ?? path.join(tmpdir(), "astra-stage1-ui");
+          await mkdir(artifactDirectory, { recursive: true });
+          const screenshot = path.join(artifactDirectory, "polyquota-providers.png");
+          await writeFile(
+            screenshot,
+            (
+              await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })
+            ).toPNG(),
+          );
+          console.info(`POLYQUOTA_UI_SCREENSHOT ${screenshot}`);
+        }
         const baseline = runtime.events.subscriberCount;
         const result = await window.webContents.executeJavaScript(`${clientBundle}\n(async () => {
       const base = "polyquota-app://app";
-      const query = await fetch(base + "/v1/probe?q=中文");
+      const query = await fetch(base + "/api/v1/probe?q=中文");
       if (query.status !== 202 || query.headers.get("x-probe") !== "preserved") throw new Error("response metadata lost");
       if ((await query.json()).query !== "中文") throw new Error("query lost");
-      const posted = await fetch(base + "/v1/probe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hello: "世界" }) });
+      const posted = await fetch(base + "/api/v1/probe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hello: "世界" }) });
       if ((await posted.json()).body.hello !== "世界") throw new Error("POST body lost");
-      const client = new ProtocolClient.HttpPolyQuotaService(base);
+      const client = new ProtocolClient.HttpPolyQuotaService(new ProtocolClient.FetchServiceTransport({ baseUrl: base }));
       let latest = null;
       const dispose = client.subscribe((event) => { latest = event; });
-      await client.waitForEvents();
+      const ready = await client.waitForEvents();
+      if (!ready.ok) throw new Error(ready.error.message);
       const initial = await client.getSnapshot();
       if (!initial.ok) throw new Error("snapshot failed");
       const saved = await client.saveSettings({ ...initial.value.settings, pollingEnabled: !initial.value.settings.pollingEnabled });
@@ -183,10 +205,11 @@ void app
       while (!latest || latest.revision <= initial.value.revision) { if (Date.now() > limit) throw new Error("SSE did not stream changes"); await new Promise(r => setTimeout(r, 20)); }
       const current = await client.getSnapshot();
       if (!current.ok || current.value.revision < latest.revision) throw new Error("stale snapshot");
-      const invalid = await fetch(base + "/v1/polyquota/accounts/x/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: '{"accountId":"x"}' });
+      const invalid = await fetch(base + "/api/v1/accounts/x/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: '{"accountId":"x"}' });
       if (invalid.status !== 400 || (await invalid.json()).error.code !== "validation") throw new Error("invalid body accepted");
       await client.saveSettings(initial.value.settings);
       dispose();
+      client.dispose();
       const icon = await fetch("polyquota-app://resources/product-icon");
       if (!icon.ok || icon.headers.get("content-type") !== "image/png" || (await icon.arrayBuffer()).byteLength === 0) throw new Error("dynamic resource failed");
       if ((await fetch("polyquota-app://app/index.html")).status !== 404) throw new Error("unexpected default UI fallback");
@@ -198,14 +221,14 @@ void app
         for (const method of ["cancel", "abort"] as const) {
           await window.webContents.executeJavaScript(`(async () => {
         const controller = new AbortController();
-        const response = await fetch("polyquota-app://app/v1/polyquota/events", { signal: controller.signal });
+        const response = await fetch("polyquota-app://app/api/v1/events", { signal: controller.signal });
         const reader = response.body.getReader(); await reader.read();
         ${method === "cancel" ? "await reader.cancel();" : "controller.abort();"}
       })()`);
           await waitForSubscriptions(baseline);
         }
         await window.webContents.executeJavaScript(
-          `(async () => { window.pendingStream = await fetch("polyquota-app://app/v1/polyquota/events"); window.pendingReader = window.pendingStream.body.getReader(); await window.pendingReader.read(); })()`,
+          `(async () => { window.pendingStream = await fetch("polyquota-app://app/api/v1/events"); window.pendingReader = window.pendingStream.body.getReader(); await window.pendingReader.read(); })()`,
         );
         window.destroy();
         window = undefined;

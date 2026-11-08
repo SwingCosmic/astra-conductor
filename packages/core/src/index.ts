@@ -30,3 +30,7 @@ export type {
   ProviderPlanSource,
 } from "./providers/types.js";
 export { providerCatalog } from "./providers/catalog.js";
+export {
+  CommonProviderApplicationService,
+  type CommonProviderApplicationOptions,
+} from "./provider-application-service.js";

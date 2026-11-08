@@ -15,7 +15,7 @@ const appBuilderRequire = createRequire(builderRequire.resolve("app-builder-lib"
 const asar = appBuilderRequire("@electron/asar");
 const entries = asar.listPackage(archive).map((entry) => entry.replaceAll("\\", "/"));
 for (const filename of [
-  "/dist/main.js",
+  "/dist/platform/electron/main.js",
   "/renderer/index.html",
   "/dist/platform/electron/protocol-adapter.js",
 ])

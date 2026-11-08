@@ -1,10 +1,10 @@
 # 跨产品公共 API 与基础契约
 
-2026-11-07 · 目标设计，待实施。本文维护 `contract/common` 的公共 HTTP 操作、管理 DTO、模型基础事实、错误、事件与扩展规则，供 Core 和两产品前后端共同使用。产品 Service、传输抽象和 Hono 装配见[Service 与传输组合](./service-composition.md)，包职责和迁移归属见[契约包设计](./design.md)，项目级边界见[项目架构](../../architecture.md)。GraphAgent 模型页投影和专属命令见 [GraphAgent 契约](../../graph-agent/design/frontend-contract.md)，PolyQuota 快照及专属操作见 [PolyQuota 契约](../../polyquota/frontend-contract.md)。
+2026-11-08 · 阶段一公共管理操作已实施；连接与模型操作在阶段二扩展。本文维护 `contract/common` 的公共 HTTP 操作、管理 DTO、模型基础事实、错误、事件与扩展规则，供 Core 和两产品前后端共同使用。产品 Service、传输抽象和 Hono 装配见[Service 与传输组合](./service-composition.md)，包职责和迁移归属见[契约包设计](./design.md)，项目级边界见[项目架构](../../architecture.md)。GraphAgent 模型页投影和专属命令见 [GraphAgent 契约](../../graph-agent/design/frontend-contract.md)，PolyQuota 快照及专属操作见 [PolyQuota 契约](../../polyquota/frontend-contract.md)。
 
 ## 1. 供应商与凭据管理 API
 
-下表在两产品的 Hono 应用中按同一含义注册，类型归 `contract/common`。迁移前的 PolyQuota 路径兼容由适配层负责；新 UI 使用以下统一路径。
+下表为两产品共用的统一路径，类型归 `contract/common`。除连接读取、创建与编辑（阶段二交付）外，其余操作已在两产品的 Hono 应用中注册；旧 PolyQuota 公共路径已移除。
 
 | 方法与路径                                                                                              | 输入 → 输出                                          | 语义                                                                                                               |
 | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
@@ -26,15 +26,17 @@
 | `POST /api/v1/credential-sharing/import/confirm`                                                        | `{ previewId }` → `null`                             | 只提交预览 ID，确认时重校验版本、身份与有效期                                                                      |
 | `POST /api/v1/credential-sharing/import/cancel`、`POST /api/v1/credential-sharing/retry`                | 空对象 → `null`                                      | 释放预览，或重试当前可恢复的连接步骤                                                                               |
 | `POST /api/v1/credential-sharing/export`                                                                | `{ vaultDirectory }` → 专用密钥交付结果              | 仅来源角色与当前阶段实现后可用，不进入普通快照                                                                     |
+| `POST /api/v1/credential-sharing/export/resume`                                                         | 空对象 → 专用密钥交付结果或 `null`                  | 恢复尚未接管且私有水位未变的已取消导出；密钥已确认交付时不再交付                                                   |
+| `POST /api/v1/credential-sharing/export/restart`                                                        | `{ vaultDirectory }` → 专用密钥交付结果              | 使用另一空目录创建新导出，归档旧状态并保留旧目录、版本和密钥材料                                                     |
 | `POST /api/v1/credential-sharing/export/cancel`                                                         | 空对象 → `null`                                      | `cancelExport`：取消尚可撤销的导出准备或交付，释放冻结与临时材料；已完成接管时返回状态错误，不通过取消倒退共享状态 |
 | `POST /api/v1/credential-sharing/acknowledge-delivery`、`POST /api/v1/credential-sharing/enable-shared` | 空对象 → `null`                                      | 确认密钥交付，或发起交接                                                                                           |
 | `POST /api/v1/credential-sharing/return-to-private`                                                     | `{ acceptIndependentRefreshRisk }` → `null`          | 仅具有私有后端的宿主允许，完整快照与清理规则按专项执行                                                             |
 | `POST /api/v1/credential-sharing/rejoin-shared`                                                         | `{ migrationKey }` → `null`                          | 读取共享当前版本，不覆盖共享数据                                                                                   |
 | `GET /api/v1/events`                                                                                    | SSE → `ready` / `changed`                            | 一个产品连接承载通用和产品专属视图的脱敏失效通知，见第 4 节                                                        |
 
-表中变更操作的 JSON 输入均另携带下文 `CommandContext` 的 `instanceId`、`contextId`；会话完成与取消还核对会话的创建实例和后端。读取和宿主无状态检查不需要该写入上下文。旧入口保留兼容适配，新前端不省略这两个字段。
+表中变更操作的 JSON 输入均另携带下文 `CommandContext` 的 `instanceId`、`contextId`；会话完成与取消还核对会话的创建实例和后端。读取和宿主无状态检查不需要该写入上下文。前端不省略这两个字段。
 
-`StartAuthRequest`、`AuthStartResult`、`PublicAuthSession`、`PublicAccount` 和凭据刷新结果从现有契约迁移，保持七家供应商的交互与脱敏含义。现有定义见[认证 DTO](../../../packages/polyquota-contract/src/dto/auth.ts)、[账号 DTO](../../../packages/polyquota-contract/src/dto/account.ts)及[操作 DTO](../../../packages/polyquota-contract/src/dto/operations.ts)。凭据管理状态和专用交付结果沿用[共享契约](../../../packages/polyquota-contract/src/dto/credential-sharing.ts)与 [A6—A8 接收流程](../core/credential-sharing/a6-a8-sharing-implementation.md)，统一来源/接收角色属于凭据专项 B2/B3，不能只增加路由就宣称双向管理已完成。
+`StartAuthRequest`、`AuthStartResult`、`PublicAuthSession`、`PublicAccount` 和凭据刷新结果从现有契约迁移，保持七家供应商的交互与脱敏含义。现有定义见[认证 DTO](../../../packages/contract/src/common/dto/auth.ts)、[账号 DTO](../../../packages/contract/src/common/dto/account.ts)及[操作 DTO](../../../packages/contract/src/common/dto/operations.ts)。凭据管理状态和专用交付结果沿用[共享契约](../../../packages/contract/src/common/dto/credential-sharing.ts)与 [A6—A8 接收流程](../core/credential-sharing/a6-a8-sharing-implementation.md)，统一来源/接收角色属于凭据专项 B2/B3，不能只增加路由就宣称双向管理已完成。
 
 新增的通用公开形状如下。代码块使用的 `PublicProviderDescriptor`、`PublicAccount`、`ServiceResult` 为迁入 `contract/common` 的既有类型。
 
@@ -367,7 +369,7 @@ interface PublicExtension {
 
 ## 6. 用量事实与重置额度
 
-已有公开用量类型的目标归属为 `contract/common`，当前定义见[用量 DTO](../../../packages/polyquota-contract/src/dto/usage.ts)。`PublicUsage` 保留 `groups + extras`、套餐解析结果和 `resetCredits`：配额组表达窗口、绝对值、剩余百分比与重置时间；附加项表达其他事实。原生 `displayName`、`windowSeconds` 和真实量标记保留，缺失不编造 0、无限或默认窗口。套餐 `planId/planLabel` 由服务端解析，未知档位保留 `planId: null`。
+已有公开用量类型的目标归属为 `contract/common`，当前定义见[用量 DTO](../../../packages/contract/src/common/dto/usage.ts)。`PublicUsage` 保留 `groups + extras`、套餐解析结果和 `resetCredits`：配额组表达窗口、绝对值、剩余百分比与重置时间；附加项表达其他事实。原生 `displayName`、`windowSeconds` 和真实量标记保留，缺失不编造 0、无限或默认窗口。套餐 `planId/planLabel` 由服务端解析，未知档位保留 `planId: null`。
 
 重置额度按供应商返回的事实区分聚合与逐项形态：
 

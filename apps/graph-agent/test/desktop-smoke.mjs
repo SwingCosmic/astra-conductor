@@ -1,172 +1,182 @@
-import { app, BrowserWindow, ipcMain } from "electron";
-import { writeFile } from "node:fs/promises";
+import { app, BrowserWindow, protocol, safeStorage } from "electron";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import assert from "node:assert/strict";
+import { createGraphServices } from "../dist/server/services.js";
+import { createGraphHonoApp } from "../dist/server/create-hono-app.js";
+import { graphUiResource } from "../dist/platform/resources.js";
+
 const root = path.resolve(process.argv[process.argv.indexOf("--root") + 1]);
-app.setPath("userData", path.join(root, "profile"));
+const profile = path.join(root, "profile");
+app.setPath("userData", profile);
+const scheme = "graph-agent-smoke";
+const origin = `${scheme}://app`;
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme,
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      stream: true,
+      corsEnabled: true,
+    },
+  },
+]);
 app.whenReady().then(async () => {
   let window;
+  let services;
+  let hono;
+  const secret = "FICTIONAL-GRAPH-STAGE-ONE-SECRET";
   try {
-    const account = {
-      id: "fictional-account",
-      provider: "codex",
-      maskedIdentifier: "te***@example.invalid",
-      canRefresh: true,
-      revision: "1",
-    };
-    const state = {
-      installState: "incompatible",
-      installedVersion: "9.9.9",
-      installedApiLevel: "1.9",
-      requiredApiLevel: "2",
-      installationDirectory: "C:\\Example\\AstraCredentialBroker\\v1\\components\\9.9.9",
-      localPackageDirectory: "C:\\Example\\AstraCredentialBroker\\downloads\\win-x64\\0.0.1",
-      localPackageState: "ready",
-      downloadState: "not-configured",
-      available: true,
-      state: "none",
-      vaultDirectory: null,
-      storageVersion: null,
-      serviceState: "NOT_CHECKED",
-      ownership: "source",
-      rememberedKey: false,
-      accounts: [],
-      lastError: null,
-    };
-    const calls = [];
-    let insufficientApi = true;
-    ipcMain.handle("graph-agent:sharing", (_event, method, input) => {
-      calls.push(method);
-      if (method === "status") return { ok: true, value: state };
-      if (method === "selectDirectory") return { ok: true, value: "C:\\Example\\shared-vault" };
-      if (method === "install") {
-        insufficientApi = false;
-        state.installState = "installed";
-        state.installedVersion = "0.0.1";
-        state.installedApiLevel = "2.125";
-        state.installationDirectory = "C:\\Example\\AstraCredentialBroker\\v1\\components\\0.0.1";
-        state.lastError = null;
-        return { ok: true };
-      }
-      if (method === "verifyImport") {
-        assert.equal(
-          insufficientApi,
-          false,
-          "verification must be blocked before installing a compatible component",
-        );
-        assert.equal(input.migrationKey, "FICTIONAL-MIGRATION-INPUT");
-        return {
-          ok: true,
-          value: {
-            previewId: "preview",
-            storageVersion: "example-version",
-            recordCount: 1,
-            accounts: [account],
+    assert(safeStorage.isEncryptionAvailable(), "OS credential protection must be available");
+    const createServices = () =>
+      createGraphServices({
+        directory: profile,
+        host: {
+          localPackageDirectory: path.join(root, "package"),
+          inspect: async () => ({
+            installState: "incompatible",
+            installedVersion: "9.9.9",
+            installedApiLevel: "1.9",
+            installationDirectory: null,
+          }),
+          inspectPackage: async () => "missing",
+          install: async () => undefined,
+          uninstall: async () => undefined,
+          connect: async () => {
+            throw new Error("not configured");
           },
-        };
-      }
-      if (method === "confirmImport") {
-        assert.equal(input, "preview");
-        Object.assign(state, {
-          state: "import-ready",
-          vaultDirectory: "C:\\Example\\shared-vault",
-          storageVersion: "example-version",
-          rememberedKey: true,
-          serviceState: "READY",
-          accounts: [account],
-        });
-        return { ok: true };
-      }
-      throw new Error("unexpected action");
+        },
+        cipher: {
+          isAvailable: async () => safeStorage.isEncryptionAvailable(),
+          encrypt: async (plaintext) => safeStorage.encryptString(plaintext),
+          decrypt: async (ciphertext) => ({
+            plaintext: safeStorage.decryptString(Buffer.from(ciphertext)),
+            shouldReEncrypt: false,
+          }),
+        },
+        http: {
+          fetch: async () =>
+            Response.json({
+              success: true,
+              code: 200,
+              data: { planName: "GLM Coding Pro Plan", limits: [] },
+            }),
+        },
+        files: { readText: async () => "{}" },
+        callbackServer: {
+          start: async () => {
+            throw new Error("not expected");
+          },
+        },
+        authorization: { present: async () => "awaiting-user" },
+      });
+    services = await createServices();
+    hono = createGraphHonoApp(services);
+    protocol.handle(scheme, (request) => {
+      const url = new URL(request.url);
+      return url.pathname.startsWith("/api/")
+        ? hono.fetch(request)
+        : graphUiResource(path.resolve("ui/dist"), url.pathname);
     });
     window = new BrowserWindow({
       show: false,
-      width: 1200,
+      width: 1360,
       height: 1000,
-      webPreferences: {
-        preload: path.resolve("dist/preload.cjs"),
-        contextIsolation: true,
-        sandbox: true,
-        nodeIntegration: false,
-      },
+      webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false },
     });
-    await window.loadFile(path.resolve("renderer/index.html"));
-    await window.webContents.executeJavaScript(`(async () => {
-      const wait = async predicate => { const deadline = Date.now() + 10000; while (!predicate()) { if (Date.now() > deadline) throw new Error('render-timeout'); await new Promise(resolve => setTimeout(resolve, 20)); } };
-      if(document.querySelector('#home').textContent.trim() !== '') throw new Error('home-not-blank');
-      if(typeof window.require !== 'undefined') throw new Error('node-visible');
-      document.querySelector('#settings-tab').click();
-      await wait(() => document.querySelector('#install-badge').textContent === '不兼容');
-      if(document.querySelector('#compatibility-hint').hidden || !document.querySelector('#compatibility-hint').textContent.includes('API 2 及以上')) throw new Error('preflight-api-guidance-missing');
-      if(document.body.textContent.includes('最低兼容版本')) throw new Error('component-version-used-as-capability');
-      for(const id of ['verify','confirm','retry','migration-key']) if(!document.getElementById(id).disabled) throw new Error('incompatible-action-enabled');
-      if(document.querySelector('#install').disabled) throw new Error('compatible-install-disabled');
-      document.querySelector('#verify').click();
-      if(!document.querySelector('#preview').hidden) throw new Error('old-component-preview-visible');
+    await window.loadURL(`${origin}/`);
+    const evaluate = (body) =>
+      window.webContents.executeJavaScript(`(async () => {
+      const wait = async predicate => { const deadline = Date.now() + 15000; while (!predicate()) { if (Date.now() > deadline) throw new Error('render-timeout: '+document.body.innerText); await new Promise(resolve => setTimeout(resolve, 25)); } };
+      const button = (root, label) => [...root.querySelectorAll('button')].find(item => item.textContent.trim().endsWith(label));
+      ${body}
     })()`);
-    assert(!calls.includes("verifyImport"));
+    await evaluate(`
+      if (typeof window.require !== 'undefined' || typeof window.graphAgent !== 'undefined') throw new Error('business-preload-visible');
+      button(document.querySelector('nav'),'供应商').click();
+      await wait(() => document.querySelectorAll('.provider-row').length >= 7);
+      const provider = [...document.querySelectorAll('.provider-row')].find(item => item.textContent.includes('智谱'));
+      if (!provider) throw new Error('glm-missing');
+      button(provider,'添加账号').click();
+      await wait(() => document.querySelector('[role=dialog]'));
+      button(document.querySelector('[role=dialog]'),'API Key').click();
+      await wait(() => document.querySelector('#provider-api-key'));
+      const input = document.querySelector('#provider-api-key'); input.value=${JSON.stringify(secret)}; input.dispatchEvent(new Event('input',{bubbles:true}));
+      await new Promise(resolve=>setTimeout(resolve,30));
+      button(document.querySelector('[role=dialog]'),'验证并添加').click();
+      await wait(() => !document.querySelector('[role=dialog]'));
+      await wait(() => provider.textContent.includes('已接入 · 1 个账号'));
+      provider.querySelector('[aria-label="展开账号"]').click();
+      await wait(() => button(provider,'停用'));
+      if (document.body.innerText.includes(${JSON.stringify(secret)})) throw new Error('secret-rendered');
+      button(provider,'停用').click();
+      await wait(() => provider.textContent.includes('已停用'));
+    `);
+    assert(!(await readFile(path.join(profile, "private-business.json"), "utf8")).includes(secret));
+    const snapshot = await services.providers.getSnapshot();
+    const accountId = snapshot.accounts[0].id;
+    assert.equal(snapshot.accounts[0].enabled, false);
     await window.webContents.executeJavaScript(
       "new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
     );
     await writeFile(
-      path.join(root, "graph-upgrade-required.png"),
+      path.join(root, "graph-providers-private.png"),
       (await window.webContents.capturePage()).toPNG(),
     );
-    await window.webContents.executeJavaScript(`(async () => {
-      const wait = async predicate => { const deadline = Date.now() + 10000; while (!predicate()) { if (Date.now() > deadline) throw new Error('render-timeout'); await new Promise(resolve => setTimeout(resolve, 20)); } };
-      document.querySelector('#install').click();
-      await wait(() => document.querySelector('#notice').textContent.includes('本地组件安装完成') && !document.querySelector('#verify').disabled);
-      if(!document.querySelector('#compatibility-hint').hidden || !document.querySelector('#component-info').textContent.includes('0.0.1') || !document.querySelector('#component-info').textContent.includes('2.125')) throw new Error('older-capable-component-rejected');
-      document.querySelector('#choose').click(); await wait(() => document.querySelector('#directory').value);
-      document.querySelector('#migration-key').value = 'FICTIONAL-MIGRATION-INPUT';
-      document.querySelector('#verify').click(); await wait(() => !document.querySelector('#preview').hidden);
-      if(document.querySelector('#migration-key').value !== '') throw new Error('migration-input-retained');
-    })()`);
+    await services.stop();
+    services = await createServices();
+    hono = createGraphHonoApp(services);
+    assert.equal((await services.providers.getSnapshot()).accounts[0].id, accountId);
+    assert.equal((await services.providers.getSnapshot()).accounts[0].enabled, false);
+    await window.reload();
+    await evaluate(`
+      button(document.querySelector('nav'),'凭据管理').click();
+      await wait(() => document.body.innerText.includes('不兼容'));
+      if (!document.body.innerText.includes('API 2')) throw new Error('api-requirement-missing');
+      const verify = button(document,'验证导入');
+      if (!verify || !verify.disabled) throw new Error('incompatible-import-enabled');
+      if (!document.body.innerText.includes('内置存储')) throw new Error('private-backend-not-shown');
+    `);
     await window.webContents.executeJavaScript(
       "new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
     );
     await writeFile(
-      path.join(root, "graph-import-preview.png"),
+      path.join(root, "graph-credentials-incompatible.png"),
       (await window.webContents.capturePage()).toPNG(),
     );
-    await window.webContents.executeJavaScript(`(async () => {
-      document.querySelector('#confirm').click(); const deadline = Date.now()+10000;
-      while(document.querySelector('#sharing-badge').textContent !== '导入就绪') { if(Date.now()>deadline) throw new Error('confirm-timeout'); await new Promise(resolve=>setTimeout(resolve,20)); }
-      if(document.body.textContent.includes('FICTIONAL-MIGRATION-INPUT')) throw new Error('migration-key-leaked');
-    })()`);
-    await window.webContents.executeJavaScript(
-      "new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
-    );
-    await writeFile(
-      path.join(root, "graph-import-ready.png"),
-      (await window.webContents.capturePage()).toPNG(),
-    );
-    assert(calls.includes("verifyImport") && calls.includes("confirmImport"));
+    await services.providers.deleteAccount(accountId);
+    await services.stop();
+    services = await createServices();
+    assert.equal((await services.providers.getSnapshot()).accounts.length, 0);
+    await services.stop();
+    window.destroy();
     await writeFile(
       path.join(root, "result.json"),
       JSON.stringify(
         {
           passed: true,
           sandbox: true,
-          contextIsolation: true,
-          blankHome: true,
-          preview: true,
-          migrationInputCleared: true,
-          importReady: true,
-          apiCapabilityGuidance: true,
-          componentVersionDoesNotGateCompatibility: true,
-          incompatibleComponentPreflight: true,
+          noBusinessPreload: true,
+          privateAuth: true,
+          safeStorage: true,
+          masked: true,
+          enablementPersistence: true,
+          restartIdentity: true,
+          deletionPersistence: true,
+          incompatibleBrokerDisabled: true,
         },
         null,
         2,
       ),
     );
-    console.log("GraphAgent sandboxed desktop smoke passed");
-    window.destroy();
+    console.log("GraphAgent private Hono and sandboxed Vue desktop smoke passed");
     app.exit(0);
   } catch (error) {
-    console.error(error instanceof Error ? error.message : "desktop-smoke-failed");
+    console.error(error instanceof Error ? error.stack : "desktop-smoke-failed");
     window?.destroy();
+    await services?.stop();
     app.exit(1);
   }
 });

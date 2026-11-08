@@ -70,7 +70,7 @@ describe("PolyQuota icon assets", () => {
   });
 
   it("wires the generated assets into Electron and electron-builder", () => {
-    const main = readFileSync(path.join(polyquotaRoot, "src", "main.ts"), "utf8");
+    const main = readFileSync(path.join(polyquotaRoot, "src/platform/electron/main.ts"), "utf8");
     const builder = readFileSync(path.join(polyquotaRoot, "electron-builder.yml"), "utf8");
     const packager = readFileSync(path.join(polyquotaRoot, "scripts", "package.mjs"), "utf8");
     expect(main).toContain(
@@ -88,7 +88,10 @@ describe("PolyQuota icon assets", () => {
     expect(main).toContain("tray-unknown-24.png");
     expect(main).not.toContain("tray-16.png");
     expect(main).not.toContain("tray-32.png");
-    const chrome = readFileSync(path.join(polyquotaRoot, "src", "quota-chrome.ts"), "utf8");
+    const chrome = readFileSync(
+      path.join(polyquotaRoot, "src/platform/electron/quota-chrome.ts"),
+      "utf8",
+    );
     expect(chrome).toContain("tray-green-24.png");
     expect(chrome).toContain("tray-orange-24.png");
     expect(chrome).toContain("tray-red-24.png");
