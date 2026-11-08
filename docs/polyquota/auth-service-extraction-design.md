@@ -10,7 +10,7 @@
 - core 不执行任何 `listen`、不持有 HTTP server 句柄；监听启动是桌面实现的端口，其契约由 core 定义。
 - IPC 契约零变化：`StartAuthRequest`、`AuthStartResult`、`startAuth / finishAuth / cancelAuth` 通道与 schemaVersion 均不动。
 - 回调处理按"纯搬运"处理，行为逐字保留（§6 有保留清单）。
-- 本设计是[跨服务商服务协议设计](../common/core/provider/design.md)阶段 C 第 1、2 条的落地预演，与完整形态的差异见 §11。
+- 本设计是[供应商平台迁移沿革](../common/core/provider/migration-history.md#阶段-c认证分派收敛)中阶段 C 的落地预演，与完整形态的差异见 §11；现行端口边界见 [Core 详细设计](../common/core/provider/core-design.md)。
 
 ## 1. 现状问题
 
@@ -51,7 +51,7 @@
 | 网络传输 | `main.ts` 注入 `net.fetch` | Electron | 留桌面，端口注入（已存在） |
 | 凭据加密存储 | `safe-storage-cipher.ts` | Electron safeStorage | 留桌面，端口注入（已存在） |
 
-佐证：`auth-service.ts` 与 `zcode-credentials.ts` 的 import 清单里没有一行 electron；core 源码已有 `node:crypto` 先例（四家 adapter、`reset-card-redemption.ts`）；`core/test/boundary.test.ts` 逐文件禁止 `packages/core/src` 出现 `electron` 引用，端口纪律不是约定而是既有门禁。跨服务商设计 §8.1 的目标形态 `createCodexProvider({ http, browser, callbackServer, ... })` 正是"逻辑在 core、机制做端口"，本设计与其对齐：`callbackServer` 是宿主注入的启动端口，处理逻辑在贡献内部。
+佐证：`auth-service.ts` 与 `zcode-credentials.ts` 的 import 清单里没有一行 electron；core 源码已有 `node:crypto` 先例（四家 adapter、`reset-card-redemption.ts`）；`core/test/boundary.test.ts` 逐文件禁止 `packages/core/src` 出现 `electron` 引用，端口纪律不是约定而是既有门禁。[Core 组合与绑定](../common/core/provider/core-design.md#41-唯一组合根与供应商组合工厂)延续“逻辑在 core、机制做端口”：`callbackServer` 是宿主注入的启动端口，处理逻辑在贡献内部。本文后续工厂示例保留设计时形状，当前实现经 `ServiceResolver` 注入端口。
 
 链路的完整走向（以浏览器授权为例）：core flow 携带启动参数创建回调处理器 → 经端口要求桌面启动监听并回报实际端口 → core 拼 `redirectUri`、向 adapter 要授权 URL、经端口让桌面打开浏览器 → 回调抵达时由 core 处理器决策与校验 → core 用 code 换令牌、经 provisioner 保存凭据 → 最终结果（`Account` / pending 会话信息）经 coordinator 提供给桌面应用服务。桌面全程只执行"启动、打开、传输、存储"四个动作。
 
@@ -118,7 +118,7 @@ export interface AuthStartOptions {
 }
 ```
 
-`finish` 与 `cancel` 是闭包，由创建它的 flow 持有全部私有状态（授权对象、AbortController、回调 completion Promise）。这与跨服务商设计 §6.8 的 `ProviderAuthStart` 同构：会话固定绑定创建它的实现，coordinator 无法也不需要按 provider 找回实现。由此：
+`finish` 与 `cancel` 是闭包，由创建它的 flow 持有全部私有状态（授权对象、AbortController、回调 completion Promise）。这与 [Core 内部认证开始结果](../common/core/provider/core-design.md#24-内部认证开始结果)的 `AuthFlowStart` 同构：会话固定绑定创建它的实现，coordinator 无法也不需要按 provider 找回实现。由此：
 
 - `BrowserAuthorizationLike` 联合类型与全部 `as` 强转消失——每家 flow 内部使用自己的具体授权类型；
 - coordinator 的会话表不再存 `provider` / `method` 字段，只存句柄；
@@ -128,7 +128,7 @@ export interface AuthStartOptions {
 
 ### 5.2 flow 工厂
 
-每家导出工厂而非类，宿主端口经工厂注入（对齐跨服务商设计 §8.1 的 `createCodexProvider({ http, browser, callbackServer, ... })` 形态）：
+每家导出工厂而非类，宿主端口经工厂注入（边界见 [Core 组合与绑定](../common/core/provider/core-design.md#41-唯一组合根与供应商组合工厂)，下例保留当时的工厂形状）：
 
 ```ts
 // providers/codex/auth-flow.ts
@@ -369,7 +369,7 @@ core 侧测试全部无 Electron、无 socket、不读用户目录：flow 依赖
 
 ## 11. 与跨服务商设计阶段 B/C 的关系
 
-本设计实现阶段 C 第 1 条（"认证分支移入各自 account facet"）与第 2 条（"AuthCoordinator 只管理 session、保存、取消和公开结果"），且端口形态与 §8.1 一致：`callbackServer` / `browser` / `http` 都是宿主注入端口，处理逻辑在 core。与阶段 B/C 完整版仍有的差异：
+本设计实现原阶段 C 的认证分派收敛，端口归属与 [Core 组合与绑定](../common/core/provider/core-design.md#41-唯一组合根与供应商组合工厂)一致：`callbackServer` / `browser` / `http` 都是宿主注入端口，处理逻辑在 core。与阶段 B/C 完整版仍有的差异：
 
 | | 本设计 | 阶段 B/C 完整版 |
 | --- | --- | --- |

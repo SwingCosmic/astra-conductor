@@ -1,6 +1,6 @@
 # PolyQuota 与 GraphAgent 共用 UI、组件和项目结构详细设计
 
-2026-11-07 · 目标设计，待实施。本文细化共用页面、交互和渲染端接线。包边界、产品启动形式与业务请求路径遵循[项目架构](../../architecture.md)。GraphAgent 注册模型配置页，PolyQuota 注册用量页。[三阶段实施方案](../core/provider/implementation-plan.md) · [Core 详细设计](../core/provider/core-design.md)
+2026-11-07 · 目标设计，待实施。本文细化共用页面、交互和渲染端接线。包边界、产品启动形式与业务请求路径遵循[项目架构](../../architecture.md)。GraphAgent 注册模型配置页，PolyQuota 注册用量页。[三阶段实施方案](../core/provider/implementation-plan.md) · [Core 详细设计](../core/provider/core-design.md) · [GraphAgent 前端契约](../../graph-agent/design/frontend-contract.md) · [PolyQuota 前端契约](../../polyquota/frontend-contract.md) · [Service 与传输组合](../contract/service-composition.md)
 
 ## 1. 从现有入口拆什么
 
@@ -50,27 +50,24 @@ AppShell(brand, navigation, activeId)
 
 ## 4. 页面的接口与更新机制
 
-产品入口为 Vue 应用一次性注入 `ProviderAccessPort` 与 `CredentialManagementPort`。方法返回统一的 `ServiceResult<T>`，HTTP 适配器把断连、非法响应等转换为页面可处理的错误。下面的组件接口可以独立测试，传输 DTO、请求路径与方法取自统一 API 契约。
+产品入口创建并注入一个 `IPolyQuotaService` 或 `IGraphAgentService`，由公共接口和产品专属接口组成。共用页面接收该门面的 `.providers` / `.credentials` 分组，产品页面消费专属方法。公共客户端与产品客户端共享一个 `IServiceTransport`，页面不分别创建 fetch/SSE。具体接口、工厂和 Hono 组合见 [Service 与共享传输设计](../contract/service-composition.md)。
 
 ```ts
-interface ProviderAccessPort {
-  getSnapshot(): Promise<ServiceResult<ProviderManagementSnapshot>>;
-  subscribe(onInvalidated: (event: ProviderViewChanged) => void): () => void;
-  startAuth(input: StartAuthRequest): Promise<ServiceResult<AuthStartResult>>;
-  getAuthSession(id: string): Promise<ServiceResult<PublicAuthSession>>;
-  finishAuth(id: string): Promise<ServiceResult<PublicAccount>>;
-  cancelAuth(id: string): Promise<ServiceResult<void>>;
-  setAccountEnabled(id: string, enabled: boolean): Promise<ServiceResult<void>>;
-  refreshCredentials(id: string): Promise<ServiceResult<CredentialRefreshOutcome>>;
-  deleteAccount(id: string): Promise<ServiceResult<void>>;
-}
+// 共用组件沿用这些名称时，它们只是公共 Service 接口的类型别名。
+type ProviderAccessPort = IProviderService;
+type CredentialManagementPort = ICredentialManagementService;
+
+provideProviderService(service.providers);
+provideCredentialService(service.credentials);
 ```
+
+接口方法返回统一的 `ServiceResult<T>`；共享 transport 将断连、非法响应等转换为公开错误。`ProviderViewChanged` 是通用 `ChangedEvent` 收窄到供应商视图的类型，不另设线上事件。控制器从读取基线构造具名命令，展示组件只发用户意图；不维护一套与公共 Service 不同的方法签名。[HTTP 操作与 DTO](../contract/common-api.md#1-供应商与凭据管理-api)
 
 **供应商快照。** 快照携带宿主实例、该实例的修订、offering、获准管理的账号及可用操作。采用 `hidden | disabled(reason) | enabled` 区分宿主缺少某项功能与当前条件暂时不允许。可用性由宿主综合当前后端、组件能力、账号类型与授权给出，视图不要根据“设备码账号”猜测是否可刷新 token。所有写操作在宿主重新授权和校验，防止页面读到过期状态后执行。
 
-**凭据管理端口。** 固定基础方法读取状态及脱敏清单、订阅失效、检查组件。按可用角色提供具名的来源端、接收端和后端切换方法，例如验证导入返回有时效的脱敏预览 ID，确认方法只提交该 ID。私有模式下两端都能管理本端账号。已共享时按 broker 授权暴露写操作。已选共享但断连时分别显示所选共享和实际不可用。导出冻结、版本不兼容、没有目录选择器或主密钥清理待完成时显示宿主给出的原因。兼容性以宿主核验的协议/API level 为准。
+**凭据管理端口。** 固定基础方法读取状态及脱敏清单、订阅失效、检查组件。按可用角色提供具名的来源端、接收端和后端切换方法，例如验证导入返回有时效的脱敏预览 ID，确认方法只提交该 ID。PolyQuota 与 GraphAgent Electron 在私有模式管理本端账号；GraphAgent Web 只支持 broker，不显示私有后端切换入口。共享时按 broker 授权暴露写操作，未接入、断连或权限不足分别返回可诊断原因。已选共享但断连时分别显示所选共享和实际不可用。导出冻结、版本不兼容、没有目录选择器或主密钥清理待完成时显示宿主给出的原因。兼容性以宿主核验的协议/API level 为准。
 
-**读取与失效。** 产品适配器复用一个 SSE 状态订阅，先订阅并完成握手，再取初始快照。两端统一使用宿主实例和修订标识。Hono 应用在操作提交、共享事件补取或绑定变化后发布脱敏失效事件。重连或换实例时完整重读，迟到响应只更新匹配实例与当前请求代次的快照。卸载时取消轮询和订阅。用量页和管理页可共用 SSE 连接，管理清单按凭据管理权限查询。
+**读取与失效。** 握手、实例、修订和重连规则统一遵循[公共 SSE 协定](../contract/common-api.md#4-sse-事件与同步规则)。页面控制器订阅自己的 Service 范围并重取视图，忽略旧表单和迟到响应；卸载时释放本页的订阅与读取，不关闭其他页面使用的共享连接。管理清单按凭据管理权限展示。
 
 **交互示例。** 在任一产品的供应商页添加 Key 时，弹窗按 `interaction` 生成输入。宿主保存账号与加密信封后返回脱敏账号，本端重取管理清单。私有模式下只有创建端出现新账号。两端已接管同一共享库且具备权限时，另一端收到变更事件并重取。PolyQuota 的产品回调只对具有订阅用量资格的账号执行首次刷新，失败时保留已接入账号并说明刷新失败。GraphAgent 只更新管理视图。
 
@@ -85,11 +82,11 @@ interface ProviderAccessPort {
 | 产品 | 页面接线与验收差异 |
 | --- | --- |
 | PolyQuota | 复用现有 Hono + fetch/SSE 客户端，保留来源检查、输入限制、`no-store` 和用量首刷。Electron 作为正式产品交付。纯 Web 用于开发联调和测试，缺少系统密钥保护或原生目录选择能力时显示实际可用状态。引入普通 Key 后，管理视图从完整获准清单读取。[现有服务创建入口](../../../packages/polyquota-ui/src/services/create-services.ts) · [现有服务模式](../core/service-mode/development.md) |
-| GraphAgent | 将当前 `graph-agent:sharing` 业务操作逐项接到 GraphAgent Hono 应用，供应商与模型配置也走产品 fetch/SSE 客户端。迁移后两种正式入口共用同一组 handler、校验器、查询服务和事件流。独立 Node 入口能提供构建好的 UI、API、SSE 和持久凭据服务。Electron 内嵌同一应用，窗口、系统选择器和系统密钥保护由桌面宿主提供。[现有主进程](../../../apps/graph-agent/src/main.ts) · [旧设置页 preload](../../../apps/graph-agent/src/preload.ts) |
+| GraphAgent | 将当前 `graph-agent:sharing` 业务操作逐项接到 GraphAgent Hono 应用，供应商与模型配置也走产品 fetch/SSE 客户端。迁移后两种正式入口共用同一组 handler、校验器、查询服务和事件流。独立 Node 入口提供构建好的 UI、API、SSE 与持久业务仓储，凭据仅经已启用的 broker 访问。Electron 内嵌同一应用，可使用私有加密存储或 broker，窗口、系统选择器和系统密钥保护由桌面宿主提供。[现有主进程](../../../apps/graph-agent/src/main.ts) · [旧设置页 preload](../../../apps/graph-agent/src/preload.ts) |
 
-GraphAgent 当前使用 `MemoryStorage`，私有 vault、文件读取和授权回调均有待接线。阶段一为产品后端接入持久账号仓储、系统加密和事务。GraphAgent 的 Node/Web 在浏览器中引导用户访问当前授权 URL，Electron 由桌面宿主打开经会话核对的 URL。同一个页面依据服务返回的交互状态显示下一步。Web 模式涉及本地路径的操作应明确路径属于运行服务的机器。目录选择、文件导入及权限校验由各宿主实现并通过 Hono 操作返回结果。[GraphAgent 凭据运行时](../../../apps/graph-agent/src/runtime.ts) · [私有凭据存储](../../../packages/core/src/credential-vault.ts)
+GraphAgent Web 页面呈现 broker 未接入、连接中、可用、断连和权限不足等状态，不显示私有后端入口；Electron 按能力提供私有与共享操作。共享新增、替换和删除在[凭据专项 B2/B3](../core/credential-sharing/implementation-plan.md)授权前显示受限原因。授权时 Web 引导用户访问当前会话的 URL，Electron 交给宿主打开。目录和导入位置明确属于运行服务的机器，页面依据宿主返回的状态显示下一步。
 
-GraphAgent 的 SQLite 与凭据加密均运行在后端。桌面可采用内置 `node:sqlite` 和 `safeStorage`，独立 Node 服务需提供实际可用的服务端凭据保护及解锁、恢复入口。界面显示已锁定、可写或不可用状态。用安全存储和事务一起保存账号与密文，并在无 Electron 的环境中验证重启后回读。PolyQuota 继续沿用本产品数据库及原生模块打包流程。[PolyQuota 当前打包配置](../../../apps/polyquota/electron-builder.yml) · [GraphAgent 当前打包配置](../../../apps/graph-agent/electron-builder.json)
+后端仓储、私有加密与 broker 接线由 [Core 详细设计](../core/provider/core-design.md#5-连接记录与并发写入)及[项目架构](../../architecture.md)维护，产品构建与原生模块归各产品的实施入口。UI 只消费公开状态与操作能力，不自行选择数据库、保存凭据副本或实现后台恢复。
 
 桌面 renderer 保留 `nodeIntegration: false`、`contextIsolation: true` 和 `sandbox: true`。按所选宿主入口把 CSP 的 `connect-src` 限定为本产品的 Hono 服务来源，以支持 fetch 和 SSE。凭据或供应商调用只从后端发起，返回给页面的请求预览已脱敏。
 
@@ -97,12 +94,12 @@ GraphAgent 的 SQLite 与凭据加密均运行在后端。桌面可采用内置 
 
 1. 先构建统一契约供 Node 与浏览器导入。把产品前端、资源、构建与复制入口迁入各自的 `apps/<product>/ui`，同步调整 workspace 的开发、类型检查、测试和打包脚本。用新路径验证现有页面、资源、图标及显式 demo 模式后移除旧 UI 包。[PolyQuota 当前 Vite 配置](../../../packages/polyquota-ui/vite.config.ts) · [工作区脚本](../../../package.json)
 2. 再抽取共用组件，以内部 SFC 源码交给两个产品的 Vite/Vue 插件编译。产品根入口各导入一次基础样式与主题。GraphAgent 的 Node 静态服务和 Electron 加载同一 UI 构建产物，完成宿主接线和原操作回归后退役旧的手写 DOM 与业务 preload。[GraphAgent 当前构建脚本](../../../apps/graph-agent/scripts/build.mjs)
-3. 对 GraphAgent 验证无 Electron 环境下的正式 Web 启动、静态资源、API/SSE 与受保护的持久化，以及 Electron 安装后的同组操作。对 PolyQuota 验证桌面安装与 Web 开发联调。
+3. 对 GraphAgent 验证无 Electron 环境下的正式 Web 启动、静态资源、API/SSE、业务数据持久化与 broker 绑定恢复，以及 Electron 的私有/共享操作。对 PolyQuota 验证桌面安装与 Web 开发联调。
 
 | 交付节点 | 通过条件 |
 | --- | --- |
-| 阶段一 · 结构迁移后抽取 UI | 先从新目录构建并回归原入口。抽取共用页面后，两端私有 profile 从同一个共用接入页实际新增、启停、重启回读和删除账号。回归 OAuth/设备码/CLI/Key、取消与会话恢复、清除敏感输入和受限操作。GraphAgent Web 与 Electron 经相同 API 完成用例。PolyQuota 桌面通过原用量与通知回归，Web 开发入口用可控宿主覆盖页面交互。保留两主题截图。[现有 UI 回归](../../../packages/polyquota-ui/test) · [GraphAgent 桌面烟测](../../../apps/graph-agent/test/desktop-smoke.mjs) |
-| 阶段二 · 固定契约 | 用 Core 的真实脱敏投影和契约样本验证路由 ID、目录修订、字段来源、操作能力与字段错误。旧 DTO 继续可读。模拟服务离线、实例变化、请求乱序与 SSE 重连，验证页面重读和订阅释放 |
-| 阶段三 · 接入新能力 | 从实际页面录入虚构普通 Key 和不同协议地址。GraphAgent Web/Electron 分别查看模型目录、参数覆盖和映射预览。PolyQuota 管理页可以读回，受控上游的用量请求数为零。通过共用凭据页检查共享角色变化及操作后的状态重取，存储切换和升级用例按凭据专项执行。[双向凭据实施与验收](../core/credential-sharing/implementation-plan.md#双向导出与存储切换) |
+| 阶段一 · 结构迁移后抽取 UI | 先从新目录构建并回归原入口。抽取共用页面后，PolyQuota 与 GraphAgent Electron 在独立私有 profile 中实际新增、启停、重启回读和删除账号，回归七家供应商认证、取消与会话恢复。GraphAgent Web 通过同组 API 回归既有 broker 导入、读取与刷新，以及未接入、断连、权限不足和敏感输入清除；尚未获准的 CRUD 显示禁用原因。PolyQuota Web 用可控宿主联调。保留两主题截图。[现有 UI 回归](../../../packages/polyquota-ui/test) · [GraphAgent 桌面烟测](../../../apps/graph-agent/test/desktop-smoke.mjs) |
+| 阶段二 · 固定契约 | 按 [GraphAgent 前端契约](../../graph-agent/design/frontend-contract.md)用 Core 的真实脱敏投影和契约样本验证 HTTP 方法与路径、路由 ID、目录修订、字段来源、操作能力、模型选择和预览的字段错误。旧 DTO 继续可读。模拟服务离线、实例变化、请求乱序与 SSE 重连，验证页面重读和订阅释放 |
+| 阶段三 · 接入新能力 | 从实际页面录入虚构普通 Key 和不同协议地址。GraphAgent Electron 验证私有与共享模式；Web 在凭据专项 B2/B3 权限到位后，经 broker 验证账号新增、替换、删除、重启恢复及模型目录、参数覆盖和映射预览，未接入或失联不发供应商请求。PolyQuota 管理页可以读回且用量请求数为零。存储切换按宿主支持范围验收，升级用例按凭据专项执行。[双向凭据实施与验收](../core/credential-sharing/implementation-plan.md#双向导出与存储切换) |
 
-2026-11-07 的隔离选型检查验证了 Windows Electron 42.11.6 中 SQLite 短事务的提交、回滚及重开，也验证了 Vite 预编译的外部 SFC 及样式可在沙箱窗口加载。GraphAgent 正式 Web 的服务端密钥保护和两个入口的 Hono/SSE 联调仍待实施验证。
+2026-11-07 的隔离选型检查验证了 Vite 预编译的外部 SFC 及样式可在沙箱窗口加载。GraphAgent 两个正式入口的页面与 Service 接线仍待实施验证；后端存储与连接验收见 Core 和契约专项。

@@ -8,6 +8,7 @@ GraphAgent 是以执行图为中心的智能体协作产品。产品级入口与
 
 - [概念设计](./concept-design.md)：产品构想与范围；首页 2.5D 办公室属于概念宣传，不进入排期。
 - [功能设计总览](./design/README.md)：领域对象、六层模块、运行主路径、工具专项与跨设备设计的阅读入口。
+- [前端服务契约](./design/frontend-contract.md)：`IGraphAgentService`、模型页 DTO、专属操作及产品事件；目标设计，待实施。
 - [启动与验收计划](./plan.md)：阶段 1–4 的目标、步骤、交付与退出条件。
 - [参考源码映射](./reference-code-map.md)：固定 commit、已核对的源码入口与采用边界。
 

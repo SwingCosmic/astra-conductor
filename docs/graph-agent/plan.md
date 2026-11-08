@@ -12,6 +12,8 @@ GraphAgent 已为凭据共享 A6—A8 建立 Electron 最小壳。设置页支�
 
 下列产品业务阶段 1–4 使用独立编号。实现时须覆盖可独立启动的 Web 产品和 Electron 桌面产品，启动形态与统一业务入口遵循[项目架构](../architecture.md)。两端共用页面与供应商服务由[供应商平台实施方案](../common/core/provider/implementation-plan.md)交付，双向存储管理与版本更新按[凭据共享实施方案](../common/core/credential-sharing/implementation-plan.md)推进。
 
+模型配置页的目标前端边界见[前端服务契约](./design/frontend-contract.md)，包含产品 Service、模型 DTO、覆盖/选择/预览命令及产品事件。公共管理 API 与传输遵循[契约专项](../common/contract/design.md)。独立 Web 的账号与凭据只通过 broker；Electron 可使用私有加密后端或 broker。完整聊天、任务与工作台 API 随下列业务阶段继续细化，不能直接把 Core 执行端口发布给页面。
+
 模型、账号、provider、协议 route、codec 和推理执行属于共享 Core，不在本计划中重复实施。GraphAgent 开始真实模型调用前，共享平台至少需要提供：
 
 - 稳定的 provider/account/model 目录和协议 route；

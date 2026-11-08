@@ -1,6 +1,6 @@
 # 共享资料
 
-本目录维护 PolyQuota 与 GraphAgent 共同使用的功能、协议和 UI 设计。项目级包边界与运行形态以[项目架构](../architecture.md)为准。第三方项目研究放在 `exploration/`，Core 功能按专项放在 `core/`，其中供应商平台位于 `core/provider/`。专项目录内的主设计统一命名为 `design.md`，主实施方案统一命名为 `implementation-plan.md`，阶段记录与专项补充保留说明性名称。
+本目录维护 PolyQuota 与 GraphAgent 共同使用的功能、协议和 UI 设计。项目级包边界与运行形态以[项目架构](../architecture.md)为准。第三方项目研究放在 `exploration/`；跨前后端契约、Service 与传输协定放在 `contract/`；Core 业务按专项放在 `core/`，其中供应商平台位于 `core/provider/`；前端重构和通用组件拆分放在 `ui/`。专项目录内的主设计统一命名为 `design.md`，主实施方案统一命名为 `implementation-plan.md`，阶段记录与专项补充保留说明性名称。
 
 ## 第三方项目探索
 
@@ -13,12 +13,22 @@
 
 `references/` 下的仓库用于参考与受控提取，不成为产品运行依赖。
 
+## 前后端契约与公共传输
+
+- [统一契约包设计](./contract/design.md)
+- [公共 API、基础 DTO、错误与事件](./contract/common-api.md)
+- [产品 Service、共享传输与 Hono 组合](./contract/service-composition.md)
+
+产品专属契约分别见 [GraphAgent](../graph-agent/design/frontend-contract.md)与 [PolyQuota](../polyquota/frontend-contract.md)。公共接口归 `contract/common`，产品自己的模型配置或用量快照归对应产品子入口。
+
 ## 供应商平台
 
-- [主设计：跨服务商协议与平台边界](./core/provider/design.md)
+- [主设计：供应商平台总体边界](./core/provider/design.md)
 - [供应商接入、模型目录与请求映射](./core/provider/connections-and-models.md)
 - [Core 功能详细设计](./core/provider/core-design.md)
+- [协议、模型与推理端口详细设计](./core/provider/protocol-design.md)
 - [三阶段实施方案](./core/provider/implementation-plan.md)
+- [参考取舍与 A–G 迁移沿革](./core/provider/migration-history.md)
 
 ## 凭据共享
 
@@ -44,7 +54,7 @@
 
 各实施记录中的包名对应当时的工作区，当前目录与迁移目标见[架构迁移对照](../architecture.md#5-从当前仓库迁移)。
 
-## 双产品界面与项目结构
+## 前端重构与通用 UI
 
 - [共用 UI 组件与项目结构详细设计](./ui/design.md)
 

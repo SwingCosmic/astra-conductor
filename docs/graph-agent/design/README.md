@@ -52,6 +52,8 @@ GraphAgent 是以执行图为中心的智能体协作产品。用户提交目标
 
 跨设备的设备注册、权限、放置与产物传输见[跨设备任务派发设计](./cross-device-dispatch-design.md)；它细化第 3 层调度与第 6 层连接，不新增任务或员工种类。
 
+模型配置页面的产品边界见[前端服务契约](./frontend-contract.md)：定义 `IGraphAgentService`、模型页投影、命令和产品事件，公共管理与传输复用[契约专项](../../common/contract/design.md)。它对应供应商平台三阶段工作，完整消息聊天与任务工作台的 API 仍按第 2、3、6 层业务另行细化。
+
 各层拥有自己的业务事实，通过命令和已提交事件协作。Scheduler 不直接改记忆，做梦模型不直接改进行中的 Task，UI 不直接写运行存储，Interceptor 不直接替调度器创建 Assignment。
 
 ## 4. 运行主路径
@@ -107,7 +109,7 @@ flowchart TD
 
 GraphAgent 的 Hono 应用将产品业务路由接到本产品服务，模型选择策略、ModelLease、预算、回退、亲和与工具循环均在该侧执行。服务商认证、模型目录、协议编码、推理执行与用量基础事实由共享 Core 提供。[项目架构](../../architecture.md) · [共享 Provider Platform](../../common/core/provider/design.md)
 
-凭据遵循[共享与迁移设计](../../common/core/credential-sharing/design.md)。GraphAgent 独立存储本产品的任务、设置和私有凭据。共享模式下通过 broker 访问获准凭据。已实现能力与后续验证范围见[凭据共享实施方案](../../common/core/credential-sharing/implementation-plan.md)。
+凭据遵循[共享与迁移设计](../../common/core/credential-sharing/design.md)。独立 Web 的账号和凭据仅使用 broker，未接入时禁用依赖凭据的操作；Electron 可使用私有加密后端或 broker。两种入口都由产品业务库保存任务、模型缓存、参数覆盖与设置，不把这些业务数据放进 broker。已实现能力与后续验证范围见[凭据共享实施方案](../../common/core/credential-sharing/implementation-plan.md)。
 
 ## 7. 技术决策边界
 

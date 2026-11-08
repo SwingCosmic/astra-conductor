@@ -15,7 +15,7 @@
 
 例如，一条 OpenAI Chat 路由填 `https://relay.example/oai/v1`，另一条 Anthropic Messages 路由填 `https://relay.example/claude/v1`，分别向各自前缀下的 `models` 发请求。OpenAI Responses 可显式复用 OpenAI 地址，但与 Chat Completions 各自声明可用操作。未配置的路由不参与发现或选择。
 
-`baseUrl` 是含可选路径前缀的 API 根地址。宿主接受自建域名、局域网、localhost 与非默认端口，保留路径前缀并统一尾部斜线；协议操作以相对路径拼接。URL 不接受用户信息、查询串、片段或密钥，请求与重定向都不能把凭据带到未绑定地址。完整校验与路径拼接规则见 [Core 详细设计 · 连接、记录与并发写入](./core-design.md#2-连接记录与并发写入)。
+`baseUrl` 是含可选路径前缀的 API 根地址。宿主接受自建域名、局域网、localhost 与非默认端口，保留路径前缀并统一尾部斜线；协议操作以相对路径拼接。URL 不接受用户信息、查询串、片段或密钥，请求与重定向都不能把凭据带到未绑定地址。完整校验与路径拼接规则见 [Core 详细设计 · 连接、记录与并发写入](./core-design.md#5-连接记录与并发写入)。
 
 ### PolyQuota 如何判断是否监控
 
@@ -27,7 +27,7 @@ Core 按接入点声明和账号适用性计算“可查询订阅用量”，供
 | GLM Coding Plan 等有订阅用量的 Key | 按原账号管理 | 继续发现、刷新并展示现有用量 |
 | 共享记录用途变更 | 按权限重读描述并更新操作 | 精确筛选 `metadata.supportsUsage === "true"`，再核对本地实现、offering、认证和账号用途。失去资格时移出用量视图并取消调度 |
 
-现有共享读取已有第一道筛选。实施时合并 `sharedCredentialMetadata` 与 PolyQuota 导出侧重复的 provider 级判定，并补齐私有模式和直接调用入口。判定函数、刷新接线与快照范围见 [Core 详细设计 · 如何判定订阅用量](./core-design.md#3-如何判定订阅用量)；切回与导出的范围见[凭据共享实施方案](../credential-sharing/implementation-plan.md#双向导出与存储切换)。
+现有共享读取已有第一道筛选。实施时合并 `sharedCredentialMetadata` 与 PolyQuota 导出侧重复的 provider 级判定，并补齐私有模式和直接调用入口。判定函数、刷新接线与快照范围见 [Core 详细设计 · 如何判定订阅用量](./core-design.md#6-如何判定订阅用量)；切回与导出的范围见[凭据共享实施方案](../credential-sharing/implementation-plan.md#双向导出与存储切换)。
 
 ### 配置如何随凭据迁移
 
@@ -49,7 +49,7 @@ Core 按接入点声明和账号适用性计算“可查询订阅用量”，供
 
 ## 3. 中转站请求映射
 
-在 Core 的请求准备阶段执行声明式规则，保存时按账号、路由、操作和模型集合校验。名称解析、别名、模型名模板、Body 合并与安全限制的实现规则见 [Core 详细设计 · 从模型选择到协议请求](./core-design.md#5-从模型选择到协议请求)。配置预览与实际发送共用同一解析器。
+在 Core 的请求准备阶段执行声明式规则，保存时按账号、路由、操作和模型集合校验。名称解析、别名、模型名模板、Body 合并与安全限制的实现规则见 [Core 详细设计 · 从模型选择到协议请求](./core-design.md#8-从模型选择到协议请求)。配置预览与实际发送共用同一解析器。
 
 下面是一个虚构的网关规则。用户为网关的 `atlas-pro` 和 `atlas-mini` 系列登记了可用变体，包括 `vendor/atlas-pro-high-128k`。上下文选项 `131072` 对应该网关的 `128k` 标签。
 
@@ -72,3 +72,5 @@ Core 按接入点声明和账号适用性计算“可查询订阅用量”，供
 从现有 PolyQuota Vue 3 界面抽取共用页面到 `shared-ui`，提供同一份壳、导航、面板、表单、弹窗、状态提示和响应式布局。两个产品注入名称、品牌图标和主题色，在各自 UI 入口注册专属页面；供应商图标按同一套 `iconKey` 解析。
 
 共用范围是供应商接入页和凭据管理页，GraphAgent 的模型配置页、PolyQuota 的用量页分别由所属产品实现。页面职责、组件接口与宿主差异见[共用 UI 详细设计](../../ui/design.md)；共用页面通过统一契约和 fetch/SSE 访问所属产品的 Hono 应用。既有 PolyQuota 服务模式和 GraphAgent A6—A8 导入宿主分别作为迁移起点。[PolyQuota 服务模式](../service-mode/development.md) · [GraphAgent 最小宿主实施记录](../credential-sharing/a6-a8-sharing-implementation.md#graphagent-最小宿主)
+
+模型页需要的 DTO、HTTP 方法和路径、字段覆盖、长期选择、脱敏预览及 SSE 详见 [GraphAgent 前端契约](../../../graph-agent/design/frontend-contract.md)。GraphAgent Web 的账号凭据仅经 broker，Electron 可使用私有加密后端或 broker；模型缓存与参数覆盖仍归本产品业务库。
