@@ -33,12 +33,12 @@ describe("independent release, protocol and API identities", () => {
   it("uses only the required API level to decide API compatibility, regardless of SemVer precedence", () => {
     for (const version of ["0.0.1", "0.1.0-alpha+build", "0.2.0", "99.0.0"]) {
       expect(() =>
-        assertComponentCompatibility({ ...manifest, version, apiRevision: fromNumber("2.125") }),
+        assertComponentCompatibility({ ...manifest, version, apiRevision: fromNumber("3.125") }),
       ).not.toThrow();
       expect(() =>
         assertBrokerRuntimeCompatibility({
           protocolVersion: 1,
-          apiRevision: fromNumber("2.125"),
+          apiRevision: fromNumber("3.125"),
           componentVersion: version,
         }),
       ).not.toThrow();

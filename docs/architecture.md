@@ -34,6 +34,8 @@ packages/
 
 每个产品的 `ui/` 依赖 `shared-ui`、通用契约和自己的产品契约，组合并注入本产品 Service。`src/server/` 使用对应契约、Core 和本产品服务，将公共 Hono 子应用与产品专属子应用统一挂载。`src/platform/` 负责具体宿主的组合，可以按需使用凭据 SDK 的平台入口。Core 业务保持框架无关，HTTP 适配经独立子入口按需加载。两个应用独立构建、独立交付、独占各自的业务数据目录，彼此没有源码依赖。GraphAgent 模型页和 PolyQuota 用量页分别由各自的 Web/Electron 前端共用。共用页面的布局与交互维护一份，主题图标和配色由产品提供。
 
+两款 Electron 产品共用 Core 的 `CredentialMigrationService`，按产品 profile 持久化迁移状态。私有数据和各共享绑定的业务投影分别保存，供应商通过同一服务引用切换后端。这样在任一端导入、准备回退或清理旧授权时，另一端可继续使用原后端。迁移入口与状态见[凭据共享实施方案](./common/core/credential-sharing/implementation-plan.md#双向导出与存储切换)。
+
 独立 .NET Credential Broker 是通过本机 RPC 访问的进程，有自己的仓库、安装和升级周期。两端通过它共享获准的凭据，各自的用量、模型缓存和业务数据库留在产品内。`references/` 只提供研究和受控提取的输入。[凭据共享设计](./common/core/credential-sharing/design.md)
 
 契约包的子入口、公开类型归属和旧包迁移由[统一契约包设计](./common/contract/design.md)展开，通用 API、错误与 fetch/SSE 协定统一在 `docs/common/contract/` 维护；`docs/common/ui/` 只展开前端重构和通用组件设计。

@@ -1,14 +1,9 @@
+import { createCredentialReuseCheck } from "../credential-reuse-policy.js";
 import { CoreServices } from "../../services/contracts.js";
 import type { ServiceResolver } from "../../services/registry.js";
 import { createHash, randomUUID } from "node:crypto";
 import { AppError } from "../../errors.js";
-import type {
-  Account,
-  CredentialEnvelope,
-  PublicMetadata,
-  ProviderId,
-  UsageSnapshot,
-} from "../../models.js";
+import type { Account, CredentialEnvelope, PublicMetadata, UsageSnapshot } from "../../models.js";
 import type {
   ClockPort,
   CredentialRefreshResult,
@@ -94,7 +89,8 @@ interface GitHubUserInfo {
 }
 
 export class CopilotAdapter implements UsageProviderAdapter {
-  readonly provider: ProviderId = "github-copilot";
+  readonly canUseCurrentCredentials;
+  readonly provider = "github-copilot";
 
   private readonly fetchImpl: typeof fetch;
   private readonly clock: ClockPort;
@@ -102,6 +98,7 @@ export class CopilotAdapter implements UsageProviderAdapter {
   constructor(services: ServiceResolver) {
     this.fetchImpl = services.get(CoreServices.http).fetch;
     this.clock = services.get(CoreServices.clock);
+    this.canUseCurrentCredentials = createCredentialReuseCheck(this.provider, this.clock);
   }
 
   async requestDeviceAuthorization(): Promise<CopilotDeviceAuthorization> {
@@ -252,12 +249,7 @@ export class CopilotAdapter implements UsageProviderAdapter {
     return this.provision(accessToken, await this.fetchUserInfo(accessToken));
   }
 
-  /**
-   * GitHub 设备流的 OAuth 令牌长期有效且无刷新令牌；v2/token 会话令牌层退役
-   * 后没有可轮换的凭据。此方法只负责把历史信封（`expiresAt` 跟踪会话令牌
-   * 过期 + `copilotToken` 密钥）迁移为无过期形态，之后是幂等 no-op，不发
-   * 网络请求。令牌真的失效时由用量刷新的 401/403 报"请重新接入"。
-   */
+  /** Migrate legacy Copilot session tokens once. Current GitHub OAuth credentials do not rotate. */
   async refreshCredentials(
     account: Account,
     envelope: CredentialEnvelope,
@@ -266,7 +258,7 @@ export class CopilotAdapter implements UsageProviderAdapter {
     if (account.provider !== "github-copilot") {
       throw new AppError("validation", "只有 GitHub Copilot 账号走该刷新协议");
     }
-    if (envelope.expiresAt === null && envelope.secrets.copilotToken === undefined) {
+    if (this.canUseCurrentCredentials(account, envelope)) {
       return { envelope, changed: false };
     }
     const { copilotToken: _legacySessionToken, ...secrets } = envelope.secrets;

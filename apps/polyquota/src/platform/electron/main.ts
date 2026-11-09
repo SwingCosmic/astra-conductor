@@ -8,6 +8,7 @@ import { createHonoApp } from "../../server/http/create-hono-app.js";
 import {
   app,
   BrowserWindow,
+  dialog,
   Menu,
   Tray,
   nativeImage,
@@ -21,7 +22,7 @@ import { existsSync } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { type LoggerPort } from "@astra-conductor/core/internal";
+import { MigrationProfileUpgradeRequired, type LoggerPort } from "@astra-conductor/core/internal";
 import { PollingService } from "../../server/polling-service.js";
 import { PolyQuotaApplicationService } from "../../server/polyquota-application-service.js";
 import { envProxyAddress } from "../common/proxy-detection.js";
@@ -430,6 +431,8 @@ if (hasSingleInstanceLock) {
         "PolyQuota startup failed",
         error instanceof Error ? `${error.name}: ${error.message}` : "unknown error",
       );
+      if (error instanceof MigrationProfileUpgradeRequired)
+        dialog.showErrorBox("PolyQuota", error.message);
       await shutdownServices().catch(() => undefined);
       app.exit(1);
     });

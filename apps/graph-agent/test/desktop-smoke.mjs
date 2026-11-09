@@ -134,8 +134,8 @@ app.whenReady().then(async () => {
     await evaluate(`
       button(document.querySelector('nav'),'凭据管理').click();
       await wait(() => document.body.innerText.includes('不兼容'));
-      if (!document.body.innerText.includes('API 2')) throw new Error('api-requirement-missing');
-      const verify = button(document,'验证导入');
+      if (!document.body.innerText.includes('API 3')) throw new Error('api-requirement-missing');
+      const verify = button(document,'导入凭据');
       if (!verify || !verify.disabled) throw new Error('incompatible-import-enabled');
       if (!document.body.innerText.includes('内置存储')) throw new Error('private-backend-not-shown');
     `);

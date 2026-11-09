@@ -8,6 +8,7 @@ export interface InitialRecord {
   payload: string;
   metadata: Record<string, string>;
   coordinationKey?: string;
+  uniqueKey?: string;
 }
 export interface ExportVersion {
   vaultId: string;
@@ -30,6 +31,43 @@ export interface TransferSnapshot extends ExportVersion {
     payload: string;
   }[];
 }
+/** Verify a cached key against the authenticated vault/version/attempt/key identity. */
+export function verifyTransferKey(
+  version: Record<string, unknown>,
+  expected: ExportVersion,
+  masterKeyText: string,
+): void {
+  requireValue(
+    Object.entries(expected).every(([key, value]) => version[key] === value),
+    "version-mismatch",
+  );
+  const masterKey = unb64(masterKeyText, 32);
+  try {
+    const check = object(version.keyCheck, ["nonce", "ciphertext", "tag"]);
+    const keyCheck = createDecipheriv("aes-256-gcm", masterKey, unb64(check.nonce, 12));
+    keyCheck.setAAD(
+      Buffer.from(
+        canonical([
+          "astra.key-check.v1",
+          expected.vaultId,
+          expected.storageVersion,
+          expected.attemptId,
+          expected.keyId,
+        ]),
+      ),
+    );
+    keyCheck.setAuthTag(unb64(check.tag, 16));
+    const verified = Buffer.concat([keyCheck.update(unb64(check.ciphertext)), keyCheck.final()]);
+    try {
+      requireValue(verified.toString("utf8") === "astra-key-check-v1", "invalid-master-key");
+    } finally {
+      verified.fill(0);
+    }
+  } finally {
+    masterKey.fill(0);
+  }
+}
+
 export function unpackTransfer(
   bytes: Uint8Array,
   migrationKey: string,
@@ -115,31 +153,7 @@ export function unpackTransfer(
       Object.entries(expected).every(([k, v]) => snapshot[k] === v),
       "snapshot-mismatch",
     );
-    const masterKey = unb64(snapshot.masterKey, 32);
-    try {
-      const check = object(version.keyCheck, ["nonce", "ciphertext", "tag"]);
-      const keyCheck = createDecipheriv("aes-256-gcm", masterKey, unb64(check.nonce, 12));
-      keyCheck.setAAD(
-        Buffer.from(
-          canonical([
-            "astra.key-check.v1",
-            expected.vaultId,
-            expected.storageVersion,
-            expected.attemptId,
-            expected.keyId,
-          ]),
-        ),
-      );
-      keyCheck.setAuthTag(unb64(check.tag, 16));
-      const verified = Buffer.concat([keyCheck.update(unb64(check.ciphertext)), keyCheck.final()]);
-      try {
-        requireValue(verified.toString("utf8") === "astra-key-check-v1", "invalid-master-key");
-      } finally {
-        verified.fill(0);
-      }
-    } finally {
-      masterKey.fill(0);
-    }
+    verifyTransferKey(version, expected, text(snapshot.masterKey));
     requireValue(Array.isArray(snapshot.records) && snapshot.records.length <= 1000);
     for (const item of snapshot.records) {
       const record = object(item, ["description", "payload"]);

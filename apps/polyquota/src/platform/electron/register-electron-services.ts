@@ -4,6 +4,7 @@ import path from "node:path";
 import { BrowserWindow, dialog, type Session } from "electron";
 import {
   CoreServices,
+  SelectedBusinessStorage,
   serviceId,
   type LoggerPort,
   type ServiceRegistry,
@@ -39,13 +40,17 @@ export function registerElectronServices(
       (owner) => owner.dispose(),
     )
     .register(
-      CoreServices.storage,
+      Services.businessStorage,
       [dataOwner],
-      (services) =>
-        new SqliteStorage(path.join(services.get(dataOwner).directory, "polyquota.db"), {
-          nativeBinding: options.nativeBinding,
-        }),
-      (storage) => (storage as SqliteStorage).close(),
+      (services) => {
+        const directory = services.get(dataOwner).directory;
+        const open = (name: string) =>
+          new SqliteStorage(path.join(directory, name), { nativeBinding: options.nativeBinding });
+        return new SelectedBusinessStorage(open("polyquota.db"), (identity) =>
+          open(`shared-business.${identity}.db`),
+        );
+      },
+      (storage) => storage.close(),
     )
     .value(CoreServices.http, {
       fetch: (input, init) =>
@@ -74,7 +79,7 @@ export function registerElectronServices(
       selectDirectory: async () => {
         const parent = BrowserWindow.getFocusedWindow();
         const config = {
-          title: "选择凭据导出目录",
+          title: "选择共享凭据目录",
           buttonLabel: "选择此文件夹",
           properties: ["openDirectory", "createDirectory", "dontAddToRecent"] as (
             | "openDirectory"

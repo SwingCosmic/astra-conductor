@@ -1,14 +1,9 @@
+import { createCredentialReuseCheck } from "../credential-reuse-policy.js";
 import { CoreServices } from "../../services/contracts.js";
 import type { ServiceResolver } from "../../services/registry.js";
 import { randomUUID } from "node:crypto";
 import { AppError } from "../../errors.js";
-import type {
-  Account,
-  CredentialEnvelope,
-  PublicMetadata,
-  ProviderId,
-  UsageSnapshot,
-} from "../../models.js";
+import type { Account, CredentialEnvelope, PublicMetadata, UsageSnapshot } from "../../models.js";
 import type {
   ClockPort,
   CredentialRefreshResult,
@@ -55,7 +50,8 @@ function metadataText(account: Account, key: string): string | null {
 }
 
 export class AntigravityAdapter implements UsageProviderAdapter {
-  readonly provider: ProviderId = "antigravity";
+  readonly canUseCurrentCredentials;
+  readonly provider = "antigravity";
 
   private readonly fetchImpl: typeof fetch;
   private readonly clock: ClockPort;
@@ -63,6 +59,7 @@ export class AntigravityAdapter implements UsageProviderAdapter {
   constructor(services: ServiceResolver) {
     this.fetchImpl = services.get(CoreServices.http).fetch;
     this.clock = services.get(CoreServices.clock);
+    this.canUseCurrentCredentials = createCredentialReuseCheck(this.provider, this.clock);
   }
 
   createBrowserAuthorization(redirectUri: string): AntigravityBrowserAuthorization {
@@ -115,12 +112,11 @@ export class AntigravityAdapter implements UsageProviderAdapter {
   }
 
   async refreshCredentials(
-    _account: Account,
+    account: Account,
     envelope: CredentialEnvelope,
     force = false,
   ): Promise<CredentialRefreshResult> {
-    const expiry = envelope.expiresAt ? Date.parse(envelope.expiresAt) : Number.NaN;
-    if (!force && Number.isFinite(expiry) && expiry - this.clock.now().getTime() > 900_000) {
+    if (!force && this.canUseCurrentCredentials(account, envelope)) {
       return { envelope, changed: false };
     }
     const refreshToken = envelope.secrets.refreshToken;

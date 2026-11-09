@@ -101,6 +101,8 @@ export class EmptyPolyQuotaService implements IPolyQuotaService {
     resumeExport: unavailable,
     restartExport: unavailable,
     enableShared: unavailable,
+    switchToPrivate: unavailable,
+    relocate: unavailable,
     returnToPrivate: unavailable,
     rejoinShared: unavailable,
     verifyImport: unavailable,

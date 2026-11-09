@@ -4,9 +4,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { createCipheriv, createHash, hkdfSync } from "node:crypto";
 import {
+  CredentialMigrationService,
   CredentialVault,
   CredentialMutationGate,
   MemoryStorage,
+  MigrationProfileUpgradeRequired,
   SwitchingCredentialService,
   type Account,
   type CredentialCipherPort,
@@ -18,16 +20,11 @@ import {
   type BrokerCredential,
   type InitialRecord,
 } from "@astra-conductor/credentials";
-import {
-  CredentialSharingService,
-  sharingFrozenKey,
-  sharingStateKey,
-  sharingHistoryKey,
-} from "../src/server/credential-sharing/service.js";
 import type { BrokerHost } from "../src/platform/common/credential-broker-host.js";
+import { SqliteStorage } from "../src/platform/common/sqlite-storage.js";
 
 const directories: string[] = [];
-const services: CredentialSharingService[] = [];
+const services: CredentialMigrationService[] = [];
 afterEach(async () => {
   await Promise.all(services.splice(0).map((service) => service.stop()));
   vi.useRealTimers();
@@ -77,26 +74,24 @@ async function setup() {
   let initialized: Record<string, unknown> | undefined;
   let connectedVaultDirectory = vaultDirectory;
   let sourceClientId = "";
+  let callerId = "";
   let owner = "uninitialized";
   let loseResponse = false;
   let ack = false;
   let tamper = false;
   let activeAuth = false;
-  let handoffResponseLost = false;
   let disconnected = false;
   let sourceWatermark = "";
   let exportOperationId = "";
-  let handoffOperationId: string | undefined;
   let sharedRecords: BrokerCredential[] = [];
-  let receiverPrepared = false;
   let eventSequence = 0;
-  let handoffs = 0;
   const initialize = vi.fn(async (params: unknown) => {
     const request = params as {
       records: InitialRecord[];
       operationId: string;
       sourceWatermark: string;
     };
+    sourceClientId = callerId;
     sourceWatermark = request.sourceWatermark;
     exportOperationId = request.operationId;
     const version = {
@@ -182,19 +177,21 @@ async function setup() {
       }),
     );
     initialized = { ...version, state: "exported", migrationKey: null };
-    owner = "source";
+    owner = "broker";
+    await writeFile(
+      path.join(connectedVaultDirectory, "manifest.json"),
+      JSON.stringify({ vaultId: "vault" }),
+    );
     if (loseResponse) throw new BrokerError("broker-disconnected");
     return { ...initialized, migrationKey: `acm1_${Buffer.alloc(32, 7).toString("base64url")}` };
   });
   const call = vi.fn(async (method: string, params?: unknown): Promise<unknown> => {
     if (method === "status")
       return { vaultId: "vault", storageVersion: initialized ? "version" : null, ownership: owner };
-    if (method === "initialize") return initialize(params);
+    if (method === "publish") return initialize(params);
     if (method === "getOperation") {
       const operationId = (params as { operationId: string }).operationId;
       if (operationId === exportOperationId) return initialized;
-      if (operationId === handoffOperationId)
-        return { ownership: "broker", storageVersion: "version" };
       throw new BrokerError("operation-not-found");
     }
     if (method === "getSharingState")
@@ -205,16 +202,11 @@ async function setup() {
         keyId: "key",
         sourceWatermark,
         sourceClientId,
-        preparedClientIds: receiverPrepared ? [sourceClientId, "graph-agent"] : [sourceClientId],
+        preparedClientIds: [],
         ownership: owner,
       };
-    if (method === "handoff") {
-      handoffs++;
-      owner = "broker";
-      handoffOperationId = (params as { operationId: string }).operationId;
-      if (handoffResponseLost) throw new BrokerError("broker-disconnected");
-      return { ownership: "broker", storageVersion: "version" };
-    }
+    if (method === "getSnapshotWatermark")
+      return { vaultId: "vault", storageVersion: "version", watermark: String(eventSequence) };
     if (method === "listCredentials") {
       const filter = (params as { metadataEquals?: Record<string, string> }).metadataEquals ?? {};
       return {
@@ -259,13 +251,6 @@ async function setup() {
       if (ack) throw new BrokerError("delivery-unavailable");
       return { migrationKey: `acm1_${Buffer.alloc(32, 7).toString("base64url")}` };
     }
-    if (method === "prepareChallenge")
-      return {
-        challengeId: "challenge",
-        nonce: Buffer.alloc(32).toString("base64url"),
-        expiresAt: Date.now() + 60000,
-      };
-    if (method === "prepareClient") return { state: "prepared", storageVersion: "version" };
     if (method === "acknowledgeDelivery") {
       ack = true;
       return { acknowledged: true };
@@ -276,7 +261,7 @@ async function setup() {
     localPackageDirectory: path.join(directory, "download"),
     inspect: async () => ({
       installState: "installed",
-      installedVersion: "0.2.0",
+      installedVersion: "0.3.0",
       installationDirectory: path.join(directory, "installed"),
     }),
     install: async () => undefined,
@@ -288,14 +273,14 @@ async function setup() {
         owner = "uninitialized";
         ack = false;
       }
-      sourceClientId = clientId;
+      callerId = clientId;
       return { call, close: () => undefined };
     },
   };
   const options = {
+    product: "polyquota" as const,
     storage,
     cipher,
-    credentials: switcher,
     switcher,
     mutations,
     providers: {
@@ -310,7 +295,7 @@ async function setup() {
     cacheDirectory,
     hasActiveAuth: () => activeAuth,
   };
-  const service = new CredentialSharingService(options);
+  const service = new CredentialMigrationService(options);
   services.push(service);
   return {
     directory,
@@ -324,14 +309,11 @@ async function setup() {
     initialize,
     call,
     service,
-    receiverReady: () => {
-      receiverPrepared = true;
-    },
-    loseHandoffResponse: () => {
-      handoffResponseLost = true;
-    },
-    handoffs: () => handoffs,
     disconnected: () => disconnected,
+    deleteShared: () => {
+      sharedRecords = [];
+      eventSequence++;
+    },
     updateShared: (apiKey: string) => {
       for (const record of sharedRecords) {
         const payload = JSON.parse(Buffer.from(record.payload, "base64url").toString()) as {
@@ -361,595 +343,374 @@ async function setup() {
     },
   };
 }
-describe("PolyQuota first export", () => {
-  it("accepts an existing empty directory and rejects nonempty selection before freezing", async () => {
-    const c = await setup();
-    await mkdir(c.vaultDirectory);
-    const pick = vi.fn(async (): Promise<string | null> => c.vaultDirectory);
-    const service = new CredentialSharingService({ ...c.options, selectDirectory: pick });
-    expect(await service.selectDirectory()).toBe(c.vaultDirectory);
-    await writeFile(path.join(c.vaultDirectory, "user-file.txt"), "keep");
-    await expect(service.selectDirectory()).rejects.toThrow("首次导出请选择空目录");
-    await expect(service.exportCredentials(c.vaultDirectory)).rejects.toThrow(
-      "首次导出请选择空目录",
-    );
-    expect(c.storage.settings.get(sharingFrozenKey)).not.toBe(true);
-    expect(c.initialize).not.toHaveBeenCalled();
-    expect(await readFile(path.join(c.vaultDirectory, "user-file.txt"), "utf8")).toBe("keep");
-    pick.mockResolvedValueOnce(null);
-    expect(await service.selectDirectory()).toBeNull();
-    await rm(path.join(c.vaultDirectory, "user-file.txt"));
-    await service.exportCredentials(c.vaultDirectory);
-    expect(c.initialize).toHaveBeenCalledTimes(1);
-  });
-  it.each([
-    ["directory-permissions-too-broad", "重新安装新版本地组件"],
-    ["access-denied", "请更新或重新安装凭据共享组件后重试原导出"],
-  ])("explains %s while preserving the pending export for retry", async (code, message) => {
-    const c = await setup();
-    const connect = vi
-      .spyOn(c.options.host, "connect")
-      .mockRejectedValueOnce(new BrokerError(code));
-    await expect(c.service.exportCredentials(c.vaultDirectory)).rejects.toThrow(message);
-    expect(await c.service.getStatus()).toMatchObject({
-      exportState: "pending",
-      frozen: true,
-      lastError: code,
+
+describe("profile-local credential migration", () => {
+  it("verifies a returned SQLite snapshot against the existing local id and immutable creation time", async () => {
+    const source = await setup();
+    const { migrationKey } = await source.service.exportCredentials(source.vaultDirectory);
+    const storage = new SqliteStorage(":memory:");
+    const mutations = new CredentialMutationGate();
+    const credentials = new CredentialVault(storage, source.cipher, undefined, mutations);
+    const switcher = new SwitchingCredentialService(credentials);
+    const receiver = new CredentialMigrationService({
+      ...source.options,
+      cacheDirectory: path.join(source.directory, "receiver"),
+      storage,
+      mutations,
+      switcher,
     });
-    connect.mockRestore();
-    await c.service.exportCredentials(c.vaultDirectory);
-    expect(c.initialize).toHaveBeenCalledTimes(1);
+    try {
+      const local = { ...account, id: "local-account", createdAt: "2026-01-01T00:00:00.000Z" };
+      await credentials.saveAccount(local, {
+        ...(await source.credentials.load(account.id)),
+        accountId: local.id,
+        secrets: { apiKey: "FICTIONAL-LOCAL" },
+      });
+      const preview = await receiver.verifyImport({
+        vaultDirectory: source.vaultDirectory,
+        migrationKey,
+      });
+      expect(preview.conflicts?.map((a) => a.id)).toEqual([account.id]);
+      await receiver.confirmImport(preview.previewId);
+      await receiver.enableShared();
+      await receiver.returnToPrivate(true);
+      expect(await receiver.getStatus()).toMatchObject({
+        migrationState: "private-ready",
+        recordCount: 1,
+        rememberedKey: true,
+      });
+      expect(storage.accounts.list()).toEqual([local]);
+      await receiver.switchToPrivate();
+      expect((await switcher.load(local.id)).secrets.apiKey).toBe("FICTIONAL-ONLY");
+      expect(await receiver.getStatus()).toMatchObject({
+        migrationState: "private",
+        rememberedKey: false,
+      });
+    } finally {
+      await receiver.stop();
+      storage.close();
+    }
   });
-  it("verifies the exported snapshot, remembers only the master key and explicitly acknowledges delivery", async () => {
-    const c = await setup();
-    const result = await c.service.exportCredentials(c.vaultDirectory);
-    expect(result.migrationKey).toMatch(/^acm1_/);
-    const status = await c.service.getStatus();
-    expect(status).toMatchObject({
-      exportState: "exported",
+  it("verifies one publication, releases local writers and can migrate without a receiver or key acknowledgement", async () => {
+    const f = await setup();
+    const delivery = await f.service.exportCredentials(f.vaultDirectory);
+    expect(await f.service.getStatus()).toMatchObject({
+      migrationState: "export-ready",
+      activeBackend: "private",
       rememberedKey: true,
-      frozen: true,
-      deliveryAcknowledged: false,
-      activeBackend: "private",
-    });
-    expect(JSON.stringify(status)).not.toContain(result.migrationKey);
-    expect(JSON.stringify(status)).not.toContain("FICTIONAL");
-    expect(JSON.stringify(c.storage.settings.get("credentialSharing.export.v1"))).not.toContain(
-      result.migrationKey,
-    );
-    expect(c.initialize.mock.calls[0][0]).toMatchObject({
-      records: [{ metadata: { supportsUsage: "true" } }],
-    });
-    await c.service.acknowledgeDelivery();
-    expect(await c.service.getStatus()).toMatchObject({ deliveryAcknowledged: true });
-    await expect(c.service.exportCredentials(c.vaultDirectory)).rejects.toThrow(
-      "migration-key-already-delivered",
-    );
-    expect(c.initialize).toHaveBeenCalledTimes(1);
-  });
-  it("recovers a lost initialize response across restart without overwriting the published version", async () => {
-    const c = await setup();
-    c.loseResponse();
-    await expect(c.service.exportCredentials(c.vaultDirectory)).rejects.toThrow();
-    expect(c.storage.settings.get(sharingFrozenKey)).toBe(true);
-    const restarted = new CredentialSharingService({
-      ...c.options,
-      mutations: new CredentialMutationGate(true),
-    });
-    expect((await restarted.exportCredentials(c.vaultDirectory)).migrationKey).toMatch(/^acm1_/);
-    expect(c.initialize).toHaveBeenCalledTimes(1);
-    expect(c.call).toHaveBeenCalledWith("getOperation", expect.anything());
-  });
-  it("keeps a published export recoverable when safe storage fails", async () => {
-    const c = await setup();
-    const encrypt = vi.spyOn(c.cipher, "encrypt").mockRejectedValueOnce(new Error("SECRET-ERROR"));
-    await expect(c.service.exportCredentials(c.vaultDirectory)).rejects.not.toThrow("SECRET-ERROR");
-    expect(await c.service.getStatus()).toMatchObject({
-      exportState: "pending",
-      rememberedKey: false,
-      frozen: true,
-    });
-    encrypt.mockRestore();
-    await c.service.exportCredentials(c.vaultDirectory);
-    expect(c.initialize).toHaveBeenCalledTimes(1);
-  });
-  it("rejects mismatched authenticated content and changed source watermarks", async () => {
-    const c = await setup();
-    c.tamper();
-    await expect(c.service.exportCredentials(c.vaultDirectory)).rejects.toThrow(
-      "export-readback-mismatch",
-    );
-    const encrypted = c.storage.credentials.get(account.id)!;
-    c.storage.credentials.save({ ...encrypted, updatedAt: "changed" });
-    await expect(c.service.exportCredentials(c.vaultDirectory)).rejects.toThrow(
-      "source-watermark-changed",
-    );
-    expect(c.initialize).toHaveBeenCalledTimes(1);
-  });
-  it("refuses export during active authorization and never freezes an unavailable cipher", async () => {
-    const c = await setup();
-    c.activeAuth();
-    await expect(c.service.exportCredentials(c.vaultDirectory)).rejects.toThrow(
-      "authorization-in-progress",
-    );
-    expect(c.storage.settings.get(sharingFrozenKey)).not.toBe(true);
-    vi.spyOn(c.cipher, "isAvailable").mockResolvedValue(false);
-    await expect(c.service.exportCredentials(c.vaultDirectory)).rejects.toThrow(
-      "secure-storage-unavailable",
-    );
-  });
-  it("does not freeze or create export state when the component is missing", async () => {
-    const c = await setup();
-    vi.spyOn(c.options.host, "inspect").mockResolvedValue({
-      installState: "not-installed",
-      installedVersion: null,
-      installationDirectory: null,
-    });
-    await expect(c.service.exportCredentials(c.vaultDirectory)).rejects.toThrow(
-      "component-not-installed",
-    );
-    expect(c.storage.settings.get(sharingFrozenKey)).not.toBe(true);
-    expect(c.initialize).not.toHaveBeenCalled();
-  });
-
-  it("rejects an incompatible installed component before freezing, reading credentials or connecting", async () => {
-    const c = await setup();
-    vi.spyOn(c.options.host, "inspect").mockResolvedValue({
-      installState: "incompatible",
-      installedVersion: "0.1.0",
-      installationDirectory: path.join(c.directory, "old-component"),
-    });
-    const connect = vi.spyOn(c.options.host, "connect");
-    const decrypt = vi.spyOn(c.cipher, "decrypt");
-    const freeze = vi.spyOn(c.mutations, "freeze");
-    await expect(c.service.exportCredentials(c.vaultDirectory)).rejects.toThrow(
-      "component-incompatible",
-    );
-    expect(connect).not.toHaveBeenCalled();
-    expect(decrypt).not.toHaveBeenCalled();
-    expect(freeze).not.toHaveBeenCalled();
-    expect(c.storage.settings.get(sharingStateKey)).toBeNull();
-    expect(c.storage.settings.get(sharingFrozenKey)).not.toBe(true);
-    expect(await c.service.getStatus()).toMatchObject({
-      installState: "incompatible",
-      installedVersion: "0.1.0",
-      requiredApiLevel: "2",
-      activeBackend: "private",
-      exportState: "none",
-    });
-  });
-
-  it("cancels only while the source retains ownership and never deletes a successful version", async () => {
-    const c = await setup();
-    await c.service.exportCredentials(c.vaultDirectory);
-    c.transferOwnership();
-    await expect(c.service.cancel()).rejects.toThrow("ownership-already-transferred");
-    expect(c.storage.settings.get(sharingFrozenKey)).toBe(true);
-    const d = await setup();
-    await d.service.exportCredentials(d.vaultDirectory);
-    await d.service.cancel();
-    expect(await d.service.getStatus()).toMatchObject({ exportState: "cancelled", frozen: false });
-    expect(
-      (await readFile(path.join(d.vaultDirectory, "versions", "version", "migration.json"))).length,
-    ).toBeGreaterThan(0);
-    await expect(d.service.exportCredentials(d.vaultDirectory)).rejects.toThrow("export-cancelled");
-  });
-});
-
-describe("PolyQuota cancelled export recovery", () => {
-  it("recovers an unchanged cancelled export and its unacknowledged delivery without creating another version", async () => {
-    const c = await setup();
-    const contextId = c.service.getBackendContext().contextId;
-    const original = await c.service.exportCredentials(c.vaultDirectory);
-    expect(c.service.getBackendContext().contextId).toBe(contextId);
-    await c.service.cancel();
-    expect((await c.service.getStatus()).capabilities?.resumeExport.state).toBe("enabled");
-    expect(await c.service.resumeExport()).toEqual(original);
-    expect(await c.service.getStatus()).toMatchObject({
-      exportState: "exported",
-      frozen: true,
-      deliveryAcknowledged: false,
-      activeBackend: "private",
-    });
-    expect(c.initialize).toHaveBeenCalledOnce();
-    expect(c.service.getBackendContext().contextId).toBe(contextId);
-  });
-  it("resumes a confirmed delivery without returning or recovering the migration key again", async () => {
-    const c = await setup();
-    await c.service.exportCredentials(c.vaultDirectory);
-    await c.service.acknowledgeDelivery();
-    await c.service.cancel();
-    expect(await c.service.resumeExport()).toBeNull();
-    expect(c.call.mock.calls.filter(([method]) => method === "recoverDelivery")).toHaveLength(0);
-    expect(await c.service.getStatus()).toMatchObject({
-      exportState: "exported",
-      frozen: true,
-      deliveryAcknowledged: true,
-    });
-    expect(c.initialize).toHaveBeenCalledOnce();
-  });
-  it("keeps changed private credentials writable and starts a new export only in a new empty directory", async () => {
-    const c = await setup();
-    await c.service.exportCredentials(c.vaultDirectory);
-    await c.service.acknowledgeDelivery();
-    await c.service.cancel();
-    const oldTransfer = await readFile(
-      path.join(c.vaultDirectory, "versions/version/migration.json"),
-    );
-    const oldState = c.storage.settings.get(sharingStateKey);
-    const contextId = c.service.getBackendContext().contextId;
-    await c.credentials.saveAccount(account, {
-      version: 1,
-      accountId: account.id,
-      provider: account.provider,
-      authMethod: account.authMethod,
-      expiresAt: null,
-      secrets: { apiKey: "UPDATED-FICTIONAL-ONLY" },
-    });
-    expect((await c.service.getStatus()).capabilities?.resumeExport).toMatchObject({
-      state: "disabled",
-    });
-    await expect(c.service.resumeExport()).rejects.toThrow("内置凭据已更新");
-    expect(await c.service.getStatus()).toMatchObject({
-      exportState: "cancelled",
       frozen: false,
-      deliveryAcknowledged: true,
     });
-    expect(c.mutations.isFrozen).toBe(false);
-    await expect(c.service.restartExport(c.vaultDirectory)).rejects.toThrow("请选择新的空目录");
-    expect(c.storage.settings.get(sharingStateKey)).toBe(oldState);
-    const next = path.join(c.directory, "new-vault");
-    const delivery = await c.service.restartExport(next);
-    expect(delivery.migrationKey).toMatch(/^acm1_/);
-    expect(c.initialize).toHaveBeenCalledTimes(2);
-    const request = c.initialize.mock.calls[1]![0] as { records: InitialRecord[] };
-    expect(Buffer.from(request.records[0]!.payload, "base64url").toString()).toContain(
-      "UPDATED-FICTIONAL-ONLY",
-    );
-    expect(await readFile(path.join(c.vaultDirectory, "versions/version/migration.json"))).toEqual(
-      oldTransfer,
-    );
-    expect(JSON.parse(c.storage.settings.get(sharingHistoryKey) as string)).toMatchObject([
-      { state: JSON.parse(oldState as string) },
-    ]);
-    expect(await c.service.getStatus()).toMatchObject({
-      exportState: "exported",
-      vaultDirectory: next,
-      frozen: true,
-      deliveryAcknowledged: false,
-    });
-    expect(c.service.getBackendContext().contextId).toBe(contextId);
-  });
-  it("permits selecting a new empty directory after cancellation without changing the saved export", async () => {
-    const c = await setup();
-    await c.service.exportCredentials(c.vaultDirectory);
-    await c.service.cancel();
-    const state = c.storage.settings.get(sharingStateKey);
-    const target = path.join(c.directory, "new-target");
-    const selector = new CredentialSharingService({
-      ...c.options,
-      selectDirectory: async () => target,
-    });
-    expect(await selector.selectDirectory()).toBe(target);
-    expect(c.storage.settings.get(sharingStateKey)).toBe(state);
-    expect(c.mutations.isFrozen).toBe(false);
-  });
-  it("recovers a restarted export's lost response using its new operation and keeps the old export archived", async () => {
-    const c = await setup();
-    await c.service.exportCredentials(c.vaultDirectory);
-    await c.service.cancel();
-    const oldState = c.storage.settings.get(sharingStateKey);
-    c.loseResponse();
-    const next = path.join(c.directory, "new-vault");
-    await expect(c.service.restartExport(next)).rejects.toThrow("broker-disconnected");
-    expect(await c.service.getStatus()).toMatchObject({
-      vaultDirectory: next,
-      exportState: "pending",
-      frozen: true,
-    });
-    expect(JSON.parse(c.storage.settings.get(sharingHistoryKey) as string)).toMatchObject([
-      { state: JSON.parse(oldState as string) },
-    ]);
-    expect((await c.service.exportCredentials(next)).migrationKey).toMatch(/^acm1_/);
-    expect(c.initialize).toHaveBeenCalledTimes(2);
-  });
-  it("rejects both recovery paths after broker ownership changes and preserves cancellation", async () => {
-    const c = await setup();
-    await c.service.exportCredentials(c.vaultDirectory);
-    await c.service.cancel();
-    c.transferOwnership();
-    const state = c.storage.settings.get(sharingStateKey);
-    await expect(c.service.resumeExport()).rejects.toThrow("共享凭据已由服务接管");
-    await expect(c.service.restartExport(path.join(c.directory, "new-vault"))).rejects.toThrow(
-      "共享凭据已由服务接管",
-    );
-    expect(c.storage.settings.get(sharingStateKey)).toBe(state);
-    expect(c.storage.settings.get(sharingHistoryKey)).toBeNull();
-    expect(c.mutations.isFrozen).toBe(false);
-  });
-});
-
-describe("PolyQuota shared activation and return to private", () => {
-  async function exported() {
-    const context = await setup();
-    const delivery = await context.service.exportCredentials(context.vaultDirectory);
-    await context.service.acknowledgeDelivery();
-    context.receiverReady();
-    return { ...context, migrationKey: delivery.migrationKey };
-  }
-
-  it("blocks activation and reentry before requests or key reads when the installation becomes incompatible", async () => {
-    const c = await exported();
-    const incompatible = {
-      installState: "incompatible" as const,
-      installedVersion: "0.1.0",
-      installationDirectory: path.join(c.directory, "old-component"),
-    };
-    const inspect = vi.spyOn(c.options.host, "inspect").mockResolvedValue(incompatible);
-    const connect = vi.spyOn(c.options.host, "connect");
-    const decrypt = vi.spyOn(c.cipher, "decrypt");
-    const freeze = vi.spyOn(c.mutations, "freeze");
-    const sourceState = c.storage.settings.get(sharingStateKey);
-    await expect(c.service.enableShared()).rejects.toThrow("component-incompatible");
-    expect(c.storage.settings.get(sharingStateKey)).toEqual(sourceState);
-    expect(connect).not.toHaveBeenCalled();
-    expect(decrypt).not.toHaveBeenCalled();
-    expect(freeze).not.toHaveBeenCalled();
-    inspect.mockRestore();
-    await c.service.enableShared();
-    await c.service.returnToPrivate(true);
-    vi.spyOn(c.options.host, "inspect").mockResolvedValue(incompatible);
-    connect.mockClear();
-    decrypt.mockClear();
-    freeze.mockClear();
-    const privateState = c.storage.settings.get(sharingStateKey);
-    await expect(c.service.rejoinShared(c.migrationKey)).rejects.toThrow("component-incompatible");
-    expect(c.storage.settings.get(sharingStateKey)).toEqual(privateState);
-    expect(connect).not.toHaveBeenCalled();
-    expect(decrypt).not.toHaveBeenCalled();
-    expect(freeze).not.toHaveBeenCalled();
-    expect(c.switcher.isShared).toBe(false);
-  });
-
-  it("requires a prepared receiver and activates without copying shared tokens into the private database", async () => {
-    const c = await setup();
-    await c.service.exportCredentials(c.vaultDirectory);
-    await c.service.acknowledgeDelivery();
-    await expect(c.service.enableShared()).rejects.toThrow(
-      "请在接收应用核对本次导出目录，并点击“确认导入”后重试启用共享",
-    );
-    expect(c.handoffs()).toBe(0);
-    expect(await c.service.getStatus()).toMatchObject({
-      exportState: "exported",
-      activeBackend: "private",
-      frozen: true,
-      lastError: "client-not-prepared",
-    });
-    const original = c.storage.credentials.get(account.id);
-    c.receiverReady();
-    await c.service.enableShared();
-    c.updateShared("SHARED-C2");
-    expect((await c.switcher.load(account.id)).secrets.apiKey).toBe("SHARED-C2");
-    expect(c.storage.credentials.get(account.id)).toEqual(original);
-    expect(await c.service.getStatus()).toMatchObject({
-      selectedBackend: "shared",
+    await f.service.enableShared();
+    expect((await f.service.resumeExport())?.migrationKey).toBe(delivery.migrationKey);
+    expect(await f.service.getStatus()).toMatchObject({
+      migrationState: "shared",
       activeBackend: "shared",
-      sharingState: "active",
+    });
+    await f.service.acknowledgeDelivery();
+    await expect(f.service.resumeExport()).resolves.toBeNull();
+    expect(JSON.stringify(await f.service.getStatus())).not.toContain(delivery.migrationKey);
+    expect(f.initialize).toHaveBeenCalledOnce();
+    expect(f.call.mock.calls.map((c) => c[0])).not.toContain("handoff");
+  });
+  it("recovers the published receipt after process restart and local changes, then explicitly reviews divergence", async () => {
+    const f = await setup();
+    f.loseResponse();
+    await expect(f.service.exportCredentials(f.vaultDirectory)).rejects.toThrow();
+    expect(await f.service.getStatus()).toMatchObject({
+      migrationState: "private",
       frozen: false,
+      rememberedKey: false,
+      operation: { kind: "export" },
     });
-    expect(c.service.visibleAccountIds()).toEqual(new Set([account.id]));
+    const envelope = await f.credentials.load(account.id);
+    await f.credentials.saveAccount(account, {
+      ...envelope,
+      secrets: { apiKey: "FICTIONAL-LOCAL-CHANGED" },
+    });
+    await f.service.stop();
+    const resumed = new CredentialMigrationService(f.options);
+    services.push(resumed);
+    await resumed.exportCredentials(f.vaultDirectory);
+    expect(f.initialize).toHaveBeenCalledOnce();
+    await expect(resumed.enableShared()).rejects.toThrow("migration-review-required");
+    const review = (await resumed.getStatus()).migrationReview!;
+    expect(review.accounts[0]?.id).toBe(account.id);
+    f.updateShared("FICTIONAL-REMOTE-CHANGED");
+    await expect(resumed.enableShared(review.id)).rejects.toThrow("migration-review-required");
+    await resumed.enableShared((await resumed.getStatus()).migrationReview!.id);
+    expect((await f.switcher.load(account.id)).secrets.apiKey).toBe("FICTIONAL-REMOTE-CHANGED");
+    expect((await f.credentials.load(account.id)).secrets.apiKey).toBe("FICTIONAL-LOCAL-CHANGED");
   });
-
-  it("recovers a lost handoff response across restart without reexport or private fallback", async () => {
-    const c = await exported();
-    c.loseHandoffResponse();
-    await expect(c.service.enableShared()).rejects.toThrow("broker-disconnected");
-    expect(await c.service.getStatus()).toMatchObject({
-      selectedBackend: "shared",
-      activeBackend: "unavailable",
-      frozen: true,
-    });
-    await expect(c.switcher.load(account.id)).rejects.toThrow("共享凭据暂不可用");
-    const restarted = new CredentialSharingService(c.options);
-    services.push(restarted);
-    await restarted.start();
-    expect(await restarted.getStatus()).toMatchObject({ activeBackend: "shared", frozen: false });
-    expect(c.handoffs()).toBe(1);
-    expect(c.initialize).toHaveBeenCalledTimes(1);
-  });
-
-  it("retries an uncommitted handoff from the frozen private source and still rejects a changed watermark", async () => {
-    const c = await exported();
-    const originalCall = c.call.getMockImplementation()!;
-    c.call.mockImplementation(async (method, params) => {
-      if (method === "handoff") throw new BrokerError("broker-disconnected");
-      return originalCall(method, params);
-    });
-    await expect(c.service.enableShared()).rejects.toThrow("broker-disconnected");
-    expect(c.handoffs()).toBe(0);
-    c.call.mockImplementation(originalCall);
-    const restarted = new CredentialSharingService(c.options);
-    services.push(restarted);
-    await restarted.start();
-    expect(await restarted.getStatus()).toMatchObject({ activeBackend: "shared", frozen: false });
-    expect(c.handoffs()).toBe(1);
-    expect(c.initialize).toHaveBeenCalledTimes(1);
-
-    const d = await exported();
-    const secondCall = d.call.getMockImplementation()!;
-    d.call.mockImplementation(async (method, params) => {
-      if (method === "handoff") throw new BrokerError("broker-disconnected");
-      return secondCall(method, params);
-    });
-    await expect(d.service.enableShared()).rejects.toThrow("broker-disconnected");
-    d.call.mockImplementation(secondCall);
-    const encrypted = d.storage.credentials.get(account.id)!;
-    d.storage.credentials.save({ ...encrypted, updatedAt: "external-instance-updated" });
-    await expect(d.service.enableShared()).rejects.toThrow("source-watermark-changed");
-    expect(d.handoffs()).toBe(0);
-    expect(await d.service.getStatus()).toMatchObject({
-      activeBackend: "unavailable",
-      frozen: true,
-    });
-  });
-
-  it("saves the latest private snapshot, forgets its key and requires the migration key to rejoin current shared data", async () => {
-    const c = await exported();
-    await c.service.enableShared();
-    c.updateShared("SHARED-C2");
-    await expect(c.service.returnToPrivate(false)).rejects.toThrow(
+  it("keeps an encrypted private-ready snapshot and key through restart, and refuses a stale snapshot", async () => {
+    const f = await setup();
+    const delivery = await f.service.exportCredentials(f.vaultDirectory);
+    await f.service.enableShared();
+    await expect(f.service.returnToPrivate(false)).rejects.toThrow(
       "independent-refresh-risk-not-accepted",
     );
-    await c.service.returnToPrivate(true);
-    expect(c.disconnected()).toBe(true);
-    expect(await c.service.getStatus()).toMatchObject({
-      selectedBackend: "private",
-      activeBackend: "private",
-      sharingState: "private",
-      rememberedKey: false,
-      keyCleanupPending: false,
-      frozen: false,
-    });
-    expect((await c.credentials.load(account.id)).secrets.apiKey).toBe("SHARED-C2");
-    await c.switcher.saveAccount(account, {
-      version: 1,
-      accountId: account.id,
-      provider: account.provider,
-      authMethod: account.authMethod,
-      expiresAt: null,
-      secrets: { apiKey: "PRIVATE-C3" },
-    });
-    await expect(c.service.enableShared()).rejects.toThrow("migration-key-required");
-    const callsBeforeWrongKey = c.call.mock.calls.length;
-    await expect(c.service.rejoinShared("wrong-key")).rejects.toThrow("invalid-migration-key");
-    expect(c.call.mock.calls.length).toBe(callsBeforeWrongKey);
-    expect((await c.service.getStatus()).rememberedKey).toBe(false);
-    c.updateShared("SHARED-C4");
-    await c.service.rejoinShared(c.migrationKey);
-    expect((await c.switcher.load(account.id)).secrets.apiKey).toBe("SHARED-C4");
-    expect((await c.credentials.load(account.id)).secrets.apiKey).toBe("PRIVATE-C3");
-    expect(c.handoffs()).toBe(1);
-    expect(c.initialize).toHaveBeenCalledTimes(1);
-  });
-
-  it("returns offline using the dated prior private copy and retries only its own session cleanup on restart", async () => {
-    const c = await exported();
-    await c.service.enableShared();
-    const date = (await c.service.getStatus()).snapshotAt;
-    c.updateShared("SHARED-C2");
-    const connectedCall = c.call.getMockImplementation()!;
-    c.call.mockImplementation(async () => {
-      throw new BrokerError("broker-disconnected");
-    });
-    await c.service.returnToPrivate(true);
-    expect(await c.service.getStatus()).toMatchObject({
-      activeBackend: "private",
-      snapshotAt: date,
-      sessionCleanupPending: true,
-      keyCleanupPending: false,
-      rememberedKey: false,
-      lastError: "using-previous-private-snapshot",
-    });
-    expect((await c.credentials.load(account.id)).secrets.apiKey).toBe("FICTIONAL-ONLY");
-    c.call.mockImplementation(connectedCall);
-    const restarted = new CredentialSharingService(c.options);
-    services.push(restarted);
-    await restarted.start();
-    expect(await restarted.getStatus()).toMatchObject({
-      activeBackend: "private",
-      sharingState: "private",
-      sessionCleanupPending: false,
-      rememberedKey: false,
-    });
-    expect(c.handoffs()).toBe(1);
-  });
-
-  it("keeps private selection and a durable cleanup marker when key deletion fails", async () => {
-    const c = await exported();
-    await c.service.enableShared();
-    const state = JSON.parse(c.storage.settings.get(sharingStateKey) as string) as {
-      keyRef: string;
-    };
-    const keyPath = path.join(c.options.cacheDirectory, state.keyRef);
-    await rm(keyPath);
-    await mkdir(keyPath);
-    await c.service.returnToPrivate(true);
-    expect(await c.service.getStatus()).toMatchObject({
-      activeBackend: "private",
-      keyCleanupPending: true,
-      sharingState: "returning",
-      frozen: false,
-    });
-    await rm(keyPath, { recursive: true });
-    const restarted = new CredentialSharingService(c.options);
-    services.push(restarted);
-    await restarted.start();
-    expect(await restarted.getStatus()).toMatchObject({
-      activeBackend: "private",
-      keyCleanupPending: false,
-      sharingState: "private",
-    });
-  });
-
-  it("does not overwrite the previous private snapshot when staged readback is damaged", async () => {
-    const c = await exported();
-    await c.service.enableShared();
-    c.updateShared("SHARED-C2");
-    const prior = c.storage.credentials.get(account.id);
-    const encrypt = c.cipher.encrypt;
-    vi.spyOn(c.cipher, "encrypt").mockImplementation(async (plaintext) =>
-      plaintext.includes("SHARED-C2") ? Buffer.from("encrypted:damaged") : encrypt(plaintext),
-    );
-    await c.service.returnToPrivate(true);
-    expect(c.storage.credentials.get(account.id)).toEqual(prior);
-    expect((await c.credentials.load(account.id)).secrets.apiKey).toBe("FICTIONAL-ONLY");
-    expect((await c.service.getStatus()).lastError).toBe("using-previous-private-snapshot");
-  });
-
-  it("rechecks changed metadata and does not read secrets on empty event polls", async () => {
-    const c = await exported();
-    vi.useFakeTimers();
-    await c.service.enableShared();
-    const initialReads = c.call.mock.calls.filter(([method]) => method === "getCredential").length;
-    await vi.advanceTimersByTimeAsync(3_000);
-    expect(c.call.mock.calls.filter(([method]) => method === "getCredential")).toHaveLength(
-      initialReads,
-    );
-    c.storage.accounts.setEnabled(account.id, false, new Date().toISOString());
-    c.updateShared("SHARED-C2");
-    await vi.advanceTimersByTimeAsync(3_000);
-    expect(c.storage.accounts.get(account.id)?.enabled).toBe(false);
-    c.changeUsageSupport("false");
-    await vi.advanceTimersByTimeAsync(3_000);
-    expect(c.service.visibleAccountIds()).toEqual(new Set());
-    const filteredReads = c.call.mock.calls.filter(([method]) => method === "getCredential").length;
-    await vi.advanceTimersByTimeAsync(3_000);
-    expect(c.call.mock.calls.filter(([method]) => method === "getCredential")).toHaveLength(
-      filteredReads,
-    );
-  });
-
-  it("keeps the shared backend usable when an unavailable broker and missing private copy prevent return", async () => {
-    const c = await exported();
-    await c.service.enableShared();
-    const state = JSON.parse(c.storage.settings.get(sharingStateKey) as string) as Record<
-      string,
-      unknown
-    >;
-    delete state.snapshotAt;
-    c.storage.settings.save(sharingStateKey, JSON.stringify(state));
-    const connectedCall = c.call.getMockImplementation()!;
-    c.call.mockImplementation(async () => {
-      throw new BrokerError("broker-disconnected");
-    });
-    await expect(c.service.returnToPrivate(true)).rejects.toThrow("broker-disconnected");
-    expect(c.mutations.isFrozen).toBe(false);
-    expect(await c.service.getStatus()).toMatchObject({
+    f.updateShared("FICTIONAL-CURRENT");
+    await f.service.returnToPrivate(true);
+    expect(await f.service.getStatus()).toMatchObject({
+      migrationState: "private-ready",
       selectedBackend: "shared",
+      rememberedKey: true,
+      frozen: false,
+    });
+    await f.service.stop();
+    const resumed = new CredentialMigrationService(f.options);
+    services.push(resumed);
+    await resumed.start();
+    expect(await resumed.getStatus()).toMatchObject({
+      migrationState: "private-ready",
+      activeBackend: "shared",
+    });
+    f.updateShared("FICTIONAL-NEWER");
+    await expect(resumed.switchToPrivate()).rejects.toThrow("private-snapshot-stale");
+    expect(await resumed.getStatus()).toMatchObject({
+      migrationState: "private-ready",
+      rememberedKey: true,
+      frozen: false,
+    });
+    await resumed.returnToPrivate(true);
+    await resumed.switchToPrivate();
+    expect((await f.switcher.load(account.id)).secrets.apiKey).toBe("FICTIONAL-NEWER");
+    expect(await resumed.getStatus()).toMatchObject({
+      migrationState: "private",
+      rememberedKey: false,
+      activeBackend: "private",
+    });
+    await resumed.rejoinShared(delivery.migrationKey);
+    expect(await resumed.getStatus()).toMatchObject({
+      migrationState: "import-ready",
+      activeBackend: "private",
+    });
+  });
+  it("reconciles an authorized empty snapshot while preserving unrelated private accounts", async () => {
+    const f = await setup();
+    await f.service.exportCredentials(f.vaultDirectory);
+    await f.service.enableShared();
+    const separate = { ...account, id: "independent", stableIdentity: "different" };
+    await f.credentials.saveAccount(separate, {
+      ...(await f.credentials.load(account.id)),
+      accountId: separate.id,
+    });
+    f.deleteShared();
+    await f.service.returnToPrivate(true);
+    expect(await f.service.getStatus()).toMatchObject({
+      migrationState: "private-ready",
+      recordCount: 0,
+    });
+    await f.service.switchToPrivate();
+    expect(f.storage.accounts.list().map((a) => a.id)).toEqual(["independent"]);
+  });
+  it("does not commit an export binding if authenticated metadata or payload differs from the original snapshot", async () => {
+    const f = await setup();
+    f.tamper();
+    await expect(f.service.exportCredentials(f.vaultDirectory)).rejects.toThrow(
+      "export-readback-mismatch",
+    );
+    expect(await f.service.getStatus()).toMatchObject({
+      migrationState: "private",
+      rememberedKey: false,
+      frozen: false,
+    });
+  });
+  it("cannot publish a nonempty location, when authorization is underway, or without secure protection", async () => {
+    const f = await setup();
+    await mkdir(f.vaultDirectory);
+    await writeFile(path.join(f.vaultDirectory, "keep"), "data");
+    await expect(f.service.exportCredentials(f.vaultDirectory)).rejects.toThrow(
+      "vault-directory-not-empty",
+    );
+    await rm(path.join(f.vaultDirectory, "keep"));
+    f.activeAuth();
+    await expect(f.service.exportCredentials(f.vaultDirectory)).rejects.toThrow(
+      "authorization-in-progress",
+    );
+    f.cipher.isAvailable = async () => false;
+    await expect(f.service.exportCredentials(f.vaultDirectory)).rejects.toThrow(
+      "secure-storage-unavailable",
+    );
+    expect(f.initialize).not.toHaveBeenCalled();
+    expect(f.mutations.isFrozen).toBe(false);
+  });
+  it("keeps the original export recoverable after a system key protection failure", async () => {
+    const f = await setup();
+    const encrypt = f.cipher.encrypt;
+    f.cipher.encrypt = async () => {
+      throw Error();
+    };
+    await expect(f.service.exportCredentials(f.vaultDirectory)).rejects.toThrow();
+    expect((await f.service.getStatus()).migrationState).toBe("private");
+    f.cipher.encrypt = encrypt;
+    await f.service.resumeExport();
+    expect(f.initialize).toHaveBeenCalledOnce();
+    const profile = await readFile(
+      path.join(f.options.cacheDirectory, "migration-state.json"),
+      "utf8",
+    );
+    expect(profile).not.toContain("FICTIONAL-ONLY");
+    expect(profile).not.toContain("acm1_");
+  });
+  it("preserves shared selection and keys when the destination business read fails", async () => {
+    const f = await setup();
+    await f.service.exportCredentials(f.vaultDirectory);
+    await f.service.enableShared();
+    await f.service.returnToPrivate(true);
+    vi.spyOn(f.switcher, "load").mockRejectedValueOnce(Error("private business read failed"));
+    await expect(f.service.switchToPrivate()).rejects.toThrow();
+    expect(await f.service.getStatus()).toMatchObject({
+      migrationState: "private-ready",
+      activeBackend: "shared",
+      rememberedKey: true,
+      frozen: false,
+    });
+    await f.service.switchToPrivate();
+    expect((await f.service.getStatus()).rememberedKey).toBe(false);
+  });
+  it("commits private selection before key deletion, and retries cleanup without restoring the snapshot", async () => {
+    const f = await setup();
+    await f.service.exportCredentials(f.vaultDirectory);
+    await f.service.enableShared();
+    await f.service.returnToPrivate(true);
+    const forget = vi.fn().mockRejectedValueOnce(Error("locked")).mockResolvedValue(undefined);
+    f.options.host.forgetGrant = forget;
+    await f.service.switchToPrivate();
+    expect(await f.service.getStatus()).toMatchObject({
+      migrationState: "private",
+      keyCleanupPending: true,
+      rememberedKey: true,
+    });
+    await f.credentials.saveAccount(account, {
+      ...(await f.credentials.load(account.id)),
+      secrets: { apiKey: "FICTIONAL-AFTER-RETURN" },
+    });
+    await f.service.retry();
+    expect(await f.service.getStatus()).toMatchObject({
+      migrationState: "private",
+      keyCleanupPending: false,
+      rememberedKey: false,
+    });
+    expect((await f.switcher.load(account.id)).secrets.apiKey).toBe("FICTIONAL-AFTER-RETURN");
+  });
+  it("accepts an explicitly selected verified offline copy and rejects damaged or incomplete snapshots", async () => {
+    const f = await setup();
+    await f.service.exportCredentials(f.vaultDirectory);
+    await f.service.enableShared();
+    f.options.host.connect = async () => {
+      throw new BrokerError("broker-disconnected");
+    };
+    const snapshotAt = (await f.service.getStatus()).snapshotAt!;
+    const ciphertext = f.storage.credentials.get(account.id)!;
+    f.storage.credentials.save({ ...ciphertext, ciphertext: Buffer.from("damaged") });
+    await expect(f.service.returnToPrivate(true, snapshotAt)).rejects.toThrow();
+    expect(await f.service.getStatus()).toMatchObject({
+      migrationState: "shared",
+      rememberedKey: true,
+    });
+    f.storage.credentials.save(ciphertext);
+    await expect(f.service.returnToPrivate(true)).rejects.toThrow("confirm-offline-snapshot");
+    await f.service.returnToPrivate(true, snapshotAt);
+    await f.service.switchToPrivate();
+    expect((await f.service.getStatus()).migrationState).toBe("private");
+  });
+  it("rejects legacy settings without a migration profile and uses the current profile once present", async () => {
+    const f = await setup();
+    f.storage.settings.save("credentialSharing.frozen", true);
+    expect(() => new CredentialMigrationService(f.options)).toThrow(
+      MigrationProfileUpgradeRequired,
+    );
+    await mkdir(f.options.cacheDirectory);
+    await writeFile(
+      path.join(f.options.cacheDirectory, "migration-state.json"),
+      JSON.stringify({
+        product: "polyquota",
+        formatVersion: 1,
+        migrationState: "private",
+        selectedBackend: "private",
+        binding: null,
+      }),
+    );
+    const loaded = new CredentialMigrationService(f.options);
+    services.push(loaded);
+    expect(await loaded.getStatus()).toMatchObject({ migrationState: "private", frozen: false });
+  });
+  it("does not register or initialize the missing old location during a bound reconnect or delivery", async () => {
+    const f = await setup();
+    await f.service.exportCredentials(f.vaultDirectory);
+    await f.service.enableShared();
+    await f.service.stop();
+    const { rename } = await import("node:fs/promises");
+    await rename(f.vaultDirectory, path.join(f.directory, "moved"));
+    const connect = vi.spyOn(f.options.host, "connect");
+    const restored = new CredentialMigrationService(f.options);
+    services.push(restored);
+    await restored.start();
+    expect(await restored.getStatus()).toMatchObject({
+      migrationState: "shared",
+      activeBackend: "unavailable",
+    });
+    await expect(restored.resumeExport()).rejects.toThrow("vault-directory-missing");
+    await expect(restored.acknowledgeDelivery()).rejects.toThrow("vault-directory-missing");
+    expect(connect).not.toHaveBeenCalled();
+  });
+  it("resumes an existing shared binding using only its registered grant", async () => {
+    const f = await setup();
+    await f.service.exportCredentials(f.vaultDirectory);
+    await f.service.enableShared();
+    await f.service.stop();
+    const connect = vi.spyOn(f.options.host, "connect");
+    const restored = new CredentialMigrationService(f.options);
+    services.push(restored);
+    await restored.start();
+    expect(restored.getBackendContext().active).toBe("shared");
+    expect(connect).toHaveBeenCalled();
+    for (const call of connect.mock.calls)
+      expect(call).toEqual([
+        f.vaultDirectory,
+        expect.any(String),
+        expect.any(String),
+        { existingGrantOnly: true },
+      ]);
+  });
+  it("recovers a private snapshot transaction committed immediately before its B3 profile receipt", async () => {
+    const f = await setup();
+    await f.service.exportCredentials(f.vaultDirectory);
+    await f.service.enableShared();
+    const filename = path.join(f.options.cacheDirectory, "migration-state.json");
+    const shared = JSON.parse(await readFile(filename, "utf8"));
+    await f.service.returnToPrivate(true);
+    await f.service.stop();
+    const receipt = JSON.parse(
+      f.storage.settings.get("credentialSharing.privateSnapshot.vault") as string,
+    );
+    shared.operation = {
+      id: receipt.operationId,
+      kind: "prepare-private",
+      clientId: shared.binding.clientId,
+      vaultDirectory: f.vaultDirectory,
+    };
+    await writeFile(filename, JSON.stringify(shared));
+    const restored = new CredentialMigrationService(f.options);
+    services.push(restored);
+    await restored.start();
+    expect(await restored.getStatus()).toMatchObject({
+      migrationState: "private-ready",
       activeBackend: "shared",
       rememberedKey: true,
     });
-    c.call.mockImplementation(connectedCall);
-    expect((await c.switcher.load(account.id)).secrets.apiKey).toBe("FICTIONAL-ONLY");
+  });
+  it("reconciles records deleted between two memberships in the same vault", async () => {
+    const f = await setup();
+    const { migrationKey } = await f.service.exportCredentials(f.vaultDirectory);
+    await f.service.enableShared();
+    await f.service.returnToPrivate(true);
+    await f.service.switchToPrivate();
+    await f.service.rejoinShared(migrationKey);
+    await f.service.enableShared();
+    f.deleteShared();
+    await f.service.returnToPrivate(true);
+    await f.service.switchToPrivate();
+    expect(f.storage.accounts.get(account.id)).toBeNull();
   });
 });

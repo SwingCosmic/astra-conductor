@@ -12,6 +12,8 @@ for (const filename of [
   "runtime.js.map",
   "import-service.js",
   "import-service.js.map",
+  "server/import-service.js",
+  "server/import-service.js.map",
   "contract.js",
   "contract.js.map",
 ])

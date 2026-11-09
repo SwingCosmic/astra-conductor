@@ -96,15 +96,16 @@ export const providerOperations = {
   ),
 } as const;
 
+export type CredentialCommandContext = CommandContext & { operationId?: string | null };
 const credentialPath = "/api/v1/credential-sharing";
 const credentialVoid = (path: string) =>
-  apiOperation<CommandContext, void>("POST", `${credentialPath}/${path}`, {
+  apiOperation<CredentialCommandContext, void>("POST", `${credentialPath}/${path}`, {
     body,
     voidResult: true,
   });
 export const credentialOperations = {
   getStatus: apiOperation<void, CredentialManagementStatus>("GET", `${credentialPath}/status`),
-  selectDirectory: apiOperation<CommandContext, string | null>(
+  selectDirectory: apiOperation<CredentialCommandContext, string | null>(
     "POST",
     `${credentialPath}/select-directory`,
     { body, timeoutMs: 300_000 },
@@ -112,37 +113,48 @@ export const credentialOperations = {
   install: credentialVoid("install"),
   uninstall: credentialVoid("uninstall"),
   exportCredentials: apiOperation<
-    WithContext<{ vaultDirectory: string }>,
+    CredentialCommandContext & { vaultDirectory: string },
     CredentialExportDelivery
   >("POST", `${credentialPath}/export`, { body }),
   acknowledgeDelivery: credentialVoid("acknowledge-delivery"),
   cancelExport: credentialVoid("export/cancel"),
-  resumeExport: apiOperation<CommandContext, CredentialExportDelivery | null>(
+  resumeExport: apiOperation<CredentialCommandContext, CredentialExportDelivery | null>(
     "POST",
     `${credentialPath}/export/resume`,
     { body },
   ),
-  restartExport: apiOperation<WithContext<{ vaultDirectory: string }>, CredentialExportDelivery>(
+  restartExport: apiOperation<
+    CredentialCommandContext & { vaultDirectory: string },
+    CredentialExportDelivery
+  >("POST", `${credentialPath}/export/restart`, { body }),
+  enableShared: apiOperation<CredentialCommandContext & { confirmationId?: string }, void>(
     "POST",
-    `${credentialPath}/export/restart`,
-    { body },
-  ),
-  enableShared: credentialVoid("enable-shared"),
-  returnToPrivate: apiOperation<WithContext<{ acceptIndependentRefreshRisk: boolean }>, void>(
-    "POST",
-    `${credentialPath}/return-to-private`,
+    `${credentialPath}/enable-shared`,
     { body, voidResult: true },
   ),
-  rejoinShared: apiOperation<WithContext<{ migrationKey: string }>, void>(
+  switchToPrivate: credentialVoid("switch-to-private"),
+  relocate: apiOperation<CredentialCommandContext & { vaultDirectory: string }, void>(
+    "POST",
+    `${credentialPath}/relocate`,
+    { body, voidResult: true },
+  ),
+  returnToPrivate: apiOperation<
+    CredentialCommandContext & {
+      acceptIndependentRefreshRisk: boolean;
+      offlineSnapshotAt?: string;
+    },
+    void
+  >("POST", `${credentialPath}/return-to-private`, { body, voidResult: true }),
+  rejoinShared: apiOperation<CredentialCommandContext & { migrationKey: string }, void>(
     "POST",
     `${credentialPath}/rejoin-shared`,
     { body, voidResult: true },
   ),
   verifyImport: apiOperation<
-    WithContext<{ vaultDirectory: string; migrationKey: string }>,
+    CredentialCommandContext & { vaultDirectory: string; migrationKey: string },
     CredentialImportPreview
   >("POST", `${credentialPath}/import/verify`, { body }),
-  confirmImport: apiOperation<WithContext<{ previewId: string }>, void>(
+  confirmImport: apiOperation<CredentialCommandContext & { previewId: string }, void>(
     "POST",
     `${credentialPath}/import/confirm`,
     { body, voidResult: true },

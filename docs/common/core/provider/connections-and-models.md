@@ -33,7 +33,7 @@ Core 按接入点声明和账号适用性计算“可查询订阅用量”，供
 
 将使 Key 可用的路由、认证绑定和中转规则随账号存入加密记录；模型缓存、参数覆盖和产品设置由两个产品各自保存。开启共享后修改路由会产生记录修订事件，另一端重读并使旧绑定失效。日常调用按需读取当前凭据，目录缓存和请求预览不保存解密信封。
 
-新连接使用独立的应用层 content type 和带版本的 payload 编解码器；旧账号继续使用 v1，未知记录按 opaque 处理。当前缺口是 GraphAgent 尚无持久私有 vault 与账号写入端口，共享客户端登记也缺少 `create` 和 `delete` 授权。补全后两端的共享新增、替换和删除走已接管的 broker，具体步骤归[凭据共享实施方案](../credential-sharing/implementation-plan.md)的 B2/B3。编码器、分派规则和迁移边界见 [Core 详细设计 · 数据放在哪里](./core-design.md#数据放在哪里)。
+新连接使用独立的应用层 content type 和带版本的 payload 编解码器；旧账号继续使用 v1，未知记录按 opaque 处理。GraphAgent Electron 使用自己的持久私有库。两端共享新增、替换和删除已接入 broker 的获准记录操作，具体范围见[凭据共享实施方案](../credential-sharing/implementation-plan.md)的 B2/B3。编码器、分派规则和迁移边界见 [Core 详细设计 · 数据放在哪里](./core-design.md#数据放在哪里)。
 
 ## 2. 从协议目录得到可用模型
 

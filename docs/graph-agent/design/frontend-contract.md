@@ -1,6 +1,6 @@
 # GraphAgent 前端服务契约
 
-2026-11-08 · 公共管理门面已在供应商阶段一落地，模型页契约待实施。本文只定义 GraphAgent 的产品 Service、模型页投影、命令与事件。导入契约位于 [contract/graph-agent 兼容入口](../../../packages/contract/src/graph-agent/legacy-import.ts)，公共分组复用 `contract/common`；模型配置按[三阶段实施方案](../../common/core/provider/implementation-plan.md)阶段二、三交付，聊天与任务 API 随 [02 消息聊天](./02_conversation-and-messaging.md)和 [03 执行层](./03_agent-loop-dispatch-and-execution.md)另行细化。
+2026-11-08 · 公共管理门面已在供应商阶段一落地，模型页契约待实施。本文只定义 GraphAgent 的产品 Service、模型页投影、命令与事件。双向凭据操作与迁移状态由两款产品共用 [contract/common 凭据契约](../../../packages/contract/src/common/dto/credential-sharing.ts)；模型配置按[三阶段实施方案](../../common/core/provider/implementation-plan.md)阶段二、三交付，聊天与任务 API 随 [02 消息聊天](./02_conversation-and-messaging.md)和 [03 执行层](./03_agent-loop-dispatch-and-execution.md)另行细化。
 
 ## 1. 契约归属与入口
 

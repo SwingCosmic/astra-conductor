@@ -24,7 +24,7 @@
 
 阶段一已交付统一契约、产品目录、共用页面与正式宿主。两产品 Electron 支持各自私有账号管理和重启恢复；GraphAgent Web 使用已有 broker 授权读取与刷新凭据。取消导出恢复、新空目录重新导出与待接管导入均已完成，用户已确认两端共享状态正常。
 
-最终验证包括整仓 498 项测试、构建和双应用打包，以及真实 broker 的 26 项共享闭环和 10 项重新导出专项。宿主范围与验收边界见[阶段一交付结果](./stage-one-implementation.md)，状态与恢复规则见[凭据共享恢复交付结果](../credential-sharing/cancelled-export-recovery.md)。
+最终验证包括整仓 498 项测试、构建和双应用打包，以及真实 broker 的 26 项共享闭环和 10 项重新导出专项。宿主范围与验收边界见[阶段一交付结果](./stage-one-implementation.md)，当时的状态与恢复行为见[凭据共享恢复交付结果](../credential-sharing/cancelled-export-recovery.md)。共用凭据页面与两款桌面宿主已接入 B2/B3 的[本端迁移状态机](../credential-sharing/state-machine.md)。
 
 ## 阶段二 · 改造 Core，完成模型信息与请求配置
 

@@ -1,11 +1,14 @@
 import path from "node:path";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
   AppError,
   AuthCoordinator,
   CommonProviderApplicationService,
   CredentialVault,
   CredentialMutationGate,
+  CredentialMigrationService,
+  MemoryStorage,
+  SelectedBusinessStorage,
   RefreshCoordinator,
   SwitchingCredentialService,
   type AuthorizationInteractionService,
@@ -13,13 +16,12 @@ import {
   type FileService,
   type HttpPort,
   type StartOAuthCallbackServer,
-  type StoragePort,
 } from "@astra-conductor/core/internal";
 import type { BackendContext, CredentialManagementStatus } from "@astra-conductor/contract/common";
-import type { BrokerHost } from "@astra-conductor/credentials/host/windows";
+import { BROKER_COMPATIBILITY, type BrokerHost } from "@astra-conductor/credentials/host/windows";
+import { migrationHttpService } from "@astra-conductor/core/http";
 import { GraphStorage } from "../platform/storage.js";
 import { GraphCredentialRuntime } from "./runtime.js";
-import { GraphSharingService } from "./import-service.js";
 
 export interface GraphServicesOptions {
   directory: string;
@@ -33,49 +35,16 @@ export interface GraphServicesOptions {
   brokerBinding?: { vaultDirectory: string; clientId: string };
 }
 
-const unavailableCipher: CredentialCipherPort = {
-  isAvailable: async () => false,
-  encrypt: async () => {
-    throw new AppError("secure-storage", "Web 宿主不提供私有凭据存储");
-  },
-  decrypt: async () => {
-    throw new AppError("secure-storage", "Web 宿主不提供私有凭据存储");
-  },
-};
-
-/** The indirection lets a selected shared backend remain unavailable without falling back. */
-class SelectedStorage implements StoragePort {
-  constructor(public selected: StoragePort) {}
-  get accounts() {
-    return this.selected.accounts;
-  }
-  get credentials() {
-    return this.selected.credentials;
-  }
-  get snapshots() {
-    return this.selected.snapshots;
-  }
-  get notifications() {
-    return this.selected.notifications;
-  }
-  get settings() {
-    return this.selected.settings;
-  }
-  transaction<T>(operation: () => T): T {
-    return this.selected.transaction(operation);
-  }
-  close(): void {}
-}
-
 export async function createGraphServices(options: GraphServicesOptions) {
   const privateReady = options.cipher ? await options.cipher.isAvailable() : false;
   const privateStorage = options.cipher
     ? new GraphStorage(path.join(options.directory, "private-business.json"))
     : undefined;
-  let sharedStorage = new GraphStorage(path.join(options.directory, "shared-business.json"));
-  const sharedStores = new Map<string, GraphStorage>();
-  sharedStores.set("", sharedStorage);
-  const storage = new SelectedStorage(privateStorage ?? sharedStorage);
+  const storage = new SelectedBusinessStorage(
+    privateStorage ?? new MemoryStorage(),
+    (identity) =>
+      new GraphStorage(path.join(options.directory, `shared-business.${identity}.json`)),
+  );
   const mutations = new CredentialMutationGate();
   const unavailable = async (): Promise<never> => {
     throw new AppError("service-unavailable", "请接入已授权的共享凭据服务");
@@ -85,9 +54,7 @@ export async function createGraphServices(options: GraphServicesOptions) {
       ? new CredentialVault(privateStorage, options.cipher!, undefined, mutations)
       : { load: unavailable, save: unavailable, saveAccount: unavailable },
   );
-  let contextId = randomUUID();
-  let selectedShared = !privateStorage;
-  let selectedIdentity = "";
+  const webContextId = randomUUID();
   const listeners = new Set<(event: unknown) => void>();
   const eventControllers = new Set<AbortController>();
   const operations = new Set<Promise<unknown>>();
@@ -104,38 +71,18 @@ export async function createGraphServices(options: GraphServicesOptions) {
         revision,
         occurredAt: new Date().toISOString(),
         reasons: ["accounts", "credentials"],
-        contextId,
+        contextId: providers.getBackend().contextId,
         stamp: { instanceId, scope, revision },
       };
       for (const listener of listeners) listener(event);
     }
-  };
-  const selectShared = (binding: { vaultDirectory: string; clientId: string }) => {
-    if (!selectedShared && auth.hasActiveSessions())
-      throw new AppError("conflict", "请先完成或取消当前账号授权，再切换共享凭据");
-    const identity = createHash("sha256")
-      .update(`${path.resolve(binding.vaultDirectory).toLowerCase()}\0${binding.clientId}`)
-      .digest("hex");
-    if (!selectedShared || selectedIdentity !== identity) contextId = randomUUID();
-    selectedIdentity = identity;
-    let repository = sharedStores.get(identity);
-    if (!repository) {
-      repository = new GraphStorage(
-        path.join(options.directory, `shared-business.${identity}.json`),
-      );
-      sharedStores.set(identity, repository);
-    }
-    sharedStorage = repository;
-    selectedShared = true;
-    storage.selected = sharedStorage;
-    credentials.useUnavailable();
   };
   const runtime = new GraphCredentialRuntime(options.host, options.http, {
     storage,
     credentials,
     files: options.files,
     callbackServer: options.callbackServer,
-    sharedSelected: selectShared,
+    sharedSelected: (binding) => storage.selectShared(binding),
     changed: () => providers?.changed(),
   });
   const auth = new AuthCoordinator(runtime.providers, undefined, {
@@ -150,17 +97,40 @@ export async function createGraphServices(options: GraphServicesOptions) {
     undefined,
     mutations,
   );
-  const backend = (): BackendContext => ({
-    contextId,
-    selected: selectedShared ? "shared" : "private",
-    active: selectedShared
-      ? runtime.isConnected
-        ? "shared"
-        : "unavailable"
-      : privateReady
-        ? "private"
-        : "unavailable",
-  });
+  const migration =
+    privateStorage && options.cipher
+      ? new CredentialMigrationService({
+          product: "graph-agent",
+          cacheDirectory: path.join(options.directory, "credential-sharing"),
+          privateDataDirectory: options.directory,
+          storage: privateStorage,
+          selectStorage: (selection, binding) =>
+            selection === "shared" && binding
+              ? storage.selectShared(binding)
+              : storage.selectPrivate(),
+          cipher: options.cipher,
+          mutations,
+          providers: runtime.providers,
+          host: options.host,
+          switcher: credentials,
+          hasActiveAuth: () => auth.hasActiveSessions(),
+          selectDirectory: options.selectDirectory,
+          changed: () => providers?.changed(),
+        })
+      : undefined;
+  const backend = (): BackendContext => {
+    if (migration) {
+      const current = migration.getBackendContext();
+      return current.active === "private" && !privateReady
+        ? { ...current, active: "unavailable" }
+        : current;
+    }
+    return {
+      contextId: webContextId,
+      selected: "shared",
+      active: runtime.isConnected ? "shared" : "unavailable",
+    };
+  };
   providers = new CommonProviderApplicationService({
     storage,
     credentials,
@@ -171,124 +141,95 @@ export async function createGraphServices(options: GraphServicesOptions) {
     instanceId,
     backend,
     assertWritable: () => {
-      if (!selectedShared && !privateReady)
+      const current = backend();
+      if (current.selected === "private" && !privateReady)
         throw new AppError("secure-storage", "系统安全存储不可用，请恢复后重试");
-      if (selectedShared || !privateStorage)
-        throw new AppError("conflict", "当前共享授权仅支持读取与刷新，新增、替换和删除尚未开放");
+      if (current.active === "unavailable")
+        throw new AppError("service-unavailable", "请接入已授权的共享凭据服务");
     },
     visibleAccountIds: () =>
-      selectedShared ? (runtime.visibleAccountIds() ?? new Set<string>()) : null,
+      migration
+        ? migration.visibleAccountIds()
+        : (runtime.visibleAccountIds() ?? new Set<string>()),
     changed: publish,
   });
-  const sharing = new GraphSharingService({
-    host: options.host,
-    cipher: options.cipher ?? unavailableCipher,
-    directory: path.join(options.directory, "credential-sharing"),
-    selectDirectory: options.selectDirectory ?? (async () => null),
-    canRefresh: (provider) => runtime.canRefresh(provider),
-    activate: (binding, changed) => runtime.activate(binding, changed),
-    accounts: () => runtime.accounts(),
-    refresh: (id) => runtime.refresh(id),
-    deactivate: () => runtime.deactivate(),
-    selectShared,
-    connected: () => runtime.isConnected,
-    runStorageSwitch: (operation) => switchStorage(operation),
-    changed: () => providers.changed(),
-  });
-  let switchingStorage = false;
-  const switchStorage = async (operation: () => Promise<void>) => {
-    if (switchingStorage) throw new AppError("conflict", "共享凭据切换正在进行，请稍后重试");
-    if (auth.hasActiveSessions())
-      throw new AppError("conflict", "请先完成或取消当前账号授权，再切换共享凭据");
-    switchingStorage = true;
-    const drained = mutations.freeze();
-    providers.changed();
-    try {
-      await drained;
-      await operation();
-    } finally {
-      mutations.resume();
-      switchingStorage = false;
-      providers.changed();
-    }
-  };
-  const retry = () => {
+  let reconnecting: Promise<void> | undefined;
+  const retryWeb = async () => {
     const binding = options.brokerBinding;
-    if (!binding) return sharing.retry();
-    return switchStorage(async () => {
-      selectShared(binding);
+    if (!binding)
+      throw new AppError("capability-unavailable", "请在服务端配置共享目录和客户端身份");
+    if (reconnecting) return reconnecting;
+    if (auth.hasActiveSessions()) throw new AppError("conflict", "请先完成或取消当前账号授权");
+    reconnecting = (async () => {
+      await mutations.freeze();
       try {
         await runtime.activate(binding, () => providers.changed());
       } finally {
+        mutations.resume();
         providers.changed();
       }
+    })().finally(() => {
+      reconnecting = undefined;
     });
+    return reconnecting;
   };
-  const credentialManagement = {
+  const webCredentials = {
     async getStatus(): Promise<CredentialManagementStatus> {
-      const status = await sharing.status();
-      const selected = backend();
-      const connected = runtime.isConnected;
-      const enabled = { state: "enabled" as const };
-      const disabled = { state: "disabled" as const, reason: "当前宿主或授权不提供此操作" };
-      const importDisabled = {
-        state: "disabled" as const,
-        reason: options.cipher
-          ? `请先安装支持 API ${status.requiredApiLevel} 及以上的凭据组件`
-          : "Web 宿主使用已授权的共享服务连接，请在服务端配置共享目录和客户端身份",
-      };
+      const host = options.host;
+      const installation = await host.inspect();
+      const binding = options.brokerBinding;
+      const service =
+        binding && installation.installState === "installed"
+          ? await host.status?.(binding.vaultDirectory)
+          : undefined;
+      const accounts = runtime.isConnected ? await runtime.accounts() : [];
       return {
-        ...status,
-        installState: status.installState as CredentialManagementStatus["installState"],
-        localPackageState:
-          status.localPackageState as CredentialManagementStatus["localPackageState"],
-        directorySelectionAvailable: !!options.selectDirectory,
-        exportState: "none",
-        recordCount: connected ? (await runtime.accounts()).length : status.accounts.length,
-        frozen: selectedShared,
+        ...installation,
+        localPackageDirectory: host.localPackageDirectory,
+        localPackageState: (await host.inspectPackage?.()) ?? "unknown",
+        requiredApiLevel: BROKER_COMPATIBILITY.requiredApiLevel,
+        downloadState: "not-configured",
+        directorySelectionAvailable: false,
+        migrationState: null,
+        available: runtime.isConnected,
+        serviceState: service?.serviceState ?? "NOT_CHECKED",
+        vaultDirectory: binding?.vaultDirectory ?? null,
+        storageVersion: null,
+        recordCount: accounts.length,
+        frozen: mutations.isFrozen,
         deliveryAcknowledged: false,
-        selectedBackend: selectedShared ? "shared" : "private",
-        activeBackend: selected.active === "none" ? "unavailable" : selected.active,
-        sharingState: connected
-          ? "active"
-          : selectedShared || status.state !== "none"
-            ? "handoff-pending"
-            : "none",
+        rememberedKey: false,
+        selectedBackend: "shared",
+        activeBackend: runtime.isConnected ? "shared" : "unavailable",
         snapshotAt: null,
         keyCleanupPending: false,
         sessionCleanupPending: false,
-        brokerOwnership: status.ownership,
-        vaultDirectory: options.brokerBinding?.vaultDirectory ?? status.vaultDirectory,
+        brokerOwnership: service?.brokerOwnership ?? "NOT_CHECKED",
+        lastError: null,
         role: "receiver",
-        privateAvailable: !!privateStorage && privateReady,
-        importState: options.brokerBinding ? (connected ? "shared" : "import-ready") : status.state,
-        connected,
-        accounts: connected ? await runtime.accounts() : status.accounts,
+        privateAvailable: false,
+        connected: runtime.isConnected,
+        accounts,
         instanceId,
-        contextId,
+        contextId: webContextId,
         capabilities: {
-          verifyImport:
-            privateReady && status.installState === "installed" ? enabled : importDisabled,
-          confirmImport:
-            privateReady && status.installState === "installed" ? enabled : importDisabled,
-          retry: selectedShared || status.state !== "none" ? enabled : disabled,
-          exportCredentials: disabled,
-          returnToPrivate: disabled,
+          retry: binding
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "请在服务端配置共享目录和客户端身份" },
+          verifyImport: { state: "hidden" },
+          confirmImport: { state: "hidden" },
+          exportCredentials: { state: "hidden" },
+          returnToPrivate: { state: "hidden" },
         },
       };
     },
-    selectDirectory: () => sharing.selectDirectory(),
-    install: () => sharing.install(),
-    uninstall: () => sharing.uninstall(),
-    verifyImport: (vaultDirectory: string, migrationKey: string) =>
-      sharing.verifyImport({ vaultDirectory, migrationKey }),
-    confirmImport: (id: string) => sharing.confirmImport(id),
-    cancelImport: () => sharing.cancelPreview(),
-    retry,
-    refresh: (id: string) => sharing.refresh(id),
+    retry: retryWeb,
   };
-  if (options.brokerBinding) await retry().catch(() => undefined);
-  else if (options.cipher) await sharing.restore();
+  const credentialManagement = migration
+    ? migrationHttpService(migration, providers)
+    : webCredentials;
+  if (migration) await migration.start();
+  else if (options.brokerBinding) await retryWeb().catch(() => undefined);
 
   return {
     providers,
@@ -369,10 +310,9 @@ export async function createGraphServices(options: GraphServicesOptions) {
       auth.cancelAll();
       await auth.drain();
       await Promise.allSettled([...operations]);
-      await sharing.dispose();
+      await migration?.stop();
       await runtime.dispose();
-      privateStorage?.close();
-      for (const repository of sharedStores.values()) repository.close();
+      storage.close();
     },
   };
 }

@@ -42,16 +42,19 @@ function operation(operationId: string, status = "granted"): BrokerOperation {
 function harness(
   override?: (method: string, params: Record<string, unknown>) => unknown | Promise<unknown>,
 ) {
-  const calls: { method: string; params: Record<string, unknown> }[] = [];
+  const calls: { method: string; params: Record<string, unknown>; channel: number }[] = [];
+  const closed = new Set<number>();
   let currentOperation = "";
   let connects = 0;
   const client = new SharedBrokerClient(async () => {
-    connects++;
+    const channel = ++connects;
     return {
-      close() {},
+      close() {
+        closed.add(channel);
+      },
       async call(method: string, params: unknown = {}) {
         const record = params as Record<string, unknown>;
-        calls.push({ method, params: record });
+        calls.push({ method, params: record, channel });
         const result = await override?.(method, record);
         if (result !== undefined) return result;
         if (method === "getCredential") return credential();
@@ -74,11 +77,140 @@ function harness(
       },
     };
   });
-  return { client, calls, connects: () => connects };
+  return { client, calls, closed, connects: () => connects };
 }
 afterEach(() => vi.useRealTimers());
 
 describe("shared broker updates", () => {
+  it("uses one independent lease pipe across sequential and simultaneous provider callbacks", async () => {
+    const ids = new Map<string, string>();
+    const { client, calls, connects, closed } = harness((method, params) => {
+      if (method === "beginUpdate") {
+        const id = String(params.credentialId),
+          op = String(params.operationId);
+        ids.set(op, id);
+        const body = credential();
+        body.description.credentialId = id;
+        return {
+          status: "granted",
+          credential: body,
+          operation: { ...operation(op), credentialId: id },
+        };
+      }
+      if (method === "markUpdateStarted" || method === "abortUpdate" || method === "commitUpdate") {
+        const lease = (params.lease ?? params) as { operationId: string };
+        return {
+          ...operation(
+            lease.operationId,
+            method === "markUpdateStarted"
+              ? "started"
+              : method === "abortUpdate"
+                ? "failed-released"
+                : "committed",
+          ),
+          credentialId: ids.get(lease.operationId),
+        };
+      }
+      if (method === "disconnect") return {};
+    });
+    const cancel = new AbortController();
+    let started!: () => void;
+    const active = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const slow = client.update(
+      "slow",
+      "1",
+      async () => {
+        started();
+        return new Promise<never>(() => undefined);
+      },
+      { signal: cancel.signal },
+    );
+    const cancelled = expect(slow).rejects.toThrow("request-timeout");
+    await active;
+    await client.getCredential("record");
+    const updateFast = () =>
+      client.update("fast", "1", async () => ({ value: "ok", commit: { payload: "QzI" } }));
+    expect((await updateFast()).value).toBe("ok");
+    cancel.abort();
+    await cancelled;
+    expect((await updateFast()).value).toBe("ok");
+    expect(
+      new Set(calls.filter((call) => call.method === "beginUpdate").map((call) => call.channel))
+        .size,
+    ).toBe(1);
+    expect(calls.find((call) => call.method === "getCredential")?.channel).not.toBe(
+      calls[0]?.channel,
+    );
+    expect(connects()).toBe(2);
+    expect(closed.size).toBe(0);
+    await Promise.all([client.disconnect(), client.disconnect()]);
+    expect(calls.filter((call) => call.method === "disconnect")).toHaveLength(1);
+    expect(closed.size).toBe(2);
+  });
+
+  it("can disconnect during a long poll without waiting on the subscriber's external signal", async () => {
+    let resolvePage!: () => void;
+    let began!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      began = resolve;
+    });
+    const page = new Promise<void>((resolve) => {
+      resolvePage = resolve;
+    });
+    const { client, calls, connects, closed } = harness(async (method) => {
+      if (method === "watchEvents") {
+        began();
+        await page;
+        return { items: [], nextCursor: "0" };
+      }
+      if (method === "disconnect") return {};
+    });
+    const seen = vi.fn(async () => undefined);
+    const watching = client.watchEvents(seen, { signal: new AbortController().signal });
+    await ready;
+    await client.getCredential("record");
+    await client.update("record", "1", async () => ({ value: true }));
+    expect(connects()).toBe(3);
+    await client.disconnect();
+    resolvePage();
+    await watching;
+    expect(closed.size).toBe(3);
+    expect(calls.filter((call) => call.method === "disconnect")).toHaveLength(1);
+    expect(connects()).toBe(3);
+    expect(seen).not.toHaveBeenCalled();
+  });
+
+  it("never opens a transport for an update cancelled before the first RPC", async () => {
+    const { client, connects } = harness();
+    await expect(
+      client.update("record", undefined, vi.fn(), { signal: AbortSignal.abort() }),
+    ).rejects.toThrow("cancelled");
+    expect(connects()).toBe(0);
+    client.close();
+  });
+
+  it("does not reopen the lease pipe if cleanup loses its connection after close", async () => {
+    let entered!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const { client, calls, connects, closed } = harness((method) => {
+      if (method === "abortUpdate") throw new BrokerError("broker-disconnected");
+    });
+    const updating = client.update("record", "1", async () => {
+      entered();
+      return new Promise<never>(() => undefined);
+    });
+    const result = expect(updating).rejects.toThrow("request-timeout");
+    await ready;
+    client.close();
+    await result;
+    expect(calls.filter((call) => call.method === "abortUpdate")).toHaveLength(1);
+    expect(connects()).toBe(1);
+    expect(closed.size).toBe(1);
+  });
   it("drains update cleanup before disconnect so late cleanup cannot reopen the session", async () => {
     let ready!: () => void;
     const started = new Promise<void>((resolve) => {

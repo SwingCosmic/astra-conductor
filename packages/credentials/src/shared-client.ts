@@ -1,3 +1,4 @@
+import type { InitialRecord } from "./transfer.js";
 import { randomUUID } from "node:crypto";
 import { BrokerError, canonical, id, object, requireValue, text, unb64 } from "./format.js";
 
@@ -205,11 +206,12 @@ function delay(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-/** Product-independent protocol client. Only descriptions/cursors may be retained by consumers. */
+/** Queue only RPC frames on each authenticated pipe; provider callbacks run outside those queues. */
 export class SharedBrokerClient {
   private connection?: Promise<BrokerConnection>;
+  private updateChannel?: SharedBrokerClient;
   private closed = false;
-  private disconnecting = false;
+  private disconnecting?: Promise<void>;
   private readonly operations = new Set<AbortController>();
   private readonly completions = new Set<Promise<void>>();
   private tracking(): () => void {
@@ -236,6 +238,10 @@ export class SharedBrokerClient {
       throw error;
     }
     try {
+      requireValue(
+        !this.closed && (!this.disconnecting || method === "disconnect"),
+        "client-closed",
+      );
       return await connection.call(method, params);
     } catch (error) {
       if (transportFailure(error)) {
@@ -253,6 +259,27 @@ export class SharedBrokerClient {
       if (!transportFailure(error)) throw error;
       return this.rpc(method, params);
     }
+  }
+  async getSnapshotWatermark(): Promise<{
+    vaultId: string;
+    storageVersion: string;
+    watermark: string;
+  }> {
+    const response = object(await this.replay("getSnapshotWatermark"), [
+      "vaultId",
+      "storageVersion",
+      "watermark",
+    ]);
+    return {
+      vaultId: id(response.vaultId),
+      storageVersion: id(response.storageVersion),
+      watermark: text(response.watermark),
+    };
+  }
+  async createCredential(request: InitialRecord): Promise<BrokerCredential> {
+    return parseBrokerCredential(
+      await this.replay("createCredential", { ...request, operationId: randomUUID() }),
+    );
   }
   async getCredential(credentialId: string): Promise<BrokerCredential> {
     return parseBrokerCredential(
@@ -319,13 +346,16 @@ export class SharedBrokerClient {
     this.operations.add(controller);
     let cursor = options.cursor ?? "0";
     const revisions = new Map<string, string>();
-    const stop = () => {
-      controller.abort();
-      watcher.close();
-      finish();
-    };
+    const stop = () => controller.abort();
+    controller.signal.addEventListener(
+      "abort",
+      () => {
+        watcher.close();
+        finish();
+      },
+      { once: true },
+    );
     options.signal.addEventListener("abort", stop, { once: true });
-    controller.signal.addEventListener("abort", () => watcher.close(), { once: true });
     if (options.signal.aborted) stop();
     try {
       while (!controller.signal.aborted) {
@@ -334,6 +364,7 @@ export class SharedBrokerClient {
             await watcher.replay("watchEvents", { cursor, limit: 200, waitMilliseconds: 5000 }),
             cursor,
           );
+          if (controller.signal.aborted) break;
           const latest = new Map<string, CredentialEvent>();
           for (const item of page.items) {
             const known =
@@ -356,6 +387,7 @@ export class SharedBrokerClient {
       this.operations.delete(controller);
       options.signal.removeEventListener("abort", stop);
       watcher.close();
+      finish();
     }
   }
   async update<T>(
@@ -368,7 +400,11 @@ export class SharedBrokerClient {
     options: { signal?: AbortSignal } = {},
   ): Promise<{ value: T; operation: BrokerOperation }> {
     requireValue(!this.closed && !this.disconnecting, "client-closed");
-    const worker = new SharedBrokerClient(this.connect);
+    // Lease RPCs are short and correlated by operation ID. Keep long polls on their own pipe.
+    const worker = (this.updateChannel ??= new SharedBrokerClient(() => {
+      requireValue(!this.closed, "client-closed");
+      return this.connect();
+    }));
     const finish = this.tracking();
     const controller = new AbortController();
     this.operations.add(controller);
@@ -382,7 +418,9 @@ export class SharedBrokerClient {
     let renewing: Promise<unknown> | undefined;
     let committing = false;
     let providerStarted = false;
+    let ticketMayExist = false;
     try {
+      requireValue(!controller.signal.aborted, "cancelled");
       const observed =
         observedRevision ?? (await worker.getCredential(credentialId)).description.revision;
       const request = {
@@ -394,12 +432,16 @@ export class SharedBrokerClient {
       let granted: BrokerOperation;
       for (;;) {
         requireValue(!controller.signal.aborted, "cancelled");
+        ticketMayExist = true;
         const result = object(await worker.replay("beginUpdate", request), [
           "status",
           "credential",
           "operation",
         ]);
-        if (result.status === "stale") throw new BrokerError("stale-revision");
+        if (result.status === "stale") {
+          ticketMayExist = false;
+          throw new BrokerError("stale-revision");
+        }
         if (result.status === "queued") {
           await delay(200, controller.signal);
           continue;
@@ -425,6 +467,7 @@ export class SharedBrokerClient {
         };
         break;
       }
+      requireValue(!controller.signal.aborted, "cancelled");
       const started = operation(await worker.replay("markUpdateStarted", lease));
       requireValue(started.status === "started", "update-not-started");
       const remaining = Math.max(0, Math.min(120_000, granted.hardDeadline - Date.now()));
@@ -482,7 +525,7 @@ export class SharedBrokerClient {
       requireValue(committed.status === "committed", "commit-outcome-unknown");
       return { value: result.value, operation: committed };
     } catch (error) {
-      if (!lease) {
+      if (!lease && ticketMayExist) {
         // Cancelling one wait must not disconnect another refresh or the event subscriber.
         const pending = await worker
           .replay("cancelQueuedUpdate", { operationId })
@@ -514,21 +557,27 @@ export class SharedBrokerClient {
       if (timer) clearInterval(timer);
       if (deadline) clearTimeout(deadline);
       options.signal?.removeEventListener("abort", abort);
-      worker.close();
       finish();
     }
   }
-  async disconnect(): Promise<void> {
-    this.disconnecting = true;
-    for (const operation of this.operations) operation.abort();
-    await Promise.allSettled([...this.completions]);
-    try {
-      await this.replay("disconnect");
-    } finally {
-      this.close();
-    }
+  disconnect(): Promise<void> {
+    if (this.closed) return Promise.resolve();
+    this.disconnecting ??= Promise.resolve().then(async () => {
+      for (const operation of this.operations) operation.abort();
+      await Promise.allSettled([...this.completions]);
+      if (this.closed) return;
+      try {
+        // All pipes have the same client/instance session. Send exactly one logical disconnect.
+        const existing = this.connection ? this : (this.updateChannel ?? this);
+        await existing.replay("disconnect");
+      } finally {
+        this.close();
+      }
+    });
+    return this.disconnecting;
   }
   close(): void {
+    if (this.closed) return;
     this.closed = true;
     for (const operation of this.operations) operation.abort();
     void this.connection?.then(
@@ -536,5 +585,11 @@ export class SharedBrokerClient {
       () => undefined,
     );
     this.connection = undefined;
+    const worker = this.updateChannel;
+    this.updateChannel = undefined;
+    if (worker) {
+      if (this.completions.size === 0) worker.close();
+      else void Promise.all([...this.completions]).then(() => worker.close());
+    }
   }
 }

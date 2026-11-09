@@ -32,6 +32,8 @@ export interface ProviderOfferingDescriptor {
   displayName: string;
   description?: string;
   websiteUrl?: string;
+  /** Existing subscription offerings default to their provider's usage capability. */
+  supportsSubscriptionUsage?: boolean;
   /** core 声明键、UI 持有资产映射；缺失映射时 UI 使用自己的视觉回退。 */
   iconKey?: string;
   authMethods: ProviderAuthMethodDescriptor[];

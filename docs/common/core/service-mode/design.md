@@ -13,7 +13,7 @@
 
 > 2026-11-01 设计补充：凭据位置可切换，导出与服务启用分阶段，主密钥按客户端记住/忘记，导出更新和换钥按新版本提交。
 
-> 2026-11-08 状态更新：第 6.2 节的私有/共享后端接入已随凭据共享 A6—A8 与供应商阶段一落地；完整双向写权限仍按 B2/B3 推进，结果见[阶段一交付结果](../provider/stage-one-implementation.md)。
+> 2026-11-09 更新。两款桌面产品已实现双向导入导出和本端独立切换。宿主范围和状态见[凭据共享实施方案](../credential-sharing/implementation-plan.md)。
 
 ## 1. 功能边界与运行场景
 
@@ -198,7 +198,7 @@ SQLite 可复用现有实现与迁移，分别加载匹配 Node/Electron 运行�
 
 可用性只限制实际依赖凭据读写的步骤，不统一禁止文件读取、回调监听或授权协议执行。敏感操作的结果明确区分完成、待交互、凭据存储失败等真实状态；不把未保存的结果声明为完整导入成功。
 
-凭据共享与迁移按[专门设计](../credential-sharing/design.md)实施；PolyQuota 的导出、共享接入与返回内置已交付，完整双向写权限仍按 B2/B3 推进。
+凭据共享与迁移按[专门设计](../credential-sharing/design.md)实施；PolyQuota 的导出、共享接入与返回内置已交付，双向导入导出和独立切换已由凭据专项 B2/B3 实现。
 
 ### 6.2 私有/共享后端接入
 
@@ -212,7 +212,7 @@ SQLite 可复用现有实现与迁移，分别加载匹配 Node/Electron 运行�
 
 应用遇到网络错误等并决定本次刷新失败时，主动报告 failed-released 并释放许可，不等 TTL；可重新申请许可重试或让其他客户端接替。若只是成功结果的提交回执丢失，则查询原 operationId，不把它错误地标成失败；失败释放送不到服务时才使用租约到期兜底。
 
-[设计](../credential-sharing/design.md)规定加密、存储选择、密钥记忆、版本发布与恢复，[实施方案](../credential-sharing/implementation-plan.md)规定两阶段范围：首阶段 PolyQuota 导出、GraphAgent 导入后统一共享，PolyQuota 可返回内置；GraphAgent 使用共用供应商与凭据页。取消后的恢复和新目录重新导出已在阶段一交付，双向导出/切换和换钥仍后续实施。
+[设计](../credential-sharing/design.md)规定加密、存储选择、密钥记忆、版本发布与恢复，[实施方案](../credential-sharing/implementation-plan.md)规定两阶段范围：首阶段 PolyQuota 导出、GraphAgent 导入后统一共享，PolyQuota 可返回内置；GraphAgent 使用共用供应商与凭据页。取消后的恢复和新目录重新导出已在阶段一交付，双向导出与切换已由 B2/B3 实现，换钥按 B6 排期。
 
 导出成功、broker 接管和客户端 DI 切换分别提交。失败重试保留主密钥；主动切回内置清理本客户端缓存，重入须输入迁移密钥。共享服务不可达不自动启用旧内置副本。产品 Hono 只提供管理状态与专用迁移密钥交互，供应商秘密和主密钥不进入 UI，broker 使用独立本机通道。
 
@@ -368,7 +368,7 @@ A1—C4 已完成，包含职责服务、Hono/内部协议、独立 Node 入口�
 - [实施结果](./implementation-plan.md)：代码落点、完成情况与实现约定。
 - [验收记录](./acceptance.md)：最终结果、验证范围与回归用例。
 - [跨服务商服务协议设计](../provider/design.md)：共享能力与产品边界。
-- [跨产品凭据共享与迁移](../credential-sharing/design.md)：默认私有后端、主动迁移/导入、固定目录与唯一凭据服务；一阶段共享后端与取消恢复已实施，完整双向写权限按 B2/B3 推进。
+- [跨产品凭据共享与迁移](../credential-sharing/design.md)：默认私有后端、主动迁移/导入、固定目录与唯一凭据服务；桌面双角色与本端独立迁移已由 B2/B3 实现。
 - [Core 与 contract 结构](../2026-10-drift-review/core-contract-structure.md)：公开 DTO、校验与展示归属。
 - [认证服务抽取设计](../../../polyquota/auth-service-extraction-design.md)：Core 已有 CLI、OAuth 与回调编排。
 - [运行与通信现状](../../../polyquota/runtime-and-communication-review.md)：当前宿主、通信与生命周期。

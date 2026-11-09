@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, type Mock } from "vitest";
 import {
   CredentialVault,
+  CredentialMutationGate,
   MemoryStorage,
   ProviderRegistry,
   computeCompositeRemaining,
@@ -87,6 +88,7 @@ function createService(
   redeemResetCredit?: Mock,
   shared = false,
   visibleAccountIds?: ReadonlySet<string>,
+  mutations?: CredentialMutationGate,
 ) {
   const storage = new MemoryStorage();
   storage.accounts.save(savedAccount);
@@ -120,20 +122,18 @@ function createService(
   } as unknown as PollingService;
   const auth = { cancel: vi.fn(), start: vi.fn(), finish: vi.fn() } as unknown as AuthCoordinator;
   const detectProxyStatus = vi.fn().mockResolvedValue({ proxyMode: "system", proxyAddress: null });
-  const service = new PolyQuotaApplicationService(
-    storage,
-    new CredentialVault(storage, cipher),
-    polling,
-    auth,
-    {
-      publishChanged: (event) => events.push(event),
-      registry: testRegistry(redeemResetCredit),
-      isShared: () => shared,
-      visibleAccountIds: () => visibleAccountIds ?? null,
-      detectProxyStatus,
-      now: () => new Date("2026-09-27T00:02:00.000Z"),
-    },
-  );
+  const vault = Object.assign(new CredentialVault(storage, cipher), {
+    knownExpiry: vi.fn((_id: string): string | undefined => undefined),
+  });
+  const service = new PolyQuotaApplicationService(storage, vault, polling, auth, {
+    publishChanged: (event) => events.push(event),
+    registry: testRegistry(redeemResetCredit),
+    mutations,
+    isShared: () => shared,
+    visibleAccountIds: () => visibleAccountIds ?? null,
+    detectProxyStatus,
+    now: () => new Date("2026-09-27T00:02:00.000Z"),
+  });
   const scheduler = new RefreshScheduler(
     (source) => service.executeRefreshBatch(source),
     () => service.schedulerChanged(),
@@ -144,6 +144,7 @@ function createService(
   scheduler.start(service.getSettings());
   return {
     service,
+    vault,
     storage,
     polling,
     scheduler,
@@ -166,6 +167,26 @@ function remainingFromVisibleUsage(snapshot: PolyQuotaSnapshot) {
 }
 
 describe("PolyQuotaApplicationService", () => {
+  it("drains a pending polling completion before switching its business storage", async () => {
+    const mutations = new CredentialMutationGate();
+    const { service, polling } = createService(account, undefined, false, undefined, mutations);
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    vi.mocked(polling.refresh).mockImplementation(async () => {
+      await pending;
+      return refreshOutcome;
+    });
+    const refresh = service.refreshAccount(account.id);
+    await vi.waitFor(() => expect(polling.refresh).toHaveBeenCalledWith(account.id));
+    const draining = mutations.freeze();
+    await Promise.resolve();
+    expect(mutations.isFrozen).toBe(false);
+    finish();
+    await Promise.all([refresh, draining]);
+    expect(mutations.isFrozen).toBe(true);
+  });
   it("rejects authorization and deletion in shared mode before executing providers or changing local records", async () => {
     const { service, storage, auth } = createService(account, undefined, true);
     await expect(service.startAuth({ offeringId: "codex", method: "cli-import" })).rejects.toThrow(
@@ -196,6 +217,23 @@ describe("PolyQuotaApplicationService", () => {
     expect(storage.accounts.get("private-account")).not.toBeNull();
   });
 
+  it("builds repeated shared usage snapshots without requesting account credentials", async () => {
+    const { service, storage, vault } = createService(account, undefined, true);
+    const other = { ...account, id: "also-visible", stableIdentity: "other-identity" };
+    storage.accounts.save(other);
+    const load = vi.spyOn(vault, "load");
+    const expiry = "2026-09-28T00:00:00.000Z";
+    vault.knownExpiry.mockImplementation((id) => (id === account.id ? expiry : undefined));
+    for (let index = 0; index < 2; index++) {
+      const snapshot = await service.getSnapshot();
+      expect(snapshot.accounts.map((item) => [item.id, item.tokenExpiresAt])).toEqual([
+        [account.id, expiry],
+        [other.id, null],
+      ]);
+    }
+    expect(load).not.toHaveBeenCalled();
+  });
+
   it("returns one revisioned snapshot with matching account and usage keys", async () => {
     const { service } = createService();
     const snapshot = await service.getSnapshot();
@@ -215,7 +253,7 @@ describe("PolyQuotaApplicationService", () => {
     });
   });
 
-  it("refreshes stored snapshots that predate the reset-credits schema exactly once", async () => {
+  it("reads legacy usage snapshots without starting a refresh or emitting a change", async () => {
     const legacySnapshot = {
       accountId: account.id,
       plan: "plus",
@@ -234,18 +272,14 @@ describe("PolyQuotaApplicationService", () => {
     storage.snapshots.save(legacySnapshot);
     const baselineEvents = events.length;
 
-    // 破坏性结构更新：旧结构快照不做投影适配，照常展示并立即触发一次刷新。
     const first = await service.getSnapshot();
     expect(first.usageByAccountId[account.id]?.resetCredits).toBeNull();
     expect(first.usageByAccountId[account.id]?.extras[0]?.key).toBe("reset-credits");
-    expect(polling.refresh).toHaveBeenCalledTimes(1);
-    expect(polling.refresh).toHaveBeenCalledWith(account.id);
-
     await service.getSnapshot();
-    expect(polling.refresh).toHaveBeenCalledTimes(1);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(events.slice(baselineEvents).some((event) => event.reasons.includes("usage"))).toBe(
-      true,
+    expect(polling.refresh).not.toHaveBeenCalled();
+    expect(storage.snapshots.get(account.id)).toEqual(legacySnapshot);
+    expect(events.slice(baselineEvents).filter((event) => event.reasons.includes("usage"))).toEqual(
+      [],
     );
   });
 

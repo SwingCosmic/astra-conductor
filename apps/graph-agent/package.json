@@ -1,6 +1,6 @@
 {
   "name": "@astra-conductor/graph-agent",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
   "description": "GraphAgent Web and desktop application",
   "type": "module",

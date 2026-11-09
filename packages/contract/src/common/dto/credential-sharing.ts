@@ -1,4 +1,15 @@
+export type CredentialMigrationState =
+  | "private"
+  | "export-ready"
+  | "import-ready"
+  | "private-ready"
+  | "shared";
+
 export interface CredentialSharingStatus {
+  migrationState: CredentialMigrationState | null;
+  operation?: { id: string; kind: string; vaultDirectory?: string; step?: string } | null;
+  importPreview?: CredentialImportPreview | null;
+  migrationReview?: { id: string; accounts: CredentialAccountPreview[] } | null;
   available: boolean;
   installState: "not-installed" | "installed" | "damaged" | "incompatible" | "unknown";
   installedVersion: string | null;
@@ -10,7 +21,6 @@ export interface CredentialSharingStatus {
   localPackageState: "missing" | "ready" | "invalid" | "unknown";
   directorySelectionAvailable: boolean;
   serviceState: string;
-  exportState: "none" | "preparing" | "pending" | "exported" | "cancelled";
   vaultDirectory: string | null;
   storageVersion: string | null;
   recordCount: number;
@@ -19,7 +29,6 @@ export interface CredentialSharingStatus {
   rememberedKey: boolean;
   selectedBackend: "private" | "shared";
   activeBackend: "private" | "shared" | "unavailable";
-  sharingState: "none" | "handoff-pending" | "active" | "returning" | "private";
   snapshotAt: string | null;
   keyCleanupPending: boolean;
   sessionCleanupPending: boolean;
@@ -40,12 +49,12 @@ export interface CredentialImportPreview {
   storageVersion: string;
   recordCount: number;
   accounts: CredentialAccountPreview[];
+  conflicts?: CredentialAccountPreview[];
 }
 
 export interface CredentialManagementStatus extends CredentialSharingStatus {
   role?: "source" | "receiver" | "both";
   privateAvailable?: boolean;
-  importState?: "none" | "preparing" | "import-ready" | "shared";
   connected?: boolean;
   accounts?: CredentialAccountPreview[];
   capabilities?: Record<string, import("../service.js").ActionAvailability>;
@@ -67,8 +76,13 @@ export interface ICredentialSharingService {
   exportCredentials(vaultDirectory: string): Promise<ServiceResult<CredentialExportDelivery>>;
   acknowledgeDelivery(): Promise<ServiceResult<void>>;
   cancel(): Promise<ServiceResult<void>>;
-  enableShared(): Promise<ServiceResult<void>>;
-  returnToPrivate(acceptIndependentRefreshRisk: boolean): Promise<ServiceResult<void>>;
+  switchToPrivate(): Promise<ServiceResult<void>>;
+  relocate(vaultDirectory: string): Promise<ServiceResult<void>>;
+  enableShared(confirmationId?: string): Promise<ServiceResult<void>>;
+  returnToPrivate(
+    acceptIndependentRefreshRisk: boolean,
+    offlineSnapshotAt?: string,
+  ): Promise<ServiceResult<void>>;
   rejoinShared(migrationKey: string): Promise<ServiceResult<void>>;
 }
 

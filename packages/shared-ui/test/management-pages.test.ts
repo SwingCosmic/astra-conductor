@@ -2,7 +2,6 @@ import { mount, flushPromises } from "@vue/test-utils";
 import { describe, expect, it, vi } from "vitest";
 import type {
   CredentialManagementStatus,
-  CredentialExportDelivery,
   ICredentialManagementService,
   IProviderService,
   ProviderManagementSnapshot,
@@ -73,24 +72,22 @@ const status: CredentialManagementStatus = {
   downloadState: "not-configured",
   directorySelectionAvailable: false,
   serviceState: "READY",
-  exportState: "none",
+  migrationState: "private",
   vaultDirectory: "C:/vault",
   storageVersion: null,
   recordCount: 0,
   frozen: false,
   deliveryAcknowledged: false,
   rememberedKey: false,
-  selectedBackend: "shared",
-  activeBackend: "unavailable",
-  sharingState: "none",
+  selectedBackend: "private",
+  activeBackend: "private",
   snapshotAt: null,
   keyCleanupPending: false,
   sessionCleanupPending: false,
   brokerOwnership: "broker",
   lastError: null,
   role: "receiver",
-  privateAvailable: false,
-  importState: "none",
+  privateAvailable: true,
   capabilities: { verifyImport: { state: "enabled" }, confirmImport: { state: "enabled" } },
 };
 function credentials(): ICredentialManagementService {
@@ -107,6 +104,8 @@ function credentials(): ICredentialManagementService {
     cancel: unavailable,
     cancelExport: unavailable,
     enableShared: unavailable,
+    switchToPrivate: unavailable,
+    relocate: unavailable,
     returnToPrivate: unavailable,
     rejoinShared: unavailable,
     verifyImport: unavailable,
@@ -117,392 +116,152 @@ function credentials(): ICredentialManagementService {
 }
 
 describe("shared management pages", () => {
-  it("clears an expired import preview and asks for verification again", async () => {
+  const page = (service: ICredentialManagementService) =>
+    mount(CredentialsPage, {
+      global: { provide: { [credentialServiceKey as symbol]: service } },
+    });
+  it("keeps the verified import and private backend across status refresh and a retryable failure", async () => {
     const service = credentials();
+    const wrapper = page(service);
+    const button = (label: string) =>
+      wrapper.findAll("button").find((item) => item.text() === label)!;
     vi.spyOn(service, "verifyImport").mockResolvedValue({
       ok: true,
-      value: { previewId: "expired-preview", recordCount: 0, storageVersion: "old", accounts: [] },
-    });
-    vi.spyOn(service, "confirmImport").mockResolvedValue({
-      ok: false,
-      error: {
-        code: "import-preview-expired",
-        message: "导入预览已过期，请重新验证",
-        retryable: false,
-      },
-    });
-    const wrapper = mount(CredentialsPage, {
-      global: { provide: { [credentialServiceKey as symbol]: service } },
-    });
-    await flushPromises();
-    await wrapper.get('input[aria-label="导入迁移密钥"]').setValue("first-key");
-    await wrapper.get("form").trigger("submit");
-    await flushPromises();
-    await wrapper
-      .findAll("button")
-      .find((item) => item.text() === "确认导入")!
-      .trigger("click");
-    await flushPromises();
-    expect(wrapper.find('[aria-label="导入预览"]').exists()).toBe(false);
-    expect(wrapper.text()).toContain("导入预览已过期，请重新验证");
-    wrapper.unmount();
-  });
-
-  it("retires the old preview when a replacement verification fails", async () => {
-    const service = credentials();
-    vi.spyOn(service, "verifyImport")
-      .mockResolvedValueOnce({
-        ok: true,
-        value: {
-          previewId: "retired-preview",
-          recordCount: 0,
-          storageVersion: "old",
-          accounts: [],
-        },
-      })
-      .mockResolvedValueOnce({
-        ok: false,
-        error: { code: "invalid-key", message: "新的迁移密钥无效", retryable: false },
-      });
-    const confirm = vi.spyOn(service, "confirmImport");
-    const wrapper = mount(CredentialsPage, {
-      global: { provide: { [credentialServiceKey as symbol]: service } },
-    });
-    await flushPromises();
-    await wrapper.get('input[aria-label="导入迁移密钥"]').setValue("first-key");
-    await wrapper.get("form").trigger("submit");
-    await flushPromises();
-    expect(wrapper.find('[aria-label="导入预览"]').exists()).toBe(true);
-    await wrapper.get('input[aria-label="导入目录"]').setValue("C:/replacement-vault");
-    await wrapper.get('input[aria-label="导入迁移密钥"]').setValue("invalid-key");
-    await wrapper.get("form").trigger("submit");
-    await flushPromises();
-    expect(wrapper.find('[aria-label="导入预览"]').exists()).toBe(false);
-    expect(wrapper.text()).toContain("新的迁移密钥无效");
-    expect(confirm).not.toHaveBeenCalled();
-    wrapper.unmount();
-  });
-
-  it("keeps an unconfirmed directory preview after a busy response and retries the same preview", async () => {
-    const service = credentials();
-    let current: CredentialManagementStatus = {
-      ...status,
-      instanceId: "host-1",
-      contextId: "private-1",
-      selectedBackend: "private",
-      activeBackend: "private",
-      importState: "import-ready",
-      vaultDirectory: "C:/old-vault",
-      accounts: [
-        { id: "old", provider: "test", maskedIdentifier: "ol***", canRefresh: true, revision: "1" },
-      ],
-    };
-    service.getStatus = async () => ({ ok: true, value: { ...current } });
-    const verify = vi.spyOn(service, "verifyImport").mockResolvedValue({
-      ok: true,
-      value: {
-        previewId: "new-preview",
-        recordCount: 1,
-        storageVersion: "new",
-        accounts: [
-          {
-            id: "new",
-            provider: "test",
-            maskedIdentifier: "ne***",
-            canRefresh: true,
-            revision: "1",
-          },
-        ],
-      },
+      value: { previewId: "preview", storageVersion: "v1", recordCount: 0, accounts: [] },
     });
     const confirm = vi
       .spyOn(service, "confirmImport")
       .mockResolvedValueOnce({
         ok: false,
-        error: {
-          code: "operation-in-progress",
-          message: "后台正在处理凭据，请稍后重试",
-          retryable: true,
-        },
+        error: { code: "secure-storage", message: "保存失败", retryable: true },
       })
       .mockImplementation(async () => {
-        current = { ...current, vaultDirectory: "C:/new-vault" };
+        service.getStatus = async () => ({
+          ok: true,
+          value: { ...status, migrationState: "import-ready", rememberedKey: true },
+        });
         return { ok: true, value: undefined };
       });
-    const wrapper = mount(CredentialsPage, {
-      global: { provide: { [credentialServiceKey as symbol]: service } },
-    });
     await flushPromises();
-    await wrapper.get('input[aria-label="导入目录"]').setValue("C:/new-vault");
-    await wrapper.get('input[aria-label="导入迁移密钥"]').setValue("new-key");
+    await button("导入凭据").trigger("click");
+    expect(wrapper.find('[aria-label="导出目录"]').exists()).toBe(false);
+    await wrapper.get('[aria-label="导入目录"]').setValue("C:/new");
+    await wrapper.get('[aria-label="导入迁移密钥"]').setValue("fictional");
     await wrapper.get("form").trigger("submit");
     await flushPromises();
-    expect(verify).toHaveBeenCalledWith({
-      vaultDirectory: "C:/new-vault",
-      migrationKey: "new-key",
-    });
-    expect(wrapper.text()).toContain("目录验证成功，仍需确认");
-    expect(wrapper.text()).toContain("导入预览待确认，当前绑定尚未更改");
-    expect(wrapper.get('[aria-label="已确认绑定目录"]').text()).toBe("C:/old-vault");
-    expect(wrapper.get('[aria-label="待确认预览目录"]').text()).toBe("C:/new-vault");
-    // Editing the next draft must not relabel an already verified preview.
-    await wrapper.get('input[aria-label="导入目录"]').setValue("C:/other-draft");
-    const confirmButton = () =>
-      wrapper.findAll("button").find((item) => item.text() === "确认导入")!;
-    await confirmButton().trigger("click");
+    expect((wrapper.get('input[type="password"]').element as HTMLInputElement).value).toBe("");
+    await button("重新检查").trigger("click");
     await flushPromises();
-    expect(confirm).toHaveBeenNthCalledWith(1, "new-preview");
-    expect(wrapper.text()).toContain("后台正在处理凭据，请稍后重试");
-    expect(wrapper.text()).toContain("导入预览待确认，当前绑定尚未更改");
-    expect(wrapper.get('[aria-label="已确认绑定目录"]').text()).toBe("C:/old-vault");
-    expect(wrapper.get('[aria-label="待确认预览目录"]').text()).toBe("C:/new-vault");
-    expect(wrapper.get('[aria-label="导入预览"]').text()).toContain("ne***");
-    expect(confirmButton().attributes("disabled")).toBeUndefined();
-    await confirmButton().trigger("click");
+    await button("确认导入").trigger("click");
     await flushPromises();
-    expect(confirm).toHaveBeenNthCalledWith(2, "new-preview");
+    expect(wrapper.text()).toContain("保存失败");
+    expect(wrapper.find('[aria-label="导入预览"]').exists()).toBe(true);
+    await button("确认导入").trigger("click");
+    await flushPromises();
+    expect(confirm.mock.calls).toEqual([["preview"], ["preview"]]);
+    expect(wrapper.text()).toContain("导入成功，等待迁移");
+    expect(button("迁移到共享存储")).toBeDefined();
+    wrapper.unmount();
+  });
+
+  it("restores a live host preview after reopening, and expires only the preview", async () => {
+    const service = credentials();
+    const operation = { id: "import-op", kind: "import", vaultDirectory: "C:/chosen" };
+    let current: CredentialManagementStatus = {
+      ...status,
+      operation,
+      importPreview: { previewId: "p", storageVersion: "v", recordCount: 0, accounts: [] },
+    };
+    service.getStatus = async () => ({ ok: true, value: current });
+    const wrapper = page(service);
+    await flushPromises();
+    expect(wrapper.find('[aria-label="导入预览"]').exists()).toBe(true);
+    current = { ...current, importPreview: null };
+    await wrapper
+      .findAll("button")
+      .find((item) => item.text() === "重新检查")!
+      .trigger("click");
+    await flushPromises();
     expect(wrapper.find('[aria-label="导入预览"]').exists()).toBe(false);
-    expect(wrapper.get('[aria-label="已确认绑定目录"]').text()).toBe("C:/new-vault");
-    expect((wrapper.get('input[aria-label="导入目录"]').element as HTMLInputElement).value).toBe(
-      "C:/new-vault",
+    expect((wrapper.get('[aria-label="导入目录"]').element as HTMLInputElement).value).toBe(
+      "C:/chosen",
     );
     wrapper.unmount();
   });
 
-  it("retains a receiver directory draft through refreshes until import confirmation or instance replacement", async () => {
+  it("recovers an outstanding delivery in shared mode and clears it on acknowledgement", async () => {
     const service = credentials();
     let current: CredentialManagementStatus = {
       ...status,
-      instanceId: "host-1",
-      contextId: "private-1",
-      selectedBackend: "private",
-      activeBackend: "private",
-      importState: "import-ready",
-      vaultDirectory: "C:/old-vault",
-      directorySelectionAvailable: true,
-    };
-    service.getStatus = async () => ({ ok: true, value: { ...current } });
-    let changed = (): void => {};
-    service.subscribe = (listener) => {
-      changed = () =>
-        listener({
-          schemaVersion: 1,
-          instanceId: current.instanceId!,
-          revision: 1,
-          occurredAt: "now",
-          reasons: ["credentials"],
-        });
-      return () => {};
-    };
-    vi.spyOn(service, "selectDirectory").mockResolvedValue({ ok: true, value: "C:/new-vault" });
-    const verify = vi.spyOn(service, "verifyImport").mockResolvedValue({
-      ok: true,
-      value: { previewId: "new-preview", recordCount: 0, storageVersion: "new", accounts: [] },
-    });
-    vi.spyOn(service, "cancelPreview").mockResolvedValue({ ok: true, value: undefined });
-    const confirm = vi.spyOn(service, "confirmImport").mockImplementation(async () => {
-      current = { ...current, vaultDirectory: "C:/confirmed-vault" };
-      return { ok: true, value: undefined };
-    });
-    const wrapper = mount(CredentialsPage, {
-      global: { provide: { [credentialServiceKey as symbol]: service } },
-    });
-    await flushPromises();
-    const directory = () => wrapper.get('input[aria-label="导入目录"]');
-    const directoryValue = () => (directory().element as HTMLInputElement).value;
-    const button = (label: string) =>
-      wrapper.findAll("button").find((item) => item.text() === label)!;
-    expect(directoryValue()).toBe("C:/old-vault");
-    await button("选择文件夹").trigger("click");
-    await flushPromises();
-    // The directory chooser itself reloads status when its operation finishes.
-    expect(directoryValue()).toBe("C:/new-vault");
-    await button("重新检查").trigger("click");
-    await flushPromises();
-    expect(directoryValue()).toBe("C:/new-vault");
-    await wrapper.get('input[aria-label="导入迁移密钥"]').setValue("retired-key");
-    current = { ...current, contextId: "private-2" };
-    changed();
-    await flushPromises();
-    expect(directoryValue()).toBe("C:/new-vault");
-    expect(
-      (wrapper.get('input[aria-label="导入迁移密钥"]').element as HTMLInputElement).value,
-    ).toBe("");
-    await wrapper.get('input[aria-label="导入迁移密钥"]').setValue("new-key");
-    await wrapper.get("form").trigger("submit");
-    await flushPromises();
-    expect(verify).toHaveBeenLastCalledWith({
-      vaultDirectory: "C:/new-vault",
-      migrationKey: "new-key",
-    });
-    expect(directoryValue()).toBe("C:/new-vault");
-    await button("取消预览").trigger("click");
-    await flushPromises();
-    await directory().setValue("C:/typed-vault");
-    changed();
-    await flushPromises();
-    expect(directoryValue()).toBe("C:/typed-vault");
-    await wrapper.get('input[aria-label="导入迁移密钥"]').setValue("typed-key");
-    await wrapper.get("form").trigger("submit");
-    await flushPromises();
-    expect(verify).toHaveBeenLastCalledWith({
-      vaultDirectory: "C:/typed-vault",
-      migrationKey: "typed-key",
-    });
-    await button("确认导入").trigger("click");
-    await flushPromises();
-    expect(confirm).toHaveBeenCalledWith("new-preview");
-    expect(directoryValue()).toBe("C:/confirmed-vault");
-    await directory().setValue("C:/unsaved-vault");
-    current = { ...current, instanceId: "host-2", vaultDirectory: "C:/replacement-vault" };
-    changed();
-    await flushPromises();
-    expect(directoryValue()).toBe("C:/replacement-vault");
-    wrapper.unmount();
-  });
-
-  it("keeps pending shared records distinct from the selected private backend and reports retry honestly", async () => {
-    const service = credentials();
-    let current: CredentialManagementStatus = {
-      ...status,
-      instanceId: "host",
-      contextId: "private",
-      privateAvailable: true,
-      selectedBackend: "private",
-      activeBackend: "private",
-      importState: "import-ready",
-      connected: false,
-      brokerOwnership: "source",
-      accounts: [
-        {
-          id: "pending",
-          provider: "codex",
-          maskedIdentifier: "ma***",
-          revision: "1",
-          canRefresh: true,
-        },
-      ],
-      capabilities: { retry: { state: "enabled" } },
-    };
-    service.getStatus = async () => ({ ok: true, value: current });
-    const retry = vi.spyOn(service, "retry").mockResolvedValue({ ok: true, value: undefined });
-    const wrapper = mount(CredentialsPage, {
-      global: { provide: { [credentialServiceKey as symbol]: service } },
-    });
-    await flushPromises();
-    expect(wrapper.text()).toContain("所选凭据存储");
-    expect(wrapper.text()).toContain("实际凭据后端");
-    expect(wrapper.text()).toContain("待接管的共享凭据");
-    expect(wrapper.text()).toContain("当前继续使用内置存储，可在服务商页管理本端账号");
-    const button = wrapper.findAll("button").find((item) => item.text() === "重试共享连接")!;
-    await button.trigger("click");
-    await flushPromises();
-    expect(retry).toHaveBeenCalledOnce();
-    expect(wrapper.text()).toContain("导入已就绪，等待来源应用启用共享");
-    expect(wrapper.text()).not.toContain("已重新连接共享凭据");
-    expect(wrapper.text()).not.toContain("共享已连接");
-    current = {
-      ...current,
-      contextId: "shared",
+      migrationState: "shared",
       selectedBackend: "shared",
       activeBackend: "shared",
-      importState: "shared",
-      connected: true,
-    };
-    await button.trigger("click");
-    await flushPromises();
-    expect(wrapper.text()).toContain("共享凭据已连接");
-    expect(wrapper.text()).toContain("共享已连接");
-    wrapper.unmount();
-  });
-
-  it("offers separate cancelled-export recovery and a confirmed new-directory export", async () => {
-    const service = credentials();
-    let current: CredentialManagementStatus = {
-      ...status,
-      instanceId: "host",
-      contextId: "private",
-      role: "source",
-      selectedBackend: "private",
-      activeBackend: "private",
-      exportState: "cancelled",
-      storageVersion: "old-version",
-      vaultDirectory: "C:/old-vault",
-      directorySelectionAvailable: true,
-      capabilities: {
-        resumeExport: { state: "disabled", reason: "内置凭据已更新，请重新导出" },
-        restartExport: { state: "enabled" },
-      },
-    };
-    service.getStatus = async () => ({ ok: true, value: { ...current } });
-    const resume = vi.spyOn(service, "resumeExport");
-    vi.spyOn(service, "selectDirectory").mockResolvedValue({ ok: true, value: "C:/new-vault" });
-    const restart = vi.spyOn(service, "restartExport").mockImplementation(async () => {
-      current = {
-        ...current,
-        contextId: "new-export-context",
-        exportState: "exported",
-        storageVersion: "new-version",
-        vaultDirectory: "C:/new-vault",
-      };
-      return {
-        ok: true,
-        value: { storageVersion: "new-version", migrationKey: "acm1_NEW-FICTIONAL" },
-      };
-    });
-    const wrapper = mount(CredentialsPage, {
-      global: { provide: { [credentialServiceKey as symbol]: service } },
-    });
-    await flushPromises();
-    const find = (label: string) =>
-      wrapper.findAll("button").find((item) => item.text() === label)!;
-    expect(find("恢复原导出").attributes("disabled")).toBeDefined();
-    expect(wrapper.text()).toContain("内置凭据已更新，请重新导出");
-    await find("选择新目录重新导出").trigger("click");
-    await flushPromises();
-    expect(wrapper.get('[aria-label="确认重新导出"]').text()).toContain("C:/new-vault");
-    expect(wrapper.get('[aria-label="共享目录"]').text()).toBe("C:/old-vault");
-    expect(wrapper.text()).toContain("原导出目录、文件和密钥均保留");
-    expect(restart).not.toHaveBeenCalled();
-    await find("确认重新导出").trigger("click");
-    await flushPromises();
-    expect(resume).not.toHaveBeenCalled();
-    expect(restart).toHaveBeenCalledWith("C:/new-vault");
-    expect(
-      (wrapper.get('textarea[aria-label="迁移密钥"]').element as HTMLTextAreaElement).value,
-    ).toBe("acm1_NEW-FICTIONAL");
-    expect(wrapper.get('[aria-label="共享目录"]').text()).toBe("C:/new-vault");
-    wrapper.unmount();
-  });
-
-  it("resumes an acknowledged export without inventing a second key delivery", async () => {
-    const service = credentials();
-    let current: CredentialManagementStatus = {
-      ...status,
-      role: "source",
-      selectedBackend: "private",
-      activeBackend: "private",
-      exportState: "cancelled",
-      deliveryAcknowledged: true,
-      capabilities: { resumeExport: { state: "enabled" }, restartExport: { state: "enabled" } },
+      storageVersion: "v1",
+      rememberedKey: true,
+      capabilities: { recoverDelivery: { state: "enabled" } },
     };
     service.getStatus = async () => ({ ok: true, value: current });
-    const resume = vi.spyOn(service, "resumeExport").mockImplementation(async () => {
-      current = { ...current, exportState: "exported" };
-      return { ok: true, value: null };
+    service.resumeExport = async () => ({
+      ok: true,
+      value: { storageVersion: "v1", migrationKey: "fictional-delivery" },
     });
-    const wrapper = mount(CredentialsPage, {
-      global: { provide: { [credentialServiceKey as symbol]: service } },
-    });
+    service.acknowledgeDelivery = async () => {
+      current = { ...current, deliveryAcknowledged: true };
+      return { ok: true, value: undefined };
+    };
+    const wrapper = page(service);
+    const button = (label: string) =>
+      wrapper.findAll("button").find((item) => item.text() === label)!;
     await flushPromises();
-    await wrapper
-      .findAll("button")
-      .find((item) => item.text() === "恢复原导出")!
-      .trigger("click");
+    await button("恢复密钥交付").trigger("click");
     await flushPromises();
-    expect(resume).toHaveBeenCalledOnce();
+    expect((wrapper.get("textarea").element as HTMLTextAreaElement).value).toBe(
+      "fictional-delivery",
+    );
+    await button("我已保存").trigger("click");
+    await flushPromises();
     expect(wrapper.find("textarea").exists()).toBe(false);
-    expect(wrapper.text()).toContain("迁移密钥已经确认交付");
+    expect(wrapper.text()).toContain("迁移完成");
+    wrapper.unmount();
+  });
+  it("keeps the two return steps separate and never offers a private form to a Web host", async () => {
+    const service = credentials();
+    let current: CredentialManagementStatus = {
+      ...status,
+      migrationState: "shared",
+      selectedBackend: "shared",
+      activeBackend: "shared",
+      rememberedKey: true,
+    };
+    service.getStatus = async () => ({ ok: true, value: current });
+    const prepare = vi.spyOn(service, "returnToPrivate").mockImplementation(async () => {
+      current = { ...current, migrationState: "private-ready" };
+      return { ok: true, value: undefined };
+    });
+    const switchBackend = vi.spyOn(service, "switchToPrivate");
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const wrapper = page(service);
+    const button = (label: string) =>
+      wrapper.findAll("button").find((item) => item.text() === label)!;
+    await flushPromises();
+    await button("准备返回内置存储").trigger("click");
+    await flushPromises();
+    expect(prepare).toHaveBeenCalledWith(true);
+    expect(switchBackend).not.toHaveBeenCalled();
+    expect(button("切换到内置存储")).toBeDefined();
+    expect(wrapper.text()).toContain("已记住");
+    current = {
+      ...current,
+      migrationState: null,
+      privateAvailable: false,
+      activeBackend: "unavailable",
+    };
+    await button("重新检查").trigger("click");
+    await flushPromises();
+    expect(wrapper.text()).toContain("尚未接入共享");
+    expect(button("导入凭据")).toBeUndefined();
+    expect(button("准备返回内置存储")).toBeUndefined();
+    confirm.mockRestore();
     wrapper.unmount();
   });
   it("renders product-injected navigation and the purple theme", async () => {
@@ -570,163 +329,6 @@ describe("shared management pages", () => {
     );
     expect((wrapper.get('input[type="password"]').element as HTMLInputElement).value).toBe("");
     expect(sessionStorage.getItem("graphagent.auth.test")).toBeNull();
-    wrapper.unmount();
-  });
-  it("shows one receiver workflow, clears the migration key and confirms only the preview id", async () => {
-    const service = credentials();
-    let current: CredentialManagementStatus = { ...status };
-    service.getStatus = async () => ({ ok: true, value: current });
-    const verify = vi.spyOn(service, "verifyImport").mockResolvedValue({
-      ok: true,
-      value: {
-        previewId: "preview-1",
-        recordCount: 1,
-        storageVersion: "1",
-        accounts: [
-          {
-            id: "a1",
-            provider: "test",
-            maskedIdentifier: "te***",
-            canRefresh: true,
-            revision: "1",
-          },
-        ],
-      },
-    });
-    const confirm = vi.spyOn(service, "confirmImport").mockImplementation(async () => {
-      current = {
-        ...current,
-        importState: "import-ready",
-        selectedBackend: "private",
-        activeBackend: "private",
-        connected: false,
-      };
-      return { ok: true, value: undefined };
-    });
-    const wrapper = mount(CredentialsPage, {
-      global: { provide: { [credentialServiceKey as symbol]: service } },
-    });
-    await flushPromises();
-    expect(wrapper.text()).not.toContain("导出与存储切换");
-    await wrapper.get('input[aria-label="导入迁移密钥"]').setValue("fictional-migration-key");
-    await wrapper.get("form").trigger("submit");
-    await flushPromises();
-    expect(verify).toHaveBeenCalledWith({
-      vaultDirectory: "C:/vault",
-      migrationKey: "fictional-migration-key",
-    });
-    expect(
-      (wrapper.get('input[aria-label="导入迁移密钥"]').element as HTMLInputElement).value,
-    ).toBe("");
-    expect(wrapper.text()).toContain("te***");
-    await wrapper
-      .findAll("button")
-      .find((button) => button.text() === "确认导入")!
-      .trigger("click");
-    await flushPromises();
-    expect(confirm).toHaveBeenCalledWith("preview-1");
-    expect(wrapper.text()).toContain("导入已就绪，等待来源应用启用共享");
-    expect(wrapper.text()).not.toContain("已接入共享凭据");
-    wrapper.unmount();
-  });
-
-  it("closes an export confirmation and clears its directory after a backend or instance change", async () => {
-    const service = credentials();
-    let current: CredentialManagementStatus = {
-      ...status,
-      role: "source",
-      instanceId: "host-1",
-      contextId: "private-1",
-      selectedBackend: "private",
-      activeBackend: "private",
-      vaultDirectory: "C:/old-vault",
-    };
-    service.getStatus = async () => ({ ok: true, value: { ...current } });
-    let changed = (): void => {};
-    service.subscribe = (listener) => {
-      changed = () =>
-        listener({
-          schemaVersion: 1,
-          instanceId: current.instanceId!,
-          revision: 1,
-          occurredAt: "now",
-          reasons: ["credentials"],
-        });
-      return () => {};
-    };
-    const exportCredentials = vi.spyOn(service, "exportCredentials");
-    const wrapper = mount(CredentialsPage, {
-      global: { provide: { [credentialServiceKey as symbol]: service } },
-    });
-    await flushPromises();
-    await wrapper
-      .findAll("button")
-      .find((button) => button.text() === "准备导出")!
-      .trigger("click");
-    expect(wrapper.find('[aria-label="确认导出"]').exists()).toBe(true);
-    // A restarted process may select an identical context label; instance identity still retires the form.
-    current = { ...current, instanceId: "host-2", vaultDirectory: null };
-    changed();
-    await flushPromises();
-    expect(wrapper.find('[aria-label="确认导出"]').exists()).toBe(false);
-    expect(wrapper.text()).not.toContain("C:/old-vault");
-    expect(wrapper.get('[aria-label="共享目录"]').text()).toBe("尚未选择文件夹");
-    expect(exportCredentials).not.toHaveBeenCalled();
-    wrapper.unmount();
-  });
-
-  it("discards a delayed migration-key delivery after the backend context changes", async () => {
-    const service = credentials();
-    let current: CredentialManagementStatus = {
-      ...status,
-      role: "source",
-      instanceId: "host-1",
-      contextId: "private-1",
-      selectedBackend: "private",
-      activeBackend: "private",
-      vaultDirectory: "C:/old-vault",
-    };
-    service.getStatus = async () => ({ ok: true, value: { ...current } });
-    let changed = (): void => {};
-    service.subscribe = (listener) => {
-      changed = () =>
-        listener({
-          schemaVersion: 1,
-          instanceId: current.instanceId!,
-          revision: 1,
-          occurredAt: "now",
-          reasons: ["credentials"],
-        });
-      return () => {};
-    };
-    let deliver!: (result: ServiceResult<CredentialExportDelivery>) => void;
-    vi.spyOn(service, "exportCredentials").mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          deliver = resolve;
-        }),
-    );
-    const wrapper = mount(CredentialsPage, {
-      global: { provide: { [credentialServiceKey as symbol]: service } },
-    });
-    await flushPromises();
-    await wrapper
-      .findAll("button")
-      .find((button) => button.text() === "准备导出")!
-      .trigger("click");
-    await wrapper
-      .findAll("button")
-      .find((button) => button.text() === "确认导出")!
-      .trigger("click");
-    current = { ...current, contextId: "private-2", vaultDirectory: "C:/new-vault" };
-    changed();
-    await flushPromises();
-    deliver({ ok: true, value: { migrationKey: "acm1_FICTIONAL-RETIRED", storageVersion: "1" } });
-    await flushPromises();
-    expect(wrapper.find("textarea").exists()).toBe(false);
-    expect(wrapper.html()).not.toContain("acm1_FICTIONAL-RETIRED");
-    expect(wrapper.text()).not.toContain("导出成功。请保存迁移密钥");
-    expect(wrapper.get('[aria-label="共享目录"]').text()).toBe("C:/new-vault");
     wrapper.unmount();
   });
 });

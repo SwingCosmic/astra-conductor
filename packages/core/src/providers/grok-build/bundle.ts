@@ -24,6 +24,7 @@ export function createGrokBuildProvider(services: ServiceResolver): ProviderCont
       providerId: "grok-build",
       supportedMethods: authFlow.supportedMethods,
       startAuth: (offeringId, method, options) => authFlow.start(offeringId, method, options),
+      canUseCurrentCredentials: adapter.canUseCurrentCredentials,
       refreshCredentials: (account, envelope, options) =>
         adapter.refreshCredentials(account, envelope, options.force),
     },

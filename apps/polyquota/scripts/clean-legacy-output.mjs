@@ -20,6 +20,7 @@ for (const filename of [
     "storage-smoke",
     "proxy-detection",
     "quota-chrome",
+    "server/credential-sharing/service",
   ].flatMap((name) => [`${name}.js`, `${name}.js.map`]),
 ]) {
   await rm(fileURLToPath(new URL(`../dist/${filename}`, import.meta.url)), { force: true });

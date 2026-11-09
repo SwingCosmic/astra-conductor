@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
-import { readFile, lstat, readdir } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { readFile, lstat, readdir, realpath, rm } from "node:fs/promises";
 import path from "node:path";
 import {
   BrokerClient,
@@ -13,7 +13,7 @@ import {
   parseCompatibilityJson,
   requireValue,
   text,
-  type BrokerIdentity,
+  unb64,
 } from "../../index.js";
 export { BROKER_COMPATIBILITY, BROKER_DISTRIBUTION } from "../../index.js";
 
@@ -36,7 +36,20 @@ export interface BrokerHost {
   inspectPackage?(): Promise<LocalPackageState>;
   install(): Promise<void>;
   uninstall(): Promise<void>;
-  connect(vault: string, clientId: string, instanceId: string): Promise<BrokerConnection>;
+  relocateVault?(
+    previous: string,
+    directory: string,
+    vaultId: string,
+    storageVersion: string,
+  ): Promise<void>;
+  forgetGrant?(vaultId: string, clientId: string): Promise<void>;
+  revokeGrant?(vault: string, vaultId: string, clientId: string): Promise<void>;
+  connect(
+    vault: string,
+    clientId: string,
+    instanceId: string,
+    options?: { existingGrantOnly?: boolean },
+  ): Promise<BrokerConnection>;
 }
 // Only documented, non-sensitive error codes may cross the native controller boundary.
 const controllerErrors = new Set([
@@ -116,6 +129,7 @@ $ErrorActionPreference = 'Stop'
 try {
   Add-Type -AssemblyName System.Security
   $request = [Console]::In.ReadToEnd() | ConvertFrom-Json
+  if ([Security.Principal.WindowsIdentity]::GetCurrent().User.Value -ne $request.ownerSid) { exit 1 }
   $entropy = [Text.Encoding]::UTF8.GetBytes('astra-credential-broker.v1:' + $request.purpose)
   $bytes = [Convert]::FromBase64String($request.ciphertext)
   $plain = [Security.Cryptography.ProtectedData]::Unprotect($bytes, $entropy, [Security.Cryptography.DataProtectionScope]::CurrentUser)
@@ -123,7 +137,12 @@ try {
   [Array]::Clear($plain, 0, $plain.Length)
 } catch { exit 1 }
 `;
-async function unprotectCli(filename: string, vaultId: string): Promise<unknown> {
+async function grantVerifier(
+  ciphertext: Buffer,
+  vaultId: string,
+  ownerSid: string,
+  clientId: string,
+): Promise<Buffer> {
   const shell = path.join(
     process.env.SystemRoot ?? "C:\\Windows",
     "System32",
@@ -142,14 +161,22 @@ async function unprotectCli(filename: string, vaultId: string): Promise<unknown>
     ],
     JSON.stringify({
       purpose: `cli-secret:${vaultId}`,
-      ciphertext: (await readFile(filename)).toString("base64"),
+      ownerSid,
+      ciphertext: ciphertext.toString("base64"),
     }),
     15_000,
   );
   const bytes = Buffer.from(output.toString("utf8"), "base64");
   output.fill(0);
   try {
-    return parseJson(bytes);
+    const access = object(parseJson(bytes), ["clientId", "accessToken"]);
+    requireValue(access.clientId === clientId, "client-identity-mismatch");
+    const token = unb64(access.accessToken, 32);
+    try {
+      return createHash("sha256").update(token).digest();
+    } finally {
+      token.fill(0);
+    }
   } finally {
     bytes.fill(0);
   }
@@ -245,11 +272,33 @@ export async function verifyComponent(
   };
   await walk(directory);
 }
+interface RegisteredEndpoint {
+  vault: string;
+  vaultId: string;
+  ownerSid: string;
+  generation: string;
+  clientId: string;
+  file: string;
+  ciphertext: Buffer;
+  fingerprint: string;
+}
+interface LiveGrant {
+  vault: string;
+  clientId: string;
+  fingerprint: string;
+  verifier: Buffer;
+  connections: number;
+}
 export class WindowsBrokerHost implements BrokerHost {
+  private readonly grants = new Map<string, Promise<void>>();
+  private readonly live = new Map<string, LiveGrant>();
+  private readonly authorizationGenerations = new Map<string, number>();
+  private authorizationSequence = 0;
   constructor(
     readonly home: string,
     readonly localPackageDirectory: string,
     private readonly clientDirectory: string,
+    private readonly existingAuthorizationOnly = false,
   ) {}
   async inspectPackage(): Promise<LocalPackageState> {
     if (!(await exists(this.localPackageDirectory))) return "missing";
@@ -342,6 +391,30 @@ export class WindowsBrokerHost implements BrokerHost {
   }
   async status(vault: string): Promise<{ serviceState: string; brokerOwnership: string }> {
     try {
+      const grant = [...this.live.values()].find(
+        (item) => item.vault.toLowerCase() === path.resolve(vault).toLowerCase(),
+      );
+      if (grant) {
+        const endpoint = await this.registeredEndpoint(vault, grant.clientId);
+        if (endpoint?.fingerprint === grant.fingerprint) {
+          let connection: BrokerClient | undefined;
+          try {
+            connection = await this.openPipe(endpoint, grant.verifier, randomUUID());
+            const status = object(await connection.call("status"));
+            return {
+              serviceState: text(status.serviceStatus),
+              brokerOwnership: text(status.ownership),
+            };
+          } catch {
+            // A stopped or replacing broker is diagnosed by the verified controller below.
+          } finally {
+            if (connection) {
+              await connection.call("disconnect").catch(() => undefined);
+              connection.close();
+            }
+          }
+        }
+      }
       const result = object(await this.controller("status", ["--vault", vault]));
       if (result.runtime === null)
         return { serviceState: text(result.offlineState), brokerOwnership: "NOT_CHECKED" };
@@ -367,11 +440,89 @@ export class WindowsBrokerHost implements BrokerHost {
   async uninstall(): Promise<void> {
     await this.controller("uninstall", [], undefined, true);
   }
-  async connect(vault: string, clientId: string, instanceId: string): Promise<BrokerConnection> {
-    requireValue(
-      process.platform === "win32" && process.arch === "x64",
-      "platform-feature-unavailable",
-    );
+  async relocateVault(
+    previous: string,
+    directory: string,
+    vaultId: string,
+    storageVersion: string,
+  ): Promise<void> {
+    requireValue(!this.existingAuthorizationOnly, "access-denied");
+    await this.controller("register-vault", [
+      "--vault",
+      directory,
+      "--previous-root",
+      previous,
+      "--vault-id",
+      id(vaultId),
+      "--storage-version",
+      id(storageVersion),
+    ]);
+  }
+  private clientFile(vaultId: string, clientId: string): string {
+    return path.join(this.clientDirectory, id(vaultId) + "." + id(clientId) + ".dpapi");
+  }
+  async forgetGrant(vaultId: string, clientId: string): Promise<void> {
+    const file = this.clientFile(vaultId, clientId);
+    const pending = [this.grants.get(file + ":grant"), this.grants.get(file + ":upgrade")];
+    this.clearAuthorization(file);
+    await Promise.allSettled(pending);
+    await rm(file, { force: true });
+  }
+  async revokeGrant(vault: string, vaultId: string, clientId: string): Promise<void> {
+    requireValue(!this.existingAuthorizationOnly, "access-denied");
+    const manifest = object(parseJson(await readFile(path.join(vault, "manifest.json"))));
+    requireValue(manifest.vaultId === vaultId, "vault-identity-mismatch");
+    await this.controller("ensure-running", ["--vault", vault]);
+    await this.controller("rpc", ["--vault", vault, "--admin"], {
+      method: "revokeClient",
+      params: { clientId: id(clientId) },
+    });
+    this.clearAuthorization(this.clientFile(vaultId, clientId));
+  }
+  private clearAuthorization(file: string) {
+    this.authorizationGenerations.set(file, ++this.authorizationSequence);
+    this.dropLive(file);
+    this.grants.delete(file + ":upgrade");
+    this.grants.delete(file + ":grant");
+  }
+  private async authorize(
+    vault: string,
+    clientFile: string,
+    clientId: string,
+    upgrade: boolean,
+  ): Promise<void> {
+    const present = await exists(clientFile);
+    if (this.existingAuthorizationOnly) {
+      requireValue(present, "access-denied");
+      return;
+    }
+    const previousScopes = [
+      "initialize",
+      "import",
+      "handoff",
+      "describe",
+      "read",
+      "events",
+      "update",
+    ];
+    const grant = {
+      clientId,
+      scopes: [...previousScopes, "create", "delete"],
+      credentialIds: [],
+      allCredentials: true,
+    };
+    if (present) {
+      if (upgrade)
+        await this.controller("rpc", ["--vault", vault, "--admin"], {
+          method: "updateClientGrant",
+          params: { ...grant, previousScopes },
+        });
+    } else {
+      requireValue(!upgrade, "access-denied");
+      await this.controller("grant", ["--vault", vault, "--out", clientFile], grant);
+    }
+  }
+  private async requireInstalled() {
     const installed = await this.inspect();
     requireValue(installed.installState !== "incompatible", "component-incompatible");
     requireValue(
@@ -380,30 +531,296 @@ export class WindowsBrokerHost implements BrokerHost {
         installed.installedVersion,
       "component-not-installed",
     );
-    const registration = object(await this.controller("register-vault", ["--vault", vault]));
-    const vaultId = id(registration.vaultId);
-    const ownerSid = text(registration.ownerSid);
+  }
+  private async prepareGrant(
+    vault: string,
+    clientFile: string,
+    clientId: string,
+    upgrade = false,
+  ): Promise<void> {
+    const key = clientFile + (upgrade ? ":upgrade" : ":grant");
+    let pending = this.grants.get(key);
+    if (pending) return pending;
+    pending = this.authorize(vault, clientFile, clientId, upgrade);
+    this.grants.set(key, pending);
+    try {
+      await pending;
+    } finally {
+      if (this.grants.get(key) === pending) this.grants.delete(key);
+    }
+  }
+
+  private dropLive(file: string) {
+    this.live.get(file)?.verifier.fill(0);
+    this.live.delete(file);
+  }
+
+  /** Only an already registered, running vault can skip starting a native controller. */
+  private async registeredEndpoint(
+    vault: string,
+    clientId: string,
+  ): Promise<RegisteredEndpoint | undefined> {
+    const root = path.resolve(vault);
+    try {
+      const [location, maintenance, journal, manifestBytes] = await Promise.all([
+        realpath(root),
+        exists(path.join(this.home, "maintenance.json")),
+        exists(path.join(this.home, "install-journal.json")),
+        readFile(path.join(root, "manifest.json")),
+      ]);
+      if (maintenance || journal) return;
+      requireValue(location.toLowerCase() === root.toLowerCase(), "vault-identity-mismatch");
+      const manifest = object(parseJson(manifestBytes));
+      const vaultId = id(manifest.vaultId);
+      const file = this.clientFile(vaultId, clientId);
+      const [registrationBytes, runtimeBytes, installation, ciphertext] = await Promise.all([
+        readFile(path.join(this.home, "vaults", vaultId + ".json")),
+        readFile(path.join(root, "runtime", "endpoint.json")),
+        readFile(path.join(this.home, "installation.json")),
+        readFile(file),
+      ]);
+      const ownerSid = text(manifest.ownerSid);
+      const registration = object(parseJson(registrationBytes));
+      requireValue(
+        manifest.layoutVersion === 1 &&
+          registration.vaultId === vaultId &&
+          registration.ownerSid === ownerSid &&
+          registration.directoryIdentity === manifest.directoryIdentity &&
+          path.resolve(text(registration.root)).toLowerCase() === root.toLowerCase(),
+        "vault-identity-mismatch",
+      );
+      // Process start ticks in this local hint can exceed JS safe integers. Only the generation
+      // is used, and is checked against the mutually authenticated protocol greeting below.
+      const runtime = object(JSON.parse(runtimeBytes.toString("utf8")));
+      if (!runtime.generation || ["FAILED", "STOPPED", "STARTING"].includes(String(runtime.state)))
+        return;
+      const generation = id(runtime.generation);
+      const fingerprint = createHash("sha256")
+        .update(manifestBytes)
+        .update(registrationBytes)
+        .update(runtimeBytes)
+        .update(installation)
+        .update(ciphertext)
+        .digest("hex");
+      return {
+        vault: root,
+        vaultId,
+        ownerSid,
+        generation,
+        clientId,
+        file,
+        ciphertext,
+        fingerprint,
+      };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw error;
+    }
+  }
+
+  private async openPipe(endpoint: RegisteredEndpoint, verifier: Buffer, instanceId: string) {
+    const signingKey = Buffer.from(verifier);
+    let connection: BrokerClient;
+    try {
+      connection = await BrokerClient.connect({
+        vaultId: endpoint.vaultId,
+        ownerSid: endpoint.ownerSid,
+        clientId: endpoint.clientId,
+        instanceId,
+        verifier: signingKey,
+      });
+    } finally {
+      signingKey.fill(0);
+    }
+    if (connection.generation !== endpoint.generation) {
+      connection.close();
+      throw new BrokerError("broker-generation-changed");
+    }
+    return connection;
+  }
+
+  private async connectRegistered(
+    endpoint: RegisteredEndpoint,
+    instanceId: string,
+    preflight: boolean,
+  ): Promise<BrokerConnection> {
+    const { file, vault, clientId, fingerprint } = endpoint;
+    const generation = this.authorizationGenerations.get(file);
+    let grant = this.live.get(file);
+    if (grant && grant.fingerprint !== fingerprint) {
+      this.dropLive(file);
+      grant = undefined;
+    }
+    const reused = grant !== undefined;
+    if (!grant) {
+      if (preflight) await this.requireInstalled();
+      const verifier = await grantVerifier(
+        endpoint.ciphertext,
+        endpoint.vaultId,
+        endpoint.ownerSid,
+        clientId,
+      );
+      grant = { vault, clientId, fingerprint, verifier, connections: 0 };
+    }
+    let pipe: BrokerClient | undefined;
+    grant.connections++;
+    try {
+      pipe = await this.openPipe(endpoint, grant.verifier, instanceId);
+      let connection = pipe;
+      const checked = await this.registeredEndpoint(vault, clientId);
+      requireValue(checked?.fingerprint === fingerprint, "client-identity-mismatch");
+      requireValue(generation === this.authorizationGenerations.get(file), "access-denied");
+      const current = this.live.get(file);
+      requireValue(!reused || current === grant, "client-identity-mismatch");
+      if (current && current !== grant) {
+        requireValue(current.fingerprint === fingerprint, "broker-generation-changed");
+        grant.connections--;
+        if (!grant.connections) grant.verifier.fill(0);
+        grant = current;
+        grant.connections++;
+      }
+      this.live.set(file, grant);
+      const held = grant;
+      let closed = false;
+      const release = () => {
+        if (closed) return;
+        closed = true;
+        if (--held.connections === 0 && this.live.get(file) === held) this.dropLive(file);
+      };
+      const observeClose = (socket: BrokerClient) =>
+        socket.onClose(() => {
+          if (socket === connection) release();
+        });
+      observeClose(connection);
+      let repairAttempted = false;
+      let tail: Promise<void> = Promise.resolve();
+      const call = async (method: string, params?: unknown): Promise<unknown> => {
+        requireValue(!closed, "broker-disconnected");
+        if (this.live.get(file) !== held) {
+          connection.close();
+          throw new BrokerError("access-denied");
+        }
+        try {
+          return await connection.call(method, params);
+        } catch (error) {
+          const needsNewScope =
+            method === "createCredential" ||
+            (method === "commitUpdate" &&
+              params &&
+              typeof params === "object" &&
+              "delete" in params &&
+              params.delete === true);
+          if (
+            this.existingAuthorizationOnly ||
+            repairAttempted ||
+            !needsNewScope ||
+            !(error instanceof BrokerError) ||
+            error.code !== "forbidden"
+          )
+            throw error;
+          const stillCurrent = async () => {
+            const latest = await this.registeredEndpoint(vault, clientId);
+            requireValue(
+              !closed && this.live.get(file) === held && latest?.fingerprint === fingerprint,
+              "client-identity-mismatch",
+            );
+          };
+          await stillCurrent();
+          await this.prepareGrant(vault, file, clientId, true);
+          await stillCurrent();
+          const next = await this.openPipe(endpoint, held.verifier, instanceId);
+          if (closed || this.live.get(file) !== held) {
+            next.close();
+            throw new BrokerError("client-closed");
+          }
+          const previous = connection;
+          connection = next;
+          observeClose(next);
+          previous.close();
+          repairAttempted = true;
+          return next.call(method, params);
+        }
+      };
+      return {
+        call: (method, params) => {
+          const result = tail.then(() => call(method, params));
+          tail = result.then(
+            () => undefined,
+            () => undefined,
+          );
+          return result;
+        },
+        close: () => {
+          release();
+          connection.close();
+        },
+      };
+    } catch (error) {
+      pipe?.close();
+      if (--grant.connections === 0) {
+        if (this.live.get(file) === grant) this.dropLive(file);
+        else grant.verifier.fill(0);
+      }
+      throw error;
+    }
+  }
+
+  async connect(
+    vault: string,
+    clientId: string,
+    instanceId: string,
+    options?: { existingGrantOnly?: boolean },
+  ): Promise<BrokerConnection> {
+    const started = this.authorizationSequence;
     requireValue(
-      path.resolve(text(registration.root)).toLowerCase() === path.resolve(vault).toLowerCase(),
+      process.platform === "win32" && process.arch === "x64",
+      "platform-feature-unavailable",
+    );
+    const active = await this.registeredEndpoint(vault, clientId);
+    if (active) {
+      requireValue(
+        (this.authorizationGenerations.get(active.file) ?? 0) <= started,
+        "access-denied",
+      );
+      try {
+        return await this.connectRegistered(active, instanceId, true);
+      } catch (error) {
+        if (
+          !(error instanceof BrokerError) ||
+          !/^broker-(?:disconnected|pipe-|handshake-|generation-changed|request-timeout)/.test(
+            error.code,
+          )
+        )
+          throw error;
+      }
+    }
+    const existingOnly = this.existingAuthorizationOnly || options?.existingGrantOnly === true;
+    const webManifest = existingOnly
+      ? object(parseJson(await readFile(path.join(vault, "manifest.json"))))
+      : undefined;
+    if (webManifest)
+      requireValue(
+        await exists(this.clientFile(id(webManifest.vaultId), clientId)),
+        "access-denied",
+      );
+    const registration =
+      webManifest ??
+      object(await this.controller("register-vault", ["--vault", vault, "--no-relocate"]));
+    const vaultId = id(registration.vaultId);
+    requireValue(
+      existingOnly ||
+        path.resolve(text(registration.root)).toLowerCase() === path.resolve(vault).toLowerCase(),
       "vault-identity-mismatch",
     );
+    const file = this.clientFile(vaultId, clientId);
+    const generation = this.authorizationGenerations.get(file);
+    requireValue((generation ?? 0) <= started, "access-denied");
     await this.controller("ensure-running", ["--vault", vault]);
-    const clientFile = path.join(this.clientDirectory, `${vaultId}.${id(clientId)}.dpapi`);
-    if (!(await exists(clientFile)))
-      await this.controller("grant", ["--vault", vault, "--out", clientFile], {
-        clientId,
-        scopes: ["initialize", "import", "handoff", "describe", "read", "events", "update"],
-        credentialIds: [],
-        allCredentials: true,
-      });
-    const access = object(await unprotectCli(clientFile, vaultId), ["clientId", "accessToken"]);
-    requireValue(access.clientId === clientId, "client-identity-mismatch");
-    return BrokerClient.connect({
-      vaultId,
-      ownerSid,
-      clientId,
-      instanceId,
-      accessToken: text(access.accessToken),
-    } satisfies BrokerIdentity);
+    requireValue(generation === this.authorizationGenerations.get(file), "access-denied");
+    if (!existingOnly) await this.prepareGrant(vault, file, clientId);
+    const endpoint = await this.registeredEndpoint(vault, clientId);
+    requireValue(generation === this.authorizationGenerations.get(file), "access-denied");
+    requireValue(endpoint && endpoint.vaultId === vaultId, "vault-identity-mismatch");
+    return this.connectRegistered(endpoint, instanceId, false);
   }
 }

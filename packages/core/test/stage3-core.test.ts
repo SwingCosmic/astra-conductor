@@ -211,6 +211,27 @@ describe("stage 3 core boundaries", () => {
     expect(Buffer.from(storage.credentials.get(first.id)!.ciphertext).toString()).toBe("damaged");
   });
 
+  it("skips usage requests for an explicitly excluded subscription and an unknown API key offering", async () => {
+    const storage = new MemoryStorage();
+    const vault = new CredentialVault(storage, new FakeCipher());
+    const excluded = account("excluded");
+    excluded.publicMetadata.supportsUsage = false;
+    const generic = { ...account("generic"), offeringId: "inference-only", authMethod: "api-key" };
+    storage.accounts.save(excluded);
+    storage.accounts.save(generic);
+    const fetch = vi.fn().mockRejectedValue(new Error("Unexpected provider request"));
+    const adapter = new CodexAdapter(httpServices(fetch, { now: () => now }));
+    const coordinator = new RefreshCoordinator(
+      storage,
+      vault,
+      new ProviderRegistry([codexContribution(adapter)]),
+    );
+    expect(await coordinator.refreshAll()).toEqual([]);
+    for (const { id } of [excluded, generic])
+      expect(await coordinator.refresh(id)).toEqual({ status: "skipped", accountId: id });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("isolates refresh failures, persists rotated tokens first, and coalesces concurrency", async () => {
     const storage = new MemoryStorage();
     const cipher = new FakeCipher();

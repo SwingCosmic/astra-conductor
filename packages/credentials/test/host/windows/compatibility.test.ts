@@ -7,10 +7,12 @@ import path from "node:path";
 import { PassThrough } from "node:stream";
 import { spawn } from "node:child_process";
 import { WindowsBrokerHost, verifyComponent } from "../../../src/host/windows/index.js";
+import { BrokerClient, BrokerError } from "../../../src/index.js";
 
 vi.mock("node:child_process", () => ({ spawn: vi.fn() }));
 const directories: string[] = [];
 afterEach(async () => {
+  vi.restoreAllMocks();
   vi.clearAllMocks();
   await Promise.all(
     directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
@@ -40,7 +42,7 @@ async function fixture() {
     component: "astra-credential-broker",
     version: "0.2.0",
     rid: "win-x64",
-    apiRevision: 2,
+    apiRevision: 3,
     protocolMin: 1,
     protocolMax: 1,
     storageMin: 1,
@@ -64,7 +66,7 @@ async function fixture() {
     const current = { ...manifest, ...overrides };
     let encoded = JSON.stringify(current);
     if (rawApi !== undefined)
-      encoded = encoded.replace('"apiRevision":2', `"apiRevision":${rawApi}`);
+      encoded = encoded.replace('"apiRevision":3', `"apiRevision":${rawApi}`);
     const contents = Buffer.from(encoded);
     await writeFile(path.join(installed, "component.json"), contents);
     await writeFile(
@@ -82,6 +84,167 @@ async function fixture() {
 }
 
 suite("component compatibility preflight", () => {
+  async function runningVault() {
+    const c = await fixture();
+    const vault = path.join(c.root, "vault");
+    const clientDirectory = path.join(c.root, "client");
+    const vaultId = "vault-fixture";
+    const clientId = "reader";
+    const ownerSid = "S-1-5-21-123";
+    const file = path.join(clientDirectory, vaultId + "." + clientId + ".dpapi");
+    await Promise.all([
+      mkdir(path.join(vault, "runtime"), { recursive: true }),
+      mkdir(clientDirectory),
+      mkdir(path.join(c.home, "vaults")),
+    ]);
+    const endpointFile = path.join(vault, "runtime", "endpoint.json");
+    const running = () =>
+      writeFile(endpointFile, JSON.stringify({ generation: "generation-1", state: "READY" }));
+    await Promise.all([
+      writeFile(
+        path.join(vault, "manifest.json"),
+        JSON.stringify({ vaultId, ownerSid, layoutVersion: 1, directoryIdentity: "" }),
+      ),
+      writeFile(
+        path.join(c.home, "vaults", vaultId + ".json"),
+        JSON.stringify({ vaultId, ownerSid, root: vault, directoryIdentity: "" }),
+      ),
+      writeFile(file, "fictional protected grant"),
+      running(),
+    ]);
+    const commands: string[] = [];
+    let scopeAllowed = false;
+    vi.mocked(spawn).mockImplementation((exe, args) => {
+      const child = Object.assign(new EventEmitter(), {
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        stdin: new PassThrough(),
+        kill: vi.fn(),
+      });
+      const cmd = String(exe).endsWith("powershell.exe") ? "unprotect" : String(args?.[0]);
+      commands.push(cmd);
+      child.stdin.on("finish", async () => {
+        if (cmd === "ensure-running") await running();
+        if (cmd === "rpc") scopeAllowed = true;
+        const output =
+          cmd === "unprotect"
+            ? Buffer.from(
+                JSON.stringify({
+                  clientId,
+                  accessToken: Buffer.alloc(32, 1).toString("base64url"),
+                }),
+              ).toString("base64")
+            : "{}";
+        child.stdout.emit("data", Buffer.from(output));
+        child.emit("close", 0);
+      });
+      return child as unknown as ReturnType<typeof spawn>;
+    });
+    const pipe = vi.spyOn(BrokerClient, "connect").mockImplementation(async () => {
+      let onClose: (() => void) | undefined;
+      const scopeAtHandshake = scopeAllowed;
+      return {
+        generation: "generation-1",
+        onClose(cb: () => void) {
+          onClose = cb;
+        },
+        close() {
+          onClose?.();
+        },
+        async call(method: string) {
+          if (method === "createCredential" && !scopeAtHandshake)
+            throw new BrokerError("forbidden");
+          return { serviceStatus: "READY", ownership: "broker" };
+        },
+      } as unknown as BrokerClient;
+    });
+    return { ...c, vault, file, endpointFile, clientId, vaultId, commands, pipe, clientDirectory };
+  }
+
+  it("authenticates a registered running vault without management calls and reuses its verifier only while a pipe is alive", async () => {
+    const c = await runningVault();
+    const first = await c.host.connect(c.vault, c.clientId, "instance1", {
+      existingGrantOnly: true,
+    });
+    const second = await c.host.connect(c.vault, c.clientId, "instance2", {
+      existingGrantOnly: true,
+    });
+    await expect(c.host.status(c.vault)).resolves.toEqual({
+      serviceState: "READY",
+      brokerOwnership: "broker",
+    });
+    expect(c.commands).toEqual(["unprotect"]);
+    await first.call("createCredential", {});
+    await first.call("createCredential", {});
+    expect(c.commands).toEqual(["unprotect", "rpc"]);
+    first.close();
+    second.close();
+    const third = await c.host.connect(c.vault, c.clientId, "instance3");
+    third.close();
+    expect(c.commands).toEqual(["unprotect", "rpc", "unprotect"]);
+  });
+
+  it("can retry a legacy grant repair if its authenticated reconnect fails", async () => {
+    const c = await runningVault();
+    const connection = await c.host.connect(c.vault, c.clientId, "desktop");
+    try {
+      c.pipe.mockRejectedValueOnce(new BrokerError("broker-disconnected"));
+      await expect(connection.call("createCredential", {})).rejects.toThrow("broker-disconnected");
+      await connection.call("createCredential", {});
+      expect(c.commands).toEqual(["unprotect", "rpc", "rpc"]);
+    } finally {
+      connection.close();
+    }
+  });
+
+  it("uses existing-grant recovery for a failed supervisor and never repairs restricted grants", async () => {
+    const c = await runningVault();
+    const web = new WindowsBrokerHost(c.home, c.candidate, c.clientDirectory, true);
+    await writeFile(c.endpointFile, JSON.stringify({ state: "FAILED", generation: "" }));
+    const pipe = await web.connect(c.vault, c.clientId, "instance");
+    await expect(pipe.call("createCredential", {})).rejects.toThrow("forbidden");
+    pipe.close();
+    expect(c.commands).toEqual(["ensure-running", "unprotect"]);
+    await rm(c.file);
+    await expect(
+      c.host.connect(c.vault, c.clientId, "instance", { existingGrantOnly: true }),
+    ).rejects.toThrow("access-denied");
+    expect(c.commands).toEqual(["ensure-running", "unprotect"]);
+  });
+
+  it("rejects a grant forgotten while its pipe handshake is in flight", async () => {
+    const c = await runningVault();
+    const connect = c.pipe.getMockImplementation()!;
+    let entered!: () => void;
+    let release!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    c.pipe.mockImplementationOnce(async (identity) => {
+      entered();
+      await pending;
+      return connect(identity);
+    });
+    const opening = c.host.connect(c.vault, c.clientId, "instance", { existingGrantOnly: true });
+    await waiting;
+    await c.host.forgetGrant(c.vaultId, c.clientId);
+    release();
+    await expect(opening).rejects.toThrow();
+    expect(c.commands).toEqual(["unprotect"]);
+  });
+
+  it("stops dispatching calls on an existing connection after its local grant was forgotten", async () => {
+    const c = await runningVault();
+    const first = await c.host.connect(c.vault, c.clientId, "instance");
+    await c.host.forgetGrant(c.vaultId, c.clientId);
+    await expect(first.call("getCredential", { credentialId: "account" })).rejects.toThrow(
+      "access-denied",
+    );
+    expect(c.commands).toEqual(["unprotect"]);
+  });
   it("reports old registered components as incompatible with version and location, without starting processes", async () => {
     const c = await fixture();
     await c.saveInstalled({ version: "0.1.0", apiRevision: undefined });
@@ -128,11 +291,11 @@ suite("component compatibility preflight", () => {
       installState: "installed",
       installedVersion: "0.3.0",
     });
-    await c.saveInstalled({ version: "0.1.0-alpha+build", apiRevision: 2.125 });
+    await c.saveInstalled({ version: "0.1.0-alpha+build", apiRevision: 3.125 });
     expect(await c.host.inspect()).toMatchObject({
       installState: "installed",
       installedVersion: "0.1.0-alpha+build",
-      installedApiLevel: "2.125",
+      installedApiLevel: "3.125",
     });
     expect(spawn).not.toHaveBeenCalled();
   });
@@ -140,9 +303,9 @@ suite("component compatibility preflight", () => {
   it("inspects exact decimal API tokens without rounding across the required level", async () => {
     const c = await fixture();
     for (const [raw, expected] of [
-      ["2.5000", "2.5"],
+      ["3.5000", "3.5"],
       ["9007199254740993", "9007199254740993"],
-      ["2.0000000000000000000000000001", "2.0000000000000000000000000001"],
+      ["3.0000000000000000000000000001", "3.0000000000000000000000000001"],
     ]) {
       await c.saveInstalled({}, undefined, raw);
       expect(await c.host.inspect()).toMatchObject({
@@ -151,7 +314,7 @@ suite("component compatibility preflight", () => {
       });
     }
     for (const raw of [
-      "1.9999999999999999999999999999",
+      "2.9999999999999999999999999999",
       "2.00000000000000000000000000001",
       '"2"',
     ]) {

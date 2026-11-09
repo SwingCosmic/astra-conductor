@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   AppError,
   CoreServices,
+  SelectedBusinessStorage,
   serviceId,
   silentLogger,
   type CredentialCipherPort,
@@ -48,10 +49,16 @@ export function registerNodeServices(
       (owner) => owner.dispose(),
     )
     .register(
-      CoreServices.storage,
+      Services.businessStorage,
       [dataOwner],
-      (services) => new SqliteStorage(path.join(services.get(dataOwner).directory, "polyquota.db")),
-      (storage) => (storage as SqliteStorage).close(),
+      (services) => {
+        const directory = services.get(dataOwner).directory;
+        return new SelectedBusinessStorage(
+          new SqliteStorage(path.join(directory, "polyquota.db")),
+          (identity) => new SqliteStorage(path.join(directory, `shared-business.${identity}.db`)),
+        );
+      },
+      (storage) => storage.close(),
     )
     .value(CoreServices.http, options.http, (http) => (http as NodeHttpService).dispose())
     .value(CoreServices.files, { readText: (filename) => readFile(filename, "utf8") })

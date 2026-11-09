@@ -1,3 +1,4 @@
+import { createCredentialReuseCheck } from "../credential-reuse-policy.js";
 import { CoreServices } from "../../services/contracts.js";
 import type { ServiceResolver } from "../../services/registry.js";
 import { createHash, randomUUID } from "node:crypto";
@@ -6,7 +7,6 @@ import type {
   Account,
   CredentialEnvelope,
   PublicMetadata,
-  ProviderId,
   UsageQuota,
   UsageSnapshot,
 } from "../../models.js";
@@ -20,7 +20,6 @@ import { includedQuotas } from "../quota-inclusion.js";
 import type { CredentialService } from "../../credential-service.js";
 import { parseAndValidateClaudeAuth } from "@omniroute/src/lib/oauth/utils/claudeAuthImport.ts";
 import { refreshClaudeOAuthToken } from "@omniroute/open-sse/services/tokenRefresh/providers/claude.ts";
-import { getRefreshLeadMs } from "@omniroute/open-sse/services/tokenRefresh.ts";
 import {
   getClaudeUsage,
   type ClaudeBootstrap,
@@ -68,7 +67,8 @@ function stableIdentity(bootstrap: ClaudeBootstrap | null, refreshToken: string)
 }
 
 export class ClaudeAdapter implements UsageProviderAdapter {
-  readonly provider: ProviderId = "claude";
+  readonly canUseCurrentCredentials;
+  readonly provider = "claude";
 
   private readonly fetchImpl: typeof fetch;
   private readonly clock: ClockPort;
@@ -76,6 +76,7 @@ export class ClaudeAdapter implements UsageProviderAdapter {
   constructor(services: ServiceResolver) {
     this.fetchImpl = services.get(CoreServices.http).fetch;
     this.clock = services.get(CoreServices.clock);
+    this.canUseCurrentCredentials = createCredentialReuseCheck(this.provider, this.clock);
   }
 
   async createProvisioningFromCli(raw: unknown): Promise<ClaudeProvisioningResult> {
@@ -145,9 +146,7 @@ export class ClaudeAdapter implements UsageProviderAdapter {
     envelope: CredentialEnvelope,
     force = false,
   ): Promise<CredentialRefreshResult> {
-    const expiry = envelope.expiresAt ? Date.parse(envelope.expiresAt) : Number.NaN;
-    const lead = getRefreshLeadMs("claude", account.publicMetadata);
-    if (!force && Number.isFinite(expiry) && expiry - this.clock.now().getTime() > lead) {
+    if (!force && this.canUseCurrentCredentials(account, envelope)) {
       return { envelope, changed: false };
     }
     const refreshToken = envelope.secrets.refreshToken;

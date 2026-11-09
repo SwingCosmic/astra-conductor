@@ -7,6 +7,7 @@ import type {
 } from "./models.js";
 import type { ClockPort, CredentialRefreshResult, LoggerPort, StoragePort } from "./ports.js";
 import type { ProviderRegistry } from "./providers/registry.js";
+import { supportsSubscriptionUsage } from "./providers/usage-eligibility.js";
 import type { CredentialService } from "./credential-service.js";
 import type { CredentialMutationGate } from "./credential-mutation-gate.js";
 import { silentLogger } from "./logger.js";
@@ -52,6 +53,7 @@ function notificationCandidates(snapshot: UsageSnapshot): NotificationCandidate[
 
 export class RefreshCoordinator {
   private readonly inFlight = new Map<string, Promise<RefreshOutcome>>();
+  private readonly credentialRefreshes = new Map<string, Promise<CredentialRefreshOutcome>>();
   private readonly operationTails = new Map<string, Promise<void>>();
 
   constructor(
@@ -74,7 +76,13 @@ export class RefreshCoordinator {
   }
 
   refreshCredentials(accountId: string): Promise<CredentialRefreshOutcome> {
-    return this.serialize(accountId, () => this.runCredentialRefresh(accountId));
+    const running = this.credentialRefreshes.get(accountId);
+    if (running) return running;
+    const operation = this.serialize(accountId, () => this.runCredentialRefresh(accountId)).finally(
+      () => this.credentialRefreshes.delete(accountId),
+    );
+    this.credentialRefreshes.set(accountId, operation);
+    return operation;
   }
 
   /** Account edits share the provider queue so a late refresh cannot restore a deleted account. */
@@ -83,7 +91,12 @@ export class RefreshCoordinator {
   }
 
   async refreshAll(): Promise<RefreshOutcome[]> {
-    return Promise.all(this.storage.accounts.list().map((account) => this.refresh(account.id)));
+    return Promise.all(
+      this.storage.accounts
+        .list()
+        .filter((account) => supportsSubscriptionUsage(account, this.registry))
+        .map((account) => this.refresh(account.id)),
+    );
   }
 
   private serialize<T>(accountId: string, operation: () => Promise<T>): Promise<T> {
@@ -115,7 +128,7 @@ export class RefreshCoordinator {
       if (!refresh) {
         throw new AppError("validation", `该账号类型没有主动刷新协议：${account.provider}`);
       }
-      const refreshed = await this.refreshCredential(account, refresh, true);
+      const refreshed = await this.refreshCredential(account, refresh, "manual");
       return {
         status: refreshed.changed ? "updated" : "unchanged",
         accountId,
@@ -143,12 +156,21 @@ export class RefreshCoordinator {
         error: toPublicError(new AppError("validation", "Account does not exist")),
       };
     }
-    if (!account.enabled) return { status: "skipped", accountId };
+    if (!account.enabled || !supportsSubscriptionUsage(account, this.registry))
+      return { status: "skipped", accountId };
     try {
       const usage = this.registry.requireUsage(account.provider);
-      const refresh = this.registry.getAccount(account.provider)?.refreshCredentials;
+      const capability = this.registry.getAccount(account.provider);
+      const refresh = capability?.refreshCredentials;
       let envelope = refresh
-        ? (await this.refreshCredential(account, refresh, false)).envelope
+        ? (
+            await this.refreshCredential(
+              account,
+              refresh,
+              "usage",
+              capability.canUseCurrentCredentials,
+            )
+          ).envelope
         : await this.vault.load(account.id);
 
       let snapshot: UsageSnapshot;
@@ -158,7 +180,16 @@ export class RefreshCoordinator {
         if (!refresh || !(error instanceof AppError) || error.code !== "authentication") {
           throw error;
         }
-        const forced = await this.refreshCredential(account, refresh, true);
+        const rejectedToken = envelope.secrets.accessToken;
+        const forced = await this.refreshCredential(
+          account,
+          refresh,
+          "authentication",
+          rejectedToken
+            ? (_account, current) =>
+                !!current.secrets.accessToken && current.secrets.accessToken !== rejectedToken
+            : undefined,
+        );
         envelope = forced.envelope;
         snapshot = await usage.fetchUsage(account, envelope);
       }
@@ -205,11 +236,15 @@ export class RefreshCoordinator {
       envelope: CredentialEnvelope,
       options: { force: boolean },
     ) => Promise<CredentialRefreshResult>,
-    force: boolean,
+    reason: "manual" | "usage" | "authentication",
+    canUseCurrent?: (account: Account, envelope: CredentialEnvelope) => boolean,
   ): Promise<CredentialRefreshResult> {
+    const force = reason !== "usage";
     if (this.vault.refresh) {
-      return this.vault.refresh(account, (envelope, currentAccount) =>
-        refresh(currentAccount, envelope, { force }),
+      return this.vault.refresh(
+        account,
+        (envelope, currentAccount) => refresh(currentAccount, envelope, { force }),
+        { canUseCurrent, requestedByUser: reason === "manual" },
       );
     }
     const current = await this.vault.load(account.id);

@@ -2,7 +2,7 @@
 
 GraphAgent 的 Web 与 Electron 使用 `ui/` 中的同一 Vue 前端，供应商与凭据页面来自 `@astra-conductor/shared-ui`，通过 fetch/SSE 调用 `src/server/` 的同一 Hono 应用。Electron 通过受限内部协议装配该应用，不再提供业务 preload 或 IPC。包与宿主边界见[项目架构](../../docs/architecture.md)。
 
-Electron 支持在本端私有模式下接入七家既有供应商、账号启停和删除、认证取消与会话恢复。私有凭据由系统 `safeStorage` 加密，业务仓储采用原子替换的产品 JSON 文件；账号、密文、设置和共享侧账号投影分别在本产品 profile 内保存。导入沿用 A6—A8 的迁移包验证、脱敏预览、安全主密钥缓存、准备证明与接管恢复。共享选择在断连时保持不可用，不自动回退到私有凭据。
+Electron 支持在本端私有模式下接入七家既有供应商、账号启停和删除、认证取消与会话恢复。私有凭据由系统 `safeStorage` 加密，业务仓储采用原子替换的产品 JSON 文件；账号、密文、设置和共享侧账号投影分别在本产品 profile 内保存。GraphAgent 可发布内置凭据，也可解密其他产品的导出。导出或确认导入后，由用户单独决定本端何时迁移到共享库。共享选择在断连时保持不可用，不自动回退到私有凭据。
 
 ```powershell
 pnpm build
@@ -14,9 +14,9 @@ pnpm --filter @astra-conductor/graph-agent package
 
 打包产物位于 `release/`，Electron 默认使用独立的 `GraphAgent` userData，可用 `GRAPH_AGENT_USER_DATA` 指定隔离 profile。正式 Web 默认监听 `http://127.0.0.1:4878`，直接提供构建后的页面、业务 API 和单条 SSE。`GRAPH_AGENT_PORT` 可更换端口，`GRAPH_AGENT_DATA_DIR` 可更换业务目录，默认目录为用户主目录下的 `.astra-conductor/graph-agent-web`。Web 与 Electron 不得同时占用同一 profile。
 
-Web 不创建或打开私有凭据库。没有 broker 配置时，页面与业务仓储仍可启动，凭据新增、删除、发现和执行按实际能力禁用。设置 `GRAPH_AGENT_BROKER_VAULT` 与 `GRAPH_AGENT_BROKER_CLIENT_ID` 后，可复用本产品 `credential-sharing/` 下已有的对应 DPAPI 客户端授权。Web 不自动授予新的全记录权限，也不保存迁移主密钥；应先由支持安全存储的桌面宿主完成授权与共享接管。broker 断连、尚未接管或记录许可不足时，供应商操作保持不可用。现有共享权限支持读取和受记录租约保护的刷新；共享新增、替换与删除由凭据专项 B2/B3 交付。
+Web 不创建或打开私有凭据库。没有 broker 配置时，页面与业务仓储仍可启动，凭据新增、删除、发现和执行按实际能力禁用。设置 `GRAPH_AGENT_BROKER_VAULT` 与 `GRAPH_AGENT_BROKER_CLIENT_ID` 后，可复用本产品 `credential-sharing/` 下已有的对应 DPAPI 客户端授权。Web 不自动授予新的全记录权限，也不保存迁移主密钥；应先由支持安全存储的桌面宿主完成授权与共享接管。broker 断连、尚未接管或记录许可不足时，供应商操作保持不可用。共享新增、替换、删除与刷新按当前客户端的记录权限执行。
 
-宿主配置、安全缓存、导入与刷新流程的基线见 [A6—A8 实施记录](../../docs/common/core/credential-sharing/a6-a8-sharing-implementation.md#graphagent-最小宿主)。
+本端迁移、快照和钥槽清理的提交条件见[凭据状态机](../../docs/common/core/credential-sharing/state-machine.md)。
 
 应用、窗口、任务栏、安装/卸载程序和侧栏统一使用
 `docs/common/icon-design/graphagent.svg` 的现有紫色图标。运行时资产保存在

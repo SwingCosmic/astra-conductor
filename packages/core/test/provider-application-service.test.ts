@@ -306,6 +306,12 @@ describe("common provider application and HTTP composition", () => {
     const product = fixture();
     const snapshot = await product.service.getSnapshot();
     const context = { instanceId: snapshot.instanceId, contextId: snapshot.backend.contextId };
+    const stale = await product.post("/api/v1/credential-sharing/install", {
+      ...context,
+      operationId: "retired-export",
+    });
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toMatchObject({ error: { code: "stale-context" } });
     const installed = await product.post("/api/v1/credential-sharing/install", context);
     expect(await installed.json()).toEqual({ ok: true, value: null });
     expect(

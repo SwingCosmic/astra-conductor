@@ -130,15 +130,13 @@ GraphAgent 的[导入服务单测](../../../../apps/graph-agent/test/import-serv
 
 17 项闭环检查覆盖首次导出保持私有且冻结、错误密钥零导入、正确导入就绪、PolyQuota 交接及推理记录筛除、GraphAgent 观察统一所有权、GraphAgent C1→C2 在 PolyQuota 可见、PolyQuota C2→C3 通过事件在 GraphAgent 可见、共享刷新不覆盖私有密文、同修订并发只调用一次 provider、切私有保存 C4 并只忘记 PolyQuota 密钥、GraphAgent 持续刷新、私有副本独立刷新、错误重入密钥保留私有后端、正确重入读取共享 C5 而不上传私有修改、两个产品分别重启恢复、复用原成功版本，以及公开状态不含 token/迁移密钥。
 
-本机结果文件：`C:/Users/a/AppData/Local/Temp/astra-sharing-loop-dltN0v/result.json`。这是本轮隔离验收产物，运行命令会生成新的临时目录，不将该路径作为产品配置。
-
 GraphAgent 独立 NSIS 打包通过，产物为 `apps/graph-agent/release/GraphAgent Setup 0.1.0.exe`；PolyQuota 产物为 `apps/polyquota/release/PolyQuota-0.5.0-setup.exe`。两个 app.asar 均包含共享 SDK 和宿主包，不含 brokerctl 或 .NET runtime。PolyQuota 原生资源只纳入有效 `.node` 和 manifest，不打入构建中间备份。
 
-GraphAgent 的真实 Electron sandbox/preload 界面验收覆盖空白主页、设置页、脱敏确认和导入就绪；公开状态使用 fixture，真实导入协议由上述双进程闭环单独验证。截图位于 `C:/Users/a/AppData/Local/Temp/graph-desktop-smoke-UEVFW6/graph-import-preview.png` 与 `graph-import-ready.png`。
+GraphAgent 的真实 Electron sandbox/preload 界面验收覆盖空白主页、设置页、脱敏确认和导入就绪。公开状态使用 fixture，真实导入协议由上述双进程闭环单独验证。
 
-PolyQuota 使用真实 Vue 管理页、Vite 与 Electron 验证共享活动状态、独立刷新风险确认、返回内置和重入后清空密钥输入。最终截图位于 `C:/Users/a/AppData/Local/Temp/polyquota-a6-a8-ui-dFCg5v/` 下的 `polyquota-shared-active.png`、`polyquota-private-reentry.png`、`polyquota-rejoined.png`，均已目视检查。可运行 `node apps/polyquota/test/credential-sharing-a6-a8-ui-smoke.mjs` 重复界面验收。
+当前两款产品的凭据页面与存储切换由[双端共享验收用例](../../../../apps/polyquota/test/credential-sharing-loop-electron.mjs)覆盖。
 
-本轮 broker 完整自包含产物位于 `E:/dev/js/astra-credential-broker/artifacts/publish/a6-a8-win-x64`。使用新流程前须将这套完整产物放入 A3 约定的本地包暂存目录，并通过产品组件管理重新安装；初次闭环验收只安装在隔离服务 home，没有迁移真实账号。随后本机旧组件升级记录见下一节。
+本轮 broker 完整自包含产物位于 `astra-credential-broker/artifacts/publish/a6-a8-win-x64`。使用新流程前须将这套完整产物放入 A3 约定的本地包暂存目录，并通过产品组件管理重新安装；初次闭环验收只安装在隔离服务 home，没有迁移真实账号。随后本机旧组件升级记录见下一节。
 
 未验证生产 Release 下载、真实供应商账号轮换或干净 Windows 虚拟机；本地结果不代替这些验收。
 
@@ -146,9 +144,9 @@ PolyQuota 使用真实 Vue 管理页、Vite 与 Electron 验证共享活动状�
 
 用户在 GraphAgent 验证时遇到 `method-not-found`。核对发现实际安装和默认下载暂存目录仍使用 11 月 5 日的 A3—A5 产物；旧、新开发包都标为 `0.1.0`，仅看版本号或协议主版本不足以区分接口能力。分别从两个完整产物导出 schema，确认旧包缺少 `getSharingState` 与 `cancelQueuedUpdate`，A6—A8 包包含这两个接口。
 
-已校验 A6—A8 完整产物，将默认暂存包更新并经独立安装器重新安装。旧暂存包保留在 `%LOCALAPPDATA%/AstraCredentialBroker/downloads/win-x64/0.1.0.previous-a6-a8-20261106-214314`。实际 vault `E:/tmp/acb` 恢复为 `READY`；通过已有 GraphAgent 普通客户端授权调用 `getSharingState` 成功，描述接口可读取 6 条导出记录，更新权仍为 `source`。此修复没有执行导入确认、统一交接或供应商请求。
+已校验 A6—A8 完整产物，将默认暂存包更新并经独立安装器重新安装。旧暂存包保留在 `%LOCALAPPDATA%/AstraCredentialBroker/downloads/win-x64/0.1.0.previous-a6-a8-20261106-214314`。实际 vault 恢复为 `READY`；通过已有 GraphAgent 普通客户端授权调用 `getSharingState` 成功，描述接口可读取 6 条导出记录，更新权仍为 `source`。此修复没有执行导入确认、统一交接或供应商请求。
 
-GraphAgent 与 PolyQuota 对 `method-not-found` 增加明确的本地组件升级提示，不再仅提示重试连接。GraphAgent 回归覆盖缺接口时不写入绑定或主密钥、界面清空失败的密钥输入且不进入预览，以及模拟组件更新后恢复验证。GraphAgent 7 项测试、类型检查、构建、桌面验证和新 NSIS 包通过；升级指引截图位于 `C:/Users/a/AppData/Local/Temp/graph-desktop-smoke-Hs5lKa/graph-upgrade-required.png`。
+GraphAgent 与 PolyQuota 对 `method-not-found` 增加明确的本地组件升级提示，不再仅提示重试连接。GraphAgent 回归覆盖缺接口时不写入绑定或主密钥、界面清空失败的密钥输入且不进入预览，以及模拟组件更新后恢复验证。GraphAgent 7 项测试、类型检查、构建、桌面验证和新 NSIS 包通过。
 
 修复后全仓类型检查、394 项测试、全量构建及 PolyQuota NSIS 打包通过；变更文件格式与 diff 检查通过，全仓格式检查仍为相同的 93 个既有未修改文件问题。
 
@@ -180,20 +178,20 @@ SDK 将通信不兼容 `protocol-incompatible` 与功能不足 `api-incompatible
 以下为三类版本职责修正前的前置校验历史验证记录；其中“最低组件版本”判断已由上述 API level 判断取代，最新验证另行记录：
 
 - 全仓类型检查、420 项测试及全量构建通过，两个新版 NSIS 包均已生成。独立 broker 为 96 项通过、1 项平台测试跳过，格式和自包含发布通过。
-- 两套历史 `0.1.0` 产物分别完成 7 项在线升级检查，确认旧服务排空、安装替换、原 vault 版本、服务密钥与加密记录保留。隔离结果目录分别为 `C:/Users/a/AppData/Local/Temp/astra-broker-upgrade-66e348c71d714379aa222523ec5462ff/` 和 `C:/Users/a/AppData/Local/Temp/astra-broker-upgrade-748e99dc49744db5a6339c2421371970/`。
-- 最终 broker 产物通过完整 29 项独立生命周期检查，结果位于 `C:/Users/a/AppData/Local/AstraBrokerValidation/8ca2120461d643b594b935d7dc947d30/validation-result.json`。
-- GraphAgent 桌面验收确认旧组件显示“不兼容”和最低版本、验证/重连按钮禁用且不发出验证请求；截图位于 `C:/Users/a/AppData/Local/Temp/graph-desktop-smoke-cWk9Yd/graph-upgrade-required.png`。
+- 两套历史 `0.1.0` 产物分别完成 7 项在线升级检查，确认旧服务排空、安装替换、原 vault 版本、服务密钥与加密记录保留。
+- 最终 broker 产物通过完整 29 项独立生命周期检查。
+- GraphAgent 桌面验收确认旧组件显示“不兼容”和最低版本，验证和重连按钮禁用，验证请求数为零。
 - 最终完整 broker 候选已校验并准备到默认 `downloads/win-x64/0.2.0/`，与独立仓库 `artifacts/publish/compat-v2-win-x64` 清单一致。实际安装仍为原 `0.1.0`；新客户端只读检查能立即报告 `incompatible`，不自动中断已导入现场。
 - 两个 app.asar 的 SDK 与宿主代码和当前构建逐字节匹配，GraphAgent 包包含重连修复；两个产品仍不携带 broker/runtime。全仓格式检查保留原有 93 个未修改文件问题，变更代码格式和 diff 检查通过。
-- 最终 `0.2.0` 产物、PolyQuota `0.5.1` 与 GraphAgent `0.1.1` 完成真实双 Electron 进程的 17 项共享闭环复测，覆盖导入、交接、并发刷新、事件、返回内置、重入和两侧重启。结果为 `C:/Users/a/AppData/Local/Temp/astra-sharing-loop-EwOj8b/result.json`；仍使用隔离目录、虚构凭据与注入的 provider HTTP，实际供应商网络请求为 0。
+- 最终 `0.2.0` 产物、PolyQuota `0.5.1` 与 GraphAgent `0.1.1` 完成真实双 Electron 进程的 17 项共享闭环复测，覆盖导入、交接、并发刷新、事件、返回内置、重入和两侧重启。复测使用隔离目录、虚构凭据与注入的 provider HTTP，实际供应商网络请求为 0。
 
 ### 三类版本职责修正后的最终验证
 
 - 全仓类型检查、435 项测试和全量构建通过。变更代码 60 个文件的格式检查与 diff 检查通过；全仓格式检查仍有同一批 93 个未修改文件的既有问题。
-- 独立 broker 为 127 项测试通过、1 项平台测试跳过；格式、构建和自包含发布通过。最终产物为 `E:/dev/js/astra-credential-broker/artifacts/publish/versions-separated-win-x64`。
+- 独立 broker 为 127 项测试通过、1 项平台测试跳过；格式、构建和自包含发布通过。最终产物为 `astra-credential-broker/artifacts/publish/versions-separated-win-x64`。
 - TypeScript 与 .NET 共用固定认证向量，覆盖整数 `2`、小数 `2.125`、大于 JS safe integer 的 `9007199254740993` 和精确小数 `2.0000000000000000000000000001`；旧整数 API 认证字节不变。
-- 最终 broker 的 29 项独立生命周期检查通过，结果为 `C:/Users/a/AppData/Local/AstraBrokerValidation/db638b7f032f421195a571ed450d44c0/validation-result.json`；缺 API 声明的旧组件在线升级 7 项检查通过，结果为 `C:/Users/a/AppData/Local/Temp/astra-broker-upgrade-27f308cbe58142df9e4a5e5cc65b315f/upgrade-result.json`。均为隔离安装，测试后卸载，不替换用户实际安装。
-- 最终双 Electron 进程、真实 safeStorage/DPAPI 和 .NET broker 的 17 项共享闭环复测通过，结果为 `C:/Users/a/AppData/Local/Temp/astra-sharing-loop-shiRwB/result.json`；使用虚构凭据与注入的 provider HTTP，实际供应商网络请求为 0。
-- GraphAgent 桌面验收覆盖组件 `9.9.9` / API `1.9` 被前置拒绝，以及组件 `0.0.1` / API `2.125` 可正常导入就绪。截图位于 `C:/Users/a/AppData/Local/Temp/graph-desktop-smoke-Mm08FX/graph-upgrade-required.png` 与 `graph-import-ready.png`。
+- 最终 broker 在隔离安装中通过 29 项独立生命周期检查，缺 API 声明的旧组件通过 7 项在线升级检查。
+- 最终双 Electron 进程、真实 safeStorage/DPAPI 和 .NET broker 的 17 项共享闭环复测通过。复测使用虚构凭据与注入的 provider HTTP，实际供应商网络请求为 0。
+- GraphAgent 桌面验收覆盖组件 `9.9.9` / API `1.9` 被前置拒绝，以及组件 `0.0.1` / API `2.125` 可正常导入就绪。
 - 最终候选包已校验并更新默认 `downloads/win-x64/0.2.0/` 暂存目录，旧候选保留备份；实际安装及已导入数据保持原状，后续显式安装复用经过验证的替换流程。
 - 两个最终 NSIS 安装包已重新生成：`apps/polyquota/release/PolyQuota-0.5.1-setup.exe` 与 `apps/graph-agent/release/GraphAgent Setup 0.1.1.exe`。两个 app.asar 内的 SDK 客户端、兼容性/decimal 模块和宿主代码均与当前构建逐字节一致，GraphAgent 的导入服务与界面产物也一致；两个产品均不携带 broker/.NET runtime。

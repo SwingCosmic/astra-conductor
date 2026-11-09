@@ -40,9 +40,10 @@ export async function startRuntime(
       instanceId: application.instanceId,
       backend: () => credentialSharing.getBackendContext(),
       assertWritable: () => {
-        if (credentialSharing.isSharedSelected())
-          throw new AppError("permission", "共享模式暂不支持新增、删除或重新授权");
-        if (!host.capabilities.credentials)
+        if (credentialSharing.isSharedSelected()) {
+          if (credentialSharing.getBackendContext().active !== "shared")
+            throw new AppError("service-unavailable", "共享凭据暂不可用，请重试连接");
+        } else if (!host.capabilities.credentials)
           throw new AppError("secure-storage", "当前宿主未提供可写私有凭据存储");
       },
       visibleAccountIds: () => credentialSharing.visibleAccountIds(),

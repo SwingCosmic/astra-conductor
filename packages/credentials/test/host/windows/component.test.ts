@@ -29,7 +29,7 @@ async function component() {
   const manifest = {
     component: "astra-credential-broker",
     version: "0.2.0",
-    apiRevision: 2,
+    apiRevision: 3,
     rid: "win-x64",
     protocolMin: 1,
     protocolMax: 1,

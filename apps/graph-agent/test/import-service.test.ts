@@ -2,17 +2,24 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "node:crypto";
-import { BrokerError, canonical, type TransferSnapshot } from "@astra-conductor/credentials";
-import type { CredentialCipherPort } from "@astra-conductor/core/internal";
+import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { BrokerError, type TransferSnapshot } from "@astra-conductor/credentials";
+import {
+  CredentialMigrationService,
+  CredentialVault,
+  CredentialMutationGate,
+  MemoryStorage,
+  SwitchingCredentialService,
+  type ProviderRegistry,
+  type CredentialCipherPort,
+} from "@astra-conductor/core/internal";
 import type { ComponentInstallation } from "@astra-conductor/credentials/host/windows";
-import { GraphSharingService, type GraphSharingOptions } from "../src/server/import-service.js";
 import { transferFixture } from "./transfer-fixture.js";
 
 const roots: string[] = [];
-const services: GraphSharingService[] = [];
+const services: CredentialMigrationService[] = [];
 afterEach(async () => {
-  for (const service of services.splice(0)) await service.dispose();
+  for (const service of services.splice(0)) await service.stop();
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
 const fictionalSecret = "FICTIONAL-ONLY-SECRET-123456";
@@ -94,509 +101,224 @@ async function fixture() {
       };
     },
   };
-  let ownership = "source";
-  let failPrepare = false;
   let installState: ComponentInstallation["installState"] = "installed";
-  let installedVersion = "0.0.1";
-  let installedApiLevel = "2.125";
-  const prepared = new Set<string>();
-  const calls: string[] = [];
-  const activate = vi.fn(async () => undefined);
+  let owned = true;
   const host = {
-    localPackageDirectory: path.join(root, "package"),
+    localPackageDirectory: root,
     inspect: vi.fn(async () => ({
       installState,
-      installedVersion,
-      installedApiLevel,
-      installationDirectory: path.join(root, "component"),
+      installedVersion: "0.3.0",
+      installedApiLevel: "3",
+      installationDirectory: root,
     })),
-    inspectPackage: async () => "ready" as const,
-    status: vi.fn(async () => ({ serviceState: "READY", brokerOwnership: ownership })),
-    install: async () => undefined,
-    uninstall: async () => undefined,
-    connect: vi.fn(async (_vault: string, clientId: string) => ({
+    install: async () => {},
+    uninstall: async () => {},
+    forgetGrant: vi.fn(async () => {}),
+    revokeGrant: vi.fn(async () => {}),
+    connect: vi.fn(async () => ({
       close() {},
-      call: async (method: string, params?: unknown) => {
-        calls.push(method);
-        if (method === "getSharingState")
-          return {
-            ...transfer.version,
-            sourceWatermark: "watermark",
-            sourceClientId: "polyquota",
-            ownership,
-            preparedClientIds: [...prepared],
-          };
-        if (method === "prepareChallenge") return { challengeId: "challenge", nonce: "nonce" };
-        if (method === "prepareClient") {
-          if (failPrepare) throw new Error("offline");
-          const request = params as {
-            operationId: string;
-            sourceWatermark: string;
-            challengeId: string;
-            proof: string;
-          };
-          const expected = createHmac("sha256", Buffer.alloc(32, 9))
-            .update(
-              canonical([
-                "astra.prepare.v1",
-                "vault",
-                "version",
-                clientId,
-                request.operationId,
-                "watermark",
-                "challenge",
-                "nonce",
-              ]),
-            )
-            .digest("base64url");
-          expect(request.proof).toBe(expected);
-          prepared.add(clientId);
-          return { storageVersion: "version", state: "prepared" };
+      call: async (method: string) => {
+        switch (method) {
+          case "getSharingState":
+            return {
+              ...transfer.version,
+              sourceWatermark: "watermark",
+              sourceClientId: "source",
+              preparedClientIds: [],
+              ownership: owned ? "broker" : "source",
+            };
+          case "getSnapshotWatermark":
+            return { vaultId: "vault", storageVersion: "version", watermark: "current" };
+          case "listCredentials":
+            return { items: [record().description], nextCursor: null };
+          case "getCredential":
+            return record();
+          case "getEvents":
+            return { items: [], nextCursor: "0" };
+          default:
+            throw new BrokerError("method-not-found");
         }
-        throw new Error("unexpected method");
       },
     })),
   };
-  const make = (overrides: Partial<GraphSharingOptions> = {}) => {
-    const service = new GraphSharingService({
-      host,
-      cipher,
-      directory,
-      selectDirectory: async () => vault,
-      canRefresh: (provider) => provider === "codex",
-      activate,
-      accounts: async () => [],
-      refresh: async () => undefined,
-      deactivate: async () => undefined,
-      ...overrides,
-    });
+  const storage = new MemoryStorage();
+  const mutations = new CredentialMutationGate();
+  const credentials = new CredentialVault(storage, cipher, undefined, mutations);
+  const switcher = new SwitchingCredentialService(credentials);
+  const options = {
+    product: "graph-agent" as const,
+    cacheDirectory: directory,
+    storage,
+    cipher,
+    mutations,
+    switcher,
+    providers: {
+      getUsage: () => ({}),
+      getAccount: () => ({ refreshCredentials: () => {} }),
+      findOffering: () => ({
+        provider: "codex",
+        offering: { authMethods: [{ method: "cli-import" }] },
+      }),
+    } as unknown as ProviderRegistry,
+    host,
+    hasActiveAuth: () => false,
+  };
+  const make = () => {
+    const service = new CredentialMigrationService(options);
     services.push(service);
     return service;
   };
   return {
-    root,
     vault,
     directory,
     transfer,
-    host,
-    calls,
-    make,
-    activate,
     cipher,
+    host,
+    make,
+    options,
+    storage,
+    credentials,
+    switcher,
+    setOwner: (value: boolean) => {
+      owned = value;
+    },
     setInstallation: (value: ComponentInstallation["installState"]) => {
       installState = value;
     },
-    setComponentInfo: (version: string, apiLevel: string) => {
-      installedVersion = version;
-      installedApiLevel = apiLevel;
-    },
-    handoff: () => {
-      ownership = "broker";
-    },
-    sourceOwns: () => {
-      ownership = "source";
-    },
-    failPrepare: (value: boolean) => {
-      failPrepare = value;
-    },
   };
 }
-describe("GraphAgent import", () => {
-  it("can replace a pending import with a newly exported location only after confirmation", async () => {
-    const f = await fixture();
-    const selectShared = vi.fn();
-    const service = f.make({ selectShared });
-    const first = await service.verifyImport({
-      vaultDirectory: f.vault,
-      migrationKey: f.transfer.migrationKey,
-    });
-    await service.confirmImport(first.previewId);
-    const before = await readFile(path.join(f.directory, "binding.json"));
-    const secondVault = path.join(f.root, "new-vault");
-    await mkdir(path.join(secondVault, "versions", "version"), { recursive: true });
-    await writeFile(path.join(secondVault, "manifest.json"), JSON.stringify({ vaultId: "vault" }));
-    await writeFile(
-      path.join(secondVault, "versions", "version", "migration.json"),
-      f.transfer.bytes,
-    );
-    await writeFile(
-      path.join(secondVault, "versions", "version", "version.json"),
-      f.transfer.versionBytes,
-    );
-    const next = await service.verifyImport({
-      vaultDirectory: secondVault,
-      migrationKey: f.transfer.migrationKey,
-    });
-    expect(await readFile(path.join(f.directory, "binding.json"))).toEqual(before);
-    await service.confirmImport(next.previewId);
-    const after = JSON.parse(await readFile(path.join(f.directory, "binding.json"), "utf8"));
-    expect(after.vaultDirectory).toBe(secondVault);
-    expect(after.clientId).not.toBe(JSON.parse(before.toString()).clientId);
-    expect(selectShared).not.toHaveBeenCalled();
-    f.handoff();
-    await service.retry();
-    await expect(
-      service.verifyImport({ vaultDirectory: f.vault, migrationKey: f.transfer.migrationKey }),
-    ).rejects.toMatchObject({ code: "import-location-fixed" });
-    f.sourceOwns();
-    const sharedBinding = await readFile(path.join(f.directory, "binding.json"));
-    await expect(
-      service.verifyImport({ vaultDirectory: secondVault, migrationKey: f.transfer.migrationKey }),
-    ).rejects.toMatchObject({ code: "sharing-not-active" });
-    expect(await readFile(path.join(f.directory, "binding.json"))).toEqual(sharedBinding);
-  });
-  it("keeps a prepared or restored pending import out of the selected shared backend", async () => {
-    const f = await fixture();
-    const selectShared = vi.fn();
-    const first = f.make({ selectShared });
-    const preview = await first.verifyImport({
-      vaultDirectory: f.vault,
-      migrationKey: f.transfer.migrationKey,
-    });
-    await first.confirmImport(preview.previewId);
-    expect(await first.status()).toMatchObject({
-      state: "import-ready",
-      connected: false,
-      accounts: [{ id: "account" }],
-    });
-    expect(selectShared).not.toHaveBeenCalled();
-    expect(f.activate).not.toHaveBeenCalled();
-    await first.dispose();
-    const restored = f.make({ selectShared });
-    await restored.restore();
-    expect((await restored.status()).state).toBe("import-ready");
-    expect(selectShared).not.toHaveBeenCalled();
-    f.handoff();
-    await restored.retry();
-    expect((await restored.status()).state).toBe("shared");
-    expect(f.activate).toHaveBeenCalledOnce();
-  });
-
-  it("preserves a previously shared selection when its owner becomes unavailable", async () => {
-    const f = await fixture();
-    const deactivate = vi.fn(async () => undefined);
-    const selectShared = vi.fn();
-    const service = f.make({ deactivate, selectShared });
-    const preview = await service.verifyImport({
-      vaultDirectory: f.vault,
-      migrationKey: f.transfer.migrationKey,
-    });
-    await service.confirmImport(preview.previewId);
-    f.handoff();
-    await service.retry();
-    f.sourceOwns();
-    await expect(service.retry()).rejects.toMatchObject({ code: "sharing-not-active" });
-    expect(await service.status()).toMatchObject({ state: "shared", connected: false });
-    await service.dispose();
-    const restored = f.make({ selectShared });
-    await restored.restore();
-    expect(selectShared).toHaveBeenCalledOnce();
-    expect(await restored.status()).toMatchObject({ state: "shared", connected: false });
-  });
-  it("rejects insufficient API capability even when the component version is newer", async () => {
-    const f = await fixture();
-    f.setComponentInfo("9.9.9", "1.9");
-    f.setInstallation("incompatible");
-    const encrypt = vi.spyOn(f.cipher, "encrypt");
-    const service = f.make();
-    expect(await service.status()).toMatchObject({
-      installState: "incompatible",
-      state: "none",
-      connected: false,
-      installedVersion: "9.9.9",
-      installedApiLevel: "1.9",
-      requiredApiLevel: "2",
-    });
-    expect(f.host.status).not.toHaveBeenCalled();
-    await expect(
-      service.verifyImport({ vaultDirectory: f.vault, migrationKey: f.transfer.migrationKey }),
-    ).rejects.toMatchObject({ code: "component-incompatible" });
-    expect(f.host.connect).not.toHaveBeenCalled();
-    expect(encrypt).not.toHaveBeenCalled();
-    expect(f.calls).toEqual([]);
-    await expect(readdir(f.directory)).rejects.toMatchObject({ code: "ENOENT" });
-  });
-  it("rechecks compatibility before confirming a previously validated preview", async () => {
-    const f = await fixture();
-    const service = f.make();
-    const preview = await service.verifyImport({
-      vaultDirectory: f.vault,
-      migrationKey: f.transfer.migrationKey,
+describe("GraphAgent local migration binding", () => {
+  it("inspects the component without starting a broker, and disallows incompatible components before preview", async () => {
+    const f = await fixture(),
+      service = f.make();
+    expect(await service.getStatus()).toMatchObject({
+      migrationState: "private",
+      role: "both",
+      activeBackend: "private",
     });
     f.setInstallation("incompatible");
-    f.host.connect.mockClear();
-    f.calls.length = 0;
-    const encrypt = vi.spyOn(f.cipher, "encrypt");
-    await expect(service.confirmImport(preview.previewId)).rejects.toMatchObject({
-      code: "component-incompatible",
-    });
-    expect(f.host.connect).not.toHaveBeenCalled();
-    expect(encrypt).not.toHaveBeenCalled();
-    expect(f.calls).toEqual([]);
-    await expect(readdir(f.directory)).rejects.toMatchObject({ code: "ENOENT" });
-  });
-  it("blocks restoration, reconnect and refresh before contacting an incompatible broker", async () => {
-    const f = await fixture();
-    const refresh = vi.fn(async () => undefined);
-    const service = f.make({ refresh });
-    const preview = await service.verifyImport({
-      vaultDirectory: f.vault,
-      migrationKey: f.transfer.migrationKey,
-    });
-    await service.confirmImport(preview.previewId);
-    f.handoff();
-    await service.retry();
-    const before = await readFile(path.join(f.directory, "binding.json"));
-    f.setInstallation("incompatible");
-    f.host.connect.mockClear();
-    f.host.status.mockClear();
-    f.calls.length = 0;
-    await expect(service.retry()).rejects.toMatchObject({ code: "component-incompatible" });
-    await expect(service.refresh("account")).rejects.toMatchObject({
-      code: "component-incompatible",
-    });
-    await service.restore();
-    expect(await service.status()).toMatchObject({
-      installState: "incompatible",
-      connected: false,
-      lastError: "component-incompatible",
-    });
-    expect(refresh).not.toHaveBeenCalled();
-    expect(f.host.connect).not.toHaveBeenCalled();
-    expect(f.host.status).not.toHaveBeenCalled();
-    expect(f.calls).toEqual([]);
-    expect(await readFile(path.join(f.directory, "binding.json"))).toEqual(before);
-  });
-  it("preserves an old broker's missing-method diagnostic without creating an import", async () => {
-    const f = await fixture();
-    const service = f.make({
-      host: {
-        ...f.host,
-        connect: async () => ({
-          close() {},
-          call: async () => {
-            throw new BrokerError("method-not-found");
-          },
-        }),
-      },
-    });
     await expect(
       service.verifyImport({ vaultDirectory: f.vault, migrationKey: f.transfer.migrationKey }),
-    ).rejects.toMatchObject({ code: "method-not-found" });
-    expect(await service.status()).toMatchObject({
-      state: "none",
-      rememberedKey: false,
-      lastError: "method-not-found",
-    });
-    await expect(readdir(f.directory)).rejects.toMatchObject({ code: "ENOENT" });
+    ).rejects.toThrow("component-incompatible");
+    expect(f.host.connect).not.toHaveBeenCalled();
   });
-  it("wrong migration key writes no binding or key and never prepares a client", async () => {
-    const f = await fixture();
-    const service = f.make();
+  it("rejects an incorrect key and cancels a valid masked preview without creating any client grant or protected key", async () => {
+    const f = await fixture(),
+      service = f.make();
     await expect(
-      service.verifyImport({
-        vaultDirectory: f.vault,
-        migrationKey: `acm1_${Buffer.alloc(32, 8).toString("base64url")}`,
-      }),
-    ).rejects.toThrow();
-    expect((await service.status()).state).toBe("none");
-    expect(f.calls).not.toContain("prepareClient");
-    await expect(readdir(f.directory)).rejects.toMatchObject({ code: "ENOENT" });
-  });
-  it("accepts an older component with sufficient API and safely confirms a masked import", async () => {
-    const f = await fixture();
-    const service = f.make();
-    expect(await service.status()).toMatchObject({
-      installState: "installed",
-      installedVersion: "0.0.1",
-      installedApiLevel: "2.125",
-      requiredApiLevel: "2",
-    });
+      service.verifyImport({ vaultDirectory: f.vault, migrationKey: "incorrect" }),
+    ).rejects.toThrow("invalid-migration-key");
     const preview = await service.verifyImport({
       vaultDirectory: f.vault,
       migrationKey: f.transfer.migrationKey,
     });
-    expect(preview.accounts).toEqual([
-      {
-        id: "account",
-        provider: "codex",
-        maskedIdentifier: "fic***",
-        canRefresh: true,
-        revision: "1",
-      },
+    expect(preview.accounts).toMatchObject([
+      { id: "account", provider: "codex", maskedIdentifier: "fic***" },
     ]);
     expect(JSON.stringify(preview)).not.toContain(fictionalSecret);
-    expect(f.calls).not.toContain("prepareClient");
-    await service.confirmImport(preview.previewId);
-    expect(await service.status()).toMatchObject({ state: "import-ready", rememberedKey: true });
-    for (const file of await readdir(f.directory)) {
-      const bytes = await readFile(path.join(f.directory, file));
-      expect(bytes.includes(Buffer.from(fictionalSecret))).toBe(false);
-      expect(bytes.includes(Buffer.from(f.transfer.migrationKey))).toBe(false);
-      expect(bytes.includes(Buffer.from(f.transfer.snapshot.masterKey))).toBe(false);
-    }
-    f.handoff();
-    await service.retry();
-    expect(f.activate).toHaveBeenCalledTimes(1);
-    expect((await service.status()).state).toBe("shared");
-  });
-  it("cancelled previews cannot import and do not create protected files", async () => {
-    const f = await fixture();
-    const service = f.make();
-    const preview = await service.verifyImport({
-      vaultDirectory: f.vault,
-      migrationKey: f.transfer.migrationKey,
-    });
     await service.cancelPreview();
     await expect(service.confirmImport(preview.previewId)).rejects.toThrow(
       "import-preview-expired",
     );
-    expect((await service.status()).state).toBe("none");
-  });
-  it("recovers preparation after failure and application restart without storing migration keys", async () => {
-    const f = await fixture();
-    const first = f.make();
-    const preview = await first.verifyImport({
-      vaultDirectory: f.vault,
-      migrationKey: f.transfer.migrationKey,
+    expect((await readdir(f.directory)).filter((file) => file.endsWith(".key"))).toEqual([]);
+    expect(f.host.connect).not.toHaveBeenCalled();
+    expect(await service.getStatus()).toMatchObject({
+      migrationState: "private",
+      operation: null,
+      rememberedKey: false,
     });
-    f.failPrepare(true);
-    await expect(first.confirmImport(preview.previewId)).rejects.toThrow();
-    expect(await first.status()).toMatchObject({ state: "preparing", rememberedKey: true });
-    await first.dispose();
-    f.failPrepare(false);
-    const second = f.make();
-    await second.restore();
-    expect(await second.status()).toMatchObject({ state: "import-ready", rememberedKey: true });
-    expect(f.activate).not.toHaveBeenCalled();
   });
-  it("joins concurrent reconnect requests without merging installation or refresh operations", async () => {
-    const f = await fixture();
-    const service = f.make();
+  it("retains a verified preview when protection fails and commits B2 only after readback", async () => {
+    const f = await fixture(),
+      service = f.make();
     const preview = await service.verifyImport({
       vaultDirectory: f.vault,
       migrationKey: f.transfer.migrationKey,
     });
-    f.failPrepare(true);
+    const encrypt = vi.spyOn(f.cipher, "encrypt").mockRejectedValueOnce(Error("locked"));
     await expect(service.confirmImport(preview.previewId)).rejects.toThrow();
-    f.failPrepare(false);
-    f.handoff();
-    const installation = await f.host.inspect();
-    f.host.inspect.mockClear();
-    f.host.connect.mockClear();
-    f.calls.length = 0;
-    let release!: () => void;
-    let entered!: () => void;
-    const started = new Promise<void>((resolve) => {
-      entered = resolve;
+    expect(await service.getStatus()).toMatchObject({
+      migrationState: "private",
+      rememberedKey: false,
     });
-    const blocked = new Promise<void>((resolve) => {
-      release = resolve;
+    await service.confirmImport(preview.previewId);
+    await service.confirmImport(preview.previewId);
+    expect(encrypt).toHaveBeenCalledTimes(2);
+    expect(await service.getStatus()).toMatchObject({
+      migrationState: "import-ready",
+      rememberedKey: true,
+      activeBackend: "private",
     });
-    f.host.inspect.mockImplementationOnce(async () => {
-      entered();
-      await blocked;
-      return installation;
-    });
-    const first = service.retry();
-    await started;
-    let second: Promise<void>;
-    try {
-      second = service.retry();
-      expect(second).toBe(first);
-      expect(() => service.install()).toThrow("operation-in-progress");
-      expect(() => service.refresh("account")).toThrow("operation-in-progress");
-    } finally {
-      release();
-    }
-    await expect(Promise.all([first, second!])).resolves.toEqual([undefined, undefined]);
-    expect(f.host.inspect).toHaveBeenCalledTimes(1);
-    expect(f.host.connect).toHaveBeenCalledTimes(1);
-    expect(f.calls.filter((method) => method === "prepareClient")).toHaveLength(1);
-    expect(f.activate).toHaveBeenCalledTimes(1);
-    expect(await service.status()).toMatchObject({ state: "shared", connected: true });
+    const state = await readFile(path.join(f.directory, "migration-state.json"), "utf8");
+    expect(state).not.toContain(f.transfer.migrationKey);
+    expect(state).not.toContain(fictionalSecret);
   });
-  it("drains the shared reconnect promise before disposing without activating late", async () => {
-    const f = await fixture();
-    const deactivate = vi.fn(async () => undefined);
-    const service = f.make({ deactivate });
+  it("cleans a staged key and operation-specific grant on cancellation after a failed registration", async () => {
+    const f = await fixture(),
+      service = f.make();
+    const preview = await service.verifyImport({
+      vaultDirectory: f.vault,
+      migrationKey: f.transfer.migrationKey,
+    });
+    f.setOwner(false);
+    await expect(service.confirmImport(preview.previewId)).rejects.toThrow("sharing-not-active");
+    expect(await service.getStatus()).toMatchObject({
+      migrationState: "private",
+      rememberedKey: false,
+    });
+    await service.cancelPreview();
+    expect(f.host.revokeGrant).toHaveBeenCalledOnce();
+    expect(f.host.forgetGrant).toHaveBeenCalledOnce();
+    expect((await readdir(f.directory)).filter((file) => file.endsWith(".key"))).toEqual([]);
+  });
+  it("reopens B2 without connecting, and migrates only when the local user requests it", async () => {
+    const f = await fixture(),
+      service = f.make();
     const preview = await service.verifyImport({
       vaultDirectory: f.vault,
       migrationKey: f.transfer.migrationKey,
     });
     await service.confirmImport(preview.previewId);
-    f.handoff();
-    const installation = await f.host.inspect();
-    let release!: () => void;
-    let entered!: () => void;
-    const started = new Promise<void>((resolve) => {
-      entered = resolve;
+    await service.stop();
+    const next = f.make();
+    f.host.connect.mockClear();
+    await next.start();
+    expect(f.host.connect).not.toHaveBeenCalled();
+    await next.enableShared();
+    expect(await next.getStatus()).toMatchObject({
+      migrationState: "shared",
+      activeBackend: "shared",
     });
-    const blocked = new Promise<void>((resolve) => {
-      release = resolve;
+    expect((await f.switcher.load("account")).secrets.refreshToken).toBe(fictionalSecret);
+    expect(f.storage.accounts.list()).toHaveLength(0);
+    await next.stop();
+    const offline = f.make();
+    f.setInstallation("not-installed");
+    await offline.start();
+    expect(await offline.getStatus()).toMatchObject({
+      migrationState: "shared",
+      activeBackend: "unavailable",
     });
-    f.host.inspect.mockImplementationOnce(async () => {
-      entered();
-      await blocked;
-      return installation;
-    });
-    const first = service.retry();
-    await started;
-    const second = service.retry();
-    const rejected = expect(Promise.all([first, second])).rejects.toThrow("client-closed");
-    const closing = service.dispose();
+    await expect(offline.returnToPrivate(true)).rejects.toThrow();
+    expect(f.host.forgetGrant).not.toHaveBeenCalled();
+  });
+  it("expires in-memory secrets while retaining the public directory for revalidation", async () => {
+    const f = await fixture(),
+      service = f.make();
+    vi.useFakeTimers();
     try {
-      expect(deactivate).not.toHaveBeenCalled();
+      const preview = await service.verifyImport({
+        vaultDirectory: f.vault,
+        migrationKey: f.transfer.migrationKey,
+      });
+      await vi.advanceTimersByTimeAsync(300_001);
+      await expect(service.confirmImport(preview.previewId)).rejects.toThrow(
+        "import-preview-expired",
+      );
+      expect((await service.getStatus()).operation?.vaultDirectory).toBe(f.vault);
+      expect(f.host.connect).not.toHaveBeenCalled();
     } finally {
-      release();
+      vi.useRealTimers();
     }
-    await rejected;
-    await closing;
-    expect(deactivate).toHaveBeenCalledTimes(1);
-    expect(f.activate).not.toHaveBeenCalled();
-  });
-  it("status inspection never starts the broker and an empty directory cannot be imported", async () => {
-    const f = await fixture();
-    const service = f.make();
-    await service.status();
-    expect(f.host.connect).not.toHaveBeenCalled();
-    await expect(
-      service.verifyImport({ vaultDirectory: f.root, migrationKey: f.transfer.migrationKey }),
-    ).rejects.toThrow();
-    expect(f.host.connect).not.toHaveBeenCalled();
-  });
-  it("drains confirmation on exit without filling a late key or binding", async () => {
-    const f = await fixture();
-    let release!: () => void;
-    let entered!: () => void;
-    const started = new Promise<void>((resolve) => {
-      entered = resolve;
-    });
-    const blocked = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const service = f.make({
-      cipher: {
-        ...f.cipher,
-        encrypt: async (value) => {
-          entered();
-          await blocked;
-          return f.cipher.encrypt(value);
-        },
-      },
-    });
-    const preview = await service.verifyImport({
-      vaultDirectory: f.vault,
-      migrationKey: f.transfer.migrationKey,
-    });
-    const confirmation = service.confirmImport(preview.previewId);
-    const rejected = expect(confirmation).rejects.toThrow("client-closed");
-    await started;
-    const closing = service.dispose();
-    release();
-    await rejected;
-    await closing;
-    await expect(readdir(f.directory)).rejects.toMatchObject({ code: "ENOENT" });
-    expect(f.calls).not.toContain("prepareClient");
   });
 });

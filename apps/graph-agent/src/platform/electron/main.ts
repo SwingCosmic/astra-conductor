@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, net, protocol, safeStorage, shell } from "e
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { AppError } from "@astra-conductor/core/internal";
+import { AppError, MigrationProfileUpgradeRequired } from "@astra-conductor/core/internal";
 import { createGraphServices, type GraphServices } from "../../server/services.js";
 import { createGraphHonoApp } from "../../server/create-hono-app.js";
 import { claimGraphProfile } from "../storage.js";
@@ -123,11 +123,16 @@ else {
       window.webContents.on("will-navigate", (event) => event.preventDefault());
       await window.loadURL(`${origin}/`);
     })
-    .catch(async () => {
+    .catch(async (error: unknown) => {
       await services?.stop();
       release?.();
       release = undefined;
-      dialog.showErrorBox("GraphAgent", "应用启动失败，请检查本机组件、数据目录与安全存储后重试。");
+      dialog.showErrorBox(
+        "GraphAgent",
+        error instanceof MigrationProfileUpgradeRequired
+          ? error.message
+          : "应用启动失败，请检查本机组件、数据目录与安全存储后重试。",
+      );
       app.exit(1);
     });
   app.on("window-all-closed", () => app.quit());

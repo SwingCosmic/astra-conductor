@@ -64,7 +64,8 @@ class Frames {
     this.waiting = undefined;
     clearTimeout(pending.timer);
     const bytes = this.buffer.subarray(4, length + 4);
-    this.buffer = this.buffer.subarray(length + 4);
+    this.buffer =
+      this.buffer.length === length + 4 ? Buffer.alloc(0) : this.buffer.subarray(length + 4);
     try {
       pending.resolve(pending.compatibility ? parseCompatibilityJson(bytes) : parseJson(bytes));
     } catch (error) {
@@ -75,6 +76,8 @@ class Frames {
           : new BrokerError("invalid-broker-data"),
       );
       this.fail();
+    } finally {
+      bytes.fill(0);
     }
   }
   read(timeout: number, compatibility = false): Promise<unknown> {
@@ -102,12 +105,15 @@ class Frames {
 }
 /** One authenticated, sequential connection. No request is automatically replayed. */
 export class BrokerClient {
-  private tail: Promise<unknown> = Promise.resolve();
+  private tail: Promise<void> = Promise.resolve();
   private constructor(
     private readonly socket: Socket,
     private readonly frames: Frames,
+    readonly generation: string,
   ) {}
-  static async connect(identity: BrokerIdentity): Promise<BrokerClient> {
+  static async connect(
+    identity: BrokerIdentity | (Omit<BrokerIdentity, "accessToken"> & { verifier: Uint8Array }),
+  ): Promise<BrokerClient> {
     id(identity.vaultId);
     id(identity.clientId);
     id(identity.instanceId);
@@ -138,12 +144,18 @@ export class BrokerClient {
       unb64(greeting.nonce, 32);
       const nonce = randomBytes(32).toString("base64url");
       const requiredApi = ApiDecimal.parse(BROKER_COMPATIBILITY.requiredApiLevel);
-      const token = unb64(identity.accessToken, 32);
-      const verifier = createHash("sha256").update(token).digest();
-      token.fill(0);
+      let signingKey: Buffer;
+      if ("verifier" in identity) {
+        requireValue(identity.verifier.length === 32, "invalid-verifier");
+        signingKey = Buffer.from(identity.verifier);
+      } else {
+        const token = unb64(identity.accessToken, 32);
+        signingKey = createHash("sha256").update(token).digest();
+        token.fill(0);
+      }
       try {
         const proof = (role: string) =>
-          createHmac("sha256", verifier)
+          createHmac("sha256", signingKey)
             .update(
               canonicalApiArray(
                 [
@@ -184,9 +196,9 @@ export class BrokerClient {
           "server-identity-mismatch",
         );
       } finally {
-        verifier.fill(0);
+        signingKey.fill(0);
       }
-      return new BrokerClient(socket, frames);
+      return new BrokerClient(socket, frames, id(greeting.generation));
     } catch (error) {
       socket.destroy();
       if (stage === "greeting" && error instanceof BrokerError) {
@@ -216,8 +228,15 @@ export class BrokerClient {
       return response.result;
     };
     const result = this.tail.then(run);
-    this.tail = result.catch(() => undefined);
+    this.tail = result.then(
+      () => undefined,
+      () => undefined,
+    );
     return result;
+  }
+  onClose(listener: () => void): void {
+    if (this.socket.destroyed) listener();
+    else this.socket.once("close", listener);
   }
   close(): void {
     this.socket.destroy();

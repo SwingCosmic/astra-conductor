@@ -6,6 +6,8 @@ import {
   ProviderRegistry,
   createProviderContributions,
   providerCatalog,
+  type Account,
+  type CredentialEnvelope,
   type CredentialCipherPort,
   type ProviderContribution,
 } from "../src/internal.js";
@@ -31,6 +33,7 @@ function fullRegistry(): ProviderRegistry {
     createProviderContributions(
       providerServices({
         http: { fetch },
+        clock: { now: () => new Date(0) },
         callbackServer: { start: async () => ({ port: 0 }) },
         storage,
         vault,
@@ -189,6 +192,49 @@ describe("provider registry", () => {
     expect(registry.requireAccount("glm").refreshCredentials).toBeUndefined();
     expect(registry.requireAccount("opencode-go").refreshCredentials).toBeUndefined();
   });
+
+  it.each([
+    { provider: "codex", minutes: 5, allowsOverride: true },
+    { provider: "claude", minutes: 5, allowsOverride: true },
+    { provider: "antigravity", minutes: 15, allowsOverride: false },
+    { provider: "grok-build", minutes: 5, allowsOverride: false },
+  ])(
+    "applies the registered expiry policy for $provider",
+    ({ provider, minutes, allowsOverride }) => {
+      const check = fullRegistry().requireAccount(provider).canUseCurrentCredentials!;
+      const account: Account = {
+        id: "account",
+        provider,
+        offeringId: provider,
+        authMethod: "browser-oauth",
+        stableIdentity: "test",
+        displayName: "test",
+        maskedIdentifier: "***",
+        enabled: true,
+        credentialState: "available",
+        publicMetadata: {},
+        createdAt: new Date(0).toISOString(),
+        updatedAt: new Date(0).toISOString(),
+      };
+      const boundary = minutes * 60_000;
+      const envelope: CredentialEnvelope = {
+        version: 1,
+        accountId: account.id,
+        provider,
+        authMethod: account.authMethod,
+        expiresAt: new Date(boundary).toISOString(),
+        secrets: { accessToken: "fictional" },
+      };
+      expect(check(account, envelope)).toBe(false);
+      expect(check(account, { ...envelope, expiresAt: new Date(boundary + 1).toISOString() })).toBe(
+        true,
+      );
+      expect(check(account, { ...envelope, expiresAt: null })).toBe(false);
+      expect(check({ ...account, publicMetadata: { refreshLeadMs: 60_000 } }, envelope)).toBe(
+        allowsOverride,
+      );
+    },
+  );
 
   it("aggregates exactly the catalog providers", () => {
     const registry = fullRegistry();

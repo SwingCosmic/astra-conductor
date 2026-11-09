@@ -2,12 +2,12 @@ import { ApiDecimal, asApiDecimal } from "./api-level.js";
 import { requireValue } from "./format.js";
 
 /** Release selection is independent of whether an installed component can serve this client. */
-export const BROKER_DISTRIBUTION = Object.freeze({ version: "0.2.0" });
+export const BROKER_DISTRIBUTION = Object.freeze({ version: "0.3.0" });
 export const BROKER_COMPATIBILITY = Object.freeze({
   protocolVersion: 1,
   storageVersion: 1,
   // Internal exact decimal text; the wire apiRevision field is always a JSON number.
-  requiredApiLevel: "2",
+  requiredApiLevel: "3",
 });
 
 interface SemVer {

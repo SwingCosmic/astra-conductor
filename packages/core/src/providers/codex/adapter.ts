@@ -1,3 +1,4 @@
+import { createCredentialReuseCheck } from "../credential-reuse-policy.js";
 import { CoreServices } from "../../services/contracts.js";
 import type { ServiceResolver } from "../../services/registry.js";
 import { randomUUID } from "node:crypto";
@@ -7,7 +8,6 @@ import type {
   AuthMethod,
   CredentialEnvelope,
   PublicMetadata,
-  ProviderId,
   ResetCreditRedemption,
   ResetCreditItem,
   ResetCredits,
@@ -25,7 +25,6 @@ import type { CredentialService } from "../../credential-service.js";
 import { listAvailableCodexResetCredits, redeemCodexResetCredit } from "./reset-card-redemption.js";
 import { getCodexUsage } from "@omniroute/open-sse/services/usage/codex.ts";
 import { refreshCodexToken } from "@omniroute/open-sse/services/tokenRefresh/providers/codex.ts";
-import { getRefreshLeadMs } from "@omniroute/open-sse/services/tokenRefresh.ts";
 import { codex, type CodexOAuthTokens } from "@omniroute/src/lib/oauth/providers/codex.ts";
 import { parseAndValidateCodexAuth } from "@omniroute/src/lib/oauth/utils/codexAuthImport.ts";
 import { generatePKCE } from "@omniroute/src/lib/oauth/utils/pkce.ts";
@@ -131,13 +130,15 @@ function aggregateResetCredits(bankedCount: number): ResetCredits {
 }
 
 export class CodexAdapter implements UsageProviderAdapter {
-  readonly provider: ProviderId = "codex";
+  readonly canUseCurrentCredentials;
+  readonly provider = "codex";
   private readonly fetchImpl: typeof fetch;
   private readonly clock: ClockPort;
 
   constructor(services: ServiceResolver) {
     this.fetchImpl = services.get(CoreServices.http).fetch;
     this.clock = services.get(CoreServices.clock);
+    this.canUseCurrentCredentials = createCredentialReuseCheck(this.provider, this.clock);
   }
 
   createBrowserAuthorization(
@@ -235,9 +236,7 @@ export class CodexAdapter implements UsageProviderAdapter {
     envelope: CredentialEnvelope,
     force = false,
   ): Promise<CredentialRefreshResult> {
-    const expiry = envelope.expiresAt ? Date.parse(envelope.expiresAt) : Number.NaN;
-    const lead = getRefreshLeadMs("codex", account.publicMetadata);
-    if (!force && Number.isFinite(expiry) && expiry - this.clock.now().getTime() > lead) {
+    if (!force && this.canUseCurrentCredentials(account, envelope)) {
       return { envelope, changed: false };
     }
     const refreshToken = envelope.secrets.refreshToken;

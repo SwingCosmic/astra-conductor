@@ -26,6 +26,8 @@ export interface ProviderAccountCapability {
     method: AuthMethod,
     options: AuthStartOptions,
   ): Promise<AuthFlowStart>;
+  /** A pure preflight for usage reads. Returning true skips the broker refresh lease. */
+  canUseCurrentCredentials?(account: Account, envelope: CredentialEnvelope): boolean;
   refreshCredentials?(
     account: Account,
     envelope: CredentialEnvelope,

@@ -25,6 +25,7 @@ import {
   type CredentialService,
   type CredentialMutationGate,
   computeCompositeRemaining,
+  supportsSubscriptionUsage,
   toPublicAccount,
   toPublicUsage,
   type Account,
@@ -78,9 +79,11 @@ export class PolyQuotaApplicationService {
   private disposed = false;
   private revision = 0;
   private readonly operations = new Map<string, PublicOperationState>();
-  private readonly pendingResetCreditUses = new Map<string, Set<string>>();
+  private readonly pendingCreditsByRepository = new WeakMap<
+    StoragePort["snapshots"],
+    Map<string, Set<string>>
+  >();
   private readonly pendingReasons = new Set<PolyQuotaChangeReason>();
-  private readonly legacySnapshotRefreshes = new Set<string>();
   private publishQueued = false;
   private scheduler: RefreshScheduler | null = null;
   private readonly now: () => Date;
@@ -94,6 +97,16 @@ export class PolyQuotaApplicationService {
   ) {
     this.instanceId = options.instanceId ?? randomUUID();
     this.now = options.now ?? (() => new Date());
+  }
+
+  private get pendingCredits() {
+    const repository = this.storage.snapshots;
+    let cache = this.pendingCreditsByRepository.get(repository);
+    if (!cache) {
+      cache = new Map();
+      this.pendingCreditsByRepository.set(repository, cache);
+    }
+    return cache;
   }
 
   attachScheduler(scheduler: RefreshScheduler): void {
@@ -141,9 +154,14 @@ export class PolyQuotaApplicationService {
   async getSnapshot(): Promise<PolyQuotaSnapshot> {
     for (;;) {
       const revision = this.revision;
+      const visible = this.options.visibleAccountIds?.();
       const accounts = this.storage.accounts
         .list()
-        .filter((account) => this.options.visibleAccountIds?.()?.has(account.id) ?? true)
+        .filter(
+          (account) =>
+            (visible?.has(account.id) ?? true) &&
+            supportsSubscriptionUsage(account, this.options.registry),
+        )
         .sort(
           (left, right) =>
             left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id),
@@ -151,7 +169,6 @@ export class PolyQuotaApplicationService {
       const usageByAccountId = Object.fromEntries(
         accounts.map((account) => {
           const snapshot = this.storage.snapshots.get(account.id);
-          if (snapshot) this.refreshLegacySnapshot(account.id, snapshot);
           return [account.id, snapshot ? toPublicUsage(snapshot, account.offeringId) : null];
         }),
       );
@@ -222,8 +239,7 @@ export class PolyQuotaApplicationService {
       throw new AppError("validation", "Account does not exist");
     }
     this.storage.transaction(() => this.storage.accounts.delete(accountId));
-    this.pendingResetCreditUses.delete(accountId);
-    this.legacySnapshotRefreshes.delete(accountId);
+    this.pendingCredits.delete(accountId);
     for (const [id, operation] of this.operations) {
       if (operation.accountId === accountId) this.operations.delete(id);
     }
@@ -231,6 +247,8 @@ export class PolyQuotaApplicationService {
   }
 
   refreshAccount(accountId: string): Promise<RefreshOutcomeDto> {
+    if (this.options.visibleAccountIds?.()?.has(accountId) === false)
+      return Promise.resolve({ status: "skipped", accountId });
     return this.runOperation(
       "refresh-account",
       accountId,
@@ -290,6 +308,11 @@ export class PolyQuotaApplicationService {
       async () => {
         const account = this.storage.accounts.get(accountId);
         if (!account) throw new AppError("validation", "Account does not exist");
+        if (
+          this.options.visibleAccountIds?.()?.has(accountId) === false ||
+          !supportsSubscriptionUsage(account, this.options.registry)
+        )
+          throw new AppError("permission", "此账号没有可用的订阅用量能力");
         if (!account.enabled) throw new AppError("permission", "请先启用该账号再使用重置额度");
         const envelope = await this.vault.load(accountId);
         const usage = this.options.registry.requireUsage(account.provider);
@@ -299,9 +322,9 @@ export class PolyQuotaApplicationService {
         // 消耗请求与快照形态的一致性、聚合 type 与分体 itemId 的有效性由实现校验。
         await usage.redeemResetCard(account, envelope, redemption);
         if (redemption.kind === "item") {
-          const pending = this.pendingResetCreditUses.get(accountId) ?? new Set<string>();
+          const pending = this.pendingCredits.get(accountId) ?? new Set<string>();
           pending.add(redemption.itemId);
-          this.pendingResetCreditUses.set(accountId, pending);
+          this.pendingCredits.set(accountId, pending);
         }
         const refreshed = this.reconcilePendingResetCreditUses(
           await this.polling.refresh(accountId),
@@ -315,7 +338,7 @@ export class PolyQuotaApplicationService {
           const reconciled = currentSnapshot
             ? reconcileRedeemedResetItems(
                 currentSnapshot,
-                this.pendingResetCreditUses.get(accountId) ?? new Set<string>(),
+                this.pendingCredits.get(accountId) ?? new Set<string>(),
               )
             : null;
           if (reconciled && reconciled.snapshot !== currentSnapshot) {
@@ -451,7 +474,7 @@ export class PolyQuotaApplicationService {
     const id = this.startOperation(kind, accountId, source);
     const started = this.now().getTime();
     try {
-      const value = await (kind === "use-reset-credit" && this.options.mutations
+      const value = await (this.options.mutations
         ? this.options.mutations.run(operation)
         : operation());
       console.info("PolyQuota operation completed", {
@@ -477,6 +500,8 @@ export class PolyQuotaApplicationService {
   }
 
   private async toPublicAccount(account: Account): Promise<PublicAccount> {
+    const expiry = this.vault.knownExpiry?.(account.id);
+    if (expiry !== undefined || this.options.isShared?.()) return toPublicAccount(account, expiry);
     try {
       const credentials = await this.vault.load(account.id);
       return toPublicAccount(account, credentials.expiresAt);
@@ -534,27 +559,9 @@ export class PolyQuotaApplicationService {
     return this.scheduler;
   }
 
-  /**
-   * 破坏性结构更新：resetCredits 已是一等必填字段，旧结构快照（extras 形态、
-   * 缺该字段）不做投影适配——读到即静默触发一次该账号的刷新换取新数据。
-   * 每账号每进程只触发一次，失败也不重试（停用账号刷新会被跳过，同理不重试）。
-   */
-  private refreshLegacySnapshot(accountId: string, snapshot: UsageSnapshot): void {
-    if ("resetCredits" in snapshot) return;
-    if (this.legacySnapshotRefreshes.has(accountId)) return;
-    this.legacySnapshotRefreshes.add(accountId);
-    void this.polling
-      .refresh(accountId)
-      .then((outcome) => this.reconcilePendingResetCreditUses(outcome))
-      .then((outcome) => {
-        if (outcome.status !== "skipped") this.commit(["accounts", "usage"]);
-      })
-      .catch(() => undefined);
-  }
-
   private reconcilePendingResetCreditUses(outcome: RefreshOutcome): RefreshOutcome {
     if (outcome.status !== "updated") return outcome;
-    const pending = this.pendingResetCreditUses.get(outcome.accountId);
+    const pending = this.pendingCredits.get(outcome.accountId);
     if (!pending?.size) return outcome;
     const credits = outcome.snapshot.resetCredits;
     if (!credits || credits.kind !== "itemized") return outcome;
@@ -565,7 +572,7 @@ export class PolyQuotaApplicationService {
       }
     }
     if (!pending.size) {
-      this.pendingResetCreditUses.delete(outcome.accountId);
+      this.pendingCredits.delete(outcome.accountId);
       return outcome;
     }
     const reconciled = reconcileRedeemedResetItems(outcome.snapshot, pending);

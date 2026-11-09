@@ -84,7 +84,7 @@ provideCredentialService(service.credentials);
 | PolyQuota | 复用现有 Hono + fetch/SSE 客户端，保留来源检查、输入限制、`no-store` 和用量首刷。Electron 作为正式产品交付。纯 Web 用于开发联调和测试，缺少系统密钥保护或原生目录选择能力时显示实际可用状态。引入普通 Key 后，管理视图从完整获准清单读取。[现有服务创建入口](../../../apps/polyquota/ui/src/services/create-services.ts) · [现有服务模式](../core/service-mode/development.md) |
 | GraphAgent | 将当前 `graph-agent:sharing` 业务操作逐项接到 GraphAgent Hono 应用，供应商与模型配置也走产品 fetch/SSE 客户端。迁移后两种正式入口共用同一组 handler、校验器、查询服务和事件流。独立 Node 入口提供构建好的 UI、API、SSE 与持久业务仓储，凭据仅经已启用的 broker 访问。Electron 内嵌同一应用，可使用私有加密存储或 broker，窗口、系统选择器和系统密钥保护由桌面宿主提供。[现有主进程](../../../apps/graph-agent/src/platform/electron/main.ts) · [同组 Hono 应用](../../../apps/graph-agent/src/server/create-hono-app.ts) |
 
-GraphAgent Web 页面呈现 broker 未接入、连接中、可用、断连和权限不足等状态，不显示私有后端入口；Electron 按能力提供私有与共享操作。共享新增、替换和删除在[凭据专项 B2/B3](../core/credential-sharing/implementation-plan.md)授权前显示受限原因。授权时 Web 引导用户访问当前会话的 URL，Electron 交给宿主打开。目录和导入位置明确属于运行服务的机器，页面依据宿主返回的状态显示下一步。
+GraphAgent Web 页面呈现 broker 未接入、连接中、可用、断连和权限不足等状态，不显示私有后端入口；Electron 按能力提供私有与共享操作。共享新增、替换和删除通过 broker 授权执行。迁移状态与页面动作见[凭据专项 B2/B3](../core/credential-sharing/state-machine.md)。授权时 Web 引导用户访问当前会话的 URL，Electron 交给宿主打开。目录和导入位置明确属于运行服务的机器，页面依据宿主返回的状态显示下一步。
 
 后端仓储、私有加密与 broker 接线由 [Core 详细设计](../core/provider/core-design.md#5-连接记录与并发写入)及[项目架构](../../architecture.md)维护，产品构建与原生模块归各产品的实施入口。UI 只消费公开状态与操作能力，不自行选择数据库、保存凭据副本或实现后台恢复。
 

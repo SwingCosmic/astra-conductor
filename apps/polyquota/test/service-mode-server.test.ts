@@ -67,6 +67,8 @@ describe("service mode backend", () => {
         "POST /api/v1/credential-sharing/export/resume",
         "POST /api/v1/credential-sharing/export/restart",
         "POST /api/v1/credential-sharing/enable-shared",
+        "POST /api/v1/credential-sharing/switch-to-private",
+        "POST /api/v1/credential-sharing/relocate",
         "POST /api/v1/credential-sharing/return-to-private",
         "POST /api/v1/credential-sharing/rejoin-shared",
         "POST /api/v1/credential-sharing/import/verify",
@@ -119,6 +121,7 @@ describe("service mode backend", () => {
       ["return-to-private", { acceptIndependentRefreshRisk: false }],
       ["return-to-private", { acceptIndependentRefreshRisk: "true" }],
       ["return-to-private", { acceptIndependentRefreshRisk: true, unexpected: true }],
+      ["return-to-private", { acceptIndependentRefreshRisk: true, offlineSnapshotAt: "yesterday" }],
       ["rejoin-shared", {}],
       ["rejoin-shared", { migrationKey: false }],
       ["rejoin-shared", { migrationKey: "wrong-key" }],
@@ -142,6 +145,10 @@ describe("service mode backend", () => {
     for (const [action, body] of [
       ["enable-shared", {}],
       ["return-to-private", { acceptIndependentRefreshRisk: true }],
+      [
+        "return-to-private",
+        { acceptIndependentRefreshRisk: true, offlineSnapshotAt: "2026-11-09T01:00:00Z" },
+      ],
       ["rejoin-shared", { migrationKey }],
     ] as const) {
       const response = await fetch(`${instance.url}/v1/credential-sharing/${action}`, {
@@ -153,7 +160,8 @@ describe("service mode backend", () => {
       expect(await response.json()).toEqual({ ok: true, value: null });
     }
     expect(enable).toHaveBeenCalledOnce();
-    expect(returnToPrivate).toHaveBeenCalledWith(true);
+    expect(returnToPrivate).toHaveBeenCalledWith(true, undefined);
+    expect(returnToPrivate).toHaveBeenCalledWith(true, "2026-11-09T01:00:00Z");
     expect(rejoin).toHaveBeenCalledWith(migrationKey);
   });
 

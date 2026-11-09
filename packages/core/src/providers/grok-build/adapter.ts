@@ -1,3 +1,4 @@
+import { createCredentialReuseCheck } from "../credential-reuse-policy.js";
 import { CoreServices } from "../../services/contracts.js";
 import type { ServiceResolver } from "../../services/registry.js";
 import { randomUUID } from "node:crypto";
@@ -6,7 +7,6 @@ import type {
   Account,
   CredentialEnvelope,
   PublicMetadata,
-  ProviderId,
   UsageQuota,
   UsageSnapshot,
 } from "../../models.js";
@@ -85,7 +85,8 @@ function delay(milliseconds: number, signal?: AbortSignal): Promise<void> {
 }
 
 export class GrokBuildAdapter implements UsageProviderAdapter {
-  readonly provider: ProviderId = "grok-build";
+  readonly canUseCurrentCredentials;
+  readonly provider = "grok-build";
 
   private readonly fetchImpl: typeof fetch;
   private readonly clock: ClockPort;
@@ -93,6 +94,7 @@ export class GrokBuildAdapter implements UsageProviderAdapter {
   constructor(services: ServiceResolver) {
     this.fetchImpl = services.get(CoreServices.http).fetch;
     this.clock = services.get(CoreServices.clock);
+    this.canUseCurrentCredentials = createCredentialReuseCheck(this.provider, this.clock);
   }
 
   createBrowserAuthorization(
@@ -171,8 +173,7 @@ export class GrokBuildAdapter implements UsageProviderAdapter {
     envelope: CredentialEnvelope,
     force = false,
   ): Promise<CredentialRefreshResult> {
-    const expiry = envelope.expiresAt ? Date.parse(envelope.expiresAt) : Number.NaN;
-    if (!force && Number.isFinite(expiry) && expiry - this.clock.now().getTime() > 300_000) {
+    if (!force && this.canUseCurrentCredentials(account, envelope)) {
       return { envelope, changed: false };
     }
     const refreshToken = envelope.secrets.refreshToken;

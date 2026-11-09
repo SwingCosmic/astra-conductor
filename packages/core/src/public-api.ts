@@ -1,5 +1,5 @@
 import type { PublicAccount, PublicUsage } from "@astra-conductor/contract/common";
-import type { Account, ResetCredits, UsageSnapshot } from "./models.js";
+import type { Account, UsageSnapshot } from "./models.js";
 import { matchOfferingPlan } from "./providers/catalog.js";
 
 export function toPublicAccount(
@@ -23,17 +23,6 @@ export function toPublicAccount(
 }
 
 /**
- * 破坏性结构更新：旧结构快照（无 resetCredits 字段）不做形态适配，投影为
- * null 即可；桌面端读到旧结构快照时会立即触发一次刷新换取新数据。
- */
-function legacyResetCredits(
-  value: UsageSnapshot & { resetCredits?: ResetCredits | null },
-): ResetCredits | null {
-  if (value.resetCredits === undefined) return null;
-  return value.resetCredits ?? null;
-}
-
-/**
  * 套餐解析点上移后的唯一投影：档位匹配只在这里发生（core 目录为唯一实现），
  * 解析结果固化进公开快照。回退顺序：目录 `displayName` → 上游原始展示名
  * （叶子附带时，随数据侧批次提供）→ 原始标识串；未识别档位 `planId: null`，
@@ -45,7 +34,8 @@ export function toPublicUsage(snapshot: UsageSnapshot, offeringId: string): Publ
     resetCredits?: number;
     overallRemainingPercentage?: number | null;
   };
-  const resetCredits = legacyResetCredits(snapshot);
+  // Older snapshots gain this field on the next normal usage refresh.
+  const resetCredits = snapshot.resetCredits ?? null;
   const plan = typeof value.plan === "string" ? value.plan : "";
   const matched = matchOfferingPlan(offeringId, plan);
   const rawPlanLabel =

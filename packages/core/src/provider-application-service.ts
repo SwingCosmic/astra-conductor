@@ -87,7 +87,8 @@ export class CommonProviderApplicationService {
     }
     const mutable =
       mutationAvailable && (backend.active === "private" || backend.active === "shared");
-    let writable = backend.active === "private" && mutationAvailable;
+    let writable =
+      mutable && (backend.active === "private" || !!this.options.credentials.removeShared);
     try {
       this.options.assertWritable?.();
     } catch {
@@ -134,7 +135,7 @@ export class CommonProviderApplicationService {
         providerId: account.provider,
         offeringId: account.offeringId,
         displayName: account.displayName,
-        recordRevision: account.updatedAt,
+        recordRevision: this.options.credentials.recordRevision?.(account.id) ?? account.updatedAt,
         routes: null,
         actions: {
           delete: writable ? enabled : disabled,
@@ -162,9 +163,10 @@ export class CommonProviderApplicationService {
   }
 
   private writable(): void {
-    if (this.getBackend().active !== "private" && !this.options.assertWritable)
-      throw new AppError("capability-unavailable", "当前凭据后端不提供账号写入能力");
     this.options.assertWritable?.();
+    this.assertActiveBackend();
+    if (this.getBackend().active === "shared" && !this.options.credentials.removeShared)
+      throw new AppError("capability-unavailable", "当前凭据后端不提供账号写入能力");
     this.options.mutations?.assertAvailable();
   }
 
@@ -228,12 +230,18 @@ export class CommonProviderApplicationService {
 
   deleteAccount(accountId: string, expectedRecordRevision?: string): Promise<void> {
     const baseline = { instanceId: this.instanceId, contextId: this.getBackend().contextId };
-    return this.refresh.runAccountOperation(accountId, () => {
+    return this.refresh.runAccountOperation(accountId, async () => {
       this.assertContext(baseline);
       this.writable();
       const account = this.account(accountId);
-      if (expectedRecordRevision !== undefined && expectedRecordRevision !== account.updatedAt)
+      if (this.getBackend().active === "shared") {
+        await this.options.credentials.removeShared!(accountId, expectedRecordRevision);
+      } else if (
+        expectedRecordRevision !== undefined &&
+        expectedRecordRevision !== account.updatedAt
+      ) {
         throw new AppError("conflict", "账号记录已变更，请重新读取后确认删除");
+      }
       this.options.storage.transaction(() => this.options.storage.accounts.delete(accountId));
       this.changed();
     });

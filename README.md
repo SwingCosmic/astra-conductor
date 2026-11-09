@@ -88,8 +88,8 @@ pnpm data:reset
 
 `pnpm dev:graph-agent` 构建必要依赖并启动 GraphAgent；`pnpm package:graph-agent` 生成独立 GraphAgent NSIS 安装包，产物位于 `apps/graph-agent/release/`。它使用自己的运行身份、profile、持久业务仓储和安全缓存，提供主页、供应商与凭据设置。`pnpm start:graph-agent:web` 从构建后的同一前端启动正式 Node/Web 服务，配置方式见 [GraphAgent 运行说明](./apps/graph-agent/README.md)。供应商阶段一实现与验证见[阶段一交付结果](./docs/common/core/provider/stage-one-implementation.md)。
 
-共享流程为 PolyQuota 首次导出并保存迁移密钥 → GraphAgent 选择共享目录、验证并确认导入 → PolyQuota 启用共享。PolyQuota 可在确认独立刷新风险后返回内置存储；恢复本次共享时必须重新输入迁移密钥。两个产品始终只通过独立 broker 协议共享凭据，不读取彼此的业务数据库。
+PolyQuota 和 GraphAgent Electron 均可导出私有库或验证导入。任一端可独立迁移到共享库。返回内置需先写入并验证快照，再明确切换；只有成功切回的 profile 才清理自身钥槽。GraphAgent Web 通过服务端已有的 broker 授权访问凭据。[本端状态机](./docs/common/core/credential-sharing/state-machine.md)
 
-本地验收使用 `pnpm test:credential-sharing-loop --publish <完整自包含 publish 目录>`，沿用 A3 的本地组件安装流程。broker 及其 runtime 独立安装。二期 B4 在双向共享验收通过后发布 broker 并接入生产下载。当前闭环与后续排期分别见 [A6—A8 实施说明](./docs/common/core/credential-sharing/a6-a8-sharing-implementation.md)和[凭据共享实施方案](./docs/common/core/credential-sharing/implementation-plan.md)。
+本地闭环使用 `pnpm test:credential-sharing-loop --publish <完整自包含 publish 目录>`，要求 broker API 3。独立组件及后续生产下载排期见[凭据共享实施方案](./docs/common/core/credential-sharing/implementation-plan.md)。
 
 包与通信边界的变更规则见[项目架构](./docs/architecture.md#4-新功能落点与变更规则)。当前 PolyQuota 的内部协议、动态资源与原生模块装配见[服务模式开发说明](./docs/common/core/service-mode/development.md)。凭据共享导出侧的本地包目录与历史验收见 [A3—A5 实施说明](./docs/common/core/credential-sharing/a3-a5-export-implementation.md)。

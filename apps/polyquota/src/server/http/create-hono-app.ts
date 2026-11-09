@@ -1,7 +1,11 @@
 import { AppError } from "@astra-conductor/core/internal";
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { createProviderRoutes, createCredentialRoutes } from "@astra-conductor/core/http";
+import {
+  createProviderRoutes,
+  createCredentialRoutes,
+  migrationHttpService,
+} from "@astra-conductor/core/http";
 import {
   ContractValidationError,
   POLYQUOTA_SCHEMA_VERSION,
@@ -94,18 +98,7 @@ export function createHonoApp(runtime: PolyQuotaRuntime): Hono {
     track: runtime.track,
   };
   app.route("/", createProviderRoutes(runtime.providers, commonOptions));
-  const credentials = new Proxy(runtime.credentialSharing, {
-    get(target, property, receiver) {
-      if (property === "getStatus")
-        return async () => ({
-          ...(await target.getStatus()),
-          instanceId: runtime.providers.instanceId,
-          contextId: runtime.providers.getBackend().contextId,
-        });
-      const value: unknown = Reflect.get(target, property, receiver);
-      return typeof value === "function" ? value.bind(target) : value;
-    },
-  });
+  const credentials = migrationHttpService(runtime.credentialSharing, runtime.providers);
   app.route("/", createCredentialRoutes(credentials, commonOptions));
   app.get("/api/v1/events", async (c) => {
     await empty(c);

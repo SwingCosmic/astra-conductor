@@ -25,18 +25,22 @@
 | `POST /api/v1/credential-sharing/import/verify`                                                         | `{ vaultDirectory, migrationKey }` → `ImportPreview` | 返回有时效的脱敏预览及 `previewId`                                                                                 |
 | `POST /api/v1/credential-sharing/import/confirm`                                                        | `{ previewId }` → `null`                             | 只提交预览 ID，确认时重校验版本、身份与有效期                                                                      |
 | `POST /api/v1/credential-sharing/import/cancel`、`POST /api/v1/credential-sharing/retry`                | 空对象 → `null`                                      | 释放预览，或重试当前可恢复的连接步骤                                                                               |
-| `POST /api/v1/credential-sharing/export`                                                                | `{ vaultDirectory }` → 专用密钥交付结果              | 仅来源角色与当前阶段实现后可用，不进入普通快照                                                                     |
-| `POST /api/v1/credential-sharing/export/resume`                                                         | 空对象 → 专用密钥交付结果或 `null`                  | 恢复尚未接管且私有水位未变的已取消导出；密钥已确认交付时不再交付                                                   |
-| `POST /api/v1/credential-sharing/export/restart`                                                        | `{ vaultDirectory }` → 专用密钥交付结果              | 使用另一空目录创建新导出，归档旧状态并保留旧目录、版本和密钥材料                                                     |
-| `POST /api/v1/credential-sharing/export/cancel`                                                         | 空对象 → `null`                                      | `cancelExport`：取消尚可撤销的导出准备或交付，释放冻结与临时材料；已完成接管时返回状态错误，不通过取消倒退共享状态 |
-| `POST /api/v1/credential-sharing/acknowledge-delivery`、`POST /api/v1/credential-sharing/enable-shared` | 空对象 → `null`                                      | 确认密钥交付，或发起交接                                                                                           |
-| `POST /api/v1/credential-sharing/return-to-private`                                                     | `{ acceptIndependentRefreshRisk }` → `null`          | 仅具有私有后端的宿主允许，完整快照与清理规则按专项执行                                                             |
-| `POST /api/v1/credential-sharing/rejoin-shared`                                                         | `{ migrationKey }` → `null`                          | 读取共享当前版本，不覆盖共享数据                                                                                   |
+| `POST /api/v1/credential-sharing/export` | `{ vaultDirectory }` → 专用密钥交付结果 | 从本端内置库发布到空目录，进入 `export-ready` |
+| `POST /api/v1/credential-sharing/export/resume` | 空对象 → 专用密钥交付结果或 `null` | 按原操作恢复发布或待确认的密钥交付 |
+| `POST /api/v1/credential-sharing/export/cancel` | 空对象 → `null` | 释放本端未提交的导出操作 |
+| `POST /api/v1/credential-sharing/acknowledge-delivery` | 空对象 → `null` | 确认已保存迁移密钥 |
+| `POST /api/v1/credential-sharing/enable-shared` | `{ confirmationId? }` → `null` | 首次接入并验证本端共享后端。出现快照分歧时提供当前复核 ID |
+| `POST /api/v1/credential-sharing/return-to-private` | `{ acceptIndependentRefreshRisk: true, offlineSnapshotAt? }` → `null` | 准备并回读内置快照，提交 `private-ready`，继续使用共享库 |
+| `POST /api/v1/credential-sharing/switch-to-private` | 空对象 → `null` | 复核快照，切换并验证本端内置服务，提交 `private` 后清理旧密钥 |
+| `POST /api/v1/credential-sharing/relocate` | `{ vaultDirectory }` → `null` | 核对 vault 身份与版本，更新本端绑定及系统登记路径 |
+| `POST /api/v1/credential-sharing/rejoin-shared` | `{ migrationKey }` → `null` | 重新验证旧目录并提交 `import-ready`，由用户在本端另行迁移 |
 | `GET /api/v1/events`                                                                                    | SSE → `ready` / `changed`                            | 一个产品连接承载通用和产品专属视图的脱敏失效通知，见第 4 节                                                        |
 
-表中变更操作的 JSON 输入均另携带下文 `CommandContext` 的 `instanceId`、`contextId`；会话完成与取消还核对会话的创建实例和后端。读取和宿主无状态检查不需要该写入上下文。前端不省略这两个字段。
+桌面宿主返回 `migrationState`、`selectedBackend`、`activeBackend`、当前操作及恢复能力。GraphAgent Web 的迁移状态为 `null`。字段含义与提交条件见[本端状态机](../core/credential-sharing/state-machine.md)。
 
-`StartAuthRequest`、`AuthStartResult`、`PublicAuthSession`、`PublicAccount` 和凭据刷新结果从现有契约迁移，保持七家供应商的交互与脱敏含义。现有定义见[认证 DTO](../../../packages/contract/src/common/dto/auth.ts)、[账号 DTO](../../../packages/contract/src/common/dto/account.ts)及[操作 DTO](../../../packages/contract/src/common/dto/operations.ts)。凭据管理状态和专用交付结果沿用[共享契约](../../../packages/contract/src/common/dto/credential-sharing.ts)与 [A6—A8 接收流程](../core/credential-sharing/a6-a8-sharing-implementation.md)，统一来源/接收角色属于凭据专项 B2/B3，不能只增加路由就宣称双向管理已完成。
+表中变更操作的 JSON 输入均另携带下文 `CommandContext` 的 `instanceId`、`contextId`；会话完成与取消还核对会话的创建实例和后端。读取和宿主无状态检查不需要该写入上下文。凭据页面还会传上次状态中的 `operationId`（空闲时为 `null`），宿主在执行前核对，防止旧窗口取消或提交另一个操作。
+
+`StartAuthRequest`、`AuthStartResult`、`PublicAuthSession`、`PublicAccount` 和凭据刷新结果从现有契约迁移，保持七家供应商的交互与脱敏含义。现有定义见[认证 DTO](../../../packages/contract/src/common/dto/auth.ts)、[账号 DTO](../../../packages/contract/src/common/dto/account.ts)及[操作 DTO](../../../packages/contract/src/common/dto/operations.ts)。凭据管理状态与专用密钥交付结果见[公共 DTO](../../../packages/contract/src/common/dto/credential-sharing.ts)。
 
 新增的通用公开形状如下。代码块使用的 `PublicProviderDescriptor`、`PublicAccount`、`ServiceResult` 为迁入 `contract/common` 的既有类型。
 

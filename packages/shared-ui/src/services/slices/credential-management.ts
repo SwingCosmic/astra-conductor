@@ -1,7 +1,7 @@
 import {
   credentialEventChannel,
   credentialOperations,
-  type CommandContext,
+  type CredentialCommandContext,
   type ICredentialManagementService,
   type ServiceResult,
 } from "@astra-conductor/contract/common";
@@ -19,15 +19,25 @@ export const withCredentialManagement = defineServiceSlice(
   ["credentials"],
   (Base: typeof ServiceClientBase) =>
     class CredentialManagementSlice extends Base {
-      private credentialContext: CommandContext | null = null;
+      private credentialContext: CredentialCommandContext | null = null;
 
+      private credentialStatusRequest = 0;
       readonly credentials: ICredentialManagementService = {
         getStatus: async () => {
+          const request = ++this.credentialStatusRequest;
           const result = await this.transport.request(credentialOperations.getStatus, undefined);
-          if (result.ok && result.value.instanceId && result.value.contextId)
+          if (
+            request === this.credentialStatusRequest &&
+            result.ok &&
+            result.value.instanceId &&
+            result.value.contextId
+          )
             this.credentialContext = {
               instanceId: result.value.instanceId,
               contextId: result.value.contextId,
+              ...(result.value.operation === undefined
+                ? {}
+                : { operationId: result.value.operation?.id ?? null }),
             };
           return result;
         },
@@ -77,14 +87,29 @@ export const withCredentialManagement = defineServiceSlice(
                 ...this.credentialContext,
               })
             : Promise.resolve(missingContext()),
-        enableShared: () =>
+        relocate: (vaultDirectory) =>
           this.credentialContext
-            ? this.transport.request(credentialOperations.enableShared, this.credentialContext)
+            ? this.transport.request(credentialOperations.relocate, {
+                ...this.credentialContext,
+                vaultDirectory,
+              })
             : Promise.resolve(missingContext()),
-        returnToPrivate: (acceptIndependentRefreshRisk) =>
+        switchToPrivate: () =>
+          this.credentialContext
+            ? this.transport.request(credentialOperations.switchToPrivate, this.credentialContext)
+            : Promise.resolve(missingContext()),
+        enableShared: (confirmationId) =>
+          this.credentialContext
+            ? this.transport.request(credentialOperations.enableShared, {
+                ...this.credentialContext,
+                confirmationId,
+              })
+            : Promise.resolve(missingContext()),
+        returnToPrivate: (acceptIndependentRefreshRisk, offlineSnapshotAt) =>
           this.credentialContext
             ? this.transport.request(credentialOperations.returnToPrivate, {
                 acceptIndependentRefreshRisk,
+                ...(offlineSnapshotAt ? { offlineSnapshotAt } : {}),
                 ...this.credentialContext,
               })
             : Promise.resolve(missingContext()),

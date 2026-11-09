@@ -34,6 +34,7 @@
 ## 凭据共享
 
 - [凭据共享设计](./core/credential-sharing/design.md)
+- [凭据导出、导入与本端迁移状态机](./core/credential-sharing/state-machine.md)
 - [凭据共享两阶段实施方案](./core/credential-sharing/implementation-plan.md)
 - [Credential Broker A1/A2 实施详细设计](./core/credential-sharing/broker-a1-a2-detailed-design.md)
 - [A3—A5 本地安装与 PolyQuota 导出侧实施](./core/credential-sharing/a3-a5-export-implementation.md)

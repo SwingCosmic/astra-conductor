@@ -22,6 +22,7 @@ export function createGithubCopilotProvider(services: ServiceResolver): Provider
       providerId: "github-copilot",
       supportedMethods: authFlow.supportedMethods,
       startAuth: (offeringId, method, options) => authFlow.start(offeringId, method, options),
+      canUseCurrentCredentials: adapter.canUseCurrentCredentials,
       refreshCredentials: (account, envelope, options) =>
         adapter.refreshCredentials(account, envelope, options.force),
     },

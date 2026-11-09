@@ -119,340 +119,106 @@ async function fixture(
   return { services, app, snapshot, command, upstream };
 }
 
-async function pendingImport(directory: string, protection: CredentialCipherPort) {
-  const version = {
-    vaultId: "vault",
-    storageVersion: "version",
-    attemptId: "attempt",
-    keyId: "key",
-  };
-  const sharingDirectory = path.join(directory, "credential-sharing");
-  await mkdir(sharingDirectory);
-  await writeFile(
-    path.join(sharingDirectory, "cached.key"),
-    await protection.encrypt(
-      JSON.stringify({ version, masterKey: Buffer.alloc(32, 9).toString("base64url") }),
-    ),
-  );
-  await writeFile(
-    path.join(sharingDirectory, "binding.json"),
-    JSON.stringify({
-      state: "import-ready",
-      vaultDirectory: directory,
-      clientId: "existing-graph-client",
-      version,
-      sourceWatermark: "watermark",
-      keyRef: "cached.key",
-      accounts: [],
-    }),
-  );
-  const control = {
-    ownership: "source",
-    poll: undefined as (() => Promise<void>) | undefined,
-  };
-  const host: GraphServicesOptions["host"] = {
-    localPackageDirectory: directory,
-    inspect: async () => ({
-      installState: "installed",
-      installedVersion: "1.0.0",
-      installationDirectory: directory,
-    }),
-    install: async () => undefined,
-    uninstall: async () => undefined,
-    connect: async () => {
-      await control.poll?.();
-      return {
-        close() {},
-        call: async (method) => {
-          if (method === "getSharingState")
-            return {
-              ...version,
-              sourceWatermark: "watermark",
-              ownership: control.ownership,
-              preparedClientIds: ["existing-graph-client"],
-            };
-          throw new Error("unexpected broker method");
-        },
-      };
-    },
-  };
-  return { host, control, sharingDirectory };
-}
-
 describe("GraphAgent common provider host", () => {
-  it.each(["automatic", "manual"] as const)(
-    "restores pending imports as private and drains refresh before %s handoff",
-    async (trigger) => {
-      const directory = await temporaryDirectory();
-      const protection = cipher();
-      const transfer = {
-        vaultId: "vault",
-        storageVersion: "version",
-        attemptId: "attempt",
-        keyId: "key",
-      };
-      const sharingDirectory = path.join(directory, "credential-sharing");
-      await mkdir(sharingDirectory);
-      await writeFile(
-        path.join(sharingDirectory, "cached.key"),
-        await protection.encrypt(
-          JSON.stringify({
-            version: transfer,
-            masterKey: Buffer.alloc(32, 9).toString("base64url"),
-          }),
-        ),
-      );
-      await writeFile(
-        path.join(sharingDirectory, "binding.json"),
-        JSON.stringify({
-          state: "import-ready",
-          vaultDirectory: directory,
-          clientId: "existing-graph-client",
-          version: transfer,
-          sourceWatermark: "watermark",
-          keyRef: "cached.key",
-          accounts: [
-            {
-              id: "shared-preview",
-              provider: "codex",
-              maskedIdentifier: "shared***",
-              canRefresh: true,
-              revision: "1",
-            },
-          ],
-        }),
-      );
-      let ownership = "source";
-      let offline = false;
-      const host: GraphServicesOptions["host"] = {
-        localPackageDirectory: directory,
-        inspect: async () => ({
-          installState: "installed",
-          installedVersion: "1.0.0",
-          installationDirectory: directory,
-        }),
-        status: async () => ({ serviceState: "READY", brokerOwnership: ownership }),
-        install: async () => undefined,
-        uninstall: async () => undefined,
-        connect: async () => {
-          if (offline) throw new BrokerError("broker-disconnected");
-          return {
-            close() {},
-            call: async (method) => {
-              if (method === "getSharingState")
-                return {
-                  ...transfer,
-                  sourceWatermark: "watermark",
-                  ownership,
-                  preparedClientIds: ["existing-graph-client"],
-                };
-              if (method === "listCredentials") return { items: [], nextCursor: null };
-              if (method === "watchEvents") {
-                await new Promise((resolve) => setTimeout(resolve, 20));
-                return { items: [], nextCursor: "0" };
-              }
-              if (method === "disconnect") return {};
-              throw new Error("unexpected broker method");
-            },
-          };
-        },
-      };
-      const jwt = `header.${Buffer.from(JSON.stringify({ email: "fixture@example.test", sub: "fixture" })).toString("base64url")}.signature`;
-      const graph = await fixture(directory, protection, {
-        host,
-        files: {
-          readText: async () =>
-            JSON.stringify({
-              tokens: {
-                id_token: jwt,
-                access_token: "fictional-access",
-                refresh_token: "fictional-refresh",
-                account_id: "fixture",
-              },
-            }),
-        },
-      });
-      expect((await graph.snapshot()).backend).toMatchObject({
-        selected: "private",
-        active: "private",
-      });
-      const pending = await (await graph.app.request("/api/v1/credential-sharing/status")).json();
-      expect(pending.value).toMatchObject({
-        selectedBackend: "private",
-        activeBackend: "private",
-        importState: "import-ready",
-        sharingState: "handoff-pending",
-        connected: false,
-        accounts: [{ id: "shared-preview" }],
-        capabilities: { retry: { state: "enabled" } },
-      });
-      expect(
-        (
-          await graph.command("/api/v1/auth/sessions/start", {
-            offeringId: "bigmodel-coding-plan",
-            method: "api-key",
-            apiKey: fictionalSecret,
-          })
-        ).status,
-      ).toBe(200);
-      expect((await graph.snapshot()).accounts).toHaveLength(1);
-      const imported = await graph.command("/api/v1/auth/sessions/start", {
-        offeringId: "codex",
-        method: "cli-import",
-      });
-      const privateId = (await imported.json()).value.account.id as string;
-      let finishRefresh!: () => void;
-      let startedRefresh!: () => void;
-      const entered = new Promise<void>((resolve) => {
-        startedRefresh = resolve;
-      });
-      const blocked = new Promise<void>((resolve) => {
-        finishRefresh = resolve;
-      });
-      graph.services.runtime.providers.getAccount("codex")!.refreshCredentials = async (
-        _account,
-        envelope,
-      ) => {
-        startedRefresh();
-        await blocked;
-        return {
-          changed: true,
-          envelope: {
-            ...envelope,
-            secrets: { ...envelope.secrets, accessToken: "fictional-refreshed-private" },
-          },
-        };
-      };
-      const refresh = graph.services.providers.refreshCredentials(privateId);
-      await entered;
-      ownership = "broker";
-      const activation = vi.spyOn(graph.services.runtime, "activate");
-      const switching = trigger === "manual" ? graph.services.credentials.retry() : undefined;
-      try {
-        await vi.waitFor(
-          async () => {
-            const current = await graph.snapshot();
-            expect(current.backend.active).toBe("private");
-            expect(current.actions.startAuth.state).toBe("disabled");
-          },
-          { timeout: 5000 },
-        );
-        if (trigger === "manual") {
-          await expect(async () =>
-            graph.services.credentials.confirmImport("other-preview"),
-          ).rejects.toMatchObject({
-            code: "operation-in-progress",
-          });
-          expect(
-            (
-              await graph.command("/api/v1/auth/sessions/start", {
-                offeringId: "bigmodel-coding-plan",
-                method: "api-key",
-                apiKey: fictionalSecret,
-              })
-            ).status,
-          ).toBe(409);
-          // The automatic watcher must not activate through a manual retry's pending drain.
-          await new Promise((resolve) => setTimeout(resolve, 3200));
-          expect((await graph.snapshot()).backend.active).toBe("private");
-        }
-        expect(activation).not.toHaveBeenCalled();
-      } finally {
-        finishRefresh();
-      }
-      expect((await refresh).status).toBe("updated");
-      await switching;
-      await vi.waitFor(async () => expect((await graph.snapshot()).backend.active).toBe("shared"));
-      expect((await graph.snapshot()).backend).toMatchObject({
-        selected: "shared",
-        active: "shared",
-      });
-      expect((await graph.snapshot()).accounts).toHaveLength(0);
-      expect(
-        JSON.parse(await readFile(path.join(directory, "private-business.json"), "utf8")).accounts,
-      ).toHaveLength(2);
-      await graph.services.stop();
-      offline = true;
-      const restored = await fixture(directory, protection, { host });
-      expect((await restored.snapshot()).backend).toMatchObject({
-        selected: "shared",
-        active: "unavailable",
-      });
-      expect((await restored.snapshot()).actions.startAuth.state).toBe("disabled");
-      expect((await restored.snapshot()).accounts).toHaveLength(0);
-    },
-    10000,
-  );
-  it("keeps private authorization available throughout a slow pending-import poll", async () => {
+  it("restores an import as a writable private backend until an explicit, successful migration", async () => {
     const directory = await temporaryDirectory();
+    const vault = await temporaryDirectory();
     const protection = cipher();
-    const { host, control } = await pendingImport(directory, protection);
-    const graph = await fixture(directory, protection, { host });
-    let release!: () => void;
-    let entered!: () => void;
-    const blocked = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const started = new Promise<void>((resolve) => {
-      entered = resolve;
-    });
-    control.poll = async () => {
-      entered();
-      await blocked;
+    const sharingDirectory = path.join(directory, "credential-sharing");
+    await mkdir(sharingDirectory);
+    const version = {
+      vaultId: "vault",
+      storageVersion: "version",
+      attemptId: "attempt",
+      keyId: "key",
     };
-    const polling = graph.services.credentials.retry();
-    await started;
-    try {
-      expect((await graph.snapshot()).actions.startAuth.state).toBe("enabled");
-      expect(
-        (
-          await graph.command("/api/v1/auth/sessions/start", {
-            offeringId: "bigmodel-coding-plan",
-            method: "api-key",
-            apiKey: fictionalSecret,
-          })
-        ).status,
-      ).toBe(200);
-      expect((await graph.snapshot()).backend.active).toBe("private");
-    } finally {
-      release();
-      await polling;
-    }
-  });
-  it("rejects a shared switch before changing a pending private authorization's backend", async () => {
-    const directory = await temporaryDirectory();
-    const protection = cipher();
-    const { host, control, sharingDirectory } = await pendingImport(directory, protection);
+    const keyRef = "existing.key";
+    await writeFile(
+      path.join(sharingDirectory, keyRef),
+      await protection.encrypt(
+        JSON.stringify({
+          version,
+          masterKey: Buffer.alloc(32, 9).toString("base64url"),
+        }),
+      ),
+    );
+    const file = path.join(sharingDirectory, "migration-state.json");
+    const binding = {
+      vaultDirectory: vault,
+      version,
+      clientId: "existing-graph-client",
+      sourceWatermark: "watermark",
+      keyRef,
+      recordCount: 1,
+      accounts: [
+        {
+          id: "shared-preview",
+          provider: "codex",
+          maskedIdentifier: "test***",
+          canRefresh: true,
+          revision: "1",
+        },
+      ],
+    };
+    await writeFile(
+      file,
+      JSON.stringify({
+        formatVersion: 1,
+        product: "graph-agent",
+        migrationState: "import-ready",
+        selectedBackend: "private",
+        binding,
+      }),
+    );
+    const host = {
+      localPackageDirectory: directory,
+      inspect: async () => ({
+        installState: "installed" as const,
+        installedVersion: "0.3.0",
+        installedApiLevel: "3",
+        installationDirectory: directory,
+      }),
+      install: async () => undefined,
+      uninstall: async () => undefined,
+      connect: vi.fn(async () => {
+        throw new BrokerError("broker-disconnected");
+      }),
+    };
     const graph = await fixture(directory, protection, { host });
-    const facet = graph.services.runtime.providers.getAccount("codex")!;
-    vi.spyOn(facet, "startAuth").mockResolvedValue({
-      status: "pending",
-      interaction: "device-code",
-      userCode: "TEST-CODE",
-      verificationUri: "https://example.invalid/verify",
-      cancel() {},
-      finish: async () => {
-        throw new Error("not expected");
-      },
+    const status = await (await graph.app.request("/api/v1/credential-sharing/status")).json();
+    expect(status.value).toMatchObject({
+      role: "both",
+      migrationState: "import-ready",
+      selectedBackend: "private",
+      activeBackend: "private",
+      rememberedKey: true,
+      accounts: [{ id: "shared-preview" }],
     });
-    const started = await graph.command("/api/v1/auth/sessions/start", {
-      offeringId: "codex",
-      method: "device-code",
+    expect(host.connect).not.toHaveBeenCalled();
+    const add = await graph.command("/api/v1/auth/sessions/start", {
+      offeringId: "bigmodel-coding-plan",
+      method: "api-key",
+      apiKey: fictionalSecret,
     });
-    const sessionId = (await started.json()).value.sessionId;
-    control.ownership = "broker";
-    await expect(graph.services.credentials.retry()).rejects.toMatchObject({
-      code: "conflict",
+    expect(add.status).toBe(200);
+    const before = await graph.snapshot();
+    expect(before.accounts).toHaveLength(1);
+    expect(before.backend.active).toBe("private");
+    const failed = await graph.command("/api/v1/credential-sharing/enable-shared");
+    expect(failed.ok).toBe(false);
+    expect(JSON.parse(await readFile(file, "utf8"))).toMatchObject({
+      migrationState: "import-ready",
+      selectedBackend: "private",
+      binding,
     });
-    expect(
-      JSON.parse(await readFile(path.join(sharingDirectory, "binding.json"), "utf8")).state,
-    ).toBe("import-ready");
-    await expect(
-      graph.services.runtime.activate({ vaultDirectory: directory, clientId: "client" }, () => {}),
-    ).rejects.toMatchObject({ code: "conflict" });
-    expect((await graph.snapshot()).backend.active).toBe("private");
-    expect((await graph.command(`/api/v1/auth/sessions/${sessionId}/cancel`)).status).toBe(200);
+    await graph.services.stop();
+    const restored = await fixture(directory, protection, { host });
+    const after = await restored.snapshot();
+    expect(after.accounts).toEqual(before.accounts);
+    expect(after.actions.startAuth.state).toBe("enabled");
+    expect(after.backend).toMatchObject({ selected: "private", active: "private" });
   });
+
   it("disables private authorization before calling a provider when OS protection is unavailable", async () => {
     const protection = cipher();
     protection.isAvailable = async () => false;
@@ -540,7 +306,7 @@ describe("GraphAgent common provider host", () => {
       method: "api-key",
       apiKey: fictionalSecret,
     });
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(503);
     expect(web.upstream).not.toHaveBeenCalled();
     const status = await (await web.app.request("/api/v1/credential-sharing/status")).json();
     expect(status.value).toMatchObject({
@@ -601,6 +367,55 @@ describe("GraphAgent common provider host", () => {
     release();
   });
 
+  it("reads using a restricted Web grant without requiring export, import or events permissions", async () => {
+    const directory = await temporaryDirectory();
+    const methods: string[] = [];
+    let canRead = true;
+    const opaque = {
+      credentialId: "opaque",
+      revision: "1",
+      createdByClientId: "source",
+      lastUpdatedByClientId: "source",
+      contentType: "application/octet-stream",
+      payloadFormatVersion: 1,
+      metadata: { provider: "opaque", maskedIdentifier: fictionalSecret },
+    };
+    const web = await fixture(directory, undefined, {
+      brokerBinding: { vaultDirectory: directory, clientId: "web-reader" },
+      host: {
+        localPackageDirectory: directory,
+        inspect: async () => ({
+          installState: "installed",
+          installedVersion: "0.3.0",
+          installationDirectory: directory,
+        }),
+        install: async () => undefined,
+        uninstall: async () => undefined,
+        connect: async () => ({
+          close() {},
+          call: async (method) => {
+            methods.push(method);
+            if (method === "status") return { ownership: "broker" };
+            if (method === "listCredentials") return { items: [opaque], nextCursor: null };
+            if (method === "getSnapshotWatermark" && canRead)
+              return { vaultId: "vault", storageVersion: "version", watermark: "a".repeat(64) };
+            if (method === "disconnect") return {};
+            throw new BrokerError("forbidden");
+          },
+        }),
+      },
+    });
+    await vi.waitFor(() => expect(methods).toContain("getSnapshotWatermark"));
+    expect((await web.snapshot()).backend).toMatchObject({ selected: "shared", active: "shared" });
+    expect(methods).not.toContain("getSharingState");
+    const status = await (await web.app.request("/api/v1/credential-sharing/status")).json();
+    expect(status.value).toMatchObject({ privateAvailable: false, accounts: [], recordCount: 0 });
+    expect(JSON.stringify(status)).not.toContain(fictionalSecret);
+    canRead = false;
+    expect((await (await web.command("/api/v1/credential-sharing/retry")).json()).ok).toBe(false);
+    expect((await web.snapshot()).backend.active).toBe("unavailable");
+  });
+
   it("disables broker access during an event-stream outage and recovers without a private fallback", async () => {
     const directory = await temporaryDirectory();
     let offline = false;
@@ -618,8 +433,10 @@ describe("GraphAgent common provider host", () => {
         connect: async () => ({
           close() {},
           call: async (method) => {
-            if (method === "getSharingState") return { ownership: "broker" };
+            if (method === "status") return { ownership: "broker" };
             if (method === "listCredentials") return { items: [], nextCursor: null };
+            if (method === "getSnapshotWatermark")
+              return { vaultId: "vault", storageVersion: "version", watermark: "a".repeat(64) };
             if (method === "watchEvents") {
               await new Promise((resolve) => setTimeout(resolve, 20));
               if (offline) throw new BrokerError("access-denied");

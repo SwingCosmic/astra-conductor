@@ -1,11 +1,12 @@
 import path from "node:path";
 import { BROKER_DISTRIBUTION } from "@astra-conductor/credentials";
 import { WindowsBrokerHost } from "../../platform/common/credential-broker-host.js";
-import { CredentialSharingService, sharingFrozenKey } from "../credential-sharing/service.js";
 import {
   AuthCoordinator,
   CoreServices,
   CredentialVault,
+  CredentialMigrationService,
+  SelectedBusinessStorage,
   SwitchingCredentialService,
   CredentialMutationGate,
   ProviderRegistry,
@@ -33,7 +34,8 @@ export const Services = {
     selectDirectory?(): Promise<string | null>;
   }>("polyquota.sharing-paths"),
   mutations: serviceId<CredentialMutationGate>("polyquota.credential-mutations"),
-  sharing: serviceId<CredentialSharingService>("polyquota.sharing"),
+  sharing: serviceId<CredentialMigrationService>("polyquota.sharing"),
+  businessStorage: serviceId<SelectedBusinessStorage>("polyquota.business-storage"),
   cipher: serviceId<CredentialCipherPort>("polyquota.cipher"),
   host: serviceId<HostService>("polyquota.host"),
   proxyStatus: serviceId<() => Promise<PublicSystemStatus>>("polyquota.proxy-status"),
@@ -56,21 +58,17 @@ export function registerCommonServices(registry: ServiceRegistry): void {
       () => new ApplicationEvents(),
       (events) => events.dispose(),
     )
-    .register(
-      Services.mutations,
-      [CoreServices.storage],
-      (services) =>
-        new CredentialMutationGate(
-          services.get(CoreServices.storage).settings.get(sharingFrozenKey) === true,
-        ),
+    .register(CoreServices.storage, [Services.businessStorage], (services) =>
+      services.get(Services.businessStorage),
     )
+    .register(Services.mutations, [], () => new CredentialMutationGate())
     .register(
       CoreServices.vault,
-      [CoreServices.storage, Services.cipher, Services.mutations],
+      [Services.businessStorage, Services.cipher, Services.mutations],
       (services) =>
         new SwitchingCredentialService(
           new CredentialVault(
-            services.get(CoreServices.storage),
+            services.get(Services.businessStorage).profile,
             services.get(Services.cipher),
             undefined,
             services.get(Services.mutations),
@@ -145,7 +143,7 @@ export function registerCommonServices(registry: ServiceRegistry): void {
     .register(
       Services.sharing,
       [
-        CoreServices.storage,
+        Services.businessStorage,
         CoreServices.vault,
         Services.cipher,
         Services.mutations,
@@ -170,9 +168,14 @@ export function registerCommonServices(registry: ServiceRegistry): void {
           "win-x64",
           BROKER_DISTRIBUTION.version,
         );
-        return new CredentialSharingService({
-          storage: services.get(CoreServices.storage),
-          credentials: services.get(CoreServices.vault),
+        const storage = services.get(Services.businessStorage);
+        return new CredentialMigrationService({
+          product: "polyquota",
+          storage: storage.profile,
+          selectStorage: (selection, binding) =>
+            selection === "shared" && binding
+              ? storage.selectShared(binding)
+              : storage.selectPrivate(),
           switcher: services.get(CoreServices.vault) as SwitchingCredentialService,
           cipher: services.get(Services.cipher),
           mutations: services.get(Services.mutations),
@@ -211,7 +214,7 @@ export function registerCommonServices(registry: ServiceRegistry): void {
             registry: services.get(Services.providers),
             mutations: services.get(Services.mutations),
             isShared: () => sharing.isSharedSelected(),
-            visibleAccountIds: () => sharing.visibleAccountIds(),
+            visibleAccountIds: () => sharing.visibleUsageAccountIds(),
             detectProxyStatus: services.get(Services.proxyStatus),
             publishChanged: (event) => events.publish({ type: "changed", data: event }),
           },

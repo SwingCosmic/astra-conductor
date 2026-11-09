@@ -20,7 +20,7 @@ const navigation = [
     @navigate="active = $event"
   >
     <ProvidersPage v-if="active === 'providers'" />
-    <CredentialsPage v-else-if="active === 'credentials'" />
+    <CredentialsPage v-else-if="active === 'credentials'" :show-back="false" />
     <main v-else aria-label="GraphAgent 主页" />
   </AppShell>
 </template>

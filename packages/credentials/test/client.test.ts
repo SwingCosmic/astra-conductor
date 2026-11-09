@@ -16,7 +16,7 @@ suite("broker named pipe authentication", () => {
     tamperedCapabilities,
     tamperedVersion,
     componentVersion = "0.2.0",
-    apiRevision = 2,
+    apiRevision = 3,
   } of [
     { validProof: true, tamperedCapabilities: false, tamperedVersion: false },
     { validProof: false, tamperedCapabilities: false, tamperedVersion: false },
@@ -27,11 +27,11 @@ suite("broker named pipe authentication", () => {
       tamperedCapabilities: false,
       tamperedVersion: false,
       componentVersion: "0.1.0-alpha+build",
-      apiRevision: 2.5,
+      apiRevision: 3.5,
     },
   ])
     it(
-      apiRevision === 2.5
+      apiRevision === 3.5
         ? "accepts a lower SemVer component with a higher decimal API level"
         : tamperedVersion
           ? "binds the advertised component version into both authentication proofs"
@@ -63,7 +63,7 @@ suite("broker named pipe authentication", () => {
           socket.on("error", () => undefined);
           const greeting = {
             protocolVersion: 1,
-            apiRevision: tamperedCapabilities ? 3 : apiRevision,
+            apiRevision: tamperedCapabilities ? 4 : apiRevision,
             componentVersion: tamperedVersion ? "0.3.0" : componentVersion,
             vaultId: identity.vaultId,
             generation: "generation",
@@ -157,7 +157,7 @@ suite("broker named pipe authentication", () => {
   it.each([
     ["missing API revision", { apiRevision: undefined }, "api-incompatible"],
     ["missing runtime version", { componentVersion: undefined }, "invalid-component-version"],
-    ["old API revision", { apiRevision: 1 }, "api-incompatible"],
+    ["old API revision", { apiRevision: 2 }, "api-incompatible"],
     ["invalid API revision", { apiRevision: "2" }, "api-incompatible"],
     ["insufficient fractional API", { apiRevision: 1.5 }, "api-incompatible"],
     ["wrong wire major", { protocolVersion: 2 }, "protocol-incompatible"],
@@ -185,7 +185,7 @@ suite("broker named pipe authentication", () => {
       socket.write(
         frame({
           protocolVersion: 1,
-          apiRevision: 2,
+          apiRevision: 3,
           componentVersion: "0.2.0",
           vaultId: identity.vaultId,
           generation: "generation",

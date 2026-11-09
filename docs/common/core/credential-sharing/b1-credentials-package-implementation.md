@@ -37,18 +37,12 @@ pnpm --filter @astra-conductor/polyquota test:credential-sharing-loop --publish 
 
 两项均在全量构建后通过。安装 smoke 覆盖未安装检测、本地安装、真实 safeStorage 导出、重启恢复相同 storageVersion、既有客户端授权复用、取消共享、卸载及重装后的密钥保留。双进程闭环 17 项全部通过，覆盖错误密钥零导入、两端刷新/事件、同修订并发只执行一次上游更新、私有快照/重入、两端重启与成功版本复用。实际供应商网络请求为 0。
 
-本机脱敏结果保留于：
-
-- `C:/Users/a/AppData/Local/Temp/polyquota-sharing-smoke-VyetP3/export-result.json`
-- `C:/Users/a/AppData/Local/Temp/polyquota-sharing-smoke-VyetP3/resume-result.json`
-- `C:/Users/a/AppData/Local/Temp/astra-sharing-loop-W7xFV0/result.json`
-
 `pnpm package` 与 `pnpm package:graph-agent` 通过，生成：
 
 - `apps/polyquota/release/PolyQuota-0.5.1-setup.exe`
 - `apps/graph-agent/release/GraphAgent Setup 0.1.1.exe`
 
-对两个 `win-unpacked/resources/app.asar` 的检查通过：package exports 包含主入口与 Windows 子入口；SDK 的 8 个 JS 文件逐一与当前构建一致；应用依赖和包内均无 `credential-host`，asar 及外部 resources 中无 broker/.NET runtime。类型声明由独立 SDK consumer 验证，Electron 安装包按默认规则不携带 `.d.ts`。检查结果保留于 `out/validation/credential-sharing-b1-package-verification.json`。
+对两个 `win-unpacked/resources/app.asar` 的检查通过：package exports 包含主入口与 Windows 子入口；SDK 的 8 个 JS 文件逐一与当前构建一致；应用依赖和包内均无 `credential-host`，asar 及外部 resources 中无 broker/.NET runtime。类型声明由独立 SDK consumer 验证，Electron 安装包按默认规则不携带 `.d.ts`。
 
 `pnpm test:distribution` 通过 PolyQuota 打包版的真实安全存储、桌面启动与已有密文恢复检查。`git diff --check` 通过，改动未提交。
 

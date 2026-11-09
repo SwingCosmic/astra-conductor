@@ -1,4 +1,5 @@
 import { Hono, type Context } from "hono";
+export { migrationHttpService } from "./migration-service.js";
 import { bodyLimit } from "hono/body-limit";
 import { BrokerError } from "@astra-conductor/credentials";
 import {
@@ -26,6 +27,7 @@ export interface ProviderHttpService {
   refreshCredentials(accountId: string): Awaitable<unknown>;
 }
 export interface CredentialHttpService {
+  currentOperationId?(): string | null;
   getStatus(): Awaitable<unknown>;
   selectDirectory?(): Awaitable<unknown>;
   install?(): Awaitable<unknown>;
@@ -36,8 +38,13 @@ export interface CredentialHttpService {
   acknowledgeDelivery?(): Awaitable<unknown>;
   cancelExport?(): Awaitable<unknown>;
   cancel?(): Awaitable<unknown>;
-  enableShared?(): Awaitable<unknown>;
-  returnToPrivate?(acceptIndependentRefreshRisk: boolean): Awaitable<unknown>;
+  switchToPrivate?(): Awaitable<unknown>;
+  relocate?(vaultDirectory: string): Awaitable<unknown>;
+  enableShared?(confirmationId?: string): Awaitable<unknown>;
+  returnToPrivate?(
+    acceptIndependentRefreshRisk: boolean,
+    offlineSnapshotAt?: string,
+  ): Awaitable<unknown>;
   rejoinShared?(migrationKey: string): Awaitable<unknown>;
   verifyImport?(vaultDirectory: string, migrationKey: string): Awaitable<unknown>;
   confirmImport?(previewId: string): Awaitable<unknown>;
@@ -151,6 +158,15 @@ export function createCredentialRoutes(
   options: CommonRouteOptions,
 ): Hono {
   const { app, route } = routes(options);
+  const credentialCommand = async (c: Context, keys: readonly string[]) => {
+    const { operationId, ...request } = await command(c, options, [...keys, "operationId"]);
+    if (operationId !== undefined) {
+      if (operationId !== null) parseSessionId(operationId);
+      if (operationId !== (service.currentOperationId?.() ?? null))
+        throw new AppError("stale-context", "凭据操作已变更，请读取当前状态后继续");
+    }
+    return request;
+  };
   const unavailable = (): never => {
     throw new AppError("capability-unavailable", "当前宿主不提供此凭据操作");
   };
@@ -166,38 +182,61 @@ export function createCredentialRoutes(
     "acknowledge-delivery": "acknowledgeDelivery",
     "export/cancel": "cancelExport",
     "export/resume": "resumeExport",
-    "enable-shared": "enableShared",
+    "switch-to-private": "switchToPrivate",
     "import/cancel": "cancelImport",
     retry: "retry",
   } as const;
   for (const [path, method] of Object.entries(actions))
     route("POST", `/api/v1/credential-sharing/${path}`, async (c) => {
-      await command(c, options, []);
+      await credentialCommand(c, []);
       const action =
         method === "cancelExport" ? (service.cancelExport ?? service.cancel) : service[method];
       return action ? action.call(service) : unavailable();
     });
+  route("POST", "/api/v1/credential-sharing/enable-shared", async (c) => {
+    const request = await credentialCommand(c, ["confirmationId"]);
+    const confirmation = request.confirmationId;
+    if (
+      confirmation !== undefined &&
+      (typeof confirmation !== "string" || !/^[a-zA-Z0-9_-]{43}$/.test(confirmation))
+    )
+      invalid();
+    return service.enableShared ? service.enableShared(confirmation) : unavailable();
+  });
+  route("POST", "/api/v1/credential-sharing/relocate", async (c) => {
+    const request = parseCredentialExportRequest(await credentialCommand(c, ["vaultDirectory"]));
+    return service.relocate ? service.relocate(request.vaultDirectory) : unavailable();
+  });
   route("POST", "/api/v1/credential-sharing/export", async (c) => {
-    const request = parseCredentialExportRequest(await command(c, options, ["vaultDirectory"]));
+    const request = parseCredentialExportRequest(await credentialCommand(c, ["vaultDirectory"]));
     return service.exportCredentials
       ? service.exportCredentials(request.vaultDirectory)
       : unavailable();
   });
   route("POST", "/api/v1/credential-sharing/export/restart", async (c) => {
-    const request = parseCredentialExportRequest(await command(c, options, ["vaultDirectory"]));
+    const request = parseCredentialExportRequest(await credentialCommand(c, ["vaultDirectory"]));
     return service.restartExport ? service.restartExport(request.vaultDirectory) : unavailable();
   });
   route("POST", "/api/v1/credential-sharing/return-to-private", async (c) => {
-    const request = await command(c, options, ["acceptIndependentRefreshRisk"]);
-    if (request.acceptIndependentRefreshRisk !== true) invalid();
-    return service.returnToPrivate ? service.returnToPrivate(true) : unavailable();
+    const request = await credentialCommand(c, [
+      "acceptIndependentRefreshRisk",
+      "offlineSnapshotAt",
+    ]);
+    const at = request.offlineSnapshotAt;
+    if (
+      request.acceptIndependentRefreshRisk !== true ||
+      (at !== undefined &&
+        (typeof at !== "string" || at.length > 64 || !Number.isFinite(Date.parse(at))))
+    )
+      invalid();
+    return service.returnToPrivate ? service.returnToPrivate(true, at) : unavailable();
   });
   route("POST", "/api/v1/credential-sharing/rejoin-shared", async (c) => {
-    const request = await command(c, options, ["migrationKey"]);
+    const request = await credentialCommand(c, ["migrationKey"]);
     return service.rejoinShared ? service.rejoinShared(key(request.migrationKey)) : unavailable();
   });
   route("POST", "/api/v1/credential-sharing/import/verify", async (c) => {
-    const request = await command(c, options, ["vaultDirectory", "migrationKey"]);
+    const request = await credentialCommand(c, ["vaultDirectory", "migrationKey"]);
     const { vaultDirectory } = parseCredentialExportRequest({
       vaultDirectory: request.vaultDirectory,
     });
@@ -206,7 +245,7 @@ export function createCredentialRoutes(
       : unavailable();
   });
   route("POST", "/api/v1/credential-sharing/import/confirm", async (c) => {
-    const request = await command(c, options, ["previewId"]);
+    const request = await credentialCommand(c, ["previewId"]);
     return service.confirmImport
       ? service.confirmImport(parseSessionId(request.previewId))
       : unavailable();
@@ -216,6 +255,9 @@ export function createCredentialRoutes(
 
 type HttpErrorStatus = 400 | 401 | 403 | 404 | 409 | 429 | 500 | 501 | 502 | 503;
 const brokerErrors: Record<string, readonly [HttpErrorStatus, string, boolean]> = {
+  "credential-identity-exists": [409, "同一供应商账号已存在，请刷新账号清单后重新授权", true],
+  "credential-exists": [409, "共享记录已存在，请重新读取账号清单", true],
+  forbidden: [403, "当前客户端没有此操作或记录的授权", false],
   "access-denied": [403, "当前客户端没有此记录的访问权限", false],
   "record-access-denied": [403, "当前客户端没有此记录的访问权限", false],
   "broker-disconnected": [503, "凭据共享服务已断开，请重试连接", true],
