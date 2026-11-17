@@ -8,6 +8,7 @@
 - [ZCode 服务商架构探索报告](./exploration/zcode.md)
 - [DeepSeek Harness 服务商架构探索报告](./exploration/deepseek-harness.md)
 - [Hermes Agent 服务商架构探索报告](./exploration/hermes-agent.md)
+- [Token Monitor 用量聚合架构探索报告](./exploration/token-monitor.md)
 - [dots 设备连接实测报告](./exploration/dots.md)
 - [OmniRoute 用量页面参考图](./exploration/omniroute.png)
 

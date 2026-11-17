@@ -2,8 +2,8 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 状态 | 已于 2026-10-15 随数据侧批次落地（各 descriptor 逐条核对实施）；同日按真实账号回填修正 §5（copilot_plan 短词键，见其注）。`sourceUrl` / `verifiedAt` 仅回填 published 条目（核实日 2026-10-14），inferred 条目随真实样本回填 |
-| 更新日期 | 2026-10-15 |
+| 状态 | 已于 2026-10-15 随数据侧批次落地（各 descriptor 逐条核对实施）；同日按真实账号回填修正 §5（copilot_plan 短词键，见其注）。2026-11-17 复核并落地：codex 官方美元档名统一与 2026-10-29 allowance 变动（§2）、grok `GrokPro` 样本归属 Premium（§4）、antigravity 统一订阅口径复核无变化（§7） |
+| 更新日期 | 2026-11-17 |
 | 依据 | 已确认的两条数据规则与三层语义（[数据侧文档](./provider-subscription-drift.md)§7）；倍率与档位事实见其 §3 与参考来源 |
 | 前置 | 正则键依赖[结构侧](./core-contract-structure.md)§5.1（解析点上移、match 退出 IPC）先行落地——已于 2026-10-15 完成 |
 
@@ -24,16 +24,15 @@
 | `free` | `free` | Free | 0.1 | inferred，不变 |
 | `go` | `go` | Go | 0.1 | inferred，不变 |
 | `plus` | `plus` | Plus | 1 | published，不变 |
-| `pro-5x` | `prolite`、`pro 5x`、`pro5x` | Pro 5x | 5 | published；Pro $100，名称数值均不变 |
-| `pro` | `pro` | Pro | **10** | published；同名改值 5→10，Pro $200 新订口径（实测） |
-| `pro-20x` | `pro 20x`、`pro20x` | Pro 20x | 20 | published；**legacy**，`legacyUntil: 2026-10-29`，存量 Pro $200 老订户 |
-| `promax` | `promax` | Pro 500 | **25** | published，新增；Pro $500（官方 ~25x） |
+| `pro-100` | `prolite`、`pro 100`、`pro100` | Pro 100 | **10** | published；id 由 `pro-5x` 改名并统一官方美元档名；倍率 5→10（2026-10-29 官方将 Work 与 Codex allowance 翻倍，按原 5x 实测口径同比推算，待样本复核） |
+| `pro` | `pro`、`pro 200`、`pro200`、`pro 20x`、`pro20x` | Pro 200 | **20** | published；同名改值 10→20——官方取消 2026-09-29 宣布的削减（2026-10-29），恢复原 20x 口径；legacy `pro-20x` 条目随之删除，其展示形态键并入本条 |
+| `promax` | `promax` | Pro 500 | **50** | published；25→50（同日 allowance 翻倍，按官方 ~25x 口径同比推算，待样本复核） |
 | `team` | `team` | Team | 5 | inferred，不变 |
 | `business` | `business`、`/^self serve business/` | Business | 5 | inferred，新增；正则归并 `self_serve_business_prolite` / `self_serve_business_usage_based` |
 | `enterprise` | `enterprise`、`ent26`、`/^enterprise cbp/` | Enterprise | 5 | inferred；补 `ent26` 与正则（`enterprise_cbp_*`） |
 | `edu` | `edu`、`edu plus`、`edu pro`、`/^edu/` | Edu | 5 | inferred；补 `edu_plus` / `edu_pro` 键与防御正则 |
 
-注：`plan_type` 的 `unknown` 兜底值与其他未识别字符串走默认倍率 5。展示名风格可在实施时统一为官方美元档名（Pro 100 / Pro 200 / Pro 500），属纯展示调整，不影响匹配。
+注：`plan_type` 的 `unknown` 兜底值与其他未识别字符串走默认倍率 5。展示名已于 2026-11-17 统一为官方美元档名（Pro 100 / Pro 200 / Pro 500）；plan_type 精确键（`prolite` / `pro` / `promax`）不受改名影响。官方同批（2026-11-02 文档）将 Plus/Pro/Business 合并为 ChatGPT 与 Codex 共享的统一用量池——"Codex 用量口径"的相对倍率仍是最优可得权重，口径备注留待官方给出分产品数值后再校。
 
 ## 3. GLM（`glm`，offerings `bigmodel-coding-plan` 与 `zai-coding-plan`）
 
@@ -47,19 +46,19 @@
 
 ## 4. Grok（`grok-build`，offering `grok-build`）
 
-基线：Plus（$8）= 1x，跨 Grok / Cursor 的共享用量池（官方口径）。
+基线：Plus（$8）= 1x。2026-10-12 起官方名称 The X Subscription：一份订阅捆绑 Grok、Grok Bot、Cursor 与 X，共享 Grok 模型用量池（覆盖 Grok 应用、X 的 Grok 标签页与 Cursor）；Plus/Premium/Super/Ultra 四档价格与官方倍率经复核不变（[x.ai 公告](https://x.ai/news/x-subscription)）。
 
 | id | 数据标识符（match） | 展示文字（displayName） | 倍率 | 备注 |
 | --- | --- | --- | --- | --- |
-| `plus` | `plus`、`/\bplus\b/` | Plus | **1** | published，新增 |
-| `premium` | `premium`、`/\bpremium\b/` | Premium | **4** | published，新增 |
-| `super` | `super`、`/\bsuper\b/` | Super | **15** | published，新增 |
-| `ultra` | `ultra`、`/\bultra\b/` | Ultra | **50** | published，新增 |
-| `supergrok-pro` | `supergrokpro`、`supergrok pro`、`grokpro` | SuperGrok Pro | 5 | 原值（inferred）；**legacy**，`legacyUntil` 省略（xAI 未公布存量截止） |
+| `plus` | `plus`、`/^grok plus$/`、`/\bplus\b/` | Plus | **1** | published，新增 |
+| `premium` | `premium`、`grokpro`、`/^grok premium$/`、`/\bpremium\b/` | Premium | **4** | published，新增；`grokpro` 键 2026-11-17 移入本条（见注） |
+| `super` | `super`、`/^grok super$/`、`/\bsuper\b/` | Super | **15** | published，新增 |
+| `ultra` | `ultra`、`/^grok ultra$/`、`/\bultra\b/` | Ultra | **50** | published，新增 |
+| `supergrok-pro` | `supergrokpro`、`supergrok pro` | SuperGrok Pro | 5 | 原值（inferred）；**legacy**，`legacyUntil` 省略（xAI 未公布存量截止）；原 `grokpro` 键已移入 `premium` |
 | `supergrok-heavy` | `supergrok heavy`、`supergrokheavy` | SuperGrok Heavy | 20 | 原值（inferred）；**legacy**，`legacyUntil` 省略 |
 | `grok-build` | `grok build` | Grok Build | 5 | 原值（inferred）；tier 缺失的兜底合成标识，非订阅档，不标 legacy |
 
-注：新档位的字符串键为推测形态，正则先行兜底（`super` 用单词边界避免误吞 `supergrok`），待真实 `subscriptionTier` 样本校准后收敛为精确键；存量 SuperGrok 账号经精确键命中 legacy 条目，不受正则影响。真实样本回填（2026-10-15）：本机账号观测 `subscriptionTier: "GrokPro"`，经既有 `grokpro` 精确键命中 `supergrok-pro`（legacy，5x）——该账号无法从字符串区分是旧 SuperGrok Pro 还是改版后更名的档位，倍率暂随 legacy 条目，待更多样本确认。
+注：新档位键先按推测形态 + 防御性正则落地（`super` 用单词边界避免误吞 `supergrok`）。`GrokPro` 归属已定（2026-10-15 观测、2026-11-17 账号确认实际套餐为统一订阅 Premium）：改版后 Premium 档沿用内部档位串 `GrokPro`——xAI 将存量 SuperGrok 并入 Premium 后字符串不变，故 `grokpro` 精确键移入 `premium`（4x），legacy `supergrok-pro` 保留全名键兼容仍上报全名的存量账号；本机账号卡片自此解析为 Premium（4x），不再误挂"旧版"。其余档位按同一形态补 `/^grok\s*<X>$/` 防御正则（`GrokPlus` / `GrokSuper` / `GrokUltra` 待样本收敛为精确键），`\b<X>\b` 只兜未知单词形态。
 
 ## 5. GitHub Copilot（`github-copilot`，offering `github-copilot`）
 
@@ -90,7 +89,7 @@
 
 ## 7. Antigravity（`antigravity`，offering `antigravity`）
 
-基线：Pro（$20）= 1x（2026-05-19 改版后的官方倍率制）。
+基线：Pro（$20）= 1x（2026-05-19 改版后的官方倍率制）。Antigravity 无独立订阅，付费入口即 Google AI 统一订阅：Google AI Pro（$19.99）与 Google AI Ultra（$99.99 = 5x / $199.99 = 20x，倍率同适用于 Gemini 与 Antigravity）；2026-11-17 复核无结构变化，本表按 Antigravity 额度口径建条。
 
 | id | 数据标识符（match） | 展示文字（displayName） | 倍率 | 备注 |
 | --- | --- | --- | --- | --- |
@@ -118,9 +117,11 @@
 
 | 项 | 现状 | 校准途径 |
 | --- | --- | --- |
-| Grok 新档位 `subscriptionTier` 字符串 | 推测 + 防御性正则 | 真实账号样本；注意旧 X Premium（$8 档）与新 Premium（$30）的取值是否可分。已回填（2026-10-15）：观测到 `GrokPro` 命中 legacy `grokpro` 键（见 §4 注） |
+| Grok `Grok<X>` 形态键 | `grokpro` 已确认归 Premium（2026-11-17，§4 注）；`/^grok (plus\|super\|ultra)$/` 为防御推测 | 真实账号样本收敛为精确键；留意旧 X Premium（$8 档）与新 Premium（$30）的取值是否可分 |
+| Codex Pro 100 / Pro 500 翻倍倍率 | 10 / 50 为 2026-10-29 allowance 翻倍的同比推算，官方不公布 Plus 相对倍率 | 官方分产品数值或实测样本；plan_type 键（`prolite` / `promax`）不受影响 |
 | Copilot AI Credits 响应形态 | 付费档仍解析 `premium_interactions`；credits / extra usage 桶未映射 | 抓 `copilot_internal/user` 真实响应（Max 档优先）。已回填（2026-10-15）：免费档 `copilot_plan` 短词取值确认（`free`），付费档词汇见 §5 注 |
 | Copilot business / enterprise 倍率 | org 池化后无公开 per-seat 数值，维持旧值 | 官方文档或 org 账号样本 |
 | Antigravity tier 名形态 | 仅观测到 `Antigravity Starter Quota` 一例 | 样本回填；Ultra 5x / 20x 的原始 tier 名待确认 |
 | Codex B 端变体倍率 | `self_serve_business_*` / `enterprise_cbp_*` / `edu_*` 无公开口径，随相邻 rung 取 5 | 官方定价页或 B 端账号样本 |
-| Codex `pro-20x` 收敛 | 存量保留期至 2026-10-29 | 到期后评估删除 legacy 条目 |
+
+已收敛：Codex `pro-20x` legacy 条目于 2026-11-17 删除——官方取消削减后存量/新订同为 20x，键并入 `pro` 条目（§2），原"到期评估删除"事项关闭。

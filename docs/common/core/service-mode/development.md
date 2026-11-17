@@ -6,12 +6,12 @@
 
 在仓库根目录使用 Node.js 22.12 以上和 pnpm 10。以下命令可在不同终端独立执行：
 
-| 命令              | 用途                                                  | 是否需要另一侧                           |
-| ----------------- | ----------------------------------------------------- | ---------------------------------------- |
-| `pnpm dev:server` | 构建前置包后启动真实 Node 后端，监听 `127.0.0.1:4877` | 不需要前端或 Electron                    |
-| `pnpm dev:web`    | 启动 Vite，使用 HTTP/SSE 客户端连接 Node 后端         | 功能联调需要后端；断开时明确显示连接错误 |
-| `pnpm dev:ui`     | 显式启用演示数据的独立界面预览                        | 不需要后端                               |
-| `pnpm dev`        | 保留原 Electron 开发入口，页面直接加载 Vite           | 主进程内嵌 runtime，不另开业务 HTTP 端口 |
+| 命令                       | 用途                                                  | 是否需要另一侧                           |
+| -------------------------- | ----------------------------------------------------- | ---------------------------------------- |
+| `pnpm dev:server:polyquota` | 构建前置包后启动真实 Node 后端，监听 `127.0.0.1:4877` | 不需要前端或 Electron                    |
+| `pnpm dev:web:polyquota`    | 启动 Vite，使用 HTTP/SSE 客户端连接 Node 后端         | 功能联调需要后端；断开时明确显示连接错误 |
+| `pnpm dev:ui:polyquota`     | 显式启用演示数据的独立界面预览                        | 不需要后端                               |
+| `pnpm dev:polyquota`        | 保留原 Electron 开发入口，页面直接加载 Vite           | 主进程内嵌 runtime，不另开业务 HTTP 端口 |
 
 Web 联调与演示预览默认使用同一地址 `http://127.0.0.1:5173`，启动一个即可。Web 联调入口在后端连接失败时显示错误。Node 服务修改 `apps/polyquota/src` 后会先编译，再通知旧进程排空和释放数据锁，然后启动新实例；Core 改动需要重新构建 Core 并重启宿主。
 
@@ -20,7 +20,7 @@ Web 联调与演示预览默认使用同一地址 `http://127.0.0.1:5173`，启�
 ```powershell
 $env:POLYQUOTA_SERVER_PORT = "4877"
 $env:POLYQUOTA_SERVER_DATA = "$env:TEMP\polyquota-server-dev"
-pnpm dev:server
+pnpm dev:server:polyquota
 ```
 
 前端使用不同后端端口时，在启动前设置 `VITE_POLYQUOTA_API_BASE`，例如 `http://127.0.0.1:4877/api`。后端页面来源默认只允许 `http://127.0.0.1:5173`；需要不同前端来源的集成测试使用 `startServer({ origins: [...] })` 显式登记，不使用任意来源反射。
@@ -28,7 +28,7 @@ pnpm dev:server
 ## 2. 后端单独验证
 
 ```powershell
-pnpm test:server
+pnpm test:server:polyquota
 Invoke-RestMethod http://127.0.0.1:4877/api/v1/status
 Invoke-RestMethod http://127.0.0.1:4877/api/v1/host/capabilities
 Invoke-RestMethod http://127.0.0.1:4877/api/v1/polyquota/snapshot
@@ -42,27 +42,28 @@ curl.exe -N http://127.0.0.1:4877/api/v1/events
 ## 3. 前端单独验证与联调
 
 ```powershell
-pnpm test:ui
-pnpm dev:ui
+pnpm test:ui:polyquota
+pnpm dev:ui:polyquota
 ```
 
-前端测试不启动 Electron、Node server 或真实账号，覆盖全部 HTTP 方法映射、void 恢复、连接错误、协议版本、分块 UTF-8/SSE、多行帧、重连以及后端重启后接受低 revision、忽略旧实例迟到快照。`dev:ui` 是明确选择的演示入口，不能作为真实后端成功证据。
+前端测试不启动 Electron、Node server 或真实账号，覆盖全部 HTTP 方法映射、void 恢复、连接错误、协议版本、分块 UTF-8/SSE、多行帧、重连以及后端重启后接受低 revision、忽略旧实例迟到快照。`dev:ui:polyquota` 是明确选择的演示入口，不能作为真实后端成功证据。
 
-联调时分别执行 `pnpm dev:server` 和 `pnpm dev:web`。进入设置页面保存刷新间隔，确认后端快照同步更新；刷新页面后确认 SQLite 中的设置仍在。认证弹窗提供所属会话的授权链接/设备码，仅把 sessionId 存入当前 tab 的 sessionStorage；显式关闭或切换方式取消，组件卸载和页面重载不自动取消。设备认证由用户点击完成后启动轮询。详情轮询与 finish 同时完成只报告一次；卸载后的 finish 保留可恢复 id，后端重启后的未知会话清理本地 id。
+联调时分别执行 `pnpm dev:server:polyquota` 和 `pnpm dev:web:polyquota`。进入设置页面保存刷新间隔，确认后端快照同步更新；刷新页面后确认 SQLite 中的设置仍在。认证弹窗提供所属会话的授权链接/设备码，仅把 sessionId 存入当前 tab 的 sessionStorage；显式关闭或切换方式取消，组件卸载和页面重载不自动取消。设备认证由用户点击完成后启动轮询。详情轮询与 finish 同时完成只报告一次；卸载后的 finish 保留可恢复 id，后端重启后的未知会话清理本地 id。
 
 设置页展示桌面、凭据和通知能力。Web 通知仅在页面连接时交付，权限由用户按钮申请，收到 show 后报告 delivered；同 id 去重，拒绝、失败、超时和卸载不报告成功。Electron 由主进程交付系统通知。
 
 ## 4. Electron 内部协议验证
 
 ```powershell
-pnpm test:protocol
-pnpm test:desktop
+pnpm build
+pnpm --filter @astra-conductor/polyquota test:protocol
+pnpm --filter @astra-conductor/polyquota test:desktop
 pnpm --filter @astra-conductor/polyquota test:private-ui
-pnpm package
-pnpm test:distribution
+pnpm package:polyquota
+pnpm --filter @astra-conductor/polyquota test:distribution
 ```
 
-`test:protocol` 构建应用后启动真实 Electron 42.11.6，分别加载原打包 `renderer/index.html` 和直接 Vite 页面。使用专用 session，保持 sandbox、contextIsolation、webSecurity，验证：
+`test:protocol` 在完成 `pnpm build` 后启动真实 Electron 42.11.6，分别加载原打包 `renderer/index.html` 和直接 Vite 页面。使用专用 session，保持 sandbox、contextIsolation、webSecurity，验证：
 
 - GET/query、非空 JSON POST、空 body POST、状态/响应头和错误。
 - SSE ready、设置保存后连续分块、快照追上 revision。
@@ -71,8 +72,8 @@ pnpm test:distribution
 - Vite 页面通过实际组件保存设置到另一个真实 Node 后端，并通过真实 SSE 和 HTTP 回执确认浏览器通知；通知 API 使用受控测试对象，未发送真实系统通知。
 - 两种页面均实际加载宿主能力，且没有旧业务桥接；窗口销毁后包括页面自身订阅在内都回到初始基线。
 
-| 命令                | 验证入口                                                                       |
-| ------------------- | ------------------------------------------------------------------------------ |
+| 命令              | 验证入口                                                                       |
+| ----------------- | ------------------------------------------------------------------------------ |
 | `test:protocol`     | file/Vite 页面传输与独立 Web 联调；使用临时目录和独立 Vite 端口 `5179`         |
 | `test:desktop`      | 正式 main 与 loadFile UI 的设置→事件→快照→恢复闭环                             |
 | `test:distribution` | 打包后核对 ASAR、binding、图标，并实跑 unpacked 的业务与安全存储；不执行安装器 |

@@ -28,7 +28,7 @@ flowchart LR
 
 ## 2. 进程与页面边界
 
-`pnpm dev` 编排一次性构建、Vite 和 Electron；Electron 管理主进程、renderer 及 Chromium 辅助进程。产品后台、调度、SQLite、safeStorage、供应商请求及 OAuth 回调监听都由主进程承载，不另起业务 HTTP 进程或常驻端口。
+`pnpm dev:polyquota` 编排一次性构建、Vite 和 Electron；Electron 管理主进程、renderer 及 Chromium 辅助进程。产品后台、调度、SQLite、safeStorage、供应商请求及 OAuth 回调监听都由主进程承载，不另起业务 HTTP 进程或常驻端口。
 
 正式 UI 使用 `loadFile(renderer/index.html)`，开发 UI 直接加载 Vite。HTML、CSS、图片、字体及 JS chunk 均沿用默认路径；只有登记的动态资源使用 `polyquota-app://resources/<resourceId>`，由专用 Electron 读取服务处理。
 

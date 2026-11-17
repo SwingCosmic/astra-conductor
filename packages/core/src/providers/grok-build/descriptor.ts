@@ -22,15 +22,18 @@ export const grokBuildDescriptor: ProviderDescriptor = {
           sourcePathHint: GROK_CLI_IMPORT_PATH_HINT,
         },
       ],
-      // subscriptionTier 透传。2026-06 改版后的新档位（官方倍率相对 Plus 基线）
-      // 字符串为推测形态：正则先行兜底（单词边界避免 `super` 误吞 `supergrok`），
-      // 待真实 subscriptionTier 样本校准后收敛为精确键；旧 SuperGrok 档按
-      // legacy 保留以兼容存量账号（xAI 未公布存量截止时间，legacyUntil 省略）。
+      // subscriptionTier 透传。2026-06 改版后的新四档（官方倍率相对 Plus 基线，
+      // 2026-10-12 起官方名称 The X Subscription，捆绑 Grok / Grok Bot / Cursor / X）。
+      // 真实样本校准（2026-10-15 观测、2026-11-17 账号确认）：改版后 Premium 档
+      // 上报 `GrokPro`——xAI 沿用了内部档位串，故 `grokpro` 精确键归 Premium；
+      // 其余档位按同形态补 `Grok<X>` 防御正则，`\b<X>\b` 兜底未知的单词形态
+      // （单词边界避免 `super` 误吞 `supergrok`）。旧 SuperGrok 档按 legacy 保留
+      // 以兼容存量账号（xAI 未公布存量截止时间，legacyUntil 省略）。
       plans: [
         {
           id: "plus",
           displayName: "Plus",
-          match: ["plus", /\bplus\b/],
+          match: ["plus", /^grok\s*plus$/, /\bplus\b/],
           multiplier: 1,
           source: "published",
           sourceUrl: "https://x.ai/pricing",
@@ -39,16 +42,16 @@ export const grokBuildDescriptor: ProviderDescriptor = {
         {
           id: "premium",
           displayName: "Premium",
-          match: ["premium", /\bpremium\b/],
+          match: ["premium", "grokpro", /^grok\s*premium$/, /\bpremium\b/],
           multiplier: 4,
           source: "published",
           sourceUrl: "https://x.ai/pricing",
-          verifiedAt: "2026-10-14",
+          verifiedAt: "2026-11-17",
         },
         {
           id: "super",
           displayName: "Super",
-          match: ["super", /\bsuper\b/],
+          match: ["super", /^grok\s*super$/, /\bsuper\b/],
           multiplier: 15,
           source: "published",
           sourceUrl: "https://x.ai/pricing",
@@ -57,7 +60,7 @@ export const grokBuildDescriptor: ProviderDescriptor = {
         {
           id: "ultra",
           displayName: "Ultra",
-          match: ["ultra", /\bultra\b/],
+          match: ["ultra", /^grok\s*ultra$/, /\bultra\b/],
           multiplier: 50,
           source: "published",
           sourceUrl: "https://x.ai/pricing",
@@ -66,7 +69,7 @@ export const grokBuildDescriptor: ProviderDescriptor = {
         {
           id: "supergrok-pro",
           displayName: "SuperGrok Pro",
-          match: ["supergrokpro", "supergrok pro", "grokpro"],
+          match: ["supergrokpro", "supergrok pro"],
           multiplier: 5,
           source: "inferred",
           legacy: true,

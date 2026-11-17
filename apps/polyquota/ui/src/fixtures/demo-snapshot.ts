@@ -248,12 +248,12 @@ const accountSpecs: DemoAccountSpec[] = [
     maskedIdentifier: "co***@example.test",
   },
   {
-    id: "demo-codex-legacy",
+    id: "demo-codex-pro-100",
     provider: "codex",
     offeringId: "codex",
     authMethod: "browser-oauth",
-    displayName: "codex-legacy@example.test",
-    maskedIdentifier: "cl***@example.test",
+    displayName: "codex-second@example.test",
+    maskedIdentifier: "cs***@example.test",
     tokenExpiresAt: inMinutes(3 * 24 * 60),
   },
   {
@@ -358,12 +358,11 @@ function demoUsage(): Record<string, PublicUsage | null> {
         ],
       },
     }),
-    // codex Pro 20x：旧版套餐（legacy + 到期日场景）+ 临界用量。
-    "demo-codex-legacy": usage({
-      plan: "pro 20x",
-      planId: "pro-20x",
-      planLabel: "Pro 20x",
-      planLegacy: true,
+    // codex Pro 100：临界用量场景。
+    "demo-codex-pro-100": usage({
+      plan: "prolite",
+      planId: "pro-100",
+      planLabel: "Pro 100",
       overallRemainingPercentage: 8,
       groups: [
         group("default", [
@@ -434,9 +433,10 @@ function demoUsage(): Record<string, PublicUsage | null> {
     }),
     // Z.ai Lite：停用账号 + 尚无用量（卡片空态 + 停用提示叠加）。
     "demo-zai-lite": null,
-    // Grok 存量 SuperGrok Pro：旧版套餐 + 附加信息三件套（重置计数走 extras）。
+    // Grok 存量 SuperGrok Pro：旧版套餐（原始串仍报 SuperGrok Pro 形态）+
+    // 附加信息三件套（重置计数走 extras）。
     "demo-grok-legacy": usage({
-      plan: "GrokPro",
+      plan: "SuperGrok Pro",
       planId: "supergrok-pro",
       planLabel: "SuperGrok Pro",
       planLegacy: true,

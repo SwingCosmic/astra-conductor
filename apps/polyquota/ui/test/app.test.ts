@@ -32,7 +32,7 @@ import {
 
 const codexPlans: PublicOfferingDescriptor["plans"] = [
   { id: "plus", displayName: "Plus" },
-  { id: "pro-5x", displayName: "Pro 5x" },
+  { id: "pro-100", displayName: "Pro 100" },
 ];
 
 const providerCatalogFixture: PublicProviderDescriptor[] = [
@@ -380,11 +380,11 @@ describe("desktop account UI", () => {
         resetCredits: null,
         fetchedAt: "2026-09-27T00:00:00.000Z",
       }) satisfies PublicUsage;
-    expect(planTagLabel(resolvedUsage("prolite", "pro-5x", "Pro 5x"))).toBe("Pro 5x");
+    expect(planTagLabel(resolvedUsage("prolite", "pro-100", "Pro 100"))).toBe("Pro 100");
     expect(planTagLabel(resolvedUsage("mystery-tier", null, "mystery-tier"))).toBe("mystery-tier");
     expect(planTagLabel(null)).toBeNull();
     expect(isUnrecognizedPlan(resolvedUsage("mystery-tier", null, "mystery-tier"))).toBe(true);
-    expect(isUnrecognizedPlan(resolvedUsage("prolite", "pro-5x", "Pro 5x"))).toBe(false);
+    expect(isUnrecognizedPlan(resolvedUsage("prolite", "pro-100", "Pro 100"))).toBe(false);
     expect(isUnrecognizedPlan(resolvedUsage("", null, null))).toBe(false);
     // 占位符跟随名称首字符；未知 offering 不回退到第一行。
     expect(catalogRow("grok-build").mark).toBe("G");
@@ -505,7 +505,7 @@ describe("desktop account UI", () => {
     const legacyUsage = (planId: string | null, planLegacy: boolean) =>
       ({
         accountId: "legacy-check",
-        plan: "GrokPro",
+        plan: "SuperGrok Pro",
         planId,
         planLabel: "SuperGrok Pro",
         planLegacy,
@@ -736,7 +736,7 @@ describe("desktop account UI", () => {
         usage: {
           accountId: account.id,
           // 目录命中 legacy 条目：planLegacy 随快照下发，标签右侧追加"旧版"。
-          plan: "GrokPro",
+          plan: "SuperGrok Pro",
           planId: "supergrok-pro",
           planLabel: "SuperGrok Pro",
           planLegacy: true,

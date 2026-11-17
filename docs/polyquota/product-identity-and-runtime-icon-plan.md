@@ -36,7 +36,7 @@ PolyQuota 基础资产为 `polyquota.svg` 与 `polyquota-white.svg`，状态资�
 
 ## 3. 透明托盘的处理方向
 
-`apps/polyquota/src/main.ts` 已移除内联 SVG data URL，开发环境从 `assets/icons` 加载资源，安装后从 `resources/icons` 加载。窗口在 Windows 使用标准多尺寸 ICO，托盘使用 24 像素优化 PNG，并在资源解码为空时回退到 256 像素基础 PNG。任务栏按 AppUserModelID 取快捷方式图标。仅 NSIS 安装目录（与 EXE 同级存在 `Uninstall PolyQuota.exe`）调用 `app.setAppUserModelId("io.astraconductor.polyquota")`，与安装器写入的开始菜单快捷方式对齐。`pnpm dev` 和 `release/win-unpacked` 不设置该 ID、不创建或改写快捷方式，避免把已安装版本的任务栏分组和图标登记冲掉；未安装进程由 Windows 按 EXE 路径隐式分组，窗口与任务栏使用包内 ICO。
+`apps/polyquota/src/main.ts` 已移除内联 SVG data URL，开发环境从 `assets/icons` 加载资源，安装后从 `resources/icons` 加载。窗口在 Windows 使用标准多尺寸 ICO，托盘使用 24 像素优化 PNG，并在资源解码为空时回退到 256 像素基础 PNG。任务栏按 AppUserModelID 取快捷方式图标。仅 NSIS 安装目录（与 EXE 同级存在 `Uninstall PolyQuota.exe`）调用 `app.setAppUserModelId("io.astraconductor.polyquota")`，与安装器写入的开始菜单快捷方式对齐。`pnpm dev:polyquota` 和 `release/win-unpacked` 不设置该 ID、不创建或改写快捷方式，避免把已安装版本的任务栏分组和图标登记冲掉；未安装进程由 Windows 按 EXE 路径隐式分组，窗口与任务栏使用包内 ICO。
 
 生成脚本通过 Electron 的透明离屏窗口直接渲染最终 SVG，并验证输出尺寸同时包含透明和可见像素。electron-builder 将整个图标目录复制到 `resources/icons`，并显式使用基础 ICO 作为应用、NSIS 安装器和卸载器图标。开发启动和 unpacked 应用烟测均已验证实际资源路径；打包后资源与源目录的文件清单及 SHA-256 完全一致，EXE 与安装器也能够提取出 PolyQuota 图标。
 

@@ -27,11 +27,11 @@ PolyQuota 支持恢复已取消的导出，来源凭据变化后可重新导出�
 ## 3. 启动入口
 
 ```powershell
-pnpm dev                         # PolyQuota Electron
-pnpm dev:server                  # PolyQuota 开发后端
-pnpm dev:web                     # PolyQuota 开发 Web
-pnpm dev:graph-agent             # GraphAgent Electron
-pnpm start:graph-agent:web       # 构建后的 GraphAgent 正式 Node/Web
+pnpm dev:polyquota                # PolyQuota Electron
+pnpm dev:server:polyquota         # PolyQuota 开发后端
+pnpm dev:web:polyquota            # PolyQuota 开发 Web
+pnpm dev:graph-agent              # GraphAgent Electron
+pnpm start:graph-agent:web        # 构建后的 GraphAgent 正式 Node/Web
 ```
 
 环境准备与分侧验证见[Service mode 开发说明](../service-mode/development.md)，GraphAgent 配置见[运行说明](../../../../apps/graph-agent/README.md)。

@@ -641,7 +641,7 @@ describe("stage 3 core boundaries", () => {
     // 目录命中：displayName 优先，rawPlanLabel 不参与。
     expect(
       toPublicUsage({ ...base, plan: "prolite", rawPlanLabel: "Pro Lite (legacy)" }, "codex"),
-    ).toMatchObject({ planId: "pro-5x", planLabel: "Pro 5x" });
+    ).toMatchObject({ planId: "pro-100", planLabel: "Pro 100" });
     // 未命中但叶子上游提供了原始展示名：回退到 rawPlanLabel，planId 显式 null。
     expect(
       toPublicUsage(
@@ -669,19 +669,20 @@ describe("stage 3 core boundaries", () => {
       fetchedAt: now.toISOString(),
     };
     // 目录 legacy 条目（新旧并存）：planLegacy 随解析结果固化，UI 据此展示"旧版"。
-    expect(toPublicUsage({ ...base, plan: "GrokPro" }, "grok-build")).toMatchObject({
+    expect(toPublicUsage({ ...base, plan: "SuperGrok Pro" }, "grok-build")).toMatchObject({
       planId: "supergrok-pro",
       planLabel: "SuperGrok Pro",
       planLegacy: true,
     });
-    expect(toPublicUsage({ ...base, plan: "pro 20x" }, "codex")).toMatchObject({
-      planId: "pro-20x",
-      planLabel: "Pro 20x",
-      planLegacy: true,
+    // 改版后 Premium 档上报 `GrokPro`：命中新档条目，不带 legacy 标记。
+    expect(toPublicUsage({ ...base, plan: "GrokPro" }, "grok-build")).toMatchObject({
+      planId: "premium",
+      planLabel: "Premium",
+      planLegacy: false,
     });
     // 普通档位与未识别档位不带 legacy 标记。
     expect(toPublicUsage({ ...base, plan: "prolite" }, "codex")).toMatchObject({
-      planId: "pro-5x",
+      planId: "pro-100",
       planLegacy: false,
     });
     expect(toPublicUsage({ ...base, plan: "mystery_tier" }, "codex")).toMatchObject({

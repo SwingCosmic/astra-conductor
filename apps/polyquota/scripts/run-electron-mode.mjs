@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { prepareSqliteNative } from "../../../scripts/prepare-sqlite-native.mjs";
 
 const mode = process.argv[2];
 if (!new Set(["dev", "reset", "codex-cli-smoke", "desktop-smoke"]).has(mode)) {
@@ -12,6 +13,9 @@ if (!new Set(["dev", "reset", "codex-cli-smoke", "desktop-smoke"]).has(mode)) {
 
 const polyquotaRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sourceRoot = path.join(polyquotaRoot, "src");
+// 所有 Electron 启动路径在此统一确保 better-sqlite3 与当前 Electron ABI 匹配：
+// manifest（版本/平台/架构/哈希）一致时幂等跳过，变化时在隔离临时目录重新编译。
+await prepareSqliteNative(polyquotaRoot);
 const electron = (await import("electron")).default;
 const pnpmScript = process.env.npm_execpath;
 const temporaryUserData =

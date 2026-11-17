@@ -108,12 +108,12 @@ pnpm typecheck
 pnpm test
 pnpm build
 pnpm --filter @astra-conductor/graph-agent test:desktop
-pnpm package
+pnpm package:polyquota
 pnpm package:graph-agent
-pnpm test:credential-sharing-loop --publish <完整自包含 publish 目录>
+pnpm --filter @astra-conductor/polyquota test:credential-sharing-loop --publish <完整自包含 publish 目录>
 ```
 
-`pnpm package` 保持生成 PolyQuota 安装包；`pnpm package:graph-agent` 生成 GraphAgent 独立安装包。两个包均不携带 broker。共享闭环验收使用隔离的产品 profile、服务 home 与共享目录，输入虚构凭据；实际 provider 网络请求和生产 Release 下载需要单独证据。
+`pnpm package:polyquota` 保持生成 PolyQuota 安装包；`pnpm package:graph-agent` 生成 GraphAgent 独立安装包。两个包均不携带 broker。共享闭环验收使用隔离的产品 profile、服务 home 与共享目录，输入虚构凭据；实际 provider 网络请求和生产 Release 下载需要单独证据。
 
 SDK 单元测试覆盖许可先行、stale 避免重复上游、失败/无更改释放、丢失提交回复与回执查询、未知提交结果、队列取消、10 秒续期/固定截止/迟到结果、分页筛选、事件重连和最终解绑顺序。broker 独立测试补充当前准备名单过滤、权限拒绝、排队取消幂等与授予竞争保护。
 
@@ -123,7 +123,7 @@ GraphAgent 的[导入服务单测](../../../../apps/graph-agent/test/import-serv
 
 2026-11-06 本轮结果：
 
-- 全仓类型检查和 393 项测试通过；`pnpm package` 完成全量构建及 PolyQuota NSIS 打包。
+- 全仓类型检查和 393 项测试通过；`pnpm package:polyquota` 完成全量构建及 PolyQuota NSIS 打包。
 - SDK 17 项测试通过；独立 broker 86 项测试通过，1 项 Unix 测试在 Windows 跳过，broker 格式检查通过。
 - 本轮仅修正变更代码与受影响的 Electron 打包配置（新增原生资源白名单）的格式，仓库既有未修改文件的格式问题未批量处理。
 - 真实共享闭环使用两个隔离 Electron 进程、真实 safeStorage/DPAPI 和独立 .NET broker，17 项检查通过。供应商 adapter 实际执行，HTTP 端口注入虚构响应；实际供应商网络请求数为 0。

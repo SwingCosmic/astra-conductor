@@ -174,7 +174,7 @@ GLM 的国内与国际 Coding Plan 在核心中共用 `glm` 适配器，由账�
 
 数据使用 SQLite 保存，数据库位于 Electron `app.getPath("userData")` 下。Node.js 驱动选用 `better-sqlite3`，只由桌面主进程持有连接；Core 依赖存储端口，渲染进程不直接访问数据库。首版保存账号、加密凭证、最近用量、通知状态、设置和迁移记录，不保留历史用量曲线。查询使用参数化 SQL，模式演进使用仓库内显式迁移，不引入 ORM。
 
-Node 与 Electron 使用彼此隔离的原生二进制。workspace 中的 `better-sqlite3` 始终保持 Node ABI；Electron ABI 在隔离的临时目录中构建后固定输出到 `apps/polyquota/lib/better-sqlite3`，不修改 pnpm 依赖目录。首次开发或相关运行时发生变化后手动执行 `pnpm native:prepare`；生产构建通过 Desktop 的 `prebuild` 自动重新生成。主进程在开发时从应用目录、打包后从 `process.resourcesPath` 解析同一相对路径，并通过 `nativeBinding` 显式加载；安装包不携带依赖目录中面向 Node 的默认二进制。
+Node 与 Electron 使用彼此隔离的原生二进制。workspace 中的 `better-sqlite3` 始终保持 Node ABI；Electron ABI 在隔离的临时目录中构建后固定输出到 `apps/polyquota/lib/better-sqlite3`，不修改 pnpm 依赖目录。准备由脚本自动触发，无需手动执行：包级 `prebuild` 钩子覆盖所有 `pnpm build` 路径，`run-electron-mode`（dev、data reset 与桌面 smoke 的统一 Electron 启动入口）在启动前执行同一次准备——manifest 记录 Electron 与 better-sqlite3 版本、平台、架构及二进制哈希，一致时跳过，变化时重新编译。主进程在开发时从应用目录、打包后从 `process.resourcesPath` 解析同一相对路径，并通过 `nativeBinding` 显式加载；安装包不携带依赖目录中面向 Node 的默认二进制。
 
 授权材料按账号使用 Electron `safeStorage` 加密后以 SQLite `BLOB` 保存，不采用 SQLCipher 整库加密。密文包含版本和账号归属信息；access token、refresh token、id token、API Key 及其他认证秘密不得进入明文字段。若安全存储不可用，应用拒绝新增、导入、刷新或改写凭证，并保留已有密文。该方案提供与本机用户绑定的静态保护，不承诺抵御同一登录用户权限下的恶意进程，也不提供跨机器凭证迁移。渲染进程、通知和日志只能接收打码后的账号信息。
 

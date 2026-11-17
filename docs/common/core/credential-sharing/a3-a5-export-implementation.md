@@ -68,7 +68,7 @@ broker 继续使用独立仓库产物，本次未修改其实现、发布 Releas
 
 ## 6. 验证入口
 
-仓库常规检查：`pnpm format:check`、`pnpm typecheck`、`pnpm test`、`pnpm build`、`pnpm package`。
+仓库常规检查：`pnpm format:check`、`pnpm typecheck`、`pnpm test`、`pnpm build`、`pnpm package:polyquota`。
 
 真实 Windows 导出侧验收在完整构建后使用根入口 `pnpm test:credential-sharing --publish <完整 publish 目录>`，发布目录由独立 broker 的本地自包含产物提供。
 

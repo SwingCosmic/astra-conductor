@@ -271,10 +271,14 @@ describe("provider plan catalog", () => {
   it("matches known identifiers per offering without guessing unmatched names", () => {
     expect(planMultiplier("codex", "go")).toBe(0.1);
     expect(planMultiplier("codex", "plus")).toBe(1);
-    expect(planMultiplier("codex", "prolite")).toBe(5);
-    expect(planMultiplier("codex", "pro_5x")).toBe(5);
-    // Pro $200 新订口径（2026-09 重新开放后官方 ~10x，实测）。
-    expect(planMultiplier("codex", "pro")).toBe(10);
+    // Pro 100（`prolite`）：2026-10-29 官方翻倍 Work/Codex allowance，
+    // 按原 5x 实测口径同比推算为 10x。
+    expect(planMultiplier("codex", "prolite")).toBe(10);
+    expect(planMultiplier("codex", "pro 100")).toBe(10);
+    // 旧展示形态键（pro 5x）随改名移除：未识别串显式落默认倍率。
+    expect(planMultiplier("codex", "pro_5x")).toBe(DEFAULT_PLAN_MULTIPLIER);
+    // Pro 200（`pro`）：2026-10-29 官方取消 09-29 宣布的削减，恢复 20x 口径。
+    expect(planMultiplier("codex", "pro")).toBe(20);
     expect(planMultiplier("codex", "pro 20x")).toBe(20);
     expect(planMultiplier("codex", "team")).toBe(5);
     expect(matchOfferingPlan("codex", "ChatGPT Super Ultra")).toBeNull();
@@ -320,9 +324,14 @@ describe("provider plan catalog", () => {
   });
 
   it("matches Grok's new tiers and keeps the legacy SuperGrok entries", () => {
-    // 2026-06 改版四档（官方倍率相对 Plus 基线），字符串键为推测形态。
+    // 2026-06 改版四档（官方倍率相对 Plus 基线；2026-10-12 官方命名
+    // The X Subscription）。改版后 Premium 上报 `GrokPro`，精确键归 premium。
     expect(planMultiplier("grok-build", "plus")).toBe(1);
-    expect(planMultiplier("grok-build", "premium")).toBe(4);
+    expect(planMultiplier("grok-build", "GrokPro")).toBe(4);
+    expect(matchOfferingPlan("grok-build", "GrokPro")?.id).toBe("premium");
+    expect(matchOfferingPlan("grok-build", "GrokPro")?.legacy).toBeFalsy();
+    // 同形态的 `Grok<X>` 串由防御正则接住，宽泛 `\b<X>\b` 只兜未知单词形态。
+    expect(matchOfferingPlan("grok-build", "GrokUltra")?.id).toBe("ultra");
     expect(planMultiplier("grok-build", "super")).toBe(15);
     expect(planMultiplier("grok-build", "ultra")).toBe(50);
     // tier 缺失时的兜底合成标识照常命中。
@@ -334,7 +343,8 @@ describe("provider plan catalog", () => {
   });
 
   it("adds Codex promax and folds B-side variants through regex fallback keys", () => {
-    expect(planMultiplier("codex", "promax")).toBe(25);
+    // Pro 500（`promax`）：2026-10-29 allowance 翻倍，按官方 ~25x 口径推算为 50x。
+    expect(planMultiplier("codex", "promax")).toBe(50);
     expect(matchOfferingPlan("codex", "promax")).toMatchObject({
       id: "promax",
       displayName: "Pro 500",
@@ -352,7 +362,7 @@ describe("provider plan catalog", () => {
     // 先精确后正则：`starter` 精确键必须赢过同为子串语义的正则顺序竞争，
     // 而未声明的宽泛模式（如 /pro/）抢不走 `prolite` 的精确命中。
     expect(matchOfferingPlan("antigravity", "starter")?.id).toBe("starter");
-    expect(matchOfferingPlan("codex", "prolite")?.id).toBe("pro-5x");
+    expect(matchOfferingPlan("codex", "prolite")?.id).toBe("pro-100");
     // 正则只作用于规范化后的小写串：声明端按小写书写。
     expect(matchOfferingPlan("antigravity", "Antigravity Starter Quota")?.id).toBe("starter");
     expect(matchOfferingPlan("antigravity", "ANTIGRAVITY ULTRA 5X (BETA)")?.id).toBe("ultra-5x");
