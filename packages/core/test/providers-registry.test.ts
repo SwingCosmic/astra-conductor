@@ -45,7 +45,7 @@ function fullRegistry(): ProviderRegistry {
 function codexDescriptor(): ProviderContribution["descriptor"] {
   const descriptor = providerCatalog.find((item) => item.provider === "codex");
   if (!descriptor) throw new Error("missing codex descriptor");
-  return descriptor;
+  return { ...descriptor, capabilities: ["account", "usage"] };
 }
 
 const codexFacets = {
@@ -106,7 +106,7 @@ describe("provider registry", () => {
     ).toThrow(/provides a usage facet without declaring it/);
   });
 
-  it("rejects capabilities that no facet implements yet", () => {
+  it("rejects a declared inference capability without its provider facet", () => {
     expect(
       () =>
         new ProviderRegistry([
@@ -115,7 +115,7 @@ describe("provider registry", () => {
             ...codexFacets,
           },
         ]),
-    ).toThrow(/declares inference, which no facet implements yet/);
+    ).toThrow(/requires matching inference declaration and facet/);
   });
 
   it("rejects unknown capability names", () => {

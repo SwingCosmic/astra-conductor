@@ -8,6 +8,5 @@ PolyQuota 是本地桌面 LLM 订阅用量聚合产品，正式交付 Electron�
 - [运行流程与通信机制现状报告](./runtime-and-communication-review.md)
 - [认证服务抽取设计](./auth-service-extraction-design.md)
 - [产品信息与运行时图标计划](./product-identity-and-runtime-icon-plan.md)
-- [界面原型](./prototypes/)
 - [共享 Core 与协议资料](../common/README.md)
 - [共用产品族图标](../common/icon-design/README.md)

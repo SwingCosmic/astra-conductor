@@ -1,6 +1,6 @@
 # AstraConductor 项目架构
 
-**状态：2026-11-08 阶段一结构与公共管理链路已实现；模型配置按阶段二、三继续交付。** 本文是 PolyQuota 与 GraphAgent 的 workspace 包边界、依赖方向、业务通信和启动形式的权威说明。产品设计定义各自的业务，专项文档定义实现和验收，涉及这些项目级约束时引用本文。当前代码与目标的差异列在末节。
+**状态：2026-11-15 两产品共用供应商连接管理，GraphAgent Web/Electron 经同一 Hono 路由提供模型配置与单轮测试聊天。** 本文是 PolyQuota 与 GraphAgent 的 workspace 包边界、依赖方向、业务通信和启动形式的权威说明。产品设计定义各自的业务，专项文档定义实现和验收，涉及这些项目级约束时引用本文。当前代码与目标的差异列在末节。
 
 ## 1. 目标：两个应用，四个共享包
 
@@ -34,7 +34,7 @@ packages/
 
 每个产品的 `ui/` 依赖 `shared-ui`、通用契约和自己的产品契约，组合并注入本产品 Service。`src/server/` 使用对应契约、Core 和本产品服务，将公共 Hono 子应用与产品专属子应用统一挂载。`src/platform/` 负责具体宿主的组合，可以按需使用凭据 SDK 的平台入口。Core 业务保持框架无关，HTTP 适配经独立子入口按需加载。两个应用独立构建、独立交付、独占各自的业务数据目录，彼此没有源码依赖。GraphAgent 模型页和 PolyQuota 用量页分别由各自的 Web/Electron 前端共用。共用页面的布局与交互维护一份，主题图标和配色由产品提供。
 
-两款 Electron 产品共用 Core 的 `CredentialMigrationService`，按产品 profile 持久化迁移状态。私有数据和各共享绑定的业务投影分别保存，供应商通过同一服务引用切换后端。这样在任一端导入、准备回退或清理旧授权时，另一端可继续使用原后端。迁移入口与状态见[凭据共享实施方案](./common/core/credential-sharing/implementation-plan.md#双向导出与存储切换)。
+两款 Electron 产品共用 Core 的 `CredentialMigrationService`，按产品 profile 持久化迁移状态。私有账号数据和各共享绑定的凭据投影分别保存，供应商通过同一服务引用切换后端。这样在任一端导入、准备回退或清理旧授权时，另一端可继续使用原后端。迁移入口与状态见[凭据共享实施方案](./common/core/credential-sharing/implementation-plan.md#双向导出与存储切换)。
 
 独立 .NET Credential Broker 是通过本机 RPC 访问的进程，有自己的仓库、安装和升级周期。两端通过它共享获准的凭据，各自的用量、模型缓存和业务数据库留在产品内。`references/` 只提供研究和受控提取的输入。[凭据共享设计](./common/core/credential-sharing/design.md)
 
@@ -58,7 +58,7 @@ flowchart LR
   SDK -->|本机 RPC| Broker["独立凭据 broker"]
 ```
 
-图中的私有加密存储适用于 PolyQuota 及 GraphAgent Electron。GraphAgent 独立 Web 没有 Electron 的 `safeStorage`，凭据只经已启用的 broker 访问，不另设 Node 私有凭据库；模型缓存、选择、参数覆盖和产品设置仍保存在 GraphAgent 自己的服务端业务库。
+图中的私有加密存储适用于 PolyQuota 及 GraphAgent Electron。GraphAgent 独立 Web 没有 Electron 的 `safeStorage`，凭据只经已启用的 broker 访问，不另设 Node 私有凭据库；阶段 2B 起，模型配置由 GraphAgent 自己的 SQLite 业务库保存，应用偏好由设置服务管理。
 
 每个产品有自己的 Hono 应用工厂。Node 和 Electron 宿主装配同一组路由、应用服务和错误/事件投影。浏览器通过 HTTP 进入 Hono；Electron 可用受限内部协议把标准 `Request` 转交给同一 Hono 应用，无须额外监听 TCP 端口。前端入口为本产品 Service 创建一个共享传输实例，宿主差异收在请求基址和底层 fetch 适配。业务组件只调用 Service，服务客户端使用同一契约的方法、路径、DTO 和 SSE，凭据、模型和用量操作都经 Hono。
 
@@ -78,7 +78,7 @@ Core 提供无框架的公共应用服务；可选子入口 `@astra-conductor/co
 
 这一补充让两产品共享公共 handler，并保留各自的 Hono 组合根；无需增加 workspace 包。PolyQuota 从现有 Hono 工厂拆出公共适配，GraphAgent 复用该适配并补模型路由。每个产品内部，公共与专属子应用共用该产品的一套 Core 服务实例和事件中心，不因拆分路由而重复构造状态；两个产品的服务实例与业务数据库保持独立。产品专属 handler 和业务仍留在产品目录。
 
-完整接口、客户端工厂、后端组合示例与迁移约束见[产品 Service 与传输组合设计](./common/contract/service-composition.md)。阶段一已实现 `core/http`、公共应用服务、共享传输和两个产品 Service；模型专属操作按阶段二接入。实现和验证见[阶段一交付结果](./common/core/provider/stage-one-implementation.md)。
+完整接口、客户端工厂、后端组合示例与迁移约束见[产品 Service 与传输组合设计](./common/contract/service-composition.md)。阶段一已实现 `core/http`、公共应用服务、共享传输和两个产品 Service；阶段二模型专属操作与单轮测试聊天均复用此传输，协议调用与认证留在宿主后端。实现和验证见[阶段一交付结果](./common/core/provider/stage-one-implementation.md)。
 
 ## 3. 产品启动与交付
 
@@ -100,7 +100,7 @@ GraphAgent 独立 Web 的基础交付是可单独运行的本地服务。宿主�
 
 ## 5. 从当前仓库迁移
 
-截至 2026-11-08，工作区已归位为两个应用与四个共享包。阶段一沿用既有供应商协议和凭据共享范围，未扩大 broker 的记录权限。以下迁移已落地，模型配置与普通 Key 连接仍由阶段二、三交付。可运行命令见[根 README](../README.md)和[工作区脚本](../package.json)。
+截至 2026-11-08，工作区已归位为两个应用与四个共享包。阶段一沿用既有供应商协议和凭据共享范围，未扩大 broker 的记录权限。以下结构迁移已落地。普通 Key 与协议地址在阶段二接入两产品共用页，目录、模型设置及测试聊天在 GraphAgent 交付。可运行命令见[根 README](../README.md)和[工作区脚本](../package.json)。
 
 | 迁移来源 | 当前落点和行为 |
 | --- | --- |
@@ -111,6 +111,12 @@ GraphAgent 独立 Web 的基础交付是可单独运行的本地服务。宿主�
 | GraphAgent 仅有 Electron 导入设置 | `src/server` 组合 Core 公共 Hono、导入服务与持久业务仓储；`src/platform/node` 正式提供同源 UI/API/SSE，`src/platform/electron` 使用内部协议与 safeStorage 私有密文。两个宿主都不使用业务 IPC |
 | 原产品独立公共管理请求 | 两端使用 `/api/v1/providers`、认证/账号/凭据公共路径和唯一 `/api/v1/events`。写操作校验读取时的实例与后端上下文，公共和产品切片共享一条传输 |
 
-GraphAgent 业务数据以本产品原子持久文件保存，私有密文由 Electron safeStorage 保护，Node 不创建私有凭据库。私有与共享业务数据隔离，正式 profile 由单个宿主独占。两产品保留自己的存储实现和数据目录，不互相导入源码，也不打开对方数据库。这一实现保持第 1 节的依赖方向，对 PolyQuota 的 SQLite 交付及 GraphAgent 无原生数据库依赖的 Node/Electron 启动分别生效。
+### GraphAgent 业务数据库
+
+**2A 基线。** 当前 GraphAgent 把模型配置写在私有或共享业务 JSON 的设置键里。独立 Node/Web 使用 broker，Electron 可用 safeStorage；正式 profile 由单个宿主独占。
+
+**2B 实现。** 每个 GraphAgent profile 使用一座 `graph-agent.sqlite3`。账号展示与启停、自定义供应商和模型配置属于这座业务库。一个账号绑定一个 offering，供应商记录保存名称、可选图标、各 offering 的端点 URL 和后续非秘密传参配置。私有／共享凭据只含账号 ID、供应商 ID、账号标识文本及不透明凭据内容。PolyQuota 忽略不认识的自定义供应商。切换后端时重新核实账号身份与授权，出站前验证该账号绑定的端点。后续会话、消息和请求同库按 Workspace 隔离，其表结构及关联由对应功能设计。
+
+GraphAgent 在现有产品服务端和平台目录装配 SQLite，保留 Vue → 产品 Service → Hono 的业务路径。Node 加载本运行时的 `better-sqlite3`。Electron 开发及安装包加载按 Electron ABI 编译、随各产品分发的本地模块。两款产品复用原生构建脚本，各自装配驱动与库路径。[原生模块构建](../scripts/prepare-sqlite-native.mjs)PolyQuota 继续独占自己的业务数据库；两产品可参照相同的迁移与事务做法，各自交付和管理库文件。启动时按业务 schema 区分空库和已建库：空库建表并载入随包预置，已建库读取持久化配置。[GraphAgent 业务表结构](./graph-agent/design/business-database.md) · [2B 实施顺序](./common/core/provider/implementation-plan.md#模型配置改版的数据实施方案)
 
 迁移分属两个计划。凭据 SDK 与 Windows 宿主合包已完成[凭据共享实施方案](./common/core/credential-sharing/implementation-plan.md)二期第一步，落点与验证见 [B1 实施记录](./common/core/credential-sharing/b1-credentials-package-implementation.md)。其余工作区结构调整已按[供应商平台三阶段实施方案](./common/core/provider/implementation-plan.md)一期完成，结果见[阶段一交付结果](./common/core/provider/stage-one-implementation.md)。Core 与 UI 的实现细节分别见[Core 详细设计](./common/core/provider/core-design.md)和[UI 详细设计](./common/ui/design.md)；产品前端契约分别见 [GraphAgent](./graph-agent/design/frontend-contract.md)和 [PolyQuota](./polyquota/frontend-contract.md)。

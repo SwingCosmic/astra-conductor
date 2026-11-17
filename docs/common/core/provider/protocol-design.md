@@ -1,6 +1,6 @@
 # 供应商协议、模型与推理端口详细设计
 
-2026-11-07 · 目标设计。本文承接原总体设计第 6.4–6.7 节，定义服务端协议边界与可公开的基础模型事实。当前只有账号、用量 facet 已实现；模型目录、推理 facet 和完整 codec 尚待实施。声明、注册、持久化和校验流程见 [Core 详细设计](./core-design.md)，产品前端 DTO 与方法见 [GraphAgent 前端契约](../../../graph-agent/design/frontend-contract.md)。
+2026-11-15 · 本文描述服务端协议目标。阶段二已注册目录发现和标准对话的推理 facet，实际协议为 OpenAI Chat、OpenAI Responses、Anthropic Messages。下文的完整 codec、规范消息 IR 和执行事件属于后续设计。[现有组合](../../../../packages/core/src/providers/contributions.ts) · [已实现的对话编码](../../../../packages/core/src/providers/model-chat.ts) · [Core 详细设计](./core-design.md) · [GraphAgent 前端契约](../../../graph-agent/design/frontend-contract.md)
 
 下列 TypeScript 表达目标形状。标识、公开协议与模型事实归 `contract/common`；带函数、凭据、端口和执行句柄的类型留在 Core，不能从浏览器契约导出。统一消息 IR 的完整字段与流事件表需在后续推理专项补齐。
 
@@ -109,7 +109,23 @@ interface ProviderContribution {
 
 `prepareCall` 在一次调用开始前固定账号、模型、协议路由、实现代次、`bindingRevision` 与目录 revision。准备对象只持有非秘密调用计划，执行前重新核验活动后端和权威绑定修订；匹配后在本次请求内解析地址与秘密。改绑、撤权或后端切换使旧准备结果过期，在途请求取消并丢弃迟到结果。目录普通刷新不自动更换已选账号或路由。完整处理见 [Core 请求编译与执行](./core-design.md#8-从模型选择到协议请求)。GraphAgent 的 `ModelLease` 可以在此基础上增加预算、过期时间和任务归因。
 
+```mermaid
+sequenceDiagram
+  participant G as GraphAgent 服务
+  participant I as inference facet
+  participant H as 宿主 HTTP 端口
+  G->>I: prepareCall(selection, request)
+  I->>I: 固定账号、路由、实现代次、bindingRevision、目录 revision
+  I-->>G: PreparedProviderCall（非秘密调用计划）
+  G->>G: 执行前核验活动后端与权威绑定修订
+  G->>H: execute(signal)，本次请求内解析地址与秘密
+  H-->>G: ModelStreamEvent 序列
+  Note over G,H: 改绑、撤权或切后端使准备结果过期：取消在途请求并丢弃迟到结果
+```
+
 ## 4. 规范消息与协议编解码边界
+
+**现状债务（待重构）。** 已实现的对话编码尚未按本节边界拆分：`model-chat.ts` 的 `compile()` 以单一 switch 承载三种协议方言（openai-chat / openai-responses / anthropic-messages），分支内部再嵌厂商与目的地请求差异——codex 订阅的校验拒绝、固定指令与强制 SSE，grok-build 的强制 SSE、reasoning include 与 effort 守卫/默认注入（已下沉到 `grok-build/model-profile.ts`），输出上限字段名按账号与主机判定（`model-destination.ts`），anthropic 的 `max_tokens` 缺省与 effort 字段；回答解析（`readReply`）、Responses SSE 终止事件处理（`readResponse`）与用量/计费归一（`measuredReply`，含 anthropic 输入 token 重算基和 OpenRouter 回执挂接）同样按协议与厂商混编在同模块。新增协议或厂商请求差异都要修改同一条链，协议与厂商分支交叉组合的行为难以单独测试与枚举。收敛方式即本节目标形态：按 `ProtocolCodecRegistry` 为每协议注册 codec，厂商请求差异以 codec 选项或 route/offering 声明进入各自 codec，推理 facet 绑定 Executor。
 
 共享 Core 需要一套 `ProtocolCodecRegistry`，明确注册“原生协议与规范消息 IR”之间支持的方向；推理 facet 负责把选定 route、账号和 endpoint 绑定到 Executor。该边界对应 OmniRoute 的 translator registry、format 与 Executor 分层，但不预设所有转换都必须经过 OpenAI Chat Completions 这一中间格式。
 

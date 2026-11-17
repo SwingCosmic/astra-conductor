@@ -1,10 +1,10 @@
 # 跨产品公共 API 与基础契约
 
-2026-11-08 · 阶段一公共管理操作已实施；连接与模型操作在阶段二扩展。本文维护 `contract/common` 的公共 HTTP 操作、管理 DTO、模型基础事实、错误、事件与扩展规则，供 Core 和两产品前后端共同使用。产品 Service、传输抽象和 Hono 装配见[Service 与传输组合](./service-composition.md)，包职责和迁移归属见[契约包设计](./design.md)，项目级边界见[项目架构](../../architecture.md)。GraphAgent 模型页投影和专属命令见 [GraphAgent 契约](../../graph-agent/design/frontend-contract.md)，PolyQuota 快照及专属操作见 [PolyQuota 契约](../../polyquota/frontend-contract.md)。
+2026-11-15 · 已交付公共管理、普通 API Key 多协议连接与模型操作。本文维护 `contract/common` 的公共 HTTP 操作、管理 DTO、模型基础事实、错误、事件与扩展规则，供 Core 和两产品前后端共同使用。产品 Service、传输抽象和 Hono 装配见[Service 与传输组合](./service-composition.md)，包职责和迁移归属见[契约包设计](./design.md)，项目级边界见[项目架构](../../architecture.md)。GraphAgent 模型页投影和专属命令见 [GraphAgent 契约](../../graph-agent/design/frontend-contract.md)，PolyQuota 快照及专属操作见 [PolyQuota 契约](../../polyquota/frontend-contract.md)。
 
 ## 1. 供应商与凭据管理 API
 
-下表为两产品共用的统一路径，类型归 `contract/common`。除连接读取、创建与编辑（阶段二交付）外，其余操作已在两产品的 Hono 应用中注册；旧 PolyQuota 公共路径已移除。
+下表为两产品共用的统一路径，类型归 `contract/common`。两个产品的 Hono 应用均已注册连接读取、创建与编辑。
 
 | 方法与路径                                                                                              | 输入 → 输出                                          | 语义                                                                                                               |
 | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
@@ -82,14 +82,7 @@ interface PublicConnectionSummary {
   offeringId: string;
   displayName: string;
   recordRevision: string;
-  routes:
-    | {
-        protocolRouteId: string;
-        protocol: ApiProtocol;
-        operations: ProviderOperation[];
-        availability: ActionAvailability;
-      }[]
-    | null;
+  routes: { protocolRouteId: ProtocolRouteId; bindingRevision: string }[] | null;
   actions: Record<string, ActionAvailability>;
 }
 
@@ -99,56 +92,34 @@ interface PublicConnection extends CommandContext {
   offeringId: string;
   displayName: string;
   recordRevision: string;
-  routes: PublicRouteBinding[];
-  secretSlots: { name: string; configured: boolean }[];
-  actions: Record<string, ActionAvailability>;
+  routes: ModelRoute[];
 }
 
-interface PublicRouteBinding {
-  protocolRouteId: string;
-  protocol: ApiProtocol;
+type ProtocolRouteId = "openai-chat" | "openai-responses" | "anthropic-messages";
+
+interface ModelRouteInput {
+  protocolRouteId: ProtocolRouteId;
   baseUrl: string;
+  protocolVersion?: string | null;
+}
+
+interface ModelRoute extends ModelRouteInput {
+  protocolVersion: string | null;
   bindingRevision: string;
-  protocolOptions: Record<string, string | number | boolean>;
-  auth: { scheme: "bearer" | "x-api-key" | "api-key"; slotName: string };
-  requestRules: PublicRequestRules[];
 }
 
-interface PublicRequestRules {
-  operation: ProviderOperation;
-  modelIds: string[];
-  aliases: Record<string, string>;
-  modelTemplate: string | null;
-  windowLabels: Record<string, string>;
-  consume: ("effort" | "window")[];
-  headers: Record<string, string>;
-  secretHeaderSlots: Record<string, string>;
-  body: Record<string, JsonValue>;
-  hasOpaqueConfiguration: boolean;
-}
-
-type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
-
-type SecretChange =
-  | { operation: "keep"; name: string }
-  | { operation: "replace"; name: string; value: string }
-  | { operation: "remove"; name: string };
-
-interface ConnectionInput {
-  displayName: string;
-  routes: (Omit<PublicRouteBinding, "bindingRevision" | "requestRules"> & {
-    requestRules: Omit<PublicRequestRules, "hasOpaqueConfiguration">[];
-  })[];
-  secrets: SecretChange[];
-}
-
-interface CreateConnectionRequest extends ConnectionInput, CommandContext {
+interface CreateConnectionRequest {
   operationId: string;
-  offeringId: string;
+  displayName: string;
+  apiKey: string;
+  routes: ModelRouteInput[];
 }
 
-interface EditConnectionRequest extends ConnectionInput, CommandContext {
+interface EditConnectionRequest {
   expectedRecordRevision: string;
+  displayName: string;
+  apiKey?: string;
+  routes: ModelRouteInput[];
 }
 ```
 
@@ -156,7 +127,7 @@ interface EditConnectionRequest extends ConnectionInput, CommandContext {
 
 普通管理快照只含 `PublicConnectionSummary` 描述投影，不含 `baseUrl`、请求规则、Body、认证槽或秘密配置状态。摘要来自获准的记录描述和本端已批准的描述性事实，路由描述未知时 `routes` 为 `null`，不为了补齐摘要解密记录或猜成空列表。完整 `PublicConnection` 仅由有配置权限的 `GET .../connection` 在本次请求期读取、解密并脱敏；服务端不为普通列表长期镜像解密配置。
 
-`ConnectionInput` 替换本次表单可编辑的连接配置，再用 `expectedRecordRevision` 防止覆盖其他编辑器的新值；无秘密值回读。创建不接受 `keep`，编辑中未变更的秘密使用 `keep`。移除仍被路由或秘密头引用的槽位被拒绝。`slotName` 只引用本账号内命名槽，不是可读取秘密的句柄。`headers` 与 `body` 只接收并回显 Core 为该协议、操作明确定义的非秘密允许字段，不能把任意字段仅凭“不是认证头”判定为可公开。未知、未配置或未被允许投影的字段不回显原值；`hasOpaqueConfiguration` 只提示存在不可编辑的原配置，更新时保留该部分，不以表单缺少字段为由清空。认证头、受保护字段及秘密内容不能放进普通配置，敏感扩展头仅回显获准的槽名与已配置状态。多个操作的规则按操作和模型作用域保存，完整校验与优先级见 [Core 请求映射](../core/provider/core-design.md)。
+创建表单每次新建连接生成独立的 `operationId`，同一提交重试复用该 ID。编辑只在更换 Key 时发送 `apiKey`，服务端按 `expectedRecordRevision` 校验并替换本次提交的配置。普通 Key 的各协议路由共用该账号的 Key。基础地址包含协议所需路径前缀，服务端追加协议端点。地址、版本或 Key 变更会使对应路由原有目录和已保存选择失效；改显示名保留绑定。自定义参数转换、Header/Body 规则、模型名模板与别名由阶段三交付。[当前请求 DTO](../../../packages/contract/src/common/dto/connection.ts) · [第三阶段映射设计](../core/provider/core-design.md#8-从模型选择到协议请求)
 
 ### 1.1 账号共同投影
 

@@ -1,16 +1,35 @@
 {
   "appId": "com.astraconductor.graphagent",
   "productName": "GraphAgent",
-  "directories": { "output": "release" },
-  "files": ["dist/**", "ui/dist/**", "assets/icons/**", "package.json"],
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist/**",
+    "resources/**",
+    "ui/dist/**",
+    "assets/icons/**",
+    "package.json",
+    "!node_modules/better-sqlite3/build/**"
+  ],
   "asar": true,
   "npmRebuild": false,
-  "win": { "target": "nsis", "icon": "assets/icons/graphagent.ico" },
+  "win": {
+    "target": "nsis",
+    "icon": "assets/icons/graphagent.ico"
+  },
   "nsis": {
     "oneClick": false,
     "allowToChangeInstallationDirectory": true,
     "installerIcon": "assets/icons/graphagent.ico",
     "uninstallerIcon": "assets/icons/graphagent.ico",
     "installerHeaderIcon": "assets/icons/graphagent.ico"
-  }
+  },
+  "extraResources": [
+    {
+      "from": "lib/better-sqlite3",
+      "to": "lib/better-sqlite3",
+      "filter": ["better_sqlite3.node", "manifest.json"]
+    }
+  ]
 }

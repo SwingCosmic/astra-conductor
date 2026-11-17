@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount, ref } from "vue";
+import { computed, nextTick, onMounted, onBeforeUnmount, ref } from "vue";
 import AuthDialog from "./AuthDialog.vue";
+import ConnectionDialog from "./ConnectionDialog.vue";
+import ProviderMark from "../components/ProviderMark.vue";
 import ChevronIcon from "../components/ChevronIcon.vue";
 import type { PublicAccount } from "@astra-conductor/contract/common";
 import { authMethodLabel, type ProviderPresentation } from "../presentation";
@@ -13,11 +15,16 @@ import type {
 } from "@astra-conductor/contract/common";
 import { useProviderService } from "../ports/services";
 import { catalogPresentations } from "../presentation";
+const props = defineProps<{ hideCompatibleTemplate?: boolean; focusAccount?: PublicAccount }>();
 const emit = defineEmits<{ connected: [account: PublicAccount] }>();
 const service = useProviderService();
 const snapshot = ref<ProviderManagementSnapshot | null>(null);
 const accounts = computed(() => snapshot.value?.accounts ?? []);
-const presentations = computed(() => catalogPresentations(snapshot.value?.providers));
+const presentations = computed(() =>
+  catalogPresentations(snapshot.value?.providers).filter(
+    (row) => !(props.hideCompatibleTemplate && row.id === "compatible-api-key"),
+  ),
+);
 const busy = ref(false);
 const message = ref("");
 function context(): CommandContext | undefined {
@@ -44,6 +51,7 @@ let disposed = false;
 let generation = 0;
 let observedInstance: string | null = null;
 let desiredRevision = 0;
+let focusRestored = false;
 let loading: Promise<void> | null = null;
 function unwrap<T>(result: ServiceResult<T>): T {
   if (!result.ok) throw new Error(result.error.message);
@@ -59,7 +67,19 @@ function reload(): Promise<void> {
       if (started !== generation) continue;
       if (observedInstance && next.instanceId !== observedInstance) return;
       observedInstance ??= next.instanceId;
-      if (!snapshot.value || next.revision >= snapshot.value.revision) snapshot.value = next;
+      if (!snapshot.value || next.revision >= snapshot.value.revision) {
+        if (snapshot.value && snapshot.value.backend.contextId !== next.backend.contextId) {
+          modalProvider.value = null;
+          connectionDialog.value = null;
+        }
+        snapshot.value = next;
+        if (props.focusAccount && !focusRestored) {
+          focusRestored = true;
+          expanded.value = new Set([...expanded.value, props.focusAccount.offeringId]);
+          await nextTick();
+          document.getElementById("model-for-" + props.focusAccount.id)?.focus();
+        }
+      }
       if (next.revision >= desiredRevision) return;
     }
   })().finally(() => {
@@ -116,6 +136,7 @@ onMounted(() => {
       desiredRevision = 0;
       snapshot.value = null;
       modalProvider.value = null;
+      connectionDialog.value = null;
     }
     if (!event.resync && event.revision <= (snapshot.value?.revision ?? -1)) return;
     desiredRevision = Math.max(desiredRevision, event.revision);
@@ -131,10 +152,44 @@ onBeforeUnmount(() => {
   unsubscribe?.();
 });
 const modalProvider = ref<ProviderPresentation | null>(null);
+const connectionDialog = ref<{
+  context: CommandContext;
+  accountId?: string;
+  offeringId?: string;
+  providerId?: string;
+  offeringLabel?: string;
+} | null>(null);
 const expanded = ref(new Set<string>(["codex"]));
 
+function addAction(provider: ProviderPresentation) {
+  return provider.connectionKind || provider.id === "compatible-api-key"
+    ? "createConnection"
+    : "startAuth";
+}
+function openConnection(provider: ProviderPresentation, accountId?: string) {
+  const baseline = context();
+  if (baseline)
+    connectionDialog.value = {
+      context: baseline,
+      accountId,
+      offeringId: provider.id,
+      providerId: provider.provider,
+      offeringLabel: provider.name,
+    };
+}
+function addAccount(provider: ProviderPresentation) {
+  if (addAction(provider) === "createConnection") openConnection(provider);
+  else modalProvider.value = provider;
+}
+function connectionSaved() {
+  connectionDialog.value = null;
+  void run(async () => {});
+}
+
 function providerAccounts(provider: ProviderPresentation): PublicAccount[] {
-  return accounts.value.filter((account) => account.offeringId === provider.id);
+  return accounts.value.filter(
+    (account) => account.provider === provider.provider && account.offeringId === provider.id,
+  );
 }
 
 function accountMethodLabel(provider: ProviderPresentation, account: PublicAccount): string {
@@ -172,7 +227,9 @@ function isTokenExpired(value: string | null): boolean {
 }
 
 const connectedCount = computed(
-  () => new Set(accounts.value.map((account) => account.offeringId)).size,
+  () =>
+    new Set(accounts.value.map((account) => JSON.stringify([account.provider, account.offeringId])))
+      .size,
 );
 </script>
 
@@ -191,13 +248,11 @@ const connectedCount = computed(
     <p v-if="actionReason('startAuth')" class="setting-hint" role="status">
       {{ actionReason("startAuth") }}
     </p>
+    <slot name="custom-providers" :snapshot="snapshot" :reload="reload" />
     <div class="provider-list">
       <article v-for="provider in presentations" :key="provider.id" class="provider-row">
         <div class="provider-summary">
-          <span class="provider-mark">
-            <img v-if="provider.icon" :src="provider.icon" alt="" />
-            <template v-else>{{ provider.mark }}</template>
-          </span>
+          <ProviderMark :name="provider.name" :icon="provider.icon" />
           <div class="provider-heading">
             <div class="provider-name-row">
               <h2>{{ provider.name }}</h2>
@@ -218,11 +273,11 @@ const connectedCount = computed(
             <span v-for="method in provider.authMethods" :key="method.id">{{ method.label }}</span>
           </div>
           <button
-            v-if="action('startAuth').state !== 'hidden'"
+            v-if="action(addAction(provider)).state !== 'hidden'"
             class="primary-action"
-            :disabled="busy || action('startAuth').state !== 'enabled'"
-            :title="actionReason('startAuth')"
-            @click="modalProvider = provider"
+            :disabled="busy || action(addAction(provider)).state !== 'enabled'"
+            :title="actionReason(addAction(provider))"
+            @click="addAccount(provider)"
           >
             添加账号
           </button>
@@ -247,7 +302,11 @@ const connectedCount = computed(
           >
             <span class="account-avatar">♙</span>
             <div class="account-identity">
-              <strong>{{ account.maskedIdentifier }}</strong>
+              <strong>{{
+                provider.id === "compatible-api-key"
+                  ? account.displayName
+                  : account.maskedIdentifier
+              }}</strong>
               <span
                 v-if="account.tokenExpiresAt"
                 class="token-expiry"
@@ -262,6 +321,16 @@ const connectedCount = computed(
               ><i :class="{ off: !account.enabled }" />{{
                 account.enabled ? "已启用" : "已停用"
               }}</span
+            ><button
+              v-if="
+                (provider.connectionKind || provider.id === 'compatible-api-key') &&
+                action('editConnection', account).state !== 'hidden'
+              "
+              :disabled="busy || action('editConnection', account).state !== 'enabled'"
+              :title="actionReason('editConnection', account)"
+              @click="openConnection(provider, account.id)"
+            >
+              编辑连接</button
             ><button
               v-if="hasRefreshableToken(account)"
               :disabled="busy || action('refreshCredentials', account).state !== 'enabled'"
@@ -285,6 +354,12 @@ const connectedCount = computed(
             >
               删除
             </button>
+            <slot
+              name="account-actions"
+              :account="account"
+              :provider="provider"
+              :connection="snapshot?.connections.find((row) => row.accountId === account.id)"
+            />
           </div>
         </div>
       </article>
@@ -295,6 +370,12 @@ const connectedCount = computed(
       :context="context()"
       @close="modalProvider = null"
       @connected="connected"
+    />
+    <ConnectionDialog
+      v-if="connectionDialog"
+      v-bind="connectionDialog"
+      @close="connectionDialog = null"
+      @saved="connectionSaved"
     />
   </section>
 </template>

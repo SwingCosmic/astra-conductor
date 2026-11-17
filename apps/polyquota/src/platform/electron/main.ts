@@ -22,7 +22,7 @@ import { existsSync } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { MigrationProfileUpgradeRequired, type LoggerPort } from "@astra-conductor/core/internal";
+import type { LoggerPort } from "@astra-conductor/core/internal";
 import { PollingService } from "../../server/polling-service.js";
 import { PolyQuotaApplicationService } from "../../server/polyquota-application-service.js";
 import { envProxyAddress } from "../common/proxy-detection.js";
@@ -427,14 +427,19 @@ if (hasSingleInstanceLock) {
       applyQuotaChrome();
     })
     .catch(async (error: unknown) => {
-      console.error(
-        "PolyQuota startup failed",
-        error instanceof Error ? `${error.name}: ${error.message}` : "unknown error",
-      );
-      if (error instanceof MigrationProfileUpgradeRequired)
-        dialog.showErrorBox("PolyQuota", error.message);
-      await shutdownServices().catch(() => undefined);
-      app.exit(1);
+      const detail = error instanceof Error ? `${error.name}: ${error.message}` : "未知错误";
+      console.error("PolyQuota startup failed", detail);
+      quitting = true;
+      try {
+        // showErrorBox blocks until dismissed, including before a window exists.
+        dialog.showErrorBox(
+          "PolyQuota 启动失败",
+          `发生致命错误，PolyQuota 无法启动。关闭此对话框后应用将退出。\n\n${detail}`,
+        );
+      } finally {
+        await shutdownServices().catch(() => undefined);
+        app.exit(1);
+      }
     });
 
   app.on("second-instance", () => {

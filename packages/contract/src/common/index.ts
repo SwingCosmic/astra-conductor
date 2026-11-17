@@ -1,6 +1,7 @@
 export * from "./vocabularies.js";
 export * from "./dto/account.js";
 export * from "./dto/auth.js";
+export * from "./dto/connection.js";
 export * from "./dto/errors.js";
 export * from "./dto/usage.js";
 export * from "./dto/operations.js";
@@ -18,3 +19,5 @@ export {
   parseResetCreditRedemption,
   parseCredentialExportRequest,
 } from "./validation/request.js";
+export * from "./dto/model.js";
+export * from "./dto/rate-card.js";

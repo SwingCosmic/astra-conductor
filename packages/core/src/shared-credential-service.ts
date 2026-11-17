@@ -25,14 +25,61 @@ import {
   type PublicMetadata,
 } from "./models.js";
 import type { CredentialRefreshResult, StoragePort } from "./ports.js";
-import { supportsSubscriptionUsage } from "./providers/usage-eligibility.js";
+import { subscriptionUsageEligibility } from "./providers/usage-eligibility.js";
 import type { ProviderRegistry } from "./providers/registry.js";
 import { isOutsideRefreshWindow } from "./providers/credential-reuse-policy.js";
+import { protocolRouteIds } from "@astra-conductor/contract/common";
+import { findOffering } from "./providers/catalog.js";
+import {
+  compatibleKeyId,
+  isCustomProviderId,
+  isLocalKeyAccount,
+  officialOpenAiOffering,
+} from "./providers/compatible-api-key/descriptor.js";
+import {
+  resolveModelRoutes,
+  routeRevisionKey,
+  validateEncryptedRoutes,
+} from "./providers/model-routes.js";
 
 export const sharedCredentialContentType = "application/vnd.astraconductor.account-credential+json";
+export const connectionCredentialContentType =
+  "application/vnd.astraconductor.api-key-connection+json";
+
+export const localKeyContentType = "application/vnd.astraconductor.provider-key+json";
+export const subscriptionCredentialContentType =
+  "application/vnd.astraconductor.subscription-credential+json";
+export function recordFormat(account: Account, legacySubscription = false) {
+  if (isLocalKeyAccount(account))
+    return { contentType: localKeyContentType, payloadFormatVersion: 3 };
+  if (
+    !legacySubscription &&
+    account.provider !== compatibleKeyId &&
+    findOffering(account.offeringId)?.provider === account.provider
+  )
+    return { contentType: subscriptionCredentialContentType, payloadFormatVersion: 3 };
+  return account.provider === compatibleKeyId
+    ? { contentType: connectionCredentialContentType, payloadFormatVersion: 2 }
+    : { contentType: sharedCredentialContentType, payloadFormatVersion: 1 };
+}
+export function isKnownCredentialFormat(
+  description: Pick<CredentialDescription, "contentType" | "payloadFormatVersion">,
+): boolean {
+  return (
+    ([localKeyContentType, subscriptionCredentialContentType].includes(description.contentType) &&
+      description.payloadFormatVersion === 3) ||
+    (description.contentType === sharedCredentialContentType &&
+      description.payloadFormatVersion === 1) ||
+    (description.contentType === connectionCredentialContentType &&
+      description.payloadFormatVersion === 2)
+  );
+}
 
 const publicFields = new Set([
+  "credentialBindingRevision",
   "supportsUsage",
+  "supportsInference",
+  ...protocolRouteIds.map(routeRevisionKey),
   "workspaceId",
   "userId",
   "planType",
@@ -57,9 +104,31 @@ const publicFields = new Set([
   "plan",
 ]);
 
+export function isMinimalAccountProjection(account: Account): boolean {
+  return account.credentialProjection === "minimal";
+}
+
 export interface SharedAccountCredential {
   account: Account;
   credentials: CredentialEnvelope;
+}
+
+// Only claims used by the provider adapters for authentication, account selection or usage.
+const subscriptionClaims: Record<string, readonly string[]> = {
+  codex: ["workspaceId", "planType"],
+  claude: ["plan", "oauthClient"],
+  antigravity: ["projectId", "tier"],
+  "grok-build": ["email", "principalId", "principalType", "userId", "clientProfile"],
+  "github-copilot": [],
+  glm: [],
+  "opencode-go": [],
+};
+function providerClaims(provider: string, metadata: PublicMetadata): PublicMetadata {
+  return Object.fromEntries(
+    (subscriptionClaims[provider] ?? [])
+      .filter((key) => Object.hasOwn(metadata, key))
+      .map((key) => [key, metadata[key]]),
+  );
 }
 
 function boundedText(value: unknown, maximum = 4096): string {
@@ -83,15 +152,159 @@ export function decodeSharedCredential(record: {
   payload: string;
 }): SharedAccountCredential {
   const { description } = record;
-  requireValue(
-    description.contentType === sharedCredentialContentType &&
-      description.payloadFormatVersion === 1,
-    "unsupported-credential-payload",
-  );
+  requireValue(isKnownCredentialFormat(description), "unsupported-credential-payload");
   const bytes = unb64(record.payload);
   try {
+    if (description.contentType === localKeyContentType) {
+      const payload = object(parseJson(bytes), [
+        "version",
+        "accountId",
+        "providerId",
+        "accountIdentifier",
+        "credential",
+      ]);
+      const accountId = id(payload.accountId),
+        provider = id(payload.providerId),
+        accountIdentifier = boundedText(payload.accountIdentifier, 256);
+      requireValue(
+        payload.version === 3 &&
+          description.credentialId === accountId &&
+          description.metadata.provider === provider &&
+          (provider === "codex" || isCustomProviderId(provider)),
+        "credential-ownership-mismatch",
+      );
+      const material = object(payload.credential, ["apiKey", "bindingRevision"]);
+      const apiKey = boundedText(material.apiKey, 4096),
+        revision = id(material.bindingRevision);
+      requireValue(
+        /^[!-~]+$/.test(apiKey) && !accountIdentifier.includes(apiKey),
+        "invalid-account-payload",
+      );
+      const account: Account = {
+        credentialProjection: "minimal",
+        id: accountId,
+        provider,
+        offeringId: provider === "codex" ? officialOpenAiOffering : "",
+        authMethod: "api-key",
+        stableIdentity: accountId,
+        displayName: accountIdentifier,
+        maskedIdentifier: accountIdentifier,
+        enabled: true,
+        credentialState: "available",
+        publicMetadata: { credentialBindingRevision: revision },
+        createdAt: "1970-01-01T00:00:00.000Z",
+        updatedAt: "1970-01-01T00:00:00.000Z",
+      };
+      return {
+        account,
+        credentials: {
+          version: 1,
+          accountId,
+          provider,
+          authMethod: "api-key",
+          expiresAt: null,
+          secrets: { apiKey },
+          credentialBindingRevision: revision,
+        },
+      };
+    }
+    if (description.contentType === subscriptionCredentialContentType) {
+      const wrapper = object(parseJson(bytes), [
+        "version",
+        "accountId",
+        "accountIdentifier",
+        "providerId",
+        "credential",
+      ]);
+      const accountId = id(wrapper.accountId),
+        provider = id(wrapper.providerId),
+        accountIdentifier = boundedText(wrapper.accountIdentifier, 4096);
+      const raw = object(wrapper.credential, [
+        "offeringId",
+        "authMethod",
+        "stableIdentity",
+        "claims",
+        "expiresAt",
+        "secrets",
+      ]);
+      const offeringId = id(raw.offeringId),
+        authMethod = id(raw.authMethod),
+        owner = findOffering(offeringId);
+      requireValue(
+        wrapper.version === 3 &&
+          description.credentialId === accountId &&
+          description.metadata.provider === provider &&
+          owner?.provider === provider &&
+          !owner.offering.connectionKind &&
+          owner.offering.authMethods.some((m) => m.method === authMethod),
+        "credential-ownership-mismatch",
+      );
+      const fields = object(raw.claims);
+      requireValue(
+        Object.keys(fields).every((k) => subscriptionClaims[provider]?.includes(k)),
+        "invalid-account-payload",
+      );
+      const publicMetadata: PublicMetadata = {};
+      for (const [key, v] of Object.entries(fields)) {
+        requireValue(
+          v === null ||
+            (typeof v === "string" && v.length <= 4096) ||
+            typeof v === "boolean" ||
+            (typeof v === "number" && Number.isFinite(v)),
+          "invalid-account-payload",
+        );
+        publicMetadata[key] = v;
+      }
+      const secrets: CredentialEnvelope["secrets"] = {};
+      for (const [key, v] of Object.entries(object(raw.secrets))) {
+        requireValue(
+          (credentialSecretKeys as readonly string[]).includes(key),
+          "invalid-account-payload",
+        );
+        secrets[key as keyof typeof secrets] = boundedText(v, 256 * 1024);
+      }
+      requireValue(Object.keys(secrets).length > 0, "invalid-account-payload");
+      const stableIdentity = boundedText(raw.stableIdentity, 4096);
+      for (const secret of Object.values(secrets))
+        requireValue(
+          typeof secret === "string" &&
+            ![stableIdentity, accountIdentifier, ...Object.values(publicMetadata)].some(
+              (v) => typeof v === "string" && v.includes(secret),
+            ),
+          "secret-in-account-metadata",
+        );
+      return {
+        account: {
+          credentialProjection: "minimal",
+          id: accountId,
+          provider,
+          offeringId,
+          authMethod,
+          stableIdentity,
+          displayName: accountIdentifier,
+          maskedIdentifier: accountIdentifier,
+          enabled: true,
+          credentialState: "available",
+          publicMetadata,
+          createdAt: "1970-01-01T00:00:00.000Z",
+          updatedAt: "1970-01-01T00:00:00.000Z",
+        },
+        credentials: {
+          version: 1,
+          accountId,
+          provider,
+          authMethod,
+          expiresAt: raw.expiresAt === null ? null : timestamp(raw.expiresAt),
+          secrets,
+        },
+      };
+    }
     const payload = object(parseJson(bytes), ["version", "account", "credentials"]);
-    requireValue(payload.version === 1, "unsupported-credential-payload");
+    requireValue(
+      payload.version === description.payloadFormatVersion,
+      "unsupported-credential-payload",
+    );
+    const connection = description.contentType === connectionCredentialContentType;
     const source = object(payload.account, [
       "id",
       "provider",
@@ -113,11 +326,17 @@ export function decodeSharedCredential(record: {
       "authMethod",
       "expiresAt",
       "secrets",
+      ...(connection ? ["modelRoutes"] : []),
     ]);
     const accountId = id(source.id);
     const provider = id(source.provider);
     const offeringId = id(source.offeringId);
     const authMethod = id(source.authMethod);
+    requireValue(
+      connection === (provider === compatibleKeyId) &&
+        (!connection || (offeringId === provider && authMethod === "api-key")),
+      "invalid-account-payload",
+    );
     requireValue(
       accountId === description.credentialId &&
         credential.version === 1 &&
@@ -137,6 +356,13 @@ export function decodeSharedCredential(record: {
     const secrets: CredentialEnvelope["secrets"] = {};
     const rawSecrets = object(credential.secrets);
     requireValue(Object.keys(rawSecrets).length > 0, "invalid-account-payload");
+    if (connection)
+      requireValue(
+        Object.keys(rawSecrets).length === 1 &&
+          typeof rawSecrets.apiKey === "string" &&
+          credential.expiresAt === null,
+        "invalid-account-payload",
+      );
     for (const [key, value] of Object.entries(rawSecrets)) {
       requireValue(
         (credentialSecretKeys as readonly string[]).includes(key),
@@ -179,17 +405,19 @@ export function decodeSharedCredential(record: {
     for (const value of [account.stableIdentity, account.displayName, account.maskedIdentifier]) {
       requireValue(!containsSecret(value), "secret-in-account-metadata");
     }
-    return {
-      account,
-      credentials: {
-        version: 1,
-        accountId,
-        provider,
-        authMethod,
-        expiresAt: credential.expiresAt === null ? null : timestamp(credential.expiresAt),
-        secrets,
-      },
+    const credentials: CredentialEnvelope = {
+      version: 1,
+      accountId,
+      provider,
+      authMethod,
+      expiresAt: credential.expiresAt === null ? null : timestamp(credential.expiresAt),
+      secrets,
+      ...(connection
+        ? { modelRoutes: validateEncryptedRoutes(credential.modelRoutes, secrets.apiKey) }
+        : {}),
     };
+    if (connection) resolveModelRoutes(account, credentials);
+    return { account, credentials };
   } finally {
     bytes.fill(0);
   }
@@ -231,6 +459,7 @@ function publicProjection(account: Account): Account {
     offeringId: account.offeringId,
     authMethod: account.authMethod,
     stableIdentity: account.stableIdentity,
+    ...(isMinimalAccountProjection(account) ? { credentialProjection: "minimal" as const } : {}),
     displayName: account.displayName,
     maskedIdentifier: account.maskedIdentifier,
     enabled: account.enabled,
@@ -247,7 +476,11 @@ export function sharedCredentialMetadata(
   account: Account,
   providers: ProviderRegistry,
   revision = "1",
+  legacySubscription = false,
 ): Record<string, string> {
+  if (recordFormat(account, legacySubscription).contentType === subscriptionCredentialContentType)
+    return { provider: account.provider, ...supportsUsageMetadata(account, providers) };
+  if (isLocalKeyAccount(account)) return { provider: account.provider };
   return {
     provider: account.provider,
     offeringId: account.offeringId,
@@ -255,19 +488,128 @@ export function sharedCredentialMetadata(
     maskedIdentifier: account.maskedIdentifier,
     identityKey: sharedAccountIdentityKey(account),
     accountProjectionHash: projectionStamp(revision, account),
-    supportsUsage: supportsSubscriptionUsage(account, providers) ? "true" : "false",
+    ...credentialPurposeMetadata(account, providers),
   };
 }
 
-export function encodeSharedCredential(account: Account, credentials: CredentialEnvelope): string {
-  const payload = Buffer.from(JSON.stringify({ version: 1, account, credentials })).toString(
-    "base64url",
-  );
+function supportsUsageMetadata(
+  account: Account,
+  providers: ProviderRegistry,
+): Record<string, string> {
+  const status = subscriptionUsageEligibility(account, providers);
+  return status === "unknown" ? {} : { supportsUsage: String(status === "eligible") };
+}
+export function credentialPurposeMetadata(
+  account: Account,
+  providers: ProviderRegistry,
+): Record<string, string> {
+  const usage = subscriptionUsageEligibility(account, providers);
+  if (usage === "unknown") return {};
+  return {
+    supportsUsage: usage === "eligible" ? "true" : "false",
+    ...(providers.getInference(account.provider) && resolveModelRoutes(account).length
+      ? { supportsInference: "true" }
+      : {}),
+  };
+}
+
+/** B5 record-level conversion is pure. Unknown payloads and extension metadata round-trip verbatim. */
+export function upgradeCredentialMetadata(
+  record: BrokerCredential,
+  providers: ProviderRegistry,
+): BrokerCredential {
+  if (!isKnownCredentialFormat(record.description) || record.description.payloadFormatVersion === 3)
+    return record;
+  const { account } = decodeSharedCredential(record);
+  const derived = credentialPurposeMetadata(account, providers);
+  const metadata = { ...derived, ...record.description.metadata };
+  return { ...record, description: { ...record.description, metadata } };
+}
+
+export function encodeSharedCredential(
+  account: Account,
+  credentials: CredentialEnvelope,
+  legacySubscription = false,
+): string {
+  const format = recordFormat(account, legacySubscription);
+  if (format.contentType === subscriptionCredentialContentType) {
+    requireValue(
+      credentials.provider === account.provider &&
+        credentials.accountId === account.id &&
+        credentials.authMethod === account.authMethod &&
+        !credentials.modelRoutes,
+      "credential-ownership-mismatch",
+    );
+    const payload = Buffer.from(
+      JSON.stringify({
+        version: 3,
+        accountId: account.id,
+        providerId: account.provider,
+        accountIdentifier: account.maskedIdentifier,
+        credential: {
+          offeringId: account.offeringId,
+          authMethod: account.authMethod,
+          stableIdentity: account.stableIdentity,
+          claims: providerClaims(account.provider, account.publicMetadata),
+          expiresAt: credentials.expiresAt,
+          secrets: credentials.secrets,
+        },
+      }),
+      "utf8",
+    ).toString("base64url");
+    decodeSharedCredential({
+      description: {
+        ...format,
+        credentialId: account.id,
+        metadata: { provider: account.provider },
+      },
+      payload,
+    });
+    return payload;
+  }
+  if (format.contentType === localKeyContentType) {
+    requireValue(
+      credentials.provider === account.provider &&
+        credentials.accountId === account.id &&
+        credentials.authMethod === "api-key" &&
+        credentials.expiresAt === null &&
+        !credentials.modelRoutes &&
+        Object.keys(credentials.secrets).length === 1 &&
+        credentials.credentialBindingRevision &&
+        account.publicMetadata.credentialBindingRevision === credentials.credentialBindingRevision,
+      "invalid-account-payload",
+    );
+    const payload = Buffer.from(
+      JSON.stringify({
+        version: 3,
+        accountId: account.id,
+        providerId: account.provider,
+        accountIdentifier: account.maskedIdentifier,
+        credential: {
+          apiKey: credentials.secrets.apiKey,
+          bindingRevision: credentials.credentialBindingRevision,
+        },
+      }),
+      "utf8",
+    ).toString("base64url");
+    decodeSharedCredential({
+      description: {
+        ...format,
+        credentialId: account.id,
+        metadata: { provider: account.provider },
+      },
+      payload,
+    });
+    return payload;
+  }
+  const { credentialProjection: _localObservation, ...wireAccount } = account;
+  const payload = Buffer.from(
+    JSON.stringify({ version: format.payloadFormatVersion, account: wireAccount, credentials }),
+  ).toString("base64url");
   decodeSharedCredential({
     description: {
       credentialId: account.id,
-      contentType: sharedCredentialContentType,
-      payloadFormatVersion: 1,
+      ...format,
       metadata: {
         provider: account.provider,
         offeringId: account.offeringId,
@@ -283,6 +625,7 @@ export interface SharedCredentialOptions {
   storage?: StoragePort;
   providers?: ProviderRegistry;
   usageOnly?: boolean;
+  includeCustomProviders?: boolean;
   now?: () => Date;
   /** The supplied storage must belong exclusively to this vault and grant. */
   persistProjectionRevisions?: boolean;
@@ -340,12 +683,21 @@ export class SharedCredentialService implements CredentialService {
   ) {}
 
   private accepts(description: CredentialDescription): boolean {
-    if (
-      description.contentType !== sharedCredentialContentType ||
-      description.payloadFormatVersion !== 1
-    )
-      return false;
+    if (!isKnownCredentialFormat(description)) return false;
     if (this.options.usageOnly && description.metadata.supportsUsage !== "true") return false;
+    if (description.contentType === subscriptionCredentialContentType)
+      return (
+        !!description.metadata.provider &&
+        (!this.options.providers ||
+          !!this.options.providers.getAccount(description.metadata.provider))
+      );
+    if (description.contentType === localKeyContentType)
+      return (
+        !this.options.usageOnly &&
+        (description.metadata.provider === "codex" ||
+          (this.options.includeCustomProviders !== false &&
+            isCustomProviderId(description.metadata.provider ?? "")))
+      );
     const providers = this.options.providers;
     if (!providers) return true;
     const provider = description.metadata.provider ?? "";
@@ -436,6 +788,19 @@ export class SharedCredentialService implements CredentialService {
       "stale-revision",
     );
     const value = decodeSharedCredential(record);
+    if (record.description.payloadFormatVersion === 3) {
+      const local = this.options.storage?.accounts.get(accountId);
+      if (
+        local &&
+        local.provider === value.account.provider &&
+        local.stableIdentity === value.account.stableIdentity
+      ) {
+        value.account = {
+          ...local,
+          publicMetadata: { ...local.publicMetadata, ...value.account.publicMetadata },
+        };
+      }
+    }
     if (record.description.revision !== entry.description.revision) entry.credentials = undefined;
     entry.description = record.description;
     entry.expiresAt = value.credentials.expiresAt;
@@ -541,22 +906,54 @@ export class SharedCredentialService implements CredentialService {
     return (await this.readAccount(accountId)).credentials;
   }
 
-  async save(account: Account, envelope: CredentialEnvelope): Promise<void> {
+  async loadCurrent(accountId: string): Promise<CredentialEnvelope> {
     const generation = this.generation;
-    const payload = encodeSharedCredential(account, envelope);
+    let record: BrokerCredential;
+    try {
+      record = await this.broker.getCredential(accountId);
+    } catch (error) {
+      this.invalidate(accountId);
+      throw error;
+    }
+    requireValue(this.generation === generation, "client-closed");
+    requireValue(
+      record.description.credentialId === accountId && this.accepts(record.description),
+      "credential-not-available",
+    );
+    const entry = this.observe(record.description);
+    requireValue(entry.description.revision === record.description.revision, "stale-revision");
+    const value = decodeSharedCredential(record);
+    entry.credentials = value;
+    entry.expiresAt = value.credentials.expiresAt;
+    return structuredClone(value.credentials);
+  }
+
+  async save(
+    account: Account,
+    envelope: CredentialEnvelope,
+    expectedRevision?: string,
+  ): Promise<void> {
+    const generation = this.generation;
     const descriptions = await this.descriptions();
     const existing = descriptions.find((item) => item.credentialId === account.id);
+    if (expectedRevision !== undefined && (existing?.revision ?? "new") !== expectedRevision)
+      throw new AppError("conflict", "连接已被其他客户端修改，请重新读取");
+    const legacySubscription = existing?.contentType === sharedCredentialContentType;
+    const format = recordFormat(account, legacySubscription);
+    const payload = encodeSharedCredential(account, envelope, legacySubscription);
     const revision = existing ? String(BigInt(existing.revision) + 1n) : "1";
     const uniqueKey = sharedAccountIdentityKey(account);
-    const metadata = this.options.providers
-      ? sharedCredentialMetadata(account, this.options.providers, revision)
-      : {
-          provider: account.provider,
-          offeringId: account.offeringId,
-          authMethod: account.authMethod,
-          maskedIdentifier: account.maskedIdentifier,
-          accountProjectionHash: projectionStamp(revision, account),
-        };
+    const metadata: Record<string, string> = this.options.providers
+      ? sharedCredentialMetadata(account, this.options.providers, revision, legacySubscription)
+      : format.payloadFormatVersion === 3
+        ? { provider: account.provider }
+        : {
+            provider: account.provider,
+            offeringId: account.offeringId,
+            authMethod: account.authMethod,
+            maskedIdentifier: account.maskedIdentifier,
+            accountProjectionHash: projectionStamp(revision, account),
+          };
     if (existing && !canAddProjectionStamp({ ...existing.metadata, ...metadata }))
       delete metadata.accountProjectionHash;
     let description: CredentialDescription;
@@ -593,10 +990,10 @@ export class SharedCredentialService implements CredentialService {
       const created = await this.broker.createCredential({
         uniqueKey,
         credentialId: account.id,
-        contentType: sharedCredentialContentType,
-        payloadFormatVersion: 1,
+        ...format,
         payload,
-        metadata: { ...metadata, identityKey: uniqueKey },
+        metadata:
+          format.payloadFormatVersion === 3 ? metadata : { ...metadata, identityKey: uniqueKey },
       });
       description = created.description;
     }
@@ -611,8 +1008,12 @@ export class SharedCredentialService implements CredentialService {
     this.options.storage?.accounts.save(account);
   }
 
-  saveAccount(account: Account, envelope: CredentialEnvelope): Promise<void> {
-    return this.save(account, envelope);
+  saveAccount(
+    account: Account,
+    envelope: CredentialEnvelope,
+    expectedRevision?: string,
+  ): Promise<void> {
+    return this.save(account, envelope, expectedRevision);
   }
 
   async removeShared(accountId: string, expectedRevision?: string): Promise<void> {
@@ -684,17 +1085,23 @@ export class SharedCredentialService implements CredentialService {
           credentialState: "available" as const,
           updatedAt: (this.options.now?.() ?? new Date()).toISOString(),
         };
-        const payload = encodeSharedCredential(updated, refreshed.envelope);
+        const payload = encodeSharedCredential(
+          updated,
+          refreshed.envelope,
+          record.description.contentType === sharedCredentialContentType,
+        );
         const stamp = projectionStamp(String(BigInt(revision) + 1n), updated);
-        const setMetadata = canAddProjectionStamp({
-          ...record.description.metadata,
-          accountProjectionHash: stamp,
-        })
-          ? { accountProjectionHash: stamp }
-          : undefined;
+        const setMetadata =
+          record.description.payloadFormatVersion !== 3 &&
+          canAddProjectionStamp({
+            ...record.description.metadata,
+            accountProjectionHash: stamp,
+          })
+            ? { accountProjectionHash: stamp }
+            : undefined;
         return {
           value: { refreshed, account: updated },
-          commit: { payload, setMetadata },
+          commit: { payload, ...(setMetadata ? { setMetadata } : {}) },
         };
       });
       requireValue(this.generation === generation, "client-closed");

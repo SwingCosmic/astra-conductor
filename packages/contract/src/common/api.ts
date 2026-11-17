@@ -8,6 +8,11 @@ import type {
 } from "./service.js";
 import type { AuthStartResult, PublicAuthSession, StartAuthRequest } from "./dto/auth.js";
 import type { PublicAccount } from "./dto/account.js";
+import type {
+  PublicConnection,
+  CreateConnectionRequest,
+  EditConnectionRequest,
+} from "./dto/connection.js";
 import type { CredentialRefreshOutcomeDto } from "./dto/operations.js";
 import type {
   CredentialExportDelivery,
@@ -43,6 +48,20 @@ const contextBody = (input: CommandContext): CommandContext => ({
 });
 
 export const providerOperations = {
+  getConnection: apiOperation<{ accountId: string }, PublicConnection>(
+    "GET",
+    (input) => `/api/v1/accounts/${accountPath(input)}/connection`,
+  ),
+  createConnection: apiOperation<WithContext<CreateConnectionRequest>, PublicConnection>(
+    "POST",
+    "/api/v1/accounts/connections/create",
+    { body },
+  ),
+  editConnection: apiOperation<AccountCommand & EditConnectionRequest, PublicConnection>(
+    "POST",
+    (input) => `/api/v1/accounts/${accountPath(input)}/connection/edit`,
+    { body: ({ accountId: _, ...input }) => input },
+  ),
   getSnapshot: apiOperation<void, ProviderManagementSnapshot>("GET", "/api/v1/providers", {
     parseOutput: (value) => {
       if (

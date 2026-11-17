@@ -2,19 +2,19 @@
 
 | 项目     | 内容                                                       |
 | -------- | ---------------------------------------------------------- |
-| 状态     | 设计草案；完成信号不代表当前已完成                         |
+| 状态     | 设计草案；各阶段完成以对应退出条件的验收为准               |
 | 范围     | 从底层身份与聊天逐步扩展到工具、记忆、互操作与管理功能     |
 | 原则     | 先打通最短闭环，再增加能力；每个阶段都必须可运行、可验收   |
 
 ## 0. 前置共享依赖
 
-GraphAgent 已为凭据共享 A6—A8 建立 Electron 最小壳。设置页支持 PolyQuota 导出数据的密钥输入、实际解密验证、脱敏确认、共享接入及状态恢复。[最小宿主](../common/core/credential-sharing/a6-a8-sharing-implementation.md#graphagent-最小宿主)
+GraphAgent 已从最初的 Electron 导入壳扩展为 Web/Electron 共用的 Vue/Hono 产品。供应商阶段 2A 提供保存账号、模型目录、三种标准协议及无历史的单轮测试聊天；阶段 2B 已交付 profile 业务库、自定义供应商与模型编辑器，按[供应商与 Core 数据方案](../common/core/provider/implementation-plan.md#模型配置改版的数据实施方案)及[产品 UI 方案](./ui/model-configuration/ui-implementation-plan.md)实施。两款桌面产品的双向导入导出见[凭据共享进度](../common/core/credential-sharing/implementation-plan.md)。
 
 下列产品业务阶段 1–4 使用独立编号。实现时须覆盖可独立启动的 Web 产品和 Electron 桌面产品，启动形态与统一业务入口遵循[项目架构](../architecture.md)。两端共用页面与供应商服务由[供应商平台实施方案](../common/core/provider/implementation-plan.md)交付，双向存储管理与版本更新按[凭据共享实施方案](../common/core/credential-sharing/implementation-plan.md)推进。
 
 模型配置页的目标前端边界见[前端服务契约](./design/frontend-contract.md)，包含产品 Service、模型 DTO、覆盖/选择/预览命令及产品事件。公共管理 API 与传输遵循[契约专项](../common/contract/design.md)。独立 Web 的账号与凭据只通过 broker；Electron 可使用私有加密后端或 broker。完整聊天、任务与工作台 API 随下列业务阶段继续细化，不能直接把 Core 执行端口发布给页面。
 
-模型、账号、provider、协议 route、codec 和推理执行属于共享 Core，不在本计划中重复实施。GraphAgent 开始真实模型调用前，共享平台至少需要提供：
+模型、账号、provider、协议 route、codec 和推理执行属于共享 Core，不在本计划中重复实施。GraphAgent 从已有单轮调用扩展到 Agent 循环时，所需的共享能力包括：
 
 - 稳定的 provider/account/model 目录和协议 route；
 - 可取消的推理调用、规范流事件与用量事实；
@@ -34,18 +34,30 @@ GraphAgent 已为凭据共享 A6—A8 建立 Electron 最小壳。设置页支�
 
 依赖关系：
 
-```text
-1.1 → 1.2 → 2.1 → 2.2
-                 ├→ 3.1 → 3.2
-                 ├→ 3.3
-                 ├→ 3.4
-                 └→ 3.5
-3.1 + 3.2 → 4.2
-3.3 + 3.4 + 3.5 → 4.1
-3.5 → 4.3 → 4.4
-1.2 + 3.3 → 4.1
-全阶段 → 4.5
+```mermaid
+flowchart LR
+    S11["1.1 模板与实例"] --> S12["1.2 私聊与群聊"]
+    S12 --> S21["2.1 基础 Loop 与文件/终端工具"]
+    S21 --> S22["2.2 简单派发与 subagent"]
+    S22 --> S31["3.1 内置记忆"]
+    S31 --> S32["3.2 技能"]
+    S22 --> S33["3.3 跨设备派发与完整策略"]
+    S22 --> S34["3.4 剩余工具"]
+    S22 --> S35["3.5 拦截器"]
+    S12 --> S41["4.1 高级任务工作流"]
+    S33 --> S41
+    S34 --> S41
+    S35 --> S41
+    S31 --> S42["4.2 定时、Recap 与做梦"]
+    S32 --> S42
+    S35 --> S43["4.3 A2A 协议适配"]
+    S43 --> S44["4.4 外部 Agent 远程调用"]
+    S41 --> S45["4.5 管理看板"]
+    S42 --> S45
+    S44 --> S45
 ```
+
+4.5 管理看板在全部前序阶段完成后实施。
 
 ## 2. 阶段 1：核心逻辑打通，聊天可用
 
@@ -402,7 +414,7 @@ GraphAgent 已为凭据共享 A6—A8 建立 Electron 最小壳。设置页支�
 | UI/宿主         | fake 应用服务、图干预、多面板/断线、生命周期、真实宿主资源与打包行为               |
 | 外部互操作      | A2A fixture、外部客户端重连/取消、未知远端效果、凭据隔离                           |
 
-实现修改按仓库要求运行 `format`、`typecheck`、`test`、`build`；涉及 Electron/native/打包再运行 `package`。纯文档修改只检查文档格式、链接与设计一致性，不执行代码检查、测试或编译；这些验证不能证明运行完成信号。
+实现修改按仓库要求运行 `format`、`typecheck`、`test`、`build`；涉及 Electron/native/打包再运行 `package`。纯文档修改只检查文档格式、链接与设计一致性，不执行代码检查、测试或编译。
 
 ## 7. 启动前需落实的决策
 
@@ -416,4 +428,4 @@ GraphAgent 已为凭据共享 A6—A8 建立 Electron 最小壳。设置页支�
 - 跨设备领域边界按[专项设计](./design/cross-device-dispatch-design.md)落实；工程选型仍需确定控制面宿主、认证与密钥轮换、心跳/租约期限、中继内容库、配额与保留策略，并验证离线恢复。
 - A2A 规范版本、外部 coding agent 适配器的固定版本与沙箱行为。
 
-这些选择不阻塞当前功能设计；实施到对应阶段时，以可审查样本和完成信号确认，不把草案当作已选定工程结构。
+这些选择不阻塞当前功能设计；实施到对应阶段时，以可审查样本按对应退出条件验收确认。

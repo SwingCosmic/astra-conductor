@@ -49,6 +49,12 @@ else {
           throw new AppError("secure-storage", "系统安全存储不可用");
       };
       services = await createGraphServices({
+        nativeBinding: path.join(
+          app.isPackaged ? process.resourcesPath : app.getAppPath(),
+          "lib",
+          "better-sqlite3",
+          "better_sqlite3.node",
+        ),
         directory,
         host: createGraphBrokerHost(directory),
         http: {

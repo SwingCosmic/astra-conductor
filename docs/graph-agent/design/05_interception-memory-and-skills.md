@@ -57,15 +57,15 @@ Interception 包含两类机制：
 
 推荐管线：
 
-```text
-授权与访问前置检查
-  → 入口/内容变换
-  → 可选语义判断
-  → 最终内容的确定性安全检查
-  → schema、资源和权限复核
-  → 固定执行 envelope
-  → 派发
-  → 输出处理与发布检查
+```mermaid
+flowchart TD
+    A["授权与访问前置检查"] --> B["入口/内容变换"]
+    B --> C["可选语义判断"]
+    C --> D["最终内容的确定性安全检查"]
+    D --> E["schema、资源和权限复核"]
+    E --> F["固定执行 envelope"]
+    F --> G["派发"]
+    G --> H["输出处理与发布检查"]
 ```
 
 处理器按阶段、配置优先级和稳定 ID 顺序执行，transform 的输出成为下一处理器输入。策略快照在一次操作内固定；用户插入的新规则影响尚未派发操作。多个变换冲突时按策略拒绝或返回问题，不默默选择最后一份内容。
@@ -80,7 +80,7 @@ Interception 包含两类机制：
 
 请求检查覆盖长期记忆、压缩摘要、工具 schema/参数、文件与图片附件、原生状态和动态环境信息。SDK 自动附加的内容也须进入最终 envelope 或被可信执行层限制。
 
-首版对敏感输出和需要修改的正文采用“完整消息检查后发布”，UI 可显示运行进度；不宣称已经展示的 token 可以撤回。后续增量发布必须由确定性规则声明可安全流式处理，跨块秘密匹配需要尾部缓冲。
+首版对敏感输出和需要修改的正文采用“完整消息检查后发布”，UI 可显示运行进度；已展示内容不回撤。后续增量发布必须由确定性规则声明可安全流式处理，跨块秘密匹配需要尾部缓冲。
 
 模型 tool-call 参数只在调用完整、通过 schema 与权限校验后执行。结构修复保持 call ID 与语义，产生变换记录；不能用补猜危险参数的方式把无效调用变成可执行。
 
@@ -122,7 +122,7 @@ flowchart TD
     RECALL --> CTX
 ```
 
-原始消息是“实际收到/发出了什么”的证据，不表示所有内容都是真实事实。短期与长期记忆是有来源的结论，仍可能被纠正；journal 是某次整理的历史视图，也不是不可质疑的事实。
+原始消息档案逐条记录实际收发内容；记忆条目携带 `verification` 与 `sourceRefs`，检索结果返回版本与来源，冲突结论以 `conflictsWithEntryIds` 标记；journal 只记录对应做梦批次实际提交的变更，修正以新的 `correctsEntryIds` 引用旧条目。
 
 上下文压缩只改下一次调用采用的对话视图，新增 CompactionRecord，不覆写/删除原始消息。记忆更新不回写原始消息；原始消息到期删除后，引用保留但解析结果是 `source-unavailable`。进行中的 Task 状态、工具效果与预算仍以运行 Ledger 为准。
 
@@ -131,9 +131,8 @@ flowchart TD
 `graphAgentDataRoot` 是宿主配置并登记的产品数据绝对目录，`workspaceDataRoot = graphAgentDataRoot/workspaces/<workspaceId>`。不默认写入用户代码仓库，不与 PolyQuota 数据目录或凭据库共用。
 
 ```text
+<graphAgentDataRoot>/graph-agent.sqlite3   # profile 业务库，工作区记录带 workspace_id
 <workspaceDataRoot>/
-  runtime/
-    conversations.sqlite3          # 原始消息、调用上下文、整理工作记录
   objects/
     <objectId>                     # 原始附件/大正文/协议状态
   knowledge/
@@ -214,11 +213,11 @@ sourceRefs:
 
 journal 增加 `dreamJobId`、`changeSetId`、`period`、`timezone`、`coverageRefs`，`injection=on-demand`。一个已完成批次生成一个文件，`period` 表示观察区间，`coverageRefs` 表示实际处理的消息/记忆版本。同日后到资料产生新 journal，修正以新的 `correctsEntryIds` 引用旧条目。
 
-默认正文限制：普通记忆 64 KiB，journal/SKILL.md 256 KiB；可配置，超过限制拆分为有独立主题的文件或附件。文件容量与模型上下文 token 预算是两种不同限制。
+默认正文限制：普通记忆 64 KiB，journal/SKILL.md 256 KiB；可配置，超过限制拆分为有独立主题的文件或附件。文件容量由记忆后端校验；进入模型上下文的规模由注入预算控制（超出时保留磁盘全文并记录未注入原因）。
 
 ### 2.5 原始消息档案
 
-每个 Workspace 使用一个 `runtime/conversations.sqlite3`，WAL + foreign_keys + 单写入者，放在本机产品数据目录。FTS、索引与查询投影可以重建，但 sessions/messages/call payloads 本身是事实档案。
+本节是后续归档功能的设计资料。正式业务记录进入 profile 的 `graph-agent.sqlite3` 并按 Workspace 隔离，具体表结构和关联在实施归档功能时确定。供应商 2B 的建表与验收范围见[账号、供应商与模型配置](./business-database.md)。
 
 | 表                  | 主要内容                                                                 | 不变量                                          |
 | ------------------- | ------------------------------------------------------------------------ | ----------------------------------------------- |
@@ -422,7 +421,7 @@ prepare → reflect(optional) → consolidate → validate → commit → report
 
 ### 3.5 整理运行状态
 
-Markdown 继续是记忆正文的默认事实来源；候选与统计属于整理运行状态，保存到 `conversations.sqlite3` 的独立表，不塞进 `.store/index.sqlite3`，也不让 Agent 自改 frontmatter 统计。
+Markdown 继续是记忆正文的默认事实来源；候选与统计属于整理运行状态，按 `workspace_id` 保存到 profile 业务库的独立表，不塞进 `.store/index.sqlite3`，也不让 Agent 自改 frontmatter 统计。
 
 | 状态表              | 保存内容                                                                        | 作用                                               |
 | ------------------- | ------------------------------------------------------------------------------- | -------------------------------------------------- |

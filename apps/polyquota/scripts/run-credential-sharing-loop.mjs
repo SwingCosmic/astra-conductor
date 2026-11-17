@@ -225,6 +225,53 @@ async function scenario(source, mode) {
       pass("用量请求按账号懒读并缓存，收到其他会话的变更后按修订失效");
       return;
     }
+    if (mode === "model-connection-" + source) {
+      const id = await a("model-key-create");
+      const code = await a("export");
+      let b = await launch(other, "receiver");
+      await b("import", code);
+      await a("shared");
+      await b("shared");
+      const initial = await b("model-key-read", { id });
+      pass("官方 Key 的两个标准端点由接收端本地解析");
+      const edited = await b("model-key-edit", id);
+      await eventually(async () => {
+        try {
+          return (
+            (await a("model-key-read", { id })).routes[0]?.bindingRevision ===
+            edited.routes[0].bindingRevision
+          );
+        } catch {
+          return false;
+        }
+      }, "peer credential rotation");
+      const peer = await a("model-key-read", { id });
+      assert.deepEqual(peer.routes, edited.routes);
+      assert.notEqual(peer.displayName, edited.displayName);
+      assert.notEqual(initial.routes[0].bindingRevision, edited.routes[0].bindingRevision);
+      await a("verify-record", { id, field: "apiKey", value: "FICTIONAL-MODEL-ROTATED" });
+      pass("接收端换 Key 后两个端点失效，账号别名保留在各自产品");
+      const poly = source === "polyquota" ? a : b;
+      await poly("model-key-no-usage", id);
+      const graph = source === "graph-agent" ? a : b;
+      const customId = await graph("model-key-create", "custom");
+      await graph("verify-opaque-relay", customId);
+      await poly("ignores-custom-provider", customId);
+      pass("GraphAgent 自定义供应商的共享凭据只含身份与授权材料，PolyQuota 忽略未知引用");
+      pass("PolyQuota 通用管理保留普通 Key，用量快照及刷新跳过且无上游请求");
+      b = await restart(other);
+      assert.deepEqual((await b("model-key-read", { id })).routes, edited.routes);
+      await b("prepare");
+      await b("private");
+      assert.deepEqual((await b("model-key-read", { id })).routes, edited.routes);
+      if (other === "polyquota") await b("ignores-custom-provider", customId);
+      pass("接收端重启及准备切回内置存储后保留完整协议绑定");
+      await writeFile(
+        path.join(root, "result.json"),
+        JSON.stringify({ source, checks, passed: true }, null, 2),
+      );
+      return;
+    }
     await a("state", "private");
     const key = await a("export");
     await a("screenshot", "export-ready");
@@ -406,7 +453,9 @@ console.log("Isolated sharing loop: " + work);
 const direction = process.argv.indexOf("--source");
 const directions = direction < 0 ? ["polyquota", "graph-agent"] : [process.argv[direction + 1]];
 assert(directions.every((x) => ["polyquota", "graph-agent"].includes(x)));
-if (process.argv.includes("--usage-performance")) {
+if (process.argv.includes("--model-connection")) {
+  for (const source of directions) await scenario(source, "model-connection-" + source);
+} else if (process.argv.includes("--usage-performance")) {
   await scenario("polyquota", "usage-performance");
 } else {
   if (!process.argv.includes("--concurrent")) {

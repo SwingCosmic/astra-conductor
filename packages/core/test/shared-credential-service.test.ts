@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   BrokerError,
+  canonical,
   type BrokerCredential,
   type BrokerOperation,
   type CredentialFilter,
@@ -14,9 +15,9 @@ import {
   SharedCredentialService,
   SwitchingCredentialService,
   decodeSharedCredential,
-  encodeSharedCredential,
+  encodeSharedCredential as encodeCredential,
   providerCatalog,
-  sharedCredentialMetadata,
+  sharedCredentialMetadata as describeCredential,
   sharedCredentialContentType,
   type Account,
   type CredentialEnvelope,
@@ -39,6 +40,11 @@ const account: Account = {
   createdAt: now,
   updatedAt: now,
 };
+// These are previously published v1 records used to exercise read and rotation compatibility.
+const encodeSharedCredential = (account: Account, envelope: CredentialEnvelope) =>
+  encodeCredential(account, envelope, true);
+const sharedCredentialMetadata = (account: Account, registry: ProviderRegistry, revision: string) =>
+  describeCredential(account, registry, revision, true);
 const credential = (version: string): CredentialEnvelope => ({
   version: 1,
   accountId: account.id,
@@ -122,6 +128,7 @@ class FakeBroker {
           operationId: "operation",
         });
         if (response.commit) {
+          canonical(response.commit); // The broker wire encoder rejects explicit undefined fields.
           if (response.commit.payload) this.value.payload = response.commit.payload;
           Object.assign(this.value.description.metadata, response.commit.setMetadata);
           this.value.description.revision = String(Number(this.value.description.revision) + 1);
@@ -155,7 +162,10 @@ function providers(
 ): ProviderRegistry {
   return new ProviderRegistry([
     {
-      descriptor: providerCatalog.find((item) => item.provider === "codex")!,
+      descriptor: {
+        ...providerCatalog.find((item) => item.provider === "codex")!,
+        capabilities: ["account", "usage"],
+      },
       account: {
         providerId: "codex",
         canUseCurrentCredentials,

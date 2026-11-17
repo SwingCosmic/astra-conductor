@@ -31,6 +31,7 @@ export async function startRuntime(
     const host = registry.get(Services.host);
     const browserNotifications = registry.get(Services.browserNotifications);
     const providers = new CommonProviderApplicationService({
+      allowLegacyConnections: false,
       storage: registry.get(CoreServices.storage),
       credentials: registry.get(CoreServices.vault),
       auth,

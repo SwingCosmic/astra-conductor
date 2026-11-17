@@ -1,0 +1,439 @@
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import {
+  modelFactValue,
+  type RateCard,
+  type ModelParameterTemplate,
+  type ModelPack,
+  type ModelPresetOption,
+  type ModelFacts,
+  type ModelPrice,
+  type ModelIOProfile,
+  type ModelParameters,
+  type ProviderOperation,
+} from "@astra-conductor/contract/graph-agent";
+import { readTemplate, checkParameterValues } from "./model-parameters.js";
+import { AppError, parseRateCard } from "@astra-conductor/core/internal";
+
+export interface PresetCapability {
+  operationId: ProviderOperation;
+  parameterTemplateRef: string;
+  rateCardRefs: { rateCardId: string; revision: string; planKey: string }[];
+  ioProfiles: ModelIOProfile[];
+  facts: Partial<ModelFacts>;
+  parameters: Partial<ModelParameters>;
+}
+export interface PackPreset extends ModelPresetOption {
+  family: string;
+  series: string;
+  sourceRef: string;
+  capabilities: PresetCapability[];
+  inherit?: { presetKey: string; fields: (keyof ModelFacts)[]; referenceUrl: string };
+  prices: ModelPrice[];
+}
+export interface ValidatedPack {
+  document: ModelPack;
+  presets: PackPreset[];
+  byKey: Map<string, PackPreset>;
+  byExactId: Map<string, PackPreset[]>;
+  templates: Map<string, ModelParameterTemplate>;
+  rates: Map<string, RateCard>;
+  digest: string;
+}
+function invalid(field: string): never {
+  throw new AppError("validation", "模型预置包字段无效：" + field);
+}
+function record(raw: unknown, keys: string[], field: string): Record<string, unknown> {
+  if (
+    !raw ||
+    typeof raw !== "object" ||
+    Array.isArray(raw) ||
+    Object.keys(raw).some((k) => !keys.includes(k))
+  )
+    return invalid(field);
+  return raw as Record<string, unknown>;
+}
+function text(raw: unknown, field: string, max = 256): string {
+  if (typeof raw !== "string" || !raw.trim() || raw.length > max || /[\u0000-\u001f]/u.test(raw))
+    return invalid(field);
+  return raw;
+}
+function list(raw: unknown, field: string, max: number): unknown[] {
+  if (!Array.isArray(raw) || raw.length > max) return invalid(field);
+  return raw;
+}
+function unique<T>(values: T[], key: (v: T) => string, field: string): T[] {
+  if (new Set(values.map(key)).size !== values.length) invalid(field);
+  return values;
+}
+function modalities(raw: unknown, field: string): string[] {
+  const choices = ["text", "image", "video", "audio", "file", "choice", "vector", "scores"];
+  return unique(
+    list(raw, field, 8).map((v) => {
+      if (typeof v !== "string" || !choices.includes(v)) return invalid(field);
+      return v;
+    }),
+    (v) => v,
+    field,
+  );
+}
+function profile(raw: unknown): ModelIOProfile {
+  const p = record(raw, ["id", "requiredInputs", "optionalInputs", "outputs"], "profile");
+  const requiredInputs = modalities(p.requiredInputs, "requiredInputs");
+  const optionalInputs = modalities(p.optionalInputs, "optionalInputs");
+  const outputs = modalities(p.outputs, "outputs");
+  if (
+    !requiredInputs.length ||
+    !outputs.length ||
+    optionalInputs.some((v) => requiredInputs.includes(v))
+  )
+    return invalid("ioProfiles");
+  return { id: text(p.id, "profile.id"), requiredInputs, optionalInputs, outputs };
+}
+const operations: ProviderOperation[] = [
+  "chat",
+  "image-generation",
+  "audio-speech",
+  "audio-transcription",
+  "rerank",
+  "video-generation",
+  "embeddings",
+  "music-generation",
+  "decision",
+];
+function capability(raw: unknown): PresetCapability {
+  const p = record(
+    raw,
+    ["operationId", "ioProfiles", "facts", "parameters", "parameterTemplateRef", "rateCardRefs"],
+    "capability",
+  );
+  const op = p.operationId as ProviderOperation;
+  if (!operations.includes(op)) return invalid("operationId");
+  const ioProfiles = unique(
+    list(p.ioProfiles, "ioProfiles", 32).map(profile),
+    (v) => v.id,
+    "profile.id",
+  );
+  if (!ioProfiles.length || !p.facts || typeof p.facts !== "object" || Array.isArray(p.facts))
+    return invalid("facts");
+  const facts: Partial<ModelFacts> = {};
+  for (const [name, value] of Object.entries(p.facts))
+    Object.assign(facts, { [name]: modelFactValue(name as keyof ModelFacts, value) });
+  if (facts.operations && !facts.operations.includes(op)) invalid("operations");
+  const parameters = record(
+    p.parameters ?? {},
+    [
+      "contextWindow",
+      "maxOutputTokens",
+      "effort",
+      "temperature",
+      "topP",
+      "size",
+      "quality",
+      "count",
+      "voice",
+      "format",
+      "durationSeconds",
+      "dimensions",
+      "topK",
+    ],
+    "parameters",
+  ) as Partial<ModelParameters>;
+  const rateCardRefs = unique(
+    list(p.rateCardRefs ?? [], "rateCardRefs", 64).map((v) => {
+      const r = record(v, ["rateCardId", "revision", "planKey"], "rateCardRef");
+      if (["__proto__", "prototype", "constructor"].includes(String(r.planKey)))
+        return invalid("planKey");
+      return {
+        rateCardId: text(r.rateCardId, "rateCardId"),
+        revision: text(r.revision, "revision"),
+        planKey: text(r.planKey, "planKey"),
+      };
+    }),
+    (r) => JSON.stringify([r.rateCardId, r.revision, r.planKey]),
+    "rateCardRefs",
+  );
+  return {
+    operationId: op,
+    ioProfiles,
+    facts,
+    parameters,
+    parameterTemplateRef: text(p.parameterTemplateRef, "parameterTemplateRef"),
+    rateCardRefs,
+  };
+}
+function preset(raw: unknown, revision: string): PackPreset {
+  const p = record(
+    raw,
+    [
+      "key",
+      "vendorId",
+      "family",
+      "series",
+      "modelId",
+      "displayName",
+      "checkedAt",
+      "referenceUrl",
+      "capabilities",
+      "prices",
+      "inherit",
+      "sourceRef",
+    ],
+    "preset",
+  );
+  const referenceUrl = text(p.referenceUrl, "referenceUrl", 2048);
+  if (!/^https?:\/\//.test(referenceUrl)) invalid("referenceUrl");
+  const checkedAt = text(p.checkedAt, "checkedAt", 32);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(checkedAt) || !Number.isFinite(Date.parse(checkedAt)))
+    invalid("checkedAt");
+  const capabilities = unique(
+    list(p.capabilities, "capabilities", 16).map(capability),
+    (v) => v.operationId,
+    "operationId",
+  );
+  if (!capabilities.length) invalid("capabilities");
+  const prices = list(p.prices ?? [], "prices", 64).map((raw) => {
+    const r = record(
+      raw,
+      ["kind", "unit", "currency", "amount", "tier", "durationSeconds"],
+      "price",
+    );
+    const kind = r.kind as ModelPrice["kind"];
+    if (
+      !["input", "output", "cache-read", "cache-write"].includes(kind) ||
+      typeof r.amount !== "string" ||
+      !/^\d{1,25}(?:\.\d{1,20})?$/.test(r.amount)
+    )
+      return invalid("price");
+    if (
+      r.durationSeconds !== null &&
+      (!Number.isSafeInteger(r.durationSeconds) || Number(r.durationSeconds) <= 0)
+    )
+      return invalid("durationSeconds");
+    return {
+      kind,
+      currency: text(r.currency, "currency", 16),
+      unit: text(r.unit, "unit", 64),
+      amount: r.amount,
+      tier: r.tier === null ? null : text(r.tier, "tier", 64),
+      durationSeconds: r.durationSeconds as number | null,
+    };
+  });
+  let inherit: PackPreset["inherit"];
+  if (p.inherit !== undefined) {
+    const rule = record(p.inherit, ["presetKey", "fields", "referenceUrl"], "inherit");
+    const fields = list(rule.fields, "inherit.fields", 10).map((field) => {
+      if (
+        typeof field !== "string" ||
+        ![
+          "toolCalling",
+          "parallelToolCalling",
+          "reasoningMode",
+          "structuredOutput",
+          "outputModalities",
+          "contextWindow",
+          "maxInputTokens",
+          "maxOutputTokens",
+        ].includes(field)
+      )
+        return invalid("inherit.fields");
+      return field as keyof ModelFacts;
+    });
+    const referenceUrl = text(rule.referenceUrl, "inherit.referenceUrl", 2048);
+    if (!/^https?:\/\//.test(referenceUrl) || !fields.length) invalid("inherit");
+    inherit = { presetKey: text(rule.presetKey, "inherit.presetKey"), fields, referenceUrl };
+  }
+  return {
+    sourceRef: text(p.sourceRef, "sourceRef"),
+    inherit,
+    key: text(p.key, "key"),
+    vendorId: text(p.vendorId, "vendorId"),
+    family: text(p.family, "family"),
+    series: text(p.series, "series"),
+    modelId: text(p.modelId, "modelId"),
+    displayName: text(p.displayName, "displayName"),
+    checkedAt,
+    referenceUrl,
+    revision,
+    capabilities,
+    prices,
+  };
+}
+const digest = (v: unknown) => createHash("sha256").update(JSON.stringify(v)).digest("hex");
+export const maxModelPackBytes = 2 * 1024 * 1024;
+export function validateModelPack(raw: unknown): ValidatedPack {
+  const row = record(raw, ["schemaVersion", "revision", "files", "manifest"], "manifest");
+  if (Buffer.byteLength(JSON.stringify(row), "utf8") > maxModelPackBytes) invalid("预置包大小");
+  if (row.schemaVersion !== 2) invalid("schemaVersion");
+  const revision = text(row.revision, "revision", 128);
+  const presets: PackPreset[] = [],
+    templates: ModelParameterTemplate[] = [],
+    rates: RateCard[] = [];
+  const sources = new Map<string, { url: string; checkedAt: string }>();
+  const files = unique(
+    list(row.files, "files", 128).map((raw) => {
+      const f = record(
+        raw,
+        ["path", "sha256", "presets", "templates", "sources", "rateCards"],
+        "file",
+      );
+      const path = text(f.path, "path");
+      if (!/^(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_-]+\.json$/.test(path)) invalid("path");
+      const data = list(f.presets, "presets", 2048);
+      const templateData =
+          f.templates === undefined ? undefined : list(f.templates, "templates", 256),
+        sourceData = f.sources === undefined ? undefined : list(f.sources, "sources", 4096),
+        cardData = f.rateCards === undefined ? undefined : list(f.rateCards, "rateCards", 2048);
+      const contents = {
+        presets: data,
+        ...(templateData && { templates: templateData }),
+        ...(sourceData && { sources: sourceData }),
+        ...(cardData && { rateCards: cardData }),
+      };
+      if (f.sha256 !== digest(contents)) invalid(path + ".sha256");
+      presets.push(...data.map((p) => preset(p, revision)));
+      templates.push(...(templateData ?? []).map((t) => readTemplate(t, operations)));
+      rates.push(...(cardData ?? []).map(parseRateCard));
+      for (const raw of sourceData ?? []) {
+        const source = record(raw, ["id", "url", "checkedAt"], "source");
+        const id = text(source.id, "source.id"),
+          url = text(source.url, "source.url", 2048),
+          checkedAt = text(source.checkedAt, "source.checkedAt", 32);
+        if (
+          sources.has(id) ||
+          !/^https?:\/\//.test(url) ||
+          !/^\d{4}-\d{2}-\d{2}$/.test(checkedAt) ||
+          !Number.isFinite(Date.parse(checkedAt))
+        )
+          invalid("source");
+        sources.set(id, { url, checkedAt });
+      }
+      return { path, sha256: f.sha256 as string, ...contents };
+    }),
+    (v) => v.path,
+    "path",
+  );
+  if (!files.length || presets.length > 8192) invalid("files");
+  unique(presets, (v) => v.key, "key");
+  unique(presets, (v) => JSON.stringify([v.vendorId, v.modelId]), "modelId");
+  const manifest = unique(
+    list(row.manifest, "manifest", 128).map((raw) => {
+      const entry = record(raw, ["path", "sha256"], "manifest.file");
+      const path = text(entry.path, "manifest.path"),
+        sha256 = text(entry.sha256, "manifest.sha256");
+      if (!files.some((f) => f.path === path && f.sha256 === sha256))
+        return invalid("manifest." + path);
+      return { path, sha256 };
+    }),
+    (m) => m.path,
+    "manifest.path",
+  );
+  if (manifest.length !== files.length) invalid("manifest.files");
+  unique(templates, (t) => t.id, "template.id");
+  unique(rates, (r) => JSON.stringify([r.rateCardId, r.revision]), "rateCard.revision");
+  for (const op of operations)
+    if (!templates.some((t) => t.id === op && t.operationId === op))
+      invalid("default template." + op);
+  for (const item of presets) {
+    const source = sources.get(item.sourceRef);
+    if (!source || source.url !== item.referenceUrl || source.checkedAt !== item.checkedAt)
+      invalid("sourceRef");
+    for (const cap of item.capabilities) {
+      const template = templates.find((t) => t.id === cap.parameterTemplateRef);
+      if (!template || template.operationId !== cap.operationId) invalid("parameterTemplateRef");
+      checkParameterValues(template, cap.parameters);
+      for (const ref of cap.rateCardRefs) {
+        const card = rates.find(
+          (r) => r.rateCardId === ref.rateCardId && r.revision === ref.revision,
+        );
+        if (
+          !card?.scope ||
+          card.scope.operationId !== cap.operationId ||
+          (card.scope.upstreamModelId && card.scope.upstreamModelId !== item.modelId)
+        )
+          invalid("rateCardRef");
+      }
+    }
+    if (!item.inherit) continue;
+    const parent = presets.find((p) => p.key === item.inherit!.presetKey);
+    if (
+      !parent ||
+      parent.key === item.key ||
+      parent.inherit ||
+      parent.vendorId !== item.vendorId ||
+      parent.family !== item.family ||
+      parent.series !== item.series
+    )
+      invalid("inherit.presetKey");
+    for (const cap of item.capabilities) {
+      const base = parent.capabilities.find((c) => c.operationId === cap.operationId);
+      if (!base || JSON.stringify(base.ioProfiles) !== JSON.stringify(cap.ioProfiles))
+        invalid("inherit.ioProfiles");
+    }
+  }
+  const document: ModelPack = { schemaVersion: 2, revision, manifest, files };
+  const byExactId = new Map<string, PackPreset[]>();
+  for (const p of presets) {
+    const list = byExactId.get(p.modelId) ?? [];
+    list.push(p);
+    byExactId.set(p.modelId, list);
+  }
+  return {
+    document,
+    presets,
+    byKey: new Map(presets.map((p) => [p.key, p])),
+    byExactId,
+    templates: new Map(templates.map((t) => [t.id, t])),
+    rates: new Map(rates.map((r) => [JSON.stringify([r.rateCardId, r.revision]), r])),
+    digest: digest(document),
+  };
+}
+export function bundledModelPack(): ValidatedPack {
+  return validateModelPack(
+    JSON.parse(
+      readFileSync(new URL("../../resources/model-presets.json", import.meta.url), "utf8"),
+    ),
+  );
+}
+export async function fetchPack(url: string, fetcher: typeof fetch): Promise<ValidatedPack> {
+  const target = new URL(url);
+  if (
+    target.username ||
+    target.password ||
+    target.hash ||
+    (target.protocol !== "https:" &&
+      !(
+        target.protocol === "http:" && ["127.0.0.1", "[::1]", "localhost"].includes(target.hostname)
+      ))
+  )
+    invalid("更新地址");
+  const response = await fetcher(target, {
+    redirect: "error",
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok || !response.body)
+    throw new AppError("service-unavailable", "预置包更新源暂不可用");
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > maxModelPackBytes) {
+        await reader.cancel();
+        invalid("预置包大小");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  try {
+    return validateModelPack(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+  } catch (err) {
+    if (err instanceof SyntaxError) invalid("JSON");
+    throw err;
+  }
+}

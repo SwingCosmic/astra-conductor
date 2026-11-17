@@ -41,6 +41,8 @@ export type ProviderId = string;
 export type AuthMethod = string;
 
 export interface Account {
+  /** Minimal broker observations supply credential identity without profile-local account preferences. */
+  credentialProjection?: "minimal";
   id: string;
   provider: ProviderId;
   /** 接入点：账号的展示事实、计费目录查表键与 GLM 端点选择都由它决定。 */
@@ -82,6 +84,10 @@ export interface CredentialEnvelope {
   authMethod: AuthMethod;
   expiresAt: string | null;
   secrets: CredentialSecrets;
+  /** Opaque generation changed whenever the managed Key is rotated. */
+  credentialBindingRevision?: string;
+  /** Only legacy 2A compatible connections embedded configurable destinations. */
+  modelRoutes?: import("@astra-conductor/contract/common").ModelRoute[];
 }
 
 export interface EncryptedCredential {

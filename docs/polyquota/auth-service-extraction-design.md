@@ -55,6 +55,35 @@
 
 链路的完整走向（以浏览器授权为例）：core flow 携带启动参数创建回调处理器 → 经端口要求桌面启动监听并回报实际端口 → core 拼 `redirectUri`、向 adapter 要授权 URL、经端口让桌面打开浏览器 → 回调抵达时由 core 处理器决策与校验 → core 用 code 换令牌、经 provisioner 保存凭据 → 最终结果（`Account` / pending 会话信息）经 coordinator 提供给桌面应用服务。桌面全程只执行"启动、打开、传输、存储"四个动作。
 
+```mermaid
+sequenceDiagram
+  participant App as 桌面应用服务
+  participant C as AuthCoordinator（core）
+  participant F as 供应商 auth-flow（core）
+  participant H as OAuthCallbackHandler（core）
+  participant S as callback-server（桌面端口）
+  participant B as 系统浏览器
+
+  App->>C: start(provider, method, options)
+  C->>F: flow.start
+  F->>H: createOAuthCallbackHandler（晚绑定 state）
+  F->>S: startCallbackServer(host, port, handler)
+  S-->>F: 实际监听端口
+  F->>F: 拼 redirectUri，取 adapter 授权 URL
+  F->>B: openExternal(授权 URL)
+  F-->>C: pending 句柄（finish / cancel）
+  C-->>App: AuthStartResult(pending)
+  B->>S: 回调 ?code&state
+  S->>H: handleRequest(pathname, query)
+  H-->>S: 200 成功页 HTML
+  H-->>F: completion resolve code
+  F->>F: 换令牌，provisioner.save 落库
+  App->>C: finish(sessionId)
+  C->>F: handle.finish()
+  F-->>C: Account
+  C-->>App: Account
+```
+
 CLI 导入同理：`CODEX_HOME` 解析、`~/.grok/auth.json` 读取、ZCode 凭据解密全部在 core flow 内完成，桌面不触碰任何读取与解析逻辑，只接收最终 `Account`——落库同样经由桌面构造的 provisioner 实例在 core 内完成。
 
 ## 3. 设计原则
@@ -363,7 +392,7 @@ core 侧测试全部无 Electron、无 socket、不读用户目录：flow 依赖
 
 完成后全量验证：`pnpm format:check && pnpm typecheck && pnpm test && pnpm build`，并跑 `POLYQUOTA_CODEX_CLI_SMOKE=1`（有 Codex 凭据的环境）或至少 `POLYQUOTA_SMOKE=1` / `POLYQUOTA_IPC_SMOKE=1` 启动烟测。
 
-落地记录（2026-09-30）：三步已全部完成。core 新增 `src/auth/{types,callback-handler,coordinator}.ts` 与四家 `providers/<id>/auth-flow.ts`；`zcode-credentials.ts`（含测试）`git mv` 进 `providers/glm/`；桌面仅剩 `src/auth/callback-server.ts` 监听端口实现，`auth-service.ts` 与 `CodexAuthService` 别名已删除，`main.ts` 以四工厂 + `AuthCoordinator` 接线。验证结果：typecheck 0 错误；144 个测试全过（core 88 = 原 51 + 回调处理器 11 + 协调器 11 + 四家 flow 15；桌面 26 = 原 20 + 回调服务器真实 loopback 5 + antigravity 全链路往返 1）；`pnpm build` 通过，编译产物加载即含全部新导出；Electron IPC 冒测输出 `POLYQUOTA_IPC_SMOKE_OK`。
+落地记录（2026-09-30）：三步已全部完成。core 新增 `src/auth/{types,callback-handler,coordinator}.ts` 与四家 `providers/<id>/auth-flow.ts`；`zcode-credentials.ts`（含测试）`git mv` 进 `providers/glm/`；桌面仅剩 `src/auth/callback-server.ts` 监听端口实现，`auth-service.ts` 与 `CodexAuthService` 别名已删除，`main.ts` 以四工厂 + `AuthCoordinator` 接线。验证：全工作区 typecheck、测试与构建通过，Electron IPC 冒测通过。
 
 预计规模：`auth-service.ts`（428 行）+ `zcode-credentials.ts`（171 行）拆为 coordinator ≈ 100 行、callback-handler ≈ 100 行、桌面 callback-server ≈ 45 行、codex flow ≈ 110 行、glm flow ≈ 70 行、grok flow ≈ 110 行、antigravity flow ≈ 60 行、types ≈ 60 行；桌面 `src/` 净减约 550 行。
 

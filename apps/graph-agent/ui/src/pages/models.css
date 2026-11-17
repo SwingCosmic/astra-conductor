@@ -1,0 +1,318 @@
+.model-page {
+  max-width: 1360px;
+  width: 100%;
+}
+.model-page h2,
+.custom-providers h2 {
+  font-size: 17px;
+  margin: 0;
+}
+.model-page h4,
+.custom-offering h3 {
+  margin: 8px 0;
+}
+.graph-actions button,
+.graph-row button,
+.rate-card-editor button,
+.custom-providers button,
+.graph-card > button,
+.graph-card summary + button {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: default;
+}
+:where(.model-page, .custom-providers) :where(button:not([class])) {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: var(--text-primary);
+  font: inherit;
+  background: white;
+  cursor: pointer;
+}
+:where(.model-page, .custom-providers) button:disabled {
+  cursor: default;
+}
+:where(.graph-editor, .catalog-browser, .custom-offering) h3 {
+  overflow-wrap: anywhere;
+}
+.graph-editor .rate-rule .tag-field {
+  border: 0;
+  padding: 6px 0;
+  margin: 0;
+}
+.plain-fields {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.provider-choice-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.provider-choice {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: white;
+  padding: 7px 12px;
+  color: inherit;
+  cursor: pointer;
+}
+.provider-choice .provider-mark {
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  font-size: 13px;
+}
+.provider-choice .provider-mark img {
+  max-width: 22px;
+  max-height: 22px;
+}
+.provider-choice[aria-pressed="true"],
+.catalog-list button[aria-pressed="true"] {
+  border-color: var(--brand-accent);
+  background: var(--brand-soft, #f2efff);
+}
+.scope-picker {
+  margin: 18px 0 5px;
+}
+.custom-providers {
+  padding: 12px 0;
+}
+.custom-providers .provider-row {
+  margin: 8px 0;
+}
+.custom-offering {
+  padding: 12px;
+  min-width: 0;
+}
+.custom-providers .provider-summary,
+.custom-offering .provider-account-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.custom-providers .provider-heading {
+  flex: 1 1 150px;
+}
+.custom-offering .provider-account-row strong {
+  overflow-wrap: anywhere;
+}
+.custom-offering .provider-account-row .method-chip {
+  width: auto;
+}
+.custom-offering + .custom-offering {
+  border-top: 1px solid var(--border);
+}
+.offering-form,
+.rate-rule {
+  margin: 14px 0;
+  padding: 12px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+.endpoint-row,
+.rate-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 130px), 1fr));
+  gap: 9px;
+  align-items: end;
+  margin: 10px 0;
+}
+.catalog-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.82fr) minmax(320px, 1.6fr);
+  gap: 14px;
+  align-items: start;
+}
+.catalog-layout > .graph-card {
+  margin: 0;
+  min-width: 0;
+}
+.catalog-list {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+  max-height: 47vh;
+  overflow-y: auto;
+}
+.catalog-list li + li {
+  margin-top: 5px;
+}
+.catalog-list button {
+  display: grid;
+  text-align: start;
+  gap: 3px;
+  width: 100%;
+  border: 1px solid var(--border);
+  padding: 9px 10px;
+  background: white;
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+  color: inherit;
+  cursor: pointer;
+}
+.catalog-list span,
+.catalog-list small,
+.io-profile,
+.select-entry-hint,
+.config-meta {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.editor-tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+  padding: 0;
+  margin: 16px 0;
+}
+.editor-tabs button {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 9px 12px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.editor-tabs button[aria-pressed="true"] {
+  color: var(--brand-accent);
+  border-bottom-color: var(--brand-accent);
+  font-weight: bold;
+}
+.editor-fields {
+  margin: 12px 0;
+}
+.graph-editor .config-field {
+  margin: 3px 0;
+}
+.graph-editor .tag-field {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.tag-field legend {
+  font-size: 13px;
+  font-weight: 600;
+}
+.tag-field label {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin: 4px 6px 1px 0;
+  font-size: 12px;
+}
+.config-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+.config-meta button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--brand-accent);
+}
+.file-picker {
+  display: none;
+}
+@media (max-width: 950px) {
+  .catalog-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .catalog-list {
+    max-height: 280px;
+  }
+}
+
+.graph-card {
+  padding: 18px 20px;
+  margin: 16px 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: white;
+}
+.graph-card-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.graph-card-header h2 {
+  margin: 0;
+  font-size: 17px;
+  overflow-wrap: anywhere;
+}
+.graph-card .setting-hint {
+  margin: 6px 0;
+}
+.graph-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+  gap: 12px;
+}
+.graph-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.graph-field input,
+.graph-field select {
+  width: 100%;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  color: inherit;
+  background: white;
+  font: inherit;
+  font-weight: 400;
+}
+.graph-actions,
+.graph-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+  margin-top: 12px;
+}
+.graph-row .graph-field {
+  flex: 1 1 160px;
+}
+.graph-card details {
+  margin-top: 12px;
+}
+.graph-card summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.graph-card pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 12px;
+  background: #f6f7fb;
+  border-radius: 6px;
+}
+@media (max-width: 540px) {
+  .app-shell.theme-purple .brand strong,
+  .app-shell.theme-purple .sidebar nav button span {
+    display: none;
+  }
+  .app-shell.theme-purple .sidebar nav {
+    flex-wrap: wrap;
+  }
+}

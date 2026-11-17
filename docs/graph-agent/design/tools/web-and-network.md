@@ -142,9 +142,22 @@ GraphAgent 持久保存种子、固定范围、已发送请求、后端请求/�
 
 `action:read` 接收 crawlId、cursor 和 0–60000 的 waitMs；返回稳定的已结算页面、下一游标、活动状态、覆盖统计和停止原因。增量结果只追加已结算条目，游标不因排序/重试重排。长抓取不把全文不断塞入上下文，页面详情通过 `web_extract` 的 read 分支读取。
 
-```text
-queued → running → completed / limited / failed
-                 └→ cancel-requested → canceled / lost
+```mermaid
+stateDiagram-v2
+    state "cancel-requested" as CR
+    [*] --> queued
+    queued --> running
+    running --> completed
+    running --> limited
+    running --> failed
+    running --> CR
+    CR --> canceled
+    CR --> lost
+    completed --> [*]
+    limited --> [*]
+    failed --> [*]
+    canceled --> [*]
+    lost --> [*]
 ```
 
 completed 表示该次后端调用与本地结果归档已结算，不代表“全站所有内容”或远端队列已穷尽。独立 `coverageState` 记录 `complete-in-scope / partial / unknown`；只有后端提供足够的遍历/截断事实时才能标 `complete-in-scope`。范围外链接仅在实际可见时记录 skipped；已知页面/深度/时间/bytes/预算截断时为 limited，明确停止原因与未处理数量的可知范围。全部页面失败为 failed；部分失败保留逐页原因，覆盖事实不足则标 unknown。
@@ -186,8 +199,8 @@ MCP 未安装时按需进入组件安装流程，安装后才注册相应工具�
 | 动作                                                 | 判断                                                                           |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------ |
 | Electron 宿主创建窗口/WebContentsView 并加载网页     | 属于 Electron 应用服务；可在创建前启用调试端口                                 |
-| MCP 连接已存在的 Electron renderer target            | 官方连接入口与本地样本支持此路线，但不是对任意 Electron 应用的完整兼容承诺     |
-| MCP 的 new_page 自行创建新的 Electron 窗口/内嵌 view | 本地探测失败；不能把可连接误写为可完整管理内嵌浏览器生命周期                   |
+| MCP 连接已存在的 Electron renderer target            | 官方连接入口支持此路线，但不是对任意 Electron 应用的完整兼容承诺               |
+| MCP 的 new_page 自行创建新的 Electron 窗口/内嵌 view | 固定版本组合不支持；不能把可连接误写为可完整管理内嵌浏览器生命周期             |
 
 Electron 支持 `--remote-debugging-port`，Chrome DevTools MCP 提供 `--browserUrl / --wsEndpoint` 连接已有调试实例。这一组合允许先由宿主创建内容，再由 MCP attach；`--autoConnect` 的 Chrome 配置发现不是 Electron 宿主发现协议。
 
@@ -200,20 +213,19 @@ Electron 支持 `--remote-debugging-port`，Chrome DevTools MCP 提供 `--browse
 
 页面/target ID、MCP generation 和 Electron webContents 身份之间必须登记映射；重连不能假设之前的整数 pageId 仍指向同一页。新导航要求重新取得快照引用。Electron 主进程 Node inspector 与 renderer 的 CDP 端口不同，本方案只需要 renderer 页面自动化，不因此开放主进程调试。
 
-### 7.3 本机探测记录
+### 7.3 兼容基线
 
-环境固定为 Windows、Node 24.21.0（MCP 客户端）、Electron 42.11.6 / Chromium 148.0.7778.280、chrome-devtools-mcp 1.11.0。使用临时 userData、本机 HTTP 静态测试页、隐藏窗口和独立调试端口，未连接用户应用或登录资料。
+chrome-devtools-mcp 1.11.0 与 Electron 42（Chromium 148）组合的已验证行为构成首版兼容基线；升级 MCP 或 Electron 版本时重新执行对应样本。
 
-| 样本                                         | 结果                                                                                     | 证据边界                                                      |
-| -------------------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| 宿主 BrowserWindow 与 WebContentsView 已加载 | MCP 默认 list_pages 可列出宿主和 view                                                    | 可以发现已有目标，不代表目标隔离已完成                        |
-| WebContentsView 页面快照与点击               | take_snapshot 获得按钮引用；click 后再次读取能见 clicked                                 | 已验证基础 DOM/可访问性操作                                   |
-| WebContentsView 截图                         | 普通隐藏窗口尝试超时；显式 offscreen、关闭 backgroundThrottling 的样本成功               | 不能承诺所有隐藏/嵌入组合都支持；需固定宿主渲染配置           |
-| WebContentsView 导航                         | 独立无阻塞样本的 navigate_page 成功切换已有 view                                         | 已验证已有目标导航；没有创建新 view                           |
-| Electron `<webview>` guest                   | 默认未列出；加 `experimentalIncludeAllPages` 后列出并可读快照                            | 点击在不同可见/离屏配置中不稳定，不作为首版稳定路径           |
-| MCP new_page                                 | 返回 `Protocol error (Target.createTarget): Not supported`                               | 该版本组合不能通过此命令新建 Electron 页面                    |
+| 行为                                   | 基线结论与约束                                                                                              |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| 目标发现                               | list_pages 可列出宿主 BrowserWindow 与 WebContentsView 已加载的目标；发现目标不等于完成目标隔离            |
+| WebContentsView 快照、点击与导航       | take_snapshot、click、navigate_page 可完成基础 DOM/可访问性操作与已有 view 导航                             |
+| WebContentsView 截图                   | 窗口需显式 offscreen 并关闭 backgroundThrottling；其他隐藏/嵌入组合不承诺支持，宿主渲染配置固定后纳入验收  |
+| Electron `<webview>` guest             | 需开启 `experimentalIncludeAllPages` 才可见；点击在不同可见/离屏配置下不稳定，不作为首版路径                |
+| new_page                               | 该版本组合不支持新建 Electron 页面；页面创建由宿主生命周期桥或受控应用服务承担（见 7.4）                    |
 
-当前结论：**由 Electron 宿主创建的 WebContentsView 可以被该 MCP 连接并完成基础操作；新建页面仍需要宿主桥接，完整内嵌浏览器不能直接视为现成能力。**
+基线结论：**由 Electron 宿主创建的 WebContentsView 可以被该 MCP 连接并完成基础操作；新建页面仍需要宿主桥接，完整内嵌浏览器不能直接视为现成能力。**
 
 ### 7.4 是否增加本地渲染
 
@@ -269,12 +281,29 @@ destination 缺省为受控制品 artifact，避免不必要的工作文件修�
 
 start 先持久登记 downloadId、固定参数 digest 与 attemptId，再在受管活动中流式写临时内容。`waitMs` 只决定本次等多久：0 立即返回后台资源，正数有界等待，到期仍在运行就返回 `running + downloadId`，不重复创建任务；下载总运行预算另设 `runtimeLimitMs`。read 分支携带 downloadId/cursor/waitMs，返回 resourceState、attemptId、receivedBytes、expectedBytes（可空）、校验/提交阶段、下一游标与收据。未知总长不展示虚构百分比。
 
-```text
-queued → running → verifying → committing → completed
-          ├→ retry-wait → running（新的 attemptId，从零重下）
-          ├→ failed
-          └→ cancel-requested → canceled / completed / lost
+```mermaid
+stateDiagram-v2
+    state "cancel-requested" as CR
+    state "retry-wait" as RW
+    [*] --> queued
+    queued --> running
+    running --> verifying
+    verifying --> committing
+    committing --> completed
+    running --> RW
+    RW --> running
+    running --> failed
+    running --> CR
+    CR --> canceled
+    CR --> completed
+    CR --> lost
+    completed --> [*]
+    failed --> [*]
+    canceled --> [*]
+    lost --> [*]
 ```
+
+进入 `retry-wait` 后以新的 attemptId 从零重下。
 
 completed 必须已完成内容校验及 artifact/目标文件提交，返回最终 URL、摘要、真实大小、artifactRef 或文件写入收据、verifiedExpectedDigest、原目标版本/新版本和存储结果。HTTP、校验或提交失败均进入 failed 并保留具体阶段；本地任务状态与原 start 工具调用的协议终态分开，后台结果不重复结算原 call ID。
 

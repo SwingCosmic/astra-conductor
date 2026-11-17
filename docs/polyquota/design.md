@@ -3,7 +3,7 @@
 | 项目     | 内容                                                                |
 | -------- | ------------------------------------------------------------------- |
 | 状态     | 草案，产品方向已确认                                                |
-| 更新日期 | 2026-09-24                                                          |
+| 更新日期 | 2026-11-17                                                          |
 | 目标平台 | Windows 优先                                                        |
 | 技术方向 | pnpm monorepo、TypeScript、Vue 3、Electron                          |
 | 协议参考 | [OmniRoute](https://github.com/diegosouzapw/OmniRoute) 固定版本源码 |
@@ -61,6 +61,19 @@ Claude Code 与 OpenCode Go 已作为首轮边界验证样板接入，范围分�
 ## 4. 总体架构
 
 工作区包边界、依赖和产品启动形态遵循[项目架构](../architecture.md)。PolyQuota 的用量页、轮询、托盘和通知归本产品。页面通过 Hono 应用调用用量服务，后者使用 Core 提供的账号、凭据刷新和用量归一化能力。当前 Electron 与开发测试用 Node/Web 的具体接入方式见[运行说明](./runtime-and-communication-review.md)。
+
+```mermaid
+flowchart TB
+  UI[Vue 用量页] -->|HTTP / SSE| API[Hono 应用]
+  API --> APP[产品应用服务：快照 / 刷新 / 兑换 / 设置]
+  SCHED[RefreshScheduler] --> POLL[PollingService]
+  POLL --> APP
+  APP --> CORE[Core 适配器：认证 / 凭据刷新 / 用量归一化]
+  APP --> DB[(SQLite：账号、加密凭证、最近用量、通知状态、设置)]
+  CORE --> UP[上游认证与用量接口]
+```
+
+适配器发出的每个新请求按 6.4 节顺序解析代理；SQLite 凭证列经 Electron `safeStorage` 加密（6.6 节）。
 
 ## 5. OmniRoute 源码管理
 
@@ -191,20 +204,18 @@ Node 与 Electron 使用彼此隔离的原生二进制。workspace 中的 `bette
 | 桌面运行时 | Electron 42.11.6；构建 Node 不低于 22.12         | 固定已完成高危修复的补丁版本，同时保留明确升级点 |
 | 本地数据 | SQLite + `better-sqlite3` 12.11.1；凭证逐账号加密 | 事务边界清晰；Node/Electron ABI 隔离；不引入整库加密 |
 
-其他候选方案不再逐项展开。读取 OmniRoute 本地接口可用于开发对照，CodexBar 可用于通知交互参考，但二者都不是产品运行依赖。
+读取 OmniRoute 本地接口可用于开发对照，CodexBar 可用于通知交互参考，但二者都不是产品运行依赖。
 
 ## 9. 待探索事项
 
 以下问题不阻塞开始实施，但在相关阶段结束前需要给出结论：
 
 - `better-sqlite3` 12.11.1 已在 Electron 42.11.6、Windows x64、asar 和 NSIS 安装包中完成加载、建库和重开验证；Electron 二进制现已与 workspace 的 Node ABI 隔离，升级 Electron、Node、驱动、平台、架构或 electron-builder 时必须重新执行预构建并重复安装包验证；
-- Electron 42 将于 2026-10-20 停止上游支持；首次发布前重新检查安全公告并确定后续升级基线；
+- Electron 42 已于 2026-10-20 停止上游支持，当前仍锁定 42.11.6；首次发布前重新检查安全公告并确定后续升级基线；
 - Antigravity 与 OmniRoute 数据库耦合的最小拆分方式；
 - ZCode 已公开 v2 凭据路径、AES-256-GCM 格式及 Coding Plan 账号键规则；本项目按公开实现只读导入 Individual Coding Plan API Key，并以固定加密样本覆盖国内、国际区域和错误分类。上游格式变化时应更新该边界，不扫描浏览器状态或其他未声明文件；
 - 应用名称、开机启动默认值和按配额窗口设置通知阈值的必要性；
 - macOS 与 Linux 的最低支持范围。
-
-未经验证的方向应保留为探索项，不提前固化为详细接口或承诺。
 
 ## 10. 验收原则
 

@@ -10,6 +10,10 @@ export interface BusinessBinding {
 
 /** Provider repositories follow the selected backend. Application settings belong to the profile. */
 export class SelectedBusinessStorage implements StoragePort {
+  private source = "private";
+  get visibilityRef() {
+    return this.source;
+  }
   private selected: StoragePort;
   private readonly shared = new Map<string, StoragePort>();
 
@@ -32,11 +36,13 @@ export class SelectedBusinessStorage implements StoragePort {
       projection = this.openShared(identity);
       this.shared.set(identity, projection);
     }
+    this.source = identity;
     this.selected = projection;
     return projection;
   }
 
   selectPrivate(): StoragePort {
+    this.source = "private";
     this.selected = this.profile;
     return this.profile;
   }
@@ -52,6 +58,10 @@ export class SelectedBusinessStorage implements StoragePort {
   }
   get notifications() {
     return this.selected.notifications;
+  }
+  /** Product data scoped to the selected vault and grant, including model settings. */
+  get selectedSettings() {
+    return this.selected.settings;
   }
   get settings() {
     return this.profile.settings;

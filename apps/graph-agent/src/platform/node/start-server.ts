@@ -46,11 +46,14 @@ export async function startGraphServer(options: GraphServerOptions = {}) {
       http: {
         fetch: (input, init) => {
           const request = new Request(input, init);
+          const modelCall =
+            request.method === "POST" &&
+            /\/(?:chat\/completions|messages|responses)$/.test(new URL(request.url).pathname);
           return fetch(request, {
             signal: AbortSignal.any([
               request.signal,
               controller.signal,
-              AbortSignal.timeout(30_000),
+              AbortSignal.timeout(modelCall ? 120_000 : 30_000),
             ]),
           });
         },

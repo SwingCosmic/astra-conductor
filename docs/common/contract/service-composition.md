@@ -2,6 +2,23 @@
 
 2026-11-08 · 阶段一 Service、共享传输、泛型切片和公共 Hono 组合已实施；模型方法在阶段二扩展。每个产品以一个 Service 作为前端业务入口，由公共接口与产品专属接口组合而成，实现时通过泛型 mixin 辅助方法将功能切片类合成为最终类。HTTP 路由和 DTO 是这些接口的传输契约，页面通过 Service 调用。服务端同样组合 Core 公共服务与产品专属服务，再统一挂载到本产品 Hono 应用。[项目架构](../../architecture.md) · [契约包设计](./design.md) · [公共 API 与 DTO](./common-api.md) · [GraphAgent 契约](../../graph-agent/design/frontend-contract.md) · [PolyQuota 契约](../../polyquota/frontend-contract.md)
 
+单个产品从页面到 Core 的组合与调用关系如下，两端结构对两产品一致：
+
+```mermaid
+flowchart TB
+  subgraph FE["本产品前端 ui/"]
+    Pages["共用页面与产品页面"] --> Client["产品 Service 客户端<br/>公共切片与产品切片经 mixin 合成"]
+    Client --> Transport["共享 IServiceTransport<br/>shared-ui/services"]
+  end
+  Transport -->|"fetch / SSE"| Hono["本产品 Hono 应用<br/>src/server 组合根"]
+  Hono --> CommonRoutes["core/http 公共路由工厂<br/>providers 与 credentials 路由"]
+  Hono --> ProductRoutes["产品专属子应用"]
+  Hono --> Events["唯一 /api/v1/events 事件中心"]
+  CommonRoutes --> CoreSvc["Core 公共应用服务"]
+  ProductRoutes --> ProductSvc["产品业务服务"]
+  ProductSvc --> CoreSvc
+```
+
 ## 1. 从领域接口组合产品 Service
 
 公共接口归 `contract/common`，产品专属接口和最终产品 Service 分别归 `contract/polyquota`、`contract/graph-agent`。它们只声明接口、DTO、事件和校验，不实现网络请求。

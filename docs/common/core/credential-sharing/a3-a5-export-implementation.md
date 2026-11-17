@@ -51,7 +51,7 @@ broker 继续使用独立仓库产物，本次未修改其实现、发布 Releas
 
 普通接入令牌使用 broker CLI 创建的当前用户 DPAPI 文件；Windows 宿主通过固定的系统 PowerShell DPAPI 适配器解密，秘密经子进程私有 stdin/stdout 传递，不进入命令行、环境变量或 shell 历史。主密钥使用 PolyQuota 自身 safeStorage，数据库仅保存引用和非秘密状态。
 
-普通 SDK 连接没有 management 权限，也不执行 provider 请求。provider 仍由产品执行；A7 的租约/提交、事件同步和共享活动后端尚未接入。当前未配置凭据后端的 Node 宿主显示不可导出，Linux/macOS 不声称具备完整产品接入。
+普通 SDK 连接没有 management 权限，也不执行 provider 请求。provider 仍由产品执行；A7 的租约/提交、事件同步和共享活动后端尚未接入。当前未配置凭据后端的 Node 宿主显示不可导出；产品接入仅覆盖 Windows x64。
 
 ## 5. 公开接口
 
@@ -70,19 +70,13 @@ broker 继续使用独立仓库产物，本次未修改其实现、发布 Releas
 
 仓库常规检查：`pnpm format:check`、`pnpm typecheck`、`pnpm test`、`pnpm build`、`pnpm package`。
 
-真实 Windows 导出侧验收（完整构建后）：
+真实 Windows 导出侧验收在完整构建后使用根入口 `pnpm test:credential-sharing --publish <完整 publish 目录>`，发布目录由独立 broker 的本地自包含产物提供。
 
-```powershell
-pnpm --filter @astra-conductor/polyquota test:credential-sharing --publish E:/dev/js/astra-credential-broker/artifacts/publish/win-x64
-```
-
-也可使用根入口 `pnpm test:credential-sharing --publish <完整 publish 目录>`，会先构建。
-
-验收使用两个独立 Electron 进程、隔离 userData/SQLite/服务 home/vault 和虚构凭据，验证本地包复制安装、真实 DPAPI 与 safeStorage、.NET 管道互通、迁移包校验、来源准备、重启后复用版本及恢复交付、交付确认、卸载重装保留绑定/密钥、接管前取消。完成后卸载测试组件，临时目录保留无秘密结果 JSON、UI 截图和加密测试数据，不修改用户的实际账号与服务安装。
+验收使用两个独立 Electron 进程、隔离 userData/SQLite/服务 home/vault 和虚构凭据，验证本地包复制安装、真实 DPAPI 与 safeStorage、.NET 管道互通、迁移包校验、来源准备、重启后复用版本及恢复交付、交付确认、卸载重装保留绑定/密钥、接管前取消。完成后卸载测试组件并清理本地临时数据，不修改用户的实际账号与服务安装。
 
 单元与界面测试覆盖重复 JSON/非法 Unicode、错误迁移密钥、篡改密码参数、错误服务证明、管道地址、冻结与排空、丢失初始化响应、缓存失败、来源水位变化、接管后拒绝取消、交付确认后清除界面密钥，以及无秘密状态响应。没有执行真实 provider 请求、干净虚拟机或 GraphAgent/共享刷新闭环验收。
 
-2026-11-05 本机初次结果：351 项测试、类型检查、构建与 NSIS 打包通过；安装包内容检查确认 SDK 与导出服务已包含，独立 broker 未打入。双进程真实导出/恢复、设置页渲染及确认交付后隐藏密钥均通过。本次代码格式检查通过；全仓格式检查仍有 94 个未修改文件的既有问题。
+2026-11-05 初次验收：351 项测试、类型检查、构建与 NSIS 打包通过；安装包内容检查确认 SDK 与导出服务已包含，独立 broker 未打入。双进程真实导出/恢复、设置页渲染及确认交付后隐藏密钥均通过。本轮仅修正变更文件的格式，仓库既有未修改文件的格式问题未批量处理。
 
 ## 7. 用户目录与凭据管理界面
 
@@ -94,7 +88,7 @@ pnpm --filter @astra-conductor/polyquota test:credential-sharing --publish E:/de
 
 独立 broker 的目录权限策略已同步调整。控制器仅传递白名单错误码；未知诊断内容仍不进入 UI。旧组件若仍返回 ACL 限制错误，提示重新安装新版本地组件。
 
-2026-11-05 本轮验收：产品 356 项测试、类型检查、构建和 NSIS 打包通过；broker 82 项通过、1 项 Unix 文件模式测试在 Windows 跳过。真实双进程导出/恢复及独立管理页截图验证通过；Windows 系统目录选择器实际打开并回传选择结果，取消路径由交互和服务测试覆盖。独立 broker 生命周期验收首轮在重装步骤出现一次 io-failure，保留记录后复测完整 29 项通过，首轮问题尚未稳定复现。本机组件与本地包已更新，原用户目录的访问规则已恢复，原有 6 条导出和密钥交付记录保留。
+2026-11-05 本轮验收：产品 356 项测试、类型检查、构建和 NSIS 打包通过；broker 82 项通过、1 项 Unix 文件模式测试在 Windows 跳过。真实双进程导出/恢复及独立管理页验证通过；Windows 系统目录选择器实际打开并回传选择结果，取消路径由交互和服务测试覆盖。独立 broker 生命周期验收完整 29 项通过；首轮在重装步骤出现的间歇性 io-failure 由第 8 节的停止确认修复覆盖。
 
 ## 8. 取消展示与空闲 WAL 写入修复
 
@@ -106,4 +100,4 @@ pnpm --filter @astra-conductor/polyquota test:credential-sharing --publish E:/de
 
 本轮完整验收还定位了上轮间歇性重装 IO 失败：Stop RPC 被接受后，draining ticker 可能在停止回复送达前关闭管道。控制器现在对该阶段的传输 EOF/超时继续执行原有退出确认；只有旧进程退出且 vault.lock、supervisor.lock 都可取得才返回成功，不将丢失回复直接视为停服成功。
 
-本轮最终验证：产品 356 项测试、类型检查、构建与 NSIS 打包通过；broker 84 项通过、1 项 Unix 测试在 Windows 跳过；修复后的完整 29 项生命周期验收与真实 Electron 导出/恢复/取消及取消页截图通过。全仓格式检查仍为 94 个既有未修改文件问题，本次代码格式与 diff 检查通过。本机组件和本地包已更新；在实际用户 vault 启动后连续观察 10 秒，credentials.db-wal 始终为 8,272 字节，正常停止确认后文件由 SQLite 清理。用户状态保持 cancelled、6 条原导出记录、已确认交付，frozen=false。
+本轮最终验证：产品 356 项测试、类型检查、构建与 NSIS 打包通过；broker 84 项通过、1 项 Unix 测试在 Windows 跳过；修复后的完整 29 项生命周期验收与真实 Electron 导出/恢复/取消验证通过。本轮仅修正变更文件的格式，仓库既有未修改文件的格式问题未批量处理。空闲场景下 WAL 不再增长，正常停止确认后由 SQLite 清理 WAL；既有 cancelled 状态、原导出记录与已确认交付保持不变。

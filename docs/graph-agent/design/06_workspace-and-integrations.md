@@ -100,6 +100,19 @@
 
 GraphAgent 的应用服务按领域提供命令与查询。Web 与 Electron 页面通过同一 fetch/SSE 客户端访问 GraphAgent 的 Hono 应用，由应用服务调用 Actor、文件系统和数据库。产品与共用 API 的路径及契约归属遵循[项目架构](../../architecture.md)。
 
+```mermaid
+flowchart LR
+    UI["Web / Electron 页面"] -->|"fetch + SSE"| APP["GraphAgent Hono 应用"]
+    APP --> SVC["应用服务分组<br/>Goal/Task · 应用管理 · Conversation · Workforce · Policy/Tool<br/>Model/Budget · Memory/Skill · Maintenance · Integration"]
+    SVC --> ACT["Actor 与任务图"]
+    SVC --> FS["文件系统与工作区"]
+    SVC --> DB["profile 业务库 graph-agent.sqlite3"]
+    SVC --> CRED["凭据后端（私有存储 / broker）"]
+    SVC --> EXT["外部 Coding Agent / 远端 Worker<br/>（RemoteAgentPort）"]
+    MCP["MCP 工具宿主"] --> SVC
+    A2A["A2A 客户端与远端 Agent"] --> SVC
+```
+
 | 服务边界     | 候选能力                                                                                                               |
 | ------------ | ---------------------------------------------------------------------------------------------------------------------- |
 | Goal/Task    | createGoal、getGoalSnapshot、listGoals、getTaskDetail、proposeGraphChange、reviseTask、retryTask                       |

@@ -3,7 +3,7 @@ import type { ProviderDescriptor } from "../types.js";
 export const opencodeGoDescriptor: ProviderDescriptor = {
   provider: "opencode-go",
   displayName: "OpenCode Go",
-  capabilities: ["account", "usage"],
+  capabilities: ["account", "usage", "model-catalog", "inference"],
   offerings: [
     {
       id: "opencode-go",

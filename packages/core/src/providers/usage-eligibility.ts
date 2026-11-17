@@ -1,17 +1,30 @@
+import { isLocalKeyAccount } from "./compatible-api-key/descriptor.js";
 import type { Account } from "../models.js";
 import type { ProviderRegistry } from "./registry.js";
 
 /** Old subscription accounts need no plan lookup. Explicit account or offering exclusions win. */
-export function supportsSubscriptionUsage(account: Account, providers: ProviderRegistry): boolean {
+export function subscriptionUsageEligibility(
+  account: Account,
+  providers: ProviderRegistry,
+): "eligible" | "ineligible" | "unknown" {
+  if (isLocalKeyAccount(account)) return "ineligible";
   const offering = providers.findOffering(account.offeringId);
   const eligibility = account.publicMetadata.supportsUsage;
-  return (
-    !!offering &&
-    offering.provider === account.provider &&
-    offering.offering.supportsSubscriptionUsage !== false &&
-    offering.offering.authMethods.some(({ method }) => method === account.authMethod) &&
-    eligibility !== false &&
-    eligibility !== "false" &&
-    !!providers.getUsage(account.provider)
-  );
+  if (
+    !offering ||
+    offering.provider !== account.provider ||
+    !offering.offering.authMethods.some(({ method }) => method === account.authMethod)
+  )
+    return "unknown";
+  if (
+    offering.offering.supportsSubscriptionUsage === false ||
+    eligibility === false ||
+    eligibility === "false"
+  )
+    return "ineligible";
+  return providers.getUsage(account.provider) ? "eligible" : "unknown";
+}
+
+export function supportsSubscriptionUsage(account: Account, providers: ProviderRegistry): boolean {
+  return subscriptionUsageEligibility(account, providers) === "eligible";
 }

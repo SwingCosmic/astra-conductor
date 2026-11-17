@@ -1,4 +1,24 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import {
+  parseConnectionRequest,
+  modelEndpointDescriptors,
+  type CreateConnectionRequest,
+  type EditConnectionRequest,
+  type PublicConnection,
+} from "@astra-conductor/contract/common";
+import type { Account, CredentialEnvelope } from "./models.js";
+import {
+  compatibleKeyId,
+  isCustomProviderId,
+  isLocalKeyAccount,
+  officialOpenAiOffering,
+} from "./providers/compatible-api-key/descriptor.js";
+import {
+  resolveModelRoutes,
+  routeRevisionKey,
+  bindModelRoutes,
+  type ConnectionProviderSource,
+} from "./providers/model-routes.js";
 import type {
   BackendContext,
   CommandContext,
@@ -21,6 +41,9 @@ export interface CommonProviderApplicationOptions {
   credentials: CredentialService;
   auth: AuthCoordinator;
   registry: ProviderRegistry;
+  connectionProviders?: ConnectionProviderSource;
+  allowLegacyConnections?: boolean;
+  accountDeleted?(accountId: string): void;
   refresh?: RefreshCoordinator;
   mutations?: CredentialMutationGate;
   instanceId?: string;
@@ -51,6 +74,10 @@ export class CommonProviderApplicationService {
         undefined,
         options.mutations,
       );
+  }
+
+  private get legacyConnections() {
+    return this.options.allowLegacyConnections ?? !this.options.connectionProviders;
   }
 
   getRevision(): number {
@@ -99,7 +126,11 @@ export class CommonProviderApplicationService {
     const visibleAccountIds = this.options.visibleAccountIds?.();
     const accounts = this.options.storage.accounts
       .list()
-      .filter((account) => visibleAccountIds?.has(account.id) ?? true)
+      .filter(
+        (account) =>
+          (visibleAccountIds?.has(account.id) ?? true) &&
+          (this.options.connectionProviders || !isCustomProviderId(account.provider)),
+      )
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
       // Management listings never decrypt credential payloads just to fill display fields.
       .map((account) => toPublicAccount(account));
@@ -110,36 +141,50 @@ export class CommonProviderApplicationService {
       generatedAt: (this.options.now?.() ?? new Date()).toISOString(),
       stamp: { instanceId: this.instanceId, scope: "providers", revision: this.revision },
       backend,
-      providers: this.options.registry.descriptors.map((descriptor) => ({
-        provider: descriptor.provider,
-        displayName: descriptor.displayName,
-        offerings: descriptor.offerings.map((offering) => ({
-          id: offering.id,
-          provider: offering.provider,
-          displayName: offering.displayName,
-          ...(offering.description ? { description: offering.description } : {}),
-          ...(offering.websiteUrl ? { websiteUrl: offering.websiteUrl } : {}),
-          ...(offering.iconKey ? { iconKey: offering.iconKey } : {}),
-          authMethods: offering.authMethods.map((method) => ({
-            method: method.method,
-            interaction: method.interaction,
-            ...(method.sourceLabel ? { sourceLabel: method.sourceLabel } : {}),
-            ...(method.sourcePathHint ? { sourcePathHint: method.sourcePathHint } : {}),
+      modelEndpoints: modelEndpointDescriptors,
+      providers: this.options.registry.descriptors
+        .filter((d) => d.provider !== compatibleKeyId || this.legacyConnections)
+        .map((descriptor) => ({
+          provider: descriptor.provider,
+          displayName: descriptor.displayName,
+          offerings: descriptor.offerings.map((offering) => ({
+            id: offering.id,
+            ...(offering.connectionKind ? { connectionKind: offering.connectionKind } : {}),
+            provider: offering.provider,
+            displayName: offering.displayName,
+            ...(offering.description ? { description: offering.description } : {}),
+            ...(offering.websiteUrl ? { websiteUrl: offering.websiteUrl } : {}),
+            ...(offering.iconKey ? { iconKey: offering.iconKey } : {}),
+            authMethods: offering.authMethods.map((method) => ({
+              method: method.method,
+              interaction: method.interaction,
+              ...(method.sourceLabel ? { sourceLabel: method.sourceLabel } : {}),
+              ...(method.sourcePathHint ? { sourcePathHint: method.sourcePathHint } : {}),
+            })),
+            plans: offering.plans.map(({ id, displayName }) => ({ id, displayName })),
           })),
-          plans: offering.plans.map(({ id, displayName }) => ({ id, displayName })),
         })),
-      })),
       accounts,
       connections: accounts.map((account) => ({
         accountId: account.id,
         providerId: account.provider,
         offeringId: account.offeringId,
         displayName: account.displayName,
-        recordRevision: this.options.credentials.recordRevision?.(account.id) ?? account.updatedAt,
-        routes: null,
+        recordRevision: this.connectionRevision(account),
+        routes: resolveModelRoutes(
+          this.account(account.id),
+          undefined,
+          this.options.connectionProviders,
+        ),
         actions: {
+          editConnection:
+            account.provider === compatibleKeyId || isLocalKeyAccount(account)
+              ? writable
+                ? enabled
+                : disabled
+              : { state: "hidden" },
           delete: writable ? enabled : disabled,
-          refreshCredentials: this.options.registry.getAccount(account.provider)?.refreshCredentials
+          refreshCredentials: this.options.registry.getRefreshAccount(account)?.refreshCredentials
             ? mutable
               ? enabled
               : disabled
@@ -147,6 +192,7 @@ export class CommonProviderApplicationService {
         },
       })),
       actions: {
+        createConnection: writable ? enabled : disabled,
         startAuth: writable ? enabled : disabled,
         deleteAccount: writable ? enabled : disabled,
         setAccountEnabled: mutable ? enabled : disabled,
@@ -157,9 +203,189 @@ export class CommonProviderApplicationService {
 
   private account(accountId: string) {
     const account = this.options.storage.accounts.get(accountId);
-    if (!account || this.options.visibleAccountIds?.()?.has(accountId) === false)
+    if (
+      !account ||
+      (isCustomProviderId(account.provider) && !this.options.connectionProviders) ||
+      this.options.visibleAccountIds?.()?.has(accountId) === false
+    )
       throw new AppError("not-found", "账号不存在或不可访问");
     return account;
+  }
+
+  private connectionRevision(account: Account | PublicAccount): string {
+    const credentialRevision = this.options.credentials.recordRevision?.(account.id);
+    if (!credentialRevision || !isLocalKeyAccount(account))
+      return credentialRevision ?? account.updatedAt;
+    return (
+      credentialRevision +
+      "." +
+      createHash("sha256")
+        .update(JSON.stringify([account.displayName, account.offeringId, account.updatedAt]))
+        .digest("hex")
+    );
+  }
+  private connection(account: Account, envelope: CredentialEnvelope): PublicConnection {
+    return {
+      instanceId: this.instanceId,
+      contextId: this.getBackend().contextId,
+      accountId: account.id,
+      providerId: account.provider,
+      offeringId: account.offeringId,
+      displayName: account.displayName,
+      recordRevision: this.connectionRevision(account),
+      routes: resolveModelRoutes(account, envelope, this.options.connectionProviders),
+    };
+  }
+
+  async getConnection(accountId: string): Promise<PublicConnection> {
+    this.assertActiveBackend();
+    const context = { instanceId: this.instanceId, contextId: this.getBackend().contextId };
+    this.account(accountId);
+    const envelope = await this.options.credentials.load(accountId);
+    this.assertContext(context);
+    return this.connection(this.account(accountId), envelope);
+  }
+
+  createConnection(input: CreateConnectionRequest): Promise<PublicConnection> {
+    const request = parseConnectionRequest(input, "create");
+    const baseline = { instanceId: this.instanceId, contextId: this.getBackend().contextId };
+    const id = "connection-" + createHash("sha256").update(request.operationId).digest("hex");
+    return this.refresh.runAccountOperation(id, async () => {
+      this.assertContext(baseline);
+      this.writable();
+      // The operation's id is committed with the account, including in the shared broker.
+      if (!this.legacyConnections && !request.providerId)
+        throw new AppError("validation", "请创建自定义供应商并选择接入点，或选择官方 API");
+      const provider = request.providerId ?? compatibleKeyId,
+        offeringId = request.offeringId ?? compatibleKeyId;
+      if (
+        request.providerId &&
+        !(provider === "codex" && offeringId === officialOpenAiOffering) &&
+        !(
+          isCustomProviderId(provider) &&
+          this.options.connectionProviders?.routes(provider, offeringId)
+        )
+      )
+        throw new AppError("validation", "所选供应商接入点不存在");
+      const existing = this.options.storage.accounts.get(id);
+      if (existing) {
+        if (existing.provider !== provider || existing.offeringId !== offeringId)
+          throw new AppError("conflict", "创建操作已用于另一接入点");
+        return this.getConnection(id);
+      }
+      const now = (this.options.now?.() ?? new Date()).toISOString();
+      const account: Account = {
+        id,
+        provider,
+        offeringId,
+        authMethod: "api-key",
+        displayName: request.displayName,
+        stableIdentity: id,
+        maskedIdentifier: request.accountIdentifier ?? "API Key ••••",
+        publicMetadata: {},
+        enabled: true,
+        credentialState: "available",
+        createdAt: now,
+        updatedAt: now,
+      };
+      return this.saveConnection(account, request);
+    });
+  }
+
+  editConnection(accountId: string, input: EditConnectionRequest): Promise<PublicConnection> {
+    const request = parseConnectionRequest(input, "edit");
+    const baseline = { instanceId: this.instanceId, contextId: this.getBackend().contextId };
+    return this.refresh.runAccountOperation(accountId, async () => {
+      this.assertContext(baseline);
+      this.writable();
+      const account = this.account(accountId);
+      if (!this.legacyConnections && account.provider === compatibleKeyId)
+        throw new AppError("validation", "请配置本地供应商并重新绑定账号");
+      if (
+        request.providerId &&
+        (account.provider !== request.providerId || account.offeringId !== request.offeringId)
+      )
+        throw new AppError("conflict", "账号接入点已变更");
+      if (account.provider !== compatibleKeyId && !isLocalKeyAccount(account))
+        throw new AppError("capability-unavailable", "订阅账号使用供应商固定的协议绑定");
+      if (this.connectionRevision(account) !== request.expectedRecordRevision)
+        throw new AppError("conflict", "连接已变更，请重新读取后编辑");
+      const expectedCredentialRevision =
+        this.options.credentials.recordRevision?.(accountId) ?? request.expectedRecordRevision;
+      const previous = await (this.options.credentials.loadCurrent?.(accountId) ??
+        this.options.credentials.load(accountId));
+      this.assertContext(baseline);
+      if (this.connectionRevision(this.account(accountId)) !== request.expectedRecordRevision)
+        throw new AppError("conflict", "读取期间连接已变更");
+      return this.saveConnection(account, request, previous, expectedCredentialRevision);
+    });
+  }
+
+  private async saveConnection(
+    account: Account,
+    request: CreateConnectionRequest | EditConnectionRequest,
+    previous?: CredentialEnvelope,
+    expectedCredentialRevision = "new",
+  ) {
+    const apiKey = request.apiKey ?? previous?.secrets.apiKey;
+    if (
+      !apiKey ||
+      request.displayName.includes(apiKey) ||
+      account.maskedIdentifier.includes(apiKey) ||
+      (previous?.secrets.apiKey && request.displayName.includes(previous.secrets.apiKey))
+    )
+      throw new AppError("validation", "请检查名称及 API Key，名称不能包含密钥");
+    const local = isLocalKeyAccount(account);
+    if (local && request.routes.length)
+      throw new AppError("validation", "账号不能覆盖供应商的目的地");
+    const modelRoutes = local ? [] : bindModelRoutes(request.routes, apiKey, previous);
+    const keyRevision = local
+      ? previous?.secrets.apiKey === apiKey
+        ? previous.credentialBindingRevision
+        : randomUUID()
+      : undefined;
+    if (local && !keyRevision) throw new AppError("stale-binding", "凭据绑定修订缺失");
+    const envelope: CredentialEnvelope = {
+      version: 1,
+      accountId: account.id,
+      provider: account.provider,
+      authMethod: "api-key",
+      expiresAt: null,
+      secrets: { apiKey },
+      ...(local ? { credentialBindingRevision: keyRevision } : { modelRoutes }),
+    };
+    const metadata = { ...account.publicMetadata, supportsUsage: false, supportsInference: true };
+    for (const route of previous?.modelRoutes ?? [])
+      delete (metadata as Account["publicMetadata"])[routeRevisionKey(route.protocolRouteId)];
+    const stamp = Math.max(
+      (this.options.now?.() ?? new Date()).getTime(),
+      Date.parse(account.updatedAt) + 1,
+    );
+    const { credentialProjection: _observation, ...localAccount } = account;
+    const updated = {
+      ...localAccount,
+      displayName: request.displayName,
+      updatedAt: new Date(stamp).toISOString(),
+      publicMetadata: {
+        ...metadata,
+        ...(keyRevision ? { credentialBindingRevision: keyRevision } : {}),
+        ...Object.fromEntries(
+          modelRoutes.map((route) => [
+            routeRevisionKey(route.protocolRouteId),
+            route.bindingRevision,
+          ]),
+        ),
+      },
+    };
+    if (local) resolveModelRoutes(updated, envelope, this.options.connectionProviders);
+    if (local && previous && previous.secrets.apiKey === apiKey) {
+      this.options.storage.accounts.save(updated);
+      this.changed();
+      return this.connection(updated, envelope);
+    }
+    await this.options.credentials.saveAccount(updated, envelope, expectedCredentialRevision);
+    this.changed();
+    return this.connection(updated, envelope);
   }
 
   private writable(): void {
@@ -235,14 +461,25 @@ export class CommonProviderApplicationService {
       this.writable();
       const account = this.account(accountId);
       if (this.getBackend().active === "shared") {
-        await this.options.credentials.removeShared!(accountId, expectedRecordRevision);
+        if (
+          expectedRecordRevision !== undefined &&
+          this.connectionRevision(account) !== expectedRecordRevision
+        )
+          throw new AppError("conflict", "账号记录已变更，请重新读取后确认删除");
+        await this.options.credentials.removeShared!(
+          accountId,
+          this.options.credentials.recordRevision?.(accountId) ?? expectedRecordRevision,
+        );
       } else if (
         expectedRecordRevision !== undefined &&
         expectedRecordRevision !== account.updatedAt
       ) {
         throw new AppError("conflict", "账号记录已变更，请重新读取后确认删除");
       }
-      this.options.storage.transaction(() => this.options.storage.accounts.delete(accountId));
+      this.options.storage.transaction(() => {
+        this.options.storage.accounts.delete(accountId);
+        this.options.accountDeleted?.(accountId);
+      });
       this.changed();
     });
   }

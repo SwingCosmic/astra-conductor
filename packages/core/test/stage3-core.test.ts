@@ -62,7 +62,7 @@ class FakeCipher implements CredentialCipherPort {
 function catalogDescriptor(provider: string): ProviderContribution["descriptor"] {
   const descriptor = providerCatalog.find((item) => item.provider === provider);
   if (!descriptor) throw new Error(`missing catalog descriptor: ${provider}`);
-  return descriptor;
+  return { ...descriptor, capabilities: ["account", "usage"] };
 }
 
 /** 用本地构造的 CodexAdapter 拼出一份与真实目录一致的 contribution。 */

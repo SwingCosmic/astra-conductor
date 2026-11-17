@@ -51,6 +51,9 @@ const snapshot = (instanceId = "instance-1", revision = 0): ProviderManagementSn
 function providers(): IProviderService {
   return {
     getSnapshot: async () => ({ ok: true, value: snapshot() }),
+    getConnection: unavailable,
+    createConnection: unavailable,
+    editConnection: unavailable,
     subscribe: () => () => {},
     startAuth: unavailable,
     getAuthSession: unavailable,

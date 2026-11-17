@@ -7,7 +7,6 @@ import {
   CredentialVault,
   CredentialMutationGate,
   CredentialMigrationService,
-  MemoryStorage,
   SelectedBusinessStorage,
   RefreshCoordinator,
   SwitchingCredentialService,
@@ -20,11 +19,16 @@ import {
 import type { BackendContext, CredentialManagementStatus } from "@astra-conductor/contract/common";
 import { BROKER_COMPATIBILITY, type BrokerHost } from "@astra-conductor/credentials/host/windows";
 import { migrationHttpService } from "@astra-conductor/core/http";
+import { CustomProviders } from "./custom-providers.js";
+import { GraphBusinessDatabase } from "../platform/business-database.js";
 import { GraphStorage } from "../platform/storage.js";
 import { GraphCredentialRuntime } from "./runtime.js";
 
+import { GraphModelService } from "./model-service.js";
+import { GraphChatService } from "./chat-service.js";
 export interface GraphServicesOptions {
   directory: string;
+  nativeBinding?: string;
   host: BrokerHost;
   http: HttpPort;
   cipher?: CredentialCipherPort;
@@ -36,14 +40,45 @@ export interface GraphServicesOptions {
 }
 
 export async function createGraphServices(options: GraphServicesOptions) {
+  const business = new GraphBusinessDatabase(options.directory, options.nativeBinding);
+  try {
+    return await assembleGraphServices(options, business);
+  } catch (error) {
+    business.db.close();
+    throw error;
+  }
+}
+
+async function assembleGraphServices(
+  options: GraphServicesOptions,
+  business: GraphBusinessDatabase,
+) {
   const privateReady = options.cipher ? await options.cipher.isAvailable() : false;
-  const privateStorage = options.cipher
-    ? new GraphStorage(path.join(options.directory, "private-business.json"))
+  const appSettings = new GraphStorage(
+    path.join(options.directory, "app-settings.json"),
+    "settings",
+  );
+  const vaultFile = options.cipher
+    ? new GraphStorage(path.join(options.directory, "private-business.json"), "credentials")
     : undefined;
-  const storage = new SelectedBusinessStorage(
-    privateStorage ?? new MemoryStorage(),
-    (identity) =>
-      new GraphStorage(path.join(options.directory, `shared-business.${identity}.json`)),
+  const base = business.source("private", vaultFile ?? appSettings, Boolean(vaultFile));
+  const profileStorage: typeof base = vaultFile
+    ? {
+        ...base,
+        settings: {
+          get: (key) => appSettings.settings.get(key) ?? vaultFile.settings.get(key),
+          save: appSettings.settings.save,
+        },
+        transaction: <T>(op: () => T) => base.transaction(() => appSettings.transaction(op)),
+        close: () => {
+          base.close();
+          appSettings.close();
+        },
+      }
+    : base;
+  const privateStorage = options.cipher ? profileStorage : undefined;
+  const storage = new SelectedBusinessStorage(profileStorage, (identity) =>
+    business.source(identity),
   );
   const mutations = new CredentialMutationGate();
   const unavailable = async (): Promise<never> => {
@@ -54,14 +89,20 @@ export async function createGraphServices(options: GraphServicesOptions) {
       ? new CredentialVault(privateStorage, options.cipher!, undefined, mutations)
       : { load: unavailable, save: unavailable, saveAccount: unavailable },
   );
-  const webContextId = randomUUID();
+  let webContextId = randomUUID();
+  let webConnected = false;
   const listeners = new Set<(event: unknown) => void>();
   const eventControllers = new Set<AbortController>();
   const operations = new Set<Promise<unknown>>();
   const instanceId = randomUUID();
   let providers: CommonProviderApplicationService;
   let stopped = false;
+  let models: GraphModelService;
   const publish = () => {
+    if (!migration && webConnected !== runtime.isConnected) {
+      webConnected = runtime.isConnected;
+      webContextId = randomUUID();
+    }
     if (!providers || stopped) return;
     const revision = providers.getRevision();
     for (const scope of ["providers", "credentials"] as const) {
@@ -76,6 +117,7 @@ export async function createGraphServices(options: GraphServicesOptions) {
       };
       for (const listener of listeners) listener(event);
     }
+    models?.bindingsChanged();
   };
   const runtime = new GraphCredentialRuntime(options.host, options.http, {
     storage,
@@ -131,7 +173,12 @@ export async function createGraphServices(options: GraphServicesOptions) {
       active: runtime.isConnected ? "shared" : "unavailable",
     };
   };
+  const visible = () =>
+    migration ? migration.visibleAccountIds() : (runtime.visibleAccountIds() ?? new Set<string>());
+  const customProviders = new CustomProviders(business.db, () => providers.changed());
   providers = new CommonProviderApplicationService({
+    connectionProviders: customProviders,
+    accountDeleted: (id) => business.unlinkDeletedAccount(id),
     storage,
     credentials,
     auth,
@@ -147,12 +194,37 @@ export async function createGraphServices(options: GraphServicesOptions) {
       if (current.active === "unavailable")
         throw new AppError("service-unavailable", "请接入已授权的共享凭据服务");
     },
-    visibleAccountIds: () =>
-      migration
-        ? migration.visibleAccountIds()
-        : (runtime.visibleAccountIds() ?? new Set<string>()),
+    visibleAccountIds: visible,
     changed: publish,
   });
+  models = new GraphModelService({
+    repository: business.models,
+    visibilityRef: () => storage.visibilityRef,
+    connectionProviders: customProviders,
+    storage,
+    credentials,
+    refresh,
+    http: options.http,
+    mutations,
+    providers,
+    visible,
+    registry: runtime.providers,
+    publish(reason) {
+      if (stopped) return;
+      const revision = models.getRevision();
+      const event = {
+        schemaVersion: 1,
+        instanceId,
+        revision,
+        occurredAt: new Date().toISOString(),
+        stamp: { instanceId, scope: "graph-agent.models", revision },
+        contextId: backend().contextId,
+        reasons: [reason],
+      };
+      for (const listener of listeners) listener(event);
+    },
+  });
+  const chat = new GraphChatService(models, refresh, options.http, mutations);
   let reconnecting: Promise<void> | undefined;
   const retryWeb = async () => {
     const binding = options.brokerBinding;
@@ -233,6 +305,35 @@ export async function createGraphServices(options: GraphServicesOptions) {
 
   return {
     providers,
+    customProviders,
+    async verifyAccountCredential(
+      accountId: string,
+      expected: unknown,
+      context: Parameters<typeof providers.assertContext>[0],
+    ) {
+      const snapshot = await providers.getSnapshot();
+      providers.assertContext(context);
+      const conn = snapshot.connections.find((c) => c.accountId === accountId);
+      if (
+        !conn ||
+        conn.recordRevision !== expected ||
+        conn.actions.editConnection?.state !== "enabled"
+      )
+        throw new AppError("conflict", "账号凭据或编辑权限已变化，请重读");
+      const current = await credentials.loadCurrent(accountId);
+      const latest = await providers.getSnapshot();
+      providers.assertContext(context);
+      if (
+        current.accountId !== accountId ||
+        current.authMethod !== "api-key" ||
+        storage.accounts.get(accountId)?.provider !== current.provider ||
+        latest.connections.find((c) => c.accountId === accountId)?.recordRevision !== expected
+      )
+        throw new AppError("stale-binding", "凭据与当前账号不匹配");
+      return current.provider;
+    },
+    models,
+    chat,
     credentials: credentialManagement,
     runtime,
     get stopped() {
@@ -292,7 +393,10 @@ export async function createGraphServices(options: GraphServicesOptions) {
             schemaVersion: 1,
             instanceId,
             revision,
-            stamps: ["providers", "credentials"].map((scope) => ({ instanceId, scope, revision })),
+            stamps: [
+              ...["providers", "credentials"].map((scope) => ({ instanceId, scope, revision })),
+              { instanceId, scope: "graph-agent.models", revision: models.getRevision() },
+            ],
           });
         },
         cancel() {
@@ -307,12 +411,21 @@ export async function createGraphServices(options: GraphServicesOptions) {
       if (stopped) return;
       stopped = true;
       for (const controller of eventControllers) controller.abort();
+      chat.stop();
+      const catalogsStopped = models.stop();
       auth.cancelAll();
-      await auth.drain();
-      await Promise.allSettled([...operations]);
-      await migration?.stop();
-      await runtime.dispose();
-      storage.close();
+      try {
+        await auth.drain();
+        await Promise.allSettled([catalogsStopped, ...operations]);
+        await migration?.stop();
+      } finally {
+        try {
+          await runtime.dispose();
+        } finally {
+          storage.close();
+          business.db.close();
+        }
+      }
     },
   };
 }

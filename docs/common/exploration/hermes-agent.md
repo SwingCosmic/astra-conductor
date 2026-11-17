@@ -6,7 +6,6 @@
 | 更新日期 | 2026-09-27 |
 | 上游基线 | `references/hermes-agent` @ `6a6766fb896043ab3757a30713f1248b6054e0a6` |
 | 上游来源 | `https://github.com/NousResearch/hermes-agent.git` |
-| 本地来源 | 本机 Hermes 0.14.0 的可编辑安装，仅用于定位；报告只分析子模块固定提交 |
 | 研究范围 | ProviderProfile、插件发现、运行时解析、认证与传输分派 |
 
 Hermes Agent 同时具有预置服务商目录和用户插件覆盖能力。它比 ZCode 更动态，又没有 DSH 那样统一的服务生命周期容器，因此很适合观察“声明式 Profile 能解决什么，以及不能解决什么”。

@@ -18,8 +18,8 @@
 
 ### 2.1 产物现状
 
-- vendor 共 49 个协议与许可证产物，覆盖基础协议叶子以及 Codex、GLM、Grok Build、Antigravity、Claude Code、OpenCode Go 与 GitHub Copilot 七家；
-- 每个产物有一份本地再生成的 `.diff`，`.diff/` 目录被 git 忽略，属于审查产物而非提交物；
+- vendor 共 51 个协议与许可证产物，覆盖基础协议叶子以及 Codex、GLM、Grok Build、Antigravity、Claude Code、OpenCode Go 与 GitHub Copilot 七家；
+- 每个产物有一份本地再生成的 `.diff`，属于审查产物而非提交物；
 - vendor 的外部依赖只有 Node 内置模块（`crypto` 等）和 `zod` 4.5.4（`@astra-conductor/core` 现有运行时依赖）。
 
 ### 2.2 手工改动分布
@@ -38,7 +38,7 @@
 
 ### 2.3 工具现状
 
-`tools/omniroute-sync` 目前只有 README、空的 `src/` 与 `patches/` 目录；根目录 `package.json` 中的 `pnpm omniroute:check` 和 `pnpm omniroute:sync` 脚本指向不存在的 `src/index.mjs`，当前不可运行。此前文档把它描述为"已能维护 24 个文件的可运行尝试"与事实不符，本文将其更正为：形态由本文定义，实现是阶段 6 的实施对象。
+`tools/omniroute-sync` 目前只有 README，第 4.2 节的 `src/` 与 `patches/` 尚未创建，同步命令也未注册到根目录 `package.json`。此前文档把它描述为"已能维护 24 个文件的可运行尝试"与事实不符，本文将其更正为：形态由本文定义，实现是阶段 6 的实施对象。
 
 ### 2.4 手工样板暴露的问题
 
@@ -160,13 +160,25 @@ export const entries = [
 
 ### 4.5 命令语义
 
-三个命令，全部通过根目录脚本暴露（现有 `pnpm omniroute:check`、`pnpm omniroute:sync`，实施时补充 `pnpm omniroute:upgrade`）：
+三个命令，实施时全部通过根目录脚本暴露（`pnpm omniroute:check`、`pnpm omniroute:sync`、`pnpm omniroute:upgrade`）：
 
 - **`check`（只读）**：在临时目录按清单再生成全部产物，执行第 4.6 节全部校验，然后与 vendor 现状逐文件比对。不修改工作区。CI 与提交前运行。
 - **`sync`（写）**：再生成并完成校验后，一次性替换 vendor 中清单管理的文件，删除不再属于清单的产物，重建全部 `.diff`，输出变更报告；随后执行完整下游门禁（`pnpm --filter @astra-conductor/core typecheck && test && build`）。
 - **`upgrade <commit>`（写，独立变更）**：更新清单中的固定提交，先输出新旧提交之间全部条目的漂移预览，再执行 `sync`。用于上游升级，流程约束见第 6.2 节。
 
 生成永远先落到临时目录，所有校验通过后才替换 vendor；工具不在现有 vendor 上原地修改，避免删除规则失效时残留旧文件。
+
+```mermaid
+flowchart LR
+  M["manifest.mjs<br/>固定上游提交 + 全部条目"] --> G["generate.mjs<br/>规则应用，输出到临时目录"]
+  U["references/omniroute<br/>清单固定提交"] --> G
+  G --> V["verify.mjs 门禁 1–7<br/>纯净 / 完备 / 闭包 / 拒绝路径<br/>一致 / diff 再生 / 幂等"]
+  V -->|check| C["与 vendor 现状逐文件比对<br/>不修改工作区"]
+  V -->|sync| S["原子替换清单管理的文件<br/>重建全部 .diff"]
+  S --> D["下游门禁<br/>Core typecheck / test / build"]
+  C -->|失败| F["终止并报告差异"]
+  D -->|失败| F
+```
 
 ### 4.6 校验门禁
 
@@ -184,7 +196,7 @@ export const entries = [
 
 ### 4.7 `.diff` 的定位
 
-`.diff` 是本地审查产物：`sync` 与 `upgrade` 后重建，`check` 验证可再生，git 忽略。它的价值在上游升级时最大——漂移预览的实体就是新旧 `.diff` 的变化。需要留档的审查结论应写入基线文档或提交说明，而不是提交 `.diff` 本身。
+`.diff` 是本地审查产物：`sync` 与 `upgrade` 后重建，`check` 验证可再生，不进入提交。它的价值在上游升级时最大——漂移预览的实体就是新旧 `.diff` 的变化。需要留档的审查结论应写入基线文档或提交说明，而不是提交 `.diff` 本身。
 
 ## 5. 现有基线的收敛方案
 
@@ -208,7 +220,7 @@ export const entries = [
 | 13 处 `fetchImpl` 注入                   | 手工修改                   | 已是目标形态，待工具以 `injectFetch` 规则接管                            |
 | `pkce.ts` 等类型补充                     | 手工修改                   | 已是目标形态，待工具以带理由头的小补丁接管                               |
 
-上述"已执行"项于 2026-09-30 以手动迁移完成并通过 Core 与全工作区的类型检查、测试、构建及编译后模块加载验证；产物从 38 个调整为 45 个，零 diff 整文件复制从 8 个增加到 20 个，全部 `.diff` 合计从约 -5761 / +1186 行降到约 -3750 / +990 行（其后 Claude Code 与 OpenCode Go 边界验证把产物扩展到 49 个）。当前事实记录见[手工抽取基线](./omniroute-manual-extraction-baseline.md)第 3、4 节。
+上述"已执行"项于 2026-09-30 以手动迁移完成并通过 Core 与全工作区的类型检查、测试、构建及编译后模块加载验证；产物从 38 个调整为 45 个，零 diff 整文件复制从 8 个增加到 20 个，全部 `.diff` 合计从约 -5761 / +1186 行降到约 -3750 / +990 行（其后 Claude Code、OpenCode Go 边界验证与 Antigravity 目录叶子把产物扩展到 51 个）。当前事实记录见[手工抽取基线](./omniroute-manual-extraction-baseline.md)第 3、4 节。
 
 收敛完成标志（手动迁移已达成前两条，后两条随工具实施生效）：
 

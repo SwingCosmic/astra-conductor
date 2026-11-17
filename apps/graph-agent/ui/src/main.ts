@@ -6,10 +6,11 @@ import {
 } from "@astra-conductor/shared-ui";
 import "@astra-conductor/shared-ui/styles.css";
 import App from "./App.vue";
-import { createGraphAgentService } from "./services/graph-agent-service.js";
+import { createGraphAgentService, graphServiceKey } from "./services/graph-agent-service.js";
 
 const service = createGraphAgentService();
 const app = createApp(App);
+app.provide(graphServiceKey, service);
 app.provide(providerServiceKey, service.providers);
 app.provide(credentialServiceKey, service.credentials);
 app.provide(providerUiOptionsKey, { sessionPrefix: "graphagent" });

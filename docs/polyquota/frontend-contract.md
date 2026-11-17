@@ -1,6 +1,6 @@
 # PolyQuota 前端服务契约
 
-2026-11-08 · 本文只定义 PolyQuota 产品 Service、用量快照与产品事件。产品 Service 与下述组合门面已在阶段一落地，当前 API 位于 [contract/polyquota](../../packages/contract/src/polyquota/service.ts)；模型相关扩展按阶段二交付。
+2026-11-08 · 本文只定义 PolyQuota 产品 Service、用量快照与产品事件。产品 Service 与下述组合门面已落地，当前 API 位于 [contract/polyquota](../../packages/contract/src/polyquota/service.ts)；供应商页的模型相关扩展已随[供应商阶段 2B](../common/core/provider/implementation-plan.md)交付。
 
 公共管理、DTO、错误与事件遵循[公共契约](../common/contract/common-api.md)，共享传输与客户端组合遵循[Service 组合设计](../common/contract/service-composition.md)，包迁移见[契约包设计](../common/contract/design.md#5-从现有契约迁移)。
 
@@ -16,7 +16,7 @@ interface IPolyQuotaProductService {
   refreshAll(): Promise<ServiceResult<RefreshBatchOutcomeDto>>;
   redeemResetCredit(
     accountId: string,
-    request: ResetCreditRedemption,
+    redemption: ResetCreditRedemption,
   ): Promise<ServiceResult<RedeemResetCreditOutcomeDto>>;
   saveSettings(settings: Settings): Promise<ServiceResult<void>>;
   getSystemStatus(): Promise<ServiceResult<PublicSystemStatus>>;
@@ -25,7 +25,7 @@ interface IPolyQuotaProductService {
 interface IPolyQuotaService extends ICommonProductService, IPolyQuotaProductService {}
 ```
 
-用量页消费门面顶层方法，供应商页和凭据页分别使用 `service.providers`、`service.credentials`。公共管理与产品快照、刷新/兑换、设置等切片类通过[泛型 mixin](../common/contract/service-composition.md#11-通过泛型-mixin-合成功能切片类)合成 `HttpPolyQuotaService`，`createPolyQuotaService(transport)` 只实例化；旧接口的兼容转发按契约迁移方案处理。
+用量页消费门面顶层方法，供应商页和凭据页分别使用 `service.providers`、`service.credentials`。公共管理与产品快照、刷新/兑换、设置等切片类通过[泛型 mixin](../common/contract/service-composition.md#11-通过泛型-mixin-合成功能切片类)合成 `apps/polyquota/ui/src/services/http-polyquota-service.ts` 的 `HttpPolyQuotaService`；组合根 `createServices(mode, apiBase)` 以 `new HttpPolyQuotaService(transport)` 实例化，Electron 传内部协议传输，独立 Web 传回环 HTTP 传输。
 
 ## 2. 产品快照与用量呈现
 
@@ -61,4 +61,4 @@ interface PolyQuotaSnapshot {
 
 ## 4. 产品验收
 
-正式 Electron 与开发 Web 使用同一组产品 Service 样本，验证快照一致性、订阅刷新、额度兑换对账、设置保存和普通 Key 的用量排除。页面注入 `FakePolyQuotaService`，公共分组和产品订阅复用共享传输的验收见契约专项。实现现状见[运行与通信说明](./runtime-and-communication-review.md)，交付顺序见[供应商实施方案](../common/core/provider/implementation-plan.md)。
+正式 Electron 与开发 Web 使用同一组产品 Service 样本，验证快照一致性、订阅刷新、额度兑换对账、设置保存和普通 Key 的用量排除。页面经 provide/inject 注入 `IPolyQuotaService`，演示与测试使用 `EmptyPolyQuotaService`；公共分组和产品订阅复用共享传输的验收见契约专项。实现现状见[运行与通信说明](./runtime-and-communication-review.md)，交付顺序见[供应商实施方案](../common/core/provider/implementation-plan.md)。

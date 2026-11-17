@@ -124,7 +124,7 @@ export class RefreshCoordinator {
       };
     }
     try {
-      const refresh = this.registry.getAccount(account.provider)?.refreshCredentials;
+      const refresh = this.registry.getRefreshAccount(account)?.refreshCredentials;
       if (!refresh) {
         throw new AppError("validation", `该账号类型没有主动刷新协议：${account.provider}`);
       }
@@ -160,39 +160,9 @@ export class RefreshCoordinator {
       return { status: "skipped", accountId };
     try {
       const usage = this.registry.requireUsage(account.provider);
-      const capability = this.registry.getAccount(account.provider);
-      const refresh = capability?.refreshCredentials;
-      let envelope = refresh
-        ? (
-            await this.refreshCredential(
-              account,
-              refresh,
-              "usage",
-              capability.canUseCurrentCredentials,
-            )
-          ).envelope
-        : await this.vault.load(account.id);
-
-      let snapshot: UsageSnapshot;
-      try {
-        snapshot = await usage.fetchUsage(account, envelope);
-      } catch (error) {
-        if (!refresh || !(error instanceof AppError) || error.code !== "authentication") {
-          throw error;
-        }
-        const rejectedToken = envelope.secrets.accessToken;
-        const forced = await this.refreshCredential(
-          account,
-          refresh,
-          "authentication",
-          rejectedToken
-            ? (_account, current) =>
-                !!current.secrets.accessToken && current.secrets.accessToken !== rejectedToken
-            : undefined,
-        );
-        envelope = forced.envelope;
-        snapshot = await usage.fetchUsage(account, envelope);
-      }
+      const snapshot = await this.withCurrentCredential(account, (envelope) =>
+        usage.fetchUsage(account, envelope),
+      );
       this.storage.transaction(() => {
         this.storage.snapshots.save(snapshot);
         this.storage.accounts.setCredentialState(account.id, "available", snapshot.fetchedAt);
@@ -226,6 +196,49 @@ export class RefreshCoordinator {
         code: publicError.code,
       });
       return { status: "failed", accountId, error: publicError };
+    }
+  }
+
+  /** Only rotations take the per-account queue. Directory reads and model calls may overlap an edit. */
+  withModelCredential<T>(
+    account: Account,
+    operation: (envelope: CredentialEnvelope) => Promise<T>,
+  ): Promise<T> {
+    return this.withCurrentCredential(account, operation, true);
+  }
+
+  private async withCurrentCredential<T>(
+    account: Account,
+    operation: (envelope: CredentialEnvelope) => Promise<T>,
+    queueRefresh = false,
+  ): Promise<T> {
+    const capability = this.registry.getRefreshAccount(account);
+    const refresh = capability?.refreshCredentials;
+    const currentEnvelope = () =>
+      this.vault.loadCurrent?.(account.id) ?? this.vault.load(account.id);
+    if (!refresh)
+      return operation(await (queueRefresh ? currentEnvelope() : this.vault.load(account.id)));
+    const rotate = (
+      reason: "usage" | "authentication",
+      canUseCurrent?: (a: Account, e: CredentialEnvelope) => boolean,
+    ) => {
+      const run = () => this.refreshCredential(account, refresh, reason, canUseCurrent);
+      return queueRefresh ? this.serialize(account.id, run) : run();
+    };
+    const current = await rotate("usage", capability.canUseCurrentCredentials);
+    try {
+      return await operation(queueRefresh ? await currentEnvelope() : current.envelope);
+    } catch (error) {
+      if (!(error instanceof AppError) || error.code !== "authentication") throw error;
+      const rejected = current.envelope.secrets.accessToken;
+      const recovered = await rotate(
+        "authentication",
+        rejected
+          ? (_account, envelope) =>
+              !!envelope.secrets.accessToken && envelope.secrets.accessToken !== rejected
+          : undefined,
+      );
+      return operation(queueRefresh ? await currentEnvelope() : recovered.envelope);
     }
   }
 

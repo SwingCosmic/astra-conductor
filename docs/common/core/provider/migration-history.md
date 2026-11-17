@@ -55,7 +55,7 @@ OmniRoute 并不存在一个包办所有职责的 `ProviderAdapter`。它的完�
 | 尚未搬运的 Executor                                                                                             | `ProviderInferenceCapability` 候选来源    | 只抽纯协议/执行叶子，宿主策略由本项目实现    |
 | 尚未搬运的模型能力                                                                                              | `ProviderModelCatalogCapability` 候选来源 | 保留来源、静态/动态目录和模型级协议覆盖      |
 
-现有[手工抽取基线](../omniroute-manual-extraction-baseline.md)仍是当前 49 个产物的事实记录。本设计扩大未来共享 Core 的能力边界，不追溯修改该基线来假装推理协议已经搬运。
+现有[手工抽取基线](../omniroute-manual-extraction-baseline.md)仍是当前产物清单的事实记录（阶段 7 时为 49 个，2026-10-16 批次后为 51 个）。本设计扩大未来共享 Core 的能力边界，不追溯修改该基线来假装推理协议已经搬运。
 
 ## 2. 参考架构的综合取舍
 

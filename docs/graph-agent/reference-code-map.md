@@ -78,10 +78,10 @@ Hermes 的 `hermes_cli/session_recap.py` 是会话展示摘要生成入口，不
 
 文件工具补充核对 VS Code 固定提交 `e7789ad24cee6c17f0a2fbfb7fc110a2f6851d50` 的搜索模型更新、结果排除、替换模板、bulk edit 与保存冲突路径，以及 JetBrains 的预览/排除和文件缓存冲突说明，见[文件操作与 Git 的 IDE 调研](./design/tools/file-operations-and-git.md#8-ide-查找替换调研)。据此改为实时结果/逐项排除与固定提交预览两层，并将 `$1` 模板纳入首版；不宣称 IDE 会对所有外部修改自动重搜或完成跨文件原子保存。
 
-browser use 首版改选按需安装的 Chrome DevTools MCP。临时下载 1.11.0 研究包，使用现有 Electron 42.11.6 在 Windows 独立样本中验证已有 WebContentsView 的快照/点击/截图/导航和 new_page 不支持，见[网页与网络中的 Browser use](./design/tools/web-and-network.md#7-browser-use)。初版网页工具优先 Tavily，不实现本地浏览器渲染；原 Playwright 资料仅为前期对比输入。
+browser use 首版改选按需安装的 Chrome DevTools MCP：复用产品 Electron 已有的 WebContentsView 提供快照/点击/截图/导航，MCP 协议的 new_page 不在首版支持范围，见[网页与网络中的 Browser use](./design/tools/web-and-network.md#7-browser-use)。初版网页工具优先 Tavily，不实现本地浏览器渲染；原 Playwright 资料仅为前期对比输入。
 
 本轮使用反馈进一步核对 Hermes 固定 [code_execution_tool.py](../../references/hermes-agent/tools/code_execution_tool.py)的 Python 入口、子进程、受控工具 RPC 与 Windows TCP 分支，并区分文件旧平台注释和实际路径；官方滚动文档的 session kernel 也不当作该固定版本的运行验收。GraphAgent 首批仅选择[一次性 Node/Python](./design/tools/terminal-and-scripts.md#5-execute_code)，不搬运工具编排、不据此预留内部 API。
 
-[文件操作、Patch 与 Git](./design/tools/file-operations-and-git.md)、[HTTP 请求下载](./design/tools/web-and-network.md#9-http_download)和[媒体查看](./design/tools/media-view.md)分别核对 Git 官方 diff/merge-file、RFC 9110 与 Gemini 媒体说明；前期 FFmpeg 资料只作为资源操作研究，不构成首批内置工具/组件依赖。独立文件计算 API、收据/继续读取和多模态投影边界是设计新增。当前未实现这些工具、运行任意仓库提交或完成真实模型/API 兼容验收。
+[文件操作、Patch 与 Git](./design/tools/file-operations-and-git.md)、[HTTP 请求下载](./design/tools/web-and-network.md#9-http_download)和[媒体查看](./design/tools/media-view.md)分别核对 Git 官方 diff/merge-file、RFC 9110 与 Gemini 媒体说明；前期 FFmpeg 资料只作为资源操作研究，不构成首批内置工具/组件依赖。独立文件计算 API、收据/继续读取和多模态投影边界是设计新增。这些工具均为目标设计，真实模型/API 兼容验收待实施。
 
-上述协议与核心目录仍是设计决策；未搬运运行代码或修改产品依赖。离线 rg 展开与临时 Electron/MCP 探测是局部能力证据，不是 GraphAgent 实现、真实 Tavily API 或模型成功率验收。
+上述协议与核心目录仍是设计决策；未搬运运行代码或修改产品依赖。rg 展开与 Electron/MCP 探测只证明参考能力本身；GraphAgent 的工具实现与真实 Tavily API、模型成功率验收待实施。

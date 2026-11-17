@@ -18,6 +18,7 @@ export interface PublicPlanDescriptor {
 }
 
 export interface PublicOfferingDescriptor {
+  connectionKind?: "editable-routes" | "fixed-routes";
   id: string;
   provider: string;
   displayName: string;

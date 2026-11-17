@@ -9,7 +9,7 @@ export type AuthMethodInteraction =
 /**
  * 服务商贡献提供的共享能力面。`account`、`usage`、`model-catalog` 与
  * `inference` 必须有对应 facet（ProviderRegistry 构造期校验）；其余是行为
- * 声明。模型与推理能力尚未落地，当前不得声明。
+ * 声明。
  */
 export type ProviderCapability =
   | "account"
@@ -34,6 +34,7 @@ export interface ProviderOfferingDescriptor {
   websiteUrl?: string;
   /** Existing subscription offerings default to their provider's usage capability. */
   supportsSubscriptionUsage?: boolean;
+  connectionKind?: "editable-routes" | "fixed-routes";
   /** core 声明键、UI 持有资产映射；缺失映射时 UI 使用自己的视觉回退。 */
   iconKey?: string;
   authMethods: ProviderAuthMethodDescriptor[];

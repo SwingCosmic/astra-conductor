@@ -1,3 +1,8 @@
+import {
+  compatibleKeyId,
+  isCustomProviderId,
+  isLocalKeyAccount,
+} from "./compatible-api-key/descriptor.js";
 import { AppError } from "../errors.js";
 import type {
   Account,
@@ -11,6 +16,8 @@ import type { CredentialRefreshResult } from "../ports.js";
 import type { AuthFlowStart, AuthStartOptions } from "../auth/types.js";
 import type { ProviderDescriptor, ProviderOfferingDescriptor } from "./types.js";
 import { validateProviderCatalog } from "./catalog.js";
+import type { discoverRouteModels } from "./model-discovery.js";
+import type { previewModelChat, sendModelChat, sendModelChatDetailed } from "./model-chat.js";
 
 /**
  * 账号能力 facet：认证交互由 `startAuth` 开始，输入以 `offeringId` 为稳定
@@ -54,6 +61,13 @@ export interface ProviderContribution {
   descriptor: ProviderDescriptor;
   account?: ProviderAccountCapability;
   usage?: ProviderUsageCapability;
+  models?: { providerId: ProviderId; discover: typeof discoverRouteModels };
+  inference?: {
+    providerId: ProviderId;
+    preview: typeof previewModelChat;
+    send: typeof sendModelChat;
+    sendDetailed: typeof sendModelChatDetailed;
+  };
   dispose?(): void;
 }
 
@@ -105,11 +119,13 @@ export class ProviderRegistry {
         );
       }
       for (const capability of facetBackedCapabilities) {
-        if (!declared.has(capability)) continue;
         if (capability === "model-catalog" || capability === "inference") {
-          throw new Error(
-            `Contribution ${provider} declares ${capability}, which no facet implements yet`,
-          );
+          const facet =
+            capability === "model-catalog" ? contribution.models : contribution.inference;
+          if (declared.has(capability) !== !!facet || (facet && facet.providerId !== provider))
+            throw new Error(
+              `Contribution ${provider} requires matching ${capability} declaration and facet`,
+            );
         }
       }
       if (byProvider.has(provider)) {
@@ -121,6 +137,18 @@ export class ProviderRegistry {
 
   getDescriptor(providerId: ProviderId): ProviderDescriptor | null {
     return this.descriptors.find((descriptor) => descriptor.provider === providerId) ?? null;
+  }
+  getModels(providerId: ProviderId) {
+    if (isCustomProviderId(providerId)) providerId = compatibleKeyId;
+    return (
+      this.contributions.find((item) => item.descriptor.provider === providerId)?.models ?? null
+    );
+  }
+  getInference(providerId: ProviderId) {
+    if (isCustomProviderId(providerId)) providerId = compatibleKeyId;
+    return (
+      this.contributions.find((item) => item.descriptor.provider === providerId)?.inference ?? null
+    );
   }
 
   requireDescriptor(providerId: ProviderId): ProviderDescriptor {
@@ -142,6 +170,19 @@ export class ProviderRegistry {
   getAccount(providerId: ProviderId): ProviderAccountCapability | null {
     const contribution = this.contributions.find((item) => item.descriptor.provider === providerId);
     return contribution?.account ?? null;
+  }
+
+  getRefreshAccount(
+    account: Pick<Account, "provider" | "offeringId" | "authMethod">,
+  ): ProviderAccountCapability | null {
+    if (isLocalKeyAccount(account)) return null;
+    const entry = this.findOffering(account.offeringId);
+    if (
+      entry?.provider !== account.provider ||
+      !entry.offering.authMethods.some((method) => method.method === account.authMethod)
+    )
+      return null;
+    return this.getAccount(account.provider);
   }
 
   requireAccount(providerId: ProviderId): ProviderAccountCapability {

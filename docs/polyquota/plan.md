@@ -3,7 +3,6 @@
 | 项目     | 内容                                              |
 | -------- | ------------------------------------------------- |
 | 状态     | 实施中，阶段 0—5 与 7 已完成，阶段 6 设计已定稿、工具实现待执行 |
-| 更新日期 | 2026-09-30                                        |
 | 设计依据 | [设计说明](./design.md)                           |
 | 当前准备 | OmniRoute 已按固定提交纳入 `references/omniroute` |
 
@@ -19,7 +18,7 @@
 - 每次只扩大一个主要变量，便于定位协议、代理、存储或界面问题；
 - 真实账号验证与自动化测试并重，但真实请求不进入默认 CI；
 - 未验证的问题保留为探索项，不提前包装成确定设计；
-- 子模块只用于开发参考，应用始终从主仓库内可追溯的 vendor 副本构建；Grok Build 与 Antigravity 先继续形成手工样板，完成后再决定 vendor 副本的迁移和同步自动化程度；
+- 子模块只用于开发参考，应用始终从主仓库内可追溯的 vendor 副本构建；vendor 的清单化与同步按阶段 6 的工具设计执行；
 - 凭证、日志和通知从第一条闭环开始就按正式安全边界处理。
 
 ## 2. 阶段与方向
@@ -315,7 +314,7 @@ SQLite 中按职责保存以下逻辑记录；具体列名和索引在迁移实�
 
 **目的：** 在四个首批服务都形成经过验证的手工样板后，再根据实际差异决定哪些迁移步骤适合自动化，以及同步工具应承担生成、校验还是二者兼有的职责。
 
-本阶段在执行顺序上后于阶段 7。`tools/omniroute-sync` 目前只有 README 与空实现目录，根目录的 `pnpm omniroute:sync` 和 `pnpm omniroute:check` 脚本尚不可运行；此前关于"已能维护 24 个文件"的描述与事实不符。工具的完整形态已在阶段 7 完成后定稿为[OmniRoute 同步工具形态设计](../common/core/omniroute-sync-tool-design.md)。
+本阶段在执行顺序上后于阶段 7。`tools/omniroute-sync` 目前只有 README，同步命令尚未注册；此前关于"已能维护 24 个文件"的描述与事实不符。工具的完整形态已在阶段 7 完成后定稿为[OmniRoute 同步工具形态设计](../common/core/omniroute-sync-tool-design.md)。
 
 **设计结论：**
 
@@ -418,11 +417,11 @@ flowchart LR
 
 ### 功能
 
-- [ ] Codex 套餐名取自套餐配置 `displayName`（如 `prolite` → Pro 5x），未知原样；短窗口标题为 `5-hour`，长窗口标题为 `Weekly`，并展示只读 `Reset credits`；
-- [ ] GLM 正确区分国内与国际区域；套餐名取自套餐配置；配额标题为 `5 Hours Quota` 与 `Weekly Quota`；
+- [x] Codex 套餐名取自套餐配置 `displayName`（如 `prolite` → Pro 5x），未知原样；短窗口标题为 `5-hour`，长窗口标题为 `Weekly`，并展示只读 `Reset credits`；
+- [x] GLM 正确区分国内与国际区域；套餐名取自套餐配置；配额标题为 `5 Hours Quota` 与 `Weekly Quota`；
 - [x] GLM 重置卡只允许用户逐张确认后使用；主进程使用前重新读取列表，成功后先扣除本地对应条目并刷新服务商用量。真实账号已确认 ZCode 曾延迟约 20 分钟更新展示，但卡片实际可用且使用成功；
-- [ ] Grok Build 套餐名取自套餐配置，未命中则保持 `subscriptionTier` 原文；产品配额使用上游产品名，账户级配额标题为 `Weekly`；额外额度先接入查询，使用能力后续开放；刷新后保留账号主体信息；
-- [ ] Antigravity 套餐名取自套餐配置，未命中则原样；按 `Gemini Models` 这类分组标题展示该组的 `5 Hour Quota` 与 `Weekly Quota`；
+- [x] Grok Build 套餐名取自套餐配置，未命中则保持 `subscriptionTier` 原文；产品配额使用上游产品名，账户级配额标题为 `Weekly`；额外额度先接入查询，使用能力后续开放；刷新后保留账号主体信息；
+- [x] Antigravity 套餐名取自套餐配置，未命中则原样；按 `Gemini Models` 这类分组标题展示该组的 `5 Hour Quota` 与 `Weekly Quota`；
 - [ ] 同一服务可添加多个账号；
 - [ ] 停用账号后停止轮询和通知；
 - [ ] 登录、刷新、开关和错误都有可见反馈；
@@ -460,7 +459,7 @@ flowchart LR
 
 ## 7. 后续扩展
 
-Claude Code 与 OpenCode Go 已完成手工接入和边界验证。离线协议、契约、Core、UI 和桌面测试已通过；真实账号交互式验收仍待单独执行，因此二者暂不视为真实闭环完成。
+Claude Code 与 OpenCode Go 已完成手工接入、边界验证和真实账号交互式验收（2026-10-12），视为真实闭环完成；验收基线见[手工抽取基线](../common/core/omniroute-manual-extraction-baseline.md)第 3.6、7 节。
 
 GitHub Copilot 及其他候选服务继续复用“确认可抽取实现—形成可审查样板—接入适配器—真实账号验证—纳入既定维护方式”的流程。
 

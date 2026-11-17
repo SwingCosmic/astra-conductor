@@ -9,6 +9,9 @@ import {
   parseCredentialExportRequest,
   parseSessionId,
   parseStartAuthRequest,
+  parseConnectionRequest,
+  type CreateConnectionRequest,
+  type EditConnectionRequest,
   type CommandContext,
   type StartAuthRequest,
   type PublicError,
@@ -17,6 +20,9 @@ import { AppError, toPublicError } from "../errors.js";
 
 type Awaitable<T> = T | Promise<T>;
 export interface ProviderHttpService {
+  getConnection(accountId: string): Awaitable<unknown>;
+  createConnection(request: CreateConnectionRequest): Awaitable<unknown>;
+  editConnection(accountId: string, request: EditConnectionRequest): Awaitable<unknown>;
   getSnapshot(): Awaitable<unknown>;
   startAuth(request: StartAuthRequest): Awaitable<unknown>;
   getAuthSession(sessionId: string): Awaitable<unknown>;
@@ -112,6 +118,41 @@ export function createProviderRoutes(
 ): Hono {
   const { app, route } = routes(options);
   route("GET", "/api/v1/providers", () => service.getSnapshot());
+  route("GET", "/api/v1/accounts/:accountId/connection", (c) =>
+    service.getConnection(parseAccountId(c.req.param("accountId"))),
+  );
+  route("POST", "/api/v1/accounts/connections/create", async (c) =>
+    service.createConnection(
+      parseConnectionRequest(
+        await command(c, options, [
+          "operationId",
+          "accountIdentifier",
+          "displayName",
+          "apiKey",
+          "routes",
+          "providerId",
+          "offeringId",
+        ]),
+        "create",
+      ),
+    ),
+  );
+  route("POST", "/api/v1/accounts/:accountId/connection/edit", async (c) =>
+    service.editConnection(
+      parseAccountId(c.req.param("accountId")),
+      parseConnectionRequest(
+        await command(c, options, [
+          "expectedRecordRevision",
+          "displayName",
+          "apiKey",
+          "routes",
+          "providerId",
+          "offeringId",
+        ]),
+        "edit",
+      ),
+    ),
+  );
   route("POST", "/api/v1/auth/sessions/start", async (c) =>
     service.startAuth(
       parseStartAuthRequest(await command(c, options, ["offeringId", "method", "apiKey"])),
@@ -282,7 +323,14 @@ const brokerErrors: Record<string, readonly [HttpErrorStatus, string, boolean]> 
 /** Do not echo broker messages or arbitrary remote codes into the public API. */
 export function publicError(error: unknown): PublicError {
   if (error instanceof ContractValidationError)
-    return { code: "validation", message: error.message, retryable: false };
+    return {
+      code: "validation",
+      message: error.message,
+      retryable: false,
+      ...(error.fieldPath
+        ? { fields: [{ path: error.fieldPath, code: "invalid-value", message: error.message }] }
+        : {}),
+    };
   if (error instanceof BrokerError) {
     const known = Object.hasOwn(brokerErrors, error.code) ? brokerErrors[error.code] : undefined;
     return known
@@ -309,6 +357,7 @@ export function errorStatus(error: PublicError): HttpErrorStatus {
     "not-found": 404,
     conflict: 409,
     "stale-context": 409,
+    "stale-binding": 409,
     "capability-unavailable": 409,
     "credential-operation-failed": 409,
     "desktop-unavailable": 501,
@@ -322,11 +371,13 @@ export function errorStatus(error: PublicError): HttpErrorStatus {
 }
 
 /** Apply once before mounting common and product subapps. */
-export function installCommonMiddleware(app: Hono): void {
-  app.use(
-    "*",
+export function installCommonMiddleware(
+  app: Hono,
+  bodyLimits: Readonly<Record<string, number>> = {},
+): void {
+  const limit = (maxSize: number) =>
     bodyLimit({
-      maxSize: 65_536,
+      maxSize,
       onError: (c) =>
         c.json(
           {
@@ -335,8 +386,10 @@ export function installCommonMiddleware(app: Hono): void {
           },
           400,
         ),
-    }),
-  );
+    });
+  const standard = limit(65_536);
+  const custom = new Map(Object.entries(bodyLimits).map(([path, size]) => [path, limit(size)]));
+  app.use("*", (c, next) => (custom.get(c.req.path) ?? standard)(c, next));
   app.use("*", async (c, next) => {
     c.header("Cache-Control", "no-store");
     await next();

@@ -4,7 +4,7 @@
 
 ## 1. 实现位置
 
-独立仓库：[SwingCosmic/astra-credential-broker](https://github.com/SwingCosmic/astra-credential-broker)。本机工作目录为 `E:\dev\js\astra-credential-broker`。本次不提交、不推送，也不建立指向未提交实现的 submodule。服务不引用本仓库的 apps、core、polyquota-contract/UI 或 provider，不访问两个产品的业务数据库。
+独立仓库：[SwingCosmic/astra-credential-broker](https://github.com/SwingCosmic/astra-credential-broker)。A1/A2 实施不提交、不推送该仓库，也不建立指向未提交实现的 submodule。服务不引用本仓库的 apps、core、polyquota-contract/UI 或 provider，不访问两个产品的业务数据库。
 
 独立仓库内的实现与文档为后续接线的权威来源：
 
@@ -84,7 +84,7 @@ AES-256-GCM：32 字节密钥、12 字节随机 nonce、16 字节标签。迁移
 
 每个准备方用已验证主密钥完成一次性 HMAC 挑战，确认相同初始版本/来源水位。来源发起 handoff，broker 保存自己的 DPAPI 主密钥槽，并原子记录 ownership=broker 与交接回执。服务普通重启不依赖最初导出方在线，密钥不可用进入 LOCKED。
 
-sourceWatermark 是客户端提供的不透明值，broker 只能比较。A4—A8 必须实现来源冻结/排空、提交前复查真实水位、确认本地安全缓存、产品绑定和迟到响应清理；A1/A2 不声称这些产品行为已经完成。
+sourceWatermark 是客户端提供的不透明值，broker 只能比较。来源冻结/排空、提交前复查真实水位、确认本地安全缓存、产品绑定和迟到响应清理属于产品侧行为，由 A4—A8 实现，不在 A1/A2 交付范围内。
 
 ## 6. 并发、恢复与边界
 
@@ -92,6 +92,6 @@ sourceWatermark 是客户端提供的不透明值，broker 只能比较。A4—A
 
 重启保留原 grantedAt/expiresAt/hardDeadline，generation 改变；原实例需用同一 begin 请求恢复代次，旧代次/旧 fence 不能提交。已成功提交的相同请求只返回原回执，不递增修订；迟到 abort 不回滚成功或释放接替者。响应丢失优先按 operationId 查询。
 
-本机安全边界是 OS 用户。协议 scopes 不隔离同一 OS 用户下可直接读取其文件/DPAPI 的恶意进程。fence 不保证供应商远端 exactly-once，AEAD 不防整库恶意回滚。未实现的二阶段功能包括成功版本重新导出、换钥、共享库搬迁与双向产品后端切换。
+同机部署的安全边界是 OS 用户：协议 scopes 不隔离同一 OS 用户下可直接读取 vault 文件/DPAPI 的恶意进程。fence 不保证供应商远端 exactly-once，AEAD 不防整库恶意回滚。未实现的二阶段功能包括成功版本重新导出、换钥、共享库搬迁与双向产品后端切换。
 
-本机安装验证、后台监督实现及逐项结果以独立仓库 `docs/installation.md` 和 `docs/validation.md` 为准。
+安装验证、后台监督实现及逐项结果记录在独立仓库 `docs/installation.md` 和 `docs/validation.md`。

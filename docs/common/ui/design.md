@@ -1,6 +1,6 @@
 # PolyQuota 与 GraphAgent 共用 UI、组件和项目结构详细设计
 
-2026-11-08 · 阶段一共用壳、供应商页、凭据页与双产品接线已实施；模型配置界面按阶段三扩展。本文细化共用页面、交互和渲染端接线。包边界、产品启动形式与业务请求路径遵循[项目架构](../../architecture.md)。GraphAgent 注册模型配置页，PolyQuota 注册用量页。[三阶段实施方案](../core/provider/implementation-plan.md) · [Core 详细设计](../core/provider/core-design.md) · [GraphAgent 前端契约](../../graph-agent/design/frontend-contract.md) · [PolyQuota 前端契约](../../polyquota/frontend-contract.md) · [Service 与传输组合](../contract/service-composition.md)
+2026-11-15 · 阶段一已交付共用壳、供应商页和凭据页。阶段二已交付普通 Key、多协议地址及 GraphAgent 基础模型页。改版所需的组件归属见[模型配置公共表单](#模型配置所需的公共表单)，交付顺序见[GraphAgent UI 实施方案](../../graph-agent/ui/model-configuration/ui-implementation-plan.md)。本文细化共用页面、交互和渲染端接线。包边界、产品启动形式与业务请求路径遵循[项目架构](../../architecture.md)。GraphAgent 注册模型配置页，PolyQuota 注册用量页。[三阶段实施方案](../core/provider/implementation-plan.md) · [Core 详细设计](../core/provider/core-design.md) · [GraphAgent 前端契约](../../graph-agent/design/frontend-contract.md) · [PolyQuota 前端契约](../../polyquota/frontend-contract.md) · [Service 与传输组合](../contract/service-composition.md)
 
 ## 1. 从现有入口拆什么
 
@@ -24,7 +24,7 @@
 
 ## 3. 页面和组件
 
-沿用 PolyQuota 当前“左侧导航 + 单列内容区”的交互。页标识由各产品在自己的入口注册和校验，默认页分别为用量与空白主页。第一阶段保留从设置进入凭据管理的路径，两端均提供“服务商”入口。产品设置菜单可挂载同一个凭据管理页。用量页保留宽布局，使用共用内容区的显式宽度选项。
+沿用 PolyQuota 当前“左侧导航 + 单列内容区”的交互。页标识由各产品在自己的入口注册和校验，当前默认页分别为 PolyQuota 用量和 GraphAgent 单轮测试对话。第一阶段保留从设置进入凭据管理的路径，两端均提供“服务商”入口。产品设置菜单可挂载同一个凭据管理页。用量页保留宽布局，使用共用内容区的显式宽度选项。
 
 ```text
 AppShell(brand, navigation, activeId)
@@ -33,14 +33,14 @@ AppShell(brand, navigation, activeId)
       ├─ 供应商接入：接入点列表 → 展开脱敏账号 → 添加账号 / 管理连接
       │             AuthDialog：选择认证方式 → 输入或授权 → 完成 / 可恢复状态
       ├─ 设置 / 凭据管理：账号清单 → 当前存储与组件状态 → 当前可执行的操作
-      └─ 产品业务页：PolyQuota 用量，或 GraphAgent 模型配置
+      └─ 产品业务页：PolyQuota 用量，或 GraphAgent 测试对话与模型配置
 ```
 
 | 组件或页面 | 输入 | 输出与状态归属 |
 | --- | --- | --- |
 | `AppShell` / 侧栏 | 可信本地品牌资源、主题键、`{ id, label, icon }` 菜单、当前页、产品版本 | 导航只发 `navigate(id)`，产品入口验证并挂载页面。版本来自产品构建信息。通过 slot 插入内容，壳不枚举任何产品的业务页 |
 | `ProvidersPage` / `OfferingRow` / `AccountRow` | 目录及本端获准管理的账号、宿主返回的操作可用性 | 页面控制器按 `offeringId` 分组，行为以稳定 `accountId` 定位。行组件只发带 ID 的展开、接入、启停、刷新凭据、删除或编辑意图。输入去重、确认、结果与局部忙态归控制器 |
-| `AuthDialog` / `ConnectionEditor` | 所选 offering、允许的认证方法及配置字段。第三阶段增加按协议分行的基础地址和认证绑定 | 新建/换 Key 时仅提交用户本次输入。读取时只返回已配置状态。编辑时载入当前路由及版本，覆盖冲突提示重新载入。组件校验必填与字段形态，最终校验和原子保存由宿主执行 |
+| `AuthDialog` / `ConnectionEditor` | 所选 offering、允许的认证方法及配置字段。阶段二的 ConnectionDialog 已支持普通 Key 和按协议分行的基础地址 | 新建/换 Key 时仅提交用户本次输入。读取时只返回已配置状态。编辑时载入当前路由及版本，覆盖冲突提示重新载入。组件校验必填与字段形态，最终校验和原子保存由宿主执行 |
 | `CredentialsPage` / `StorageStatusPanel` / 角色操作面板 | 脱敏账号清单、安装/兼容状态、所选与实际后端、连接/交接/清理状态、可执行动作 | 单一状态区展示当前事实。按能力挂载导出交付、接收预览或存储切换面板。账号增改复用接入页的编辑器与命令。系统对话框、备份、密钥与文件访问由宿主处理 |
 | 业务页 | PolyQuota 消费用量和设置服务。GraphAgent 消费模型配置服务 | GraphAgent 在模型列表选择账号与路由，显示来源、能力、价格、覆盖与脱敏预览。协议路由上的规则与普通 Key 连接编辑共用字段组件。模型选择、参数覆盖及策略由 GraphAgent 管理。用量卡、首次用量刷新及通知由 PolyQuota 管理 |
 
@@ -49,6 +49,8 @@ AppShell(brand, navigation, activeId)
 页面私有样式放在对应业务组件或带页面作用域的 CSS 中。表单错误关联到具体字段，异步操作用文本说明，展开按钮暴露 `aria-expanded`，弹窗使用清晰标题、焦点约束、关闭后焦点归位。窄窗口把账号操作换行，长 URL、模型 ID 和目录路径可换行或在字段内滚动。示例截图应同时覆盖两种品牌、正常和受限状态及最小受支持窗口。
 
 ## 4. 页面的接口与更新机制
+
+**2B 的供应商页。** GraphAgent 在共用列表接入本地供应商清单和管理动作。内置条目沿用各自的账号接入流程。「创建自定义供应商」是可重复使用的模板入口；每个已保存的供应商单独展示，以 `providerId` 编辑或删除。供应商下的 offering 使用 `providerId + offeringId` 区分，账号以 `accountId` 定位。供应商表单编辑名称、图标和目的地，账号操作处理绑定和凭据。已有账号引用时，删除操作列出引用并要求先移走或解绑。PolyQuota 只接入其支持的目录和操作。[GraphAgent 页面交互与样例](../../graph-agent/ui/model-configuration/interaction.md#供应商页上的自定义供应商)
 
 产品入口创建并注入一个 `IPolyQuotaService` 或 `IGraphAgentService`，由公共接口和产品专属接口组成。共用页面接收该门面的 `.providers` / `.credentials` 分组，产品页面消费专属方法。公共客户端与产品客户端共享一个 `IServiceTransport`，页面不分别创建 fetch/SSE。具体接口、工厂和 Hono 组合见 [Service 与共享传输设计](../contract/service-composition.md)。
 
@@ -99,7 +101,34 @@ GraphAgent Web 页面呈现 broker 未接入、连接中、可用、断连和权
 | 交付节点 | 通过条件 |
 | --- | --- |
 | 阶段一 · 结构迁移后抽取 UI | 先从新目录构建并回归原入口。抽取共用页面后，PolyQuota 与 GraphAgent Electron 在独立私有 profile 中实际新增、启停、重启回读和删除账号，回归七家供应商认证、取消与会话恢复。GraphAgent Web 通过同组 API 回归既有 broker 导入、读取与刷新，以及未接入、断连、权限不足和敏感输入清除；尚未获准的 CRUD 显示禁用原因。PolyQuota Web 用可控宿主联调。[现有 UI 回归](../../../apps/polyquota/ui/test) · [GraphAgent 桌面烟测](../../../apps/graph-agent/test/desktop-smoke.mjs) |
-| 阶段二 · 固定契约 | 按 [GraphAgent 前端契约](../../graph-agent/design/frontend-contract.md)用 Core 的真实脱敏投影和契约样本验证 HTTP 方法与路径、路由 ID、目录修订、字段来源、操作能力、模型选择和预览的字段错误。旧 DTO 继续可读。模拟服务离线、实例变化、请求乱序与 SSE 重连，验证页面重读和订阅释放 |
-| 阶段三 · 接入新能力 | 从实际页面录入虚构普通 Key 和不同协议地址。GraphAgent Electron 验证私有与共享模式；Web 在凭据专项 B2/B3 权限到位后，经 broker 验证账号新增、替换、删除、重启恢复及模型目录、参数覆盖和映射预览，未接入或失联不发供应商请求。PolyQuota 管理页可以读回且用量请求数为零。存储切换按宿主支持范围验收，升级用例按凭据专项执行。[双向凭据实施与验收](../core/credential-sharing/implementation-plan.md#双向导出与存储切换) |
+| 阶段二 · 普通 Key、模型配置与测试对话 | 从共用页创建普通 Key 并编辑各协议地址，通过 GraphAgent 选择模型发送单个问题。按 [GraphAgent 前端契约](../../graph-agent/design/frontend-contract.md)用 Core 的真实脱敏投影和契约样本验证 HTTP 方法与路径、路由 ID、目录修订、字段来源、操作能力、模型选择和预览的字段错误。旧 DTO 继续可读。模拟服务离线、实例变化、请求乱序与 SSE 重连，验证页面重读和订阅释放 |
+| 阶段三 · 自定义映射与联调 | 从已有连接进入模型页验证别名与自定义参数转换。GraphAgent Electron 验证私有与共享模式；Web 使用具备对应权限的既有 broker 授权验证账号新增、替换、删除、重启恢复及模型目录、参数覆盖和映射预览，未接入或失联不发供应商请求。PolyQuota 管理页可以读回且用量请求数为零。存储切换按宿主支持范围验收，升级用例按凭据专项执行。[双向凭据实施与验收](../core/credential-sharing/implementation-plan.md#双向导出与存储切换) |
 
 阶段一已完成工作区迁移与共用页面接线，正式入口、隔离存储和最终验证结果见[阶段一交付结果](../core/provider/stage-one-implementation.md)。真实供应商账号授权与完整共享写权限的验收边界在该记录单独列明。
+
+## 模型配置所需的公共表单
+
+现有公共包已经提供壳、供应商与凭据整页、授权弹窗和基础样式。模型配置改版先用现有控件完成布局与计费交互；第四步根据两端实际用法抽取字段与选择器，统一图标、认证标签及键盘行为。字段布局与焦点由公共包维护，作用域、字段来源、事务保存和调用权限由 GraphAgent 处理。[当前公共导出](../../../packages/shared-ui/src/index.ts) · [模型编辑交互](../../graph-agent/ui/model-configuration/interaction.md)
+
+### 选型与主题
+
+**采用 shadcn-vue 的字段组合方式，复杂交互优先选 Reka UI，视觉沿用现有 CSS 变量。** shadcn-vue 以源码形式分发组件；引入的组件由本仓维护，需要记录来源和所采纳版本，升级时比较本地改动。它的 Select 已以 Reka 的 API 为基础。短选项用 Select，长目录需要搜索时用 Combobox；焦点、方向键、选项分组和浮层定位交给同一套交互实现。普通输入、原生复选框与带单位的数字框可继续使用 HTML 控件。[shadcn-vue 介绍](https://www.shadcn-vue.com/docs/introduction) · [Field](https://www.shadcn-vue.com/docs/components/field) · [Select](https://www.shadcn-vue.com/docs/components/select) · [Reka Combobox](https://www.reka-ui.com/docs/components/combobox)
+
+当前工作区固定 Vue 3.5.13、Vite 5.4.11，公共包用 Vue 的 peer dependency，两端 Vite 均只有 Vue 插件。shadcn-vue 官方 Vite 安装路径会引入 Tailwind、Vite 插件、样式入口和路径别名。第四步封装时可从 Reka 组合选择与弹窗行为，按 shadcn-vue Field 的模式在公共包维护字段模板，将选中、焦点和错误状态映射到现有主题。移植少数组件时逐个核对依赖、图标和工具类，两个产品消费同一份源码。若后续采用 Tailwind 原样引入组件，再单独验证候选插件与现用 Vite 的兼容性、共享包源码的样式扫描、全局重置对 PolyQuota 的影响，以及两个产品的构建体积。Reka 原语支持普通 CSS，可沿用现有主题。[工作区版本](../../../pnpm-workspace.yaml) · [公共包依赖](../../../packages/shared-ui/package.json) · [GraphAgent Vite](../../../apps/graph-agent/ui/vite.config.ts) · [PolyQuota Vite](../../../apps/polyquota/ui/vite.config.ts) · [shadcn-vue Vite 指引](https://www.shadcn-vue.com/docs/installation/vite) · [Reka 样式指引](https://www.reka-ui.com/docs/guides/styling)
+
+### 字段与选择器
+
+| 组件或组合 | 对调用方提供的能力 | 使用位置 |
+| --- | --- | --- |
+| 字段与字段组（Field、FieldGroup） | 标签、控件、单位、帮助、错误、只读与禁用原因。提供来源和字段级动作插槽。为标签、错误与实际输入分配并关联稳定 ID。 | 两产品的连接编辑、GraphAgent 模型事实与调用参数 |
+| 选择器（Select、Combobox） | 使用稳定值受控选择。触发区与选项行都支持图标、主标题、次标题和文本标签。长列表可搜索，明确显示“还没有账号”或“没有匹配结果”。 | 供应商、账号、协议、模型、默认推理强度 |
+| 供应商图标与账号标签 | 图标取自 offering 的 `iconKey`，缺图显示首字占位；账号选项显示名称及认证方式。如“浏览器 OAuth”“CLI 导入”“API Key”，其文案优先使用当前接入点的认证描述。账号停用、凭据锁定另行标识。 | 公共供应商账号行、GraphAgent 的两级选择器与已选摘要 |
+| 数字、枚举、多选与金额输入 | 分别处理有单位的数值、离散选择、集合与十进制金额。数值范围、枚举选项和单位由页面提供。支持只读、清除用户覆盖、字段错误。 | token 上限、模态、推理能力、温度、报价明细 |
+| 模态框与表单操作栏 | 标题、描述、关闭后返回焦点；主操作、取消、更改条数、提交中和保存反馈。离开含更改的页面时可选择继续编辑或放弃。 | 新增连接、编辑 Key、批量编辑模型 |
+
+公共字段不读取 Core、broker 或产品服务。公共供应商页可以提供账号行操作插槽，由 GraphAgent 注入“模型配置”按钮及跳转，PolyQuota 维持自己的账号操作。GraphAgent 持有当前供应商、账号范围、协议、选中模型和字段草稿，调用既有产品 Service。新增的库依赖限于 UI 入口，独立的 `shared-ui/services` 传输入口继续支持纯服务客户端。[项目分层](../../architecture.md) · [公共服务端口](../../../packages/shared-ui/src/ports/services.ts)
+
+### 组件验收
+
+- 使用方向键、Enter、Esc 完成选择。窄窗和 200% 缩放时仍可操作，错误摘要能聚焦字段，读屏能区分同名账号的认证类型。浮层随两端主题取色。[WAI-ARIA Combobox](https://www.w3.org/WAI/ARIA/apg/patterns/combobox/) · [Reka Select](https://www.reka-ui.com/docs/components/select)
+- 先在模型页使用共用字段，再逐个迁移连接编辑和认证弹窗。回归原生弹窗与原有焦点循环的行为，特别核对取消授权、关闭后清空 Key、重复提交保护及焦点归位。[认证弹窗](../../../packages/shared-ui/src/providers/AuthDialog.vue) · [连接弹窗](../../../packages/shared-ui/src/providers/ConnectionDialog.vue)

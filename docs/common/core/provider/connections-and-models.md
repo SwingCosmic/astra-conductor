@@ -1,15 +1,30 @@
 # 供应商接入、模型目录与双产品共用界面
 
-2026-11-07 · 产品需求与验收设计，待实施。本文定义跨服务商协议阶段 E 的产品行为：在任一产品保存一个无订阅的中转站 API Key，为 OpenAI 与 Anthropic 分别填地址，在 GraphAgent 查看可用模型，PolyQuota 只监控有订阅用量的账号。包边界、请求路径和启动形式见[项目架构](../../../architecture.md)；接口与持久化见 [Core 详细设计](./core-design.md)；页面组件见[共用 UI 详细设计](../../ui/design.md)；实施顺序见[三阶段实施方案](./implementation-plan.md)。
+2026-11-15 · 阶段二已实现普通 Key、OpenAI 与 Anthropic 协议地址、目录发现、手工登记和标准协议调用；2B 补充按模型类型的自定义端点配置、条件计费与共用表单组件。第 3 节描述供应商阶段三拟增加的请求映射。[项目架构](../../../architecture.md) · [Core 详细设计](./core-design.md) · [阶段二验证与阶段三计划](./implementation-plan.md)
 
 ## 1. 一个账号可绑定多个协议地址
 
-供应商注册表继续保存内置实现。新增一个通用兼容接入点，复用 `api-key` 认证。用户为每次接入填写名称、Key 和至少一条协议路由。同一中转站的两把 Key 各有独立 `accountId` 与模型权限。现有 GLM Coding Plan 等订阅接入保留自己的 `offeringId` 和认证流程。
+供应商注册表继续保存内置实现。新增一个通用兼容接入点，复用 `api-key` 认证。2A 用户为每次接入填写名称、Key 和至少一条协议路由。2B 改为先在 GraphAgent 配置自定义供应商和各 offering 的端点，再把账号绑定到一个 offering。同一中转站的两把 Key 各有独立 `accountId` 与模型权限。现有 GLM Coding Plan 等订阅接入保留自己的 `offeringId` 和认证流程。
+
+```mermaid
+flowchart LR
+  F["接入页表单<br/>名称 + API Key + 协议路由"] --> A["账号 accountId<br/>providerId + offeringId"]
+  A --> R1["openai-chat 路由绑定<br/>baseUrl + bindingRevision"]
+  A --> R2["anthropic-messages 路由绑定<br/>baseUrl + bindingRevision"]
+  R1 --> D1["目录快照与手工条目"]
+  R2 --> D2["目录快照与手工条目"]
+  D1 --> M["模型选择四元组<br/>providerId + accountId +<br/>protocolRouteId + modelId"]
+  M --> X["请求编译与发送"]
+  R1 --> X
+  A --> Q{"订阅用量资格"}
+  Q -->|eligible| P["PolyQuota 用量视图与轮询"]
+  Q -->|ineligible| S["仅共用凭据管理"]
+```
 
 | 数据 | 标识和归属 | 编辑或使用规则 |
 | --- | --- | --- |
 | 实现与接入点 | Core 注册 `providerId`、`offeringId`、支持的 `protocolRouteId` 和认证方式 | 用户创建账号实例即可复用内置实现。已有订阅账号继续使用声明的固定端点 |
-| 连接配置 | `accountId` 下按 `protocolRouteId` 保存协议版本、`baseUrl`、认证绑定、请求映射和 `bindingRevision` | 账号 ID 在改名、换 Key 和改地址时保持稳定。每次改变目标、授权身份或出站规则都使相应路由的绑定版本失效 |
+| 连接配置 | 2B 在本地自定义供应商的 offering 下按 `protocolRouteId` 保存协议版本、`baseUrl` 和端点修订，再结合账号授权解析有效绑定。阶段三的非秘密请求规则保存在同一供应商记录 | 账号 ID 在改名、换 Key 和改地址时保持稳定。每次改变目标、授权身份或出站规则都使相应路由的绑定版本失效 |
 | 模型选择 | `providerId + accountId + protocolRouteId + modelId` | Core 同时校验账号所属 offering 和路由。版本用于校验缓存与在途请求，保存的选择不随一次刷新改名 |
 | 机密 | 当前凭据后端持有 API Key 及敏感头的值 | 设置页接受一次性输入，回读只返回是否已设置。账号名称、URL、日志、公开元数据和模型缓存均不存秘密 |
 
@@ -31,13 +46,13 @@ Core 按接入点声明和账号适用性计算“可查询订阅用量”，供
 
 ### 配置如何随凭据迁移
 
-将使 Key 可用的路由、认证绑定和中转规则随账号存入加密记录；模型缓存、参数覆盖和产品设置由两个产品各自保存。开启共享后修改路由会产生记录修订事件，另一端重读并使旧绑定失效。日常调用按需读取当前凭据，目录缓存和请求预览不保存解密信封。
+2A 的兼容连接曾把地址封在凭据里。2B 只共享账号 ID、供应商 ID、账号标识文本和不透明凭据内容，自定义供应商及其所有 offering、端点 URL 和后续传参配置保存在 GraphAgent 业务库。PolyQuota 对未知自定义供应商不做业务接入或用量检查。共享换 Key 通知使对应账号重新核验；修改本地端点会使本库内使用它的账号绑定失效。[账号与供应商的表结构](../../../graph-agent/design/business-database.md#账号凭据与自定义供应商)
 
-新连接使用独立的应用层 content type 和带版本的 payload 编解码器；旧账号继续使用 v1，未知记录按 opaque 处理。GraphAgent Electron 使用自己的持久私有库。两端共享新增、替换和删除已接入 broker 的获准记录操作，具体范围见[凭据共享实施方案](../credential-sharing/implementation-plan.md)的 B2/B3。编码器、分派规则和迁移边界见 [Core 详细设计 · 数据放在哪里](./core-design.md#数据放在哪里)。
+2A 的兼容连接使用独立的应用层 content type 和带版本的 payload 编解码器；旧账号继续使用 v1，未知记录按 opaque 处理。GraphAgent Electron 使用自己的持久私有库。两端共享新增、替换和删除已接入 broker 的获准记录操作，具体范围见[凭据共享实施方案](../credential-sharing/implementation-plan.md)的 B2/B3。编码器、分派规则和迁移边界见 [Core 详细设计 · 数据放在哪里](./core-design.md#数据放在哪里)。
 
 ## 2. 从协议目录得到可用模型
 
-当前注册表会拒绝声明 `model-catalog` 或 `inference` 的贡献。扩展后，目录发现由可选的 `models` facet 提供，请求准备与执行由 `inference` facet 提供，注册表分别校验能力声明与实现的归属。发现请求携带账号、offering、路由、绑定版本和取消信号，在请求作用域内取得凭据。有些网关可执行模型请求却不提供模型列表：接入页允许保存有效配置、标出失败原因，并允许 GraphAgent 手工登记模型。[当前注册表](../../../../packages/core/src/providers/registry.ts)
+阶段二注册表已支持 `model-catalog` 和 `inference`。目录发现由可选的 `models` facet 提供，请求准备与执行由 `inference` facet 提供，注册表分别校验能力声明与实现的归属。发现请求携带账号、offering、路由、绑定版本和取消信号，在请求作用域内取得凭据。有些网关可执行模型请求却不提供模型列表：接入页允许保存有效配置、标出失败原因，并允许 GraphAgent 手工登记模型。[当前注册表](../../../../packages/core/src/providers/registry.ts)
 
 | 目录来源 | 适配规则 |
 | --- | --- |
@@ -49,7 +64,7 @@ Core 按接入点声明和账号适用性计算“可查询订阅用量”，供
 
 ## 3. 中转站请求映射
 
-在 Core 的请求准备阶段执行声明式规则，保存时按账号、路由、操作和模型集合校验。名称解析、别名、模型名模板、Body 合并与安全限制的实现规则见 [Core 详细设计 · 从模型选择到协议请求](./core-design.md#8-从模型选择到协议请求)。配置预览与实际发送共用同一解析器。
+阶段三拟在 Core 的请求准备阶段执行声明式规则，保存时按供应商、offering、路由、操作和模型集合校验，调用时再核实账号绑定。名称解析、别名、模型名模板、Body 合并与安全限制的实现规则见 [Core 详细设计 · 从模型选择到协议请求](./core-design.md#8-从模型选择到协议请求)。配置预览与实际发送共用同一解析器。
 
 下面是一个虚构的网关规则。用户为网关的 `atlas-pro` 和 `atlas-mini` 系列登记了可用变体，包括 `vendor/atlas-pro-high-128k`。上下文选项 `131072` 对应该网关的 `128k` 标签。
 
@@ -69,7 +84,7 @@ Core 按接入点声明和账号适用性计算“可查询订阅用量”，供
 
 ## 4. 两个产品共用哪些界面
 
-从现有 PolyQuota Vue 3 界面抽取共用页面到 `shared-ui`，提供同一份壳、导航、面板、表单、弹窗、状态提示和响应式布局。两个产品注入名称、品牌图标和主题色，在各自 UI 入口注册专属页面；供应商图标按同一套 `iconKey` 解析。
+阶段一已从 PolyQuota Vue 3 界面抽出共用壳与管理页到 `shared-ui`，提供同一份壳、导航、面板、表单、弹窗、状态提示和响应式布局。两个产品注入名称、品牌图标和主题色，在各自 UI 入口注册专属页面；供应商图标按同一套 `iconKey` 解析。
 
 共用范围是供应商接入页和凭据管理页，GraphAgent 的模型配置页、PolyQuota 的用量页分别由所属产品实现。页面职责、组件接口与宿主差异见[共用 UI 详细设计](../../ui/design.md)；共用页面通过统一契约和 fetch/SSE 访问所属产品的 Hono 应用。既有 PolyQuota 服务模式和 GraphAgent A6—A8 导入宿主分别作为迁移起点。[PolyQuota 服务模式](../service-mode/development.md) · [GraphAgent 最小宿主实施记录](../credential-sharing/a6-a8-sharing-implementation.md#graphagent-最小宿主)
 

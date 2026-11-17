@@ -60,6 +60,7 @@ export interface AuthMethodPresentation {
 }
 
 export interface ProviderPresentation {
+  connectionKind?: PublicOfferingDescriptor["connectionKind"];
   /** offering id：展示行与账号分组的稳定键。 */
   id: string;
   provider: string;
@@ -79,6 +80,7 @@ function toPresentation(
   const icon = offering.iconKey ? iconAssets[offering.iconKey] : undefined;
   const name = offering.displayName || providerName;
   return {
+    connectionKind: offering.connectionKind,
     id: offering.id,
     provider: offering.provider,
     name,

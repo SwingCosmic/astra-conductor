@@ -1,6 +1,6 @@
 # 凭据共享实施方案
 
-更新于 2026-11-09。
+各阶段状态见下表，日期与验收记录在对应章节内维护。
 
 | 阶段 | 状态与交付范围 |
 | --- | --- |
@@ -29,7 +29,7 @@
 
 - **B2** 两端可互换角色。导出与导入分别提交 `export-ready` 和 `import-ready`，继续使用内置存储。任一端可自行接入 broker；首次共享业务读取成功后才提交 `shared`。共享记录的新增、替换和删除受 broker 授权、修订和记录许可约束。
 - **B3** 准备回退将获准快照加密写入内置库并回读，提交 `private-ready`。用户随后切换，内置业务验证与 `private` 提交成功后才清理旧代次的密钥与授权。重入使用当前迁移密钥，读取共享最新修订。
-- 用户已完成本机两个开发 profile 的转换，并确认 PolyQuota 和 GraphAgent 均可正常刷新和获取数据。操作恢复及故障验收见[本端状态机](./state-machine.md)。普通 Key、多协议路由和模型目录编辑页面的交付范围见[供应商实施方案](../provider/implementation-plan.md)。
+- 两个开发 profile 已完成转换，PolyQuota 和 GraphAgent 均确认可正常刷新和获取数据。操作恢复及故障验收见[本端状态机](./state-machine.md)。普通 Key、多协议路由和模型目录编辑页面的交付范围见[供应商实施方案](../provider/implementation-plan.md)。
 
 ### B4 独立发布与生产下载
 
@@ -67,4 +67,6 @@ B2/B3 使用本地完整 broker 验证前六项的现有账号格式。多协议
 
 B5/B6 另验并发重新导出与换钥、版本写入及提交边界崩溃、密钥缓存部分准备失败、版本事件丢失或重连、旧版本读者仍在线，以及发布后清理失败。新版主密钥发布后，旧版本不能降级接管。
 
-2026-11-09 使用 broker 0.3.0（API 3，通信与存储协议 1）、PolyQuota 0.6.0 和 GraphAgent 0.2.0 完成本机验收。两个方向及同时迁移共 20 组检查通过，覆盖显式切回、离线快照、逆序重入、迁址重启和已授权 Node/Web 接入。复测入口为 `pnpm test:credential-sharing-loop --publish <完整发布目录>`。[双端用例](../../../../apps/polyquota/scripts/run-credential-sharing-loop.mjs)
+2026-11-09 使用 broker 0.3.0（API 3，通信与存储协议 1）、PolyQuota 0.6.0 和 GraphAgent 0.2.0 完成双端验收。两个方向及同时迁移共 20 组检查通过，覆盖显式切回、离线快照、逆序重入、迁址重启和已授权 Node/Web 接入。复测入口为 `pnpm test:credential-sharing-loop --publish <完整发布目录>`。[双端用例](../../../../apps/polyquota/scripts/run-credential-sharing-loop.mjs)
+
+供应商阶段 2B 的 `--model-connection` 专项以两款产品分别为来源，在隔离临时库创建 OpenAI 官方 Key。接收端轮换 Key 后，两端的标准聊天与 Responses 绑定均按新修订生效，账号别名由各产品本地保存。GraphAgent 另建自定义供应商，检查共享记录只有身份与授权材料，PolyQuota 跳过未知供应商和普通 Key 的订阅用量。两个方向均验证了重启和切回内置凭据。B5 单记录元数据升级使用同一套版本化编解码；旧账号、无订阅 Key、未知用途、未知记录及扩展元数据的幂等输入与预期输出见 [Core 转换用例](../../../../packages/core/test/model-connections.test.ts)。

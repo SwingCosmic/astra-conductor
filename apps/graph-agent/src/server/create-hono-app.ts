@@ -1,15 +1,22 @@
 import { Hono } from "hono";
+import { graphModelOperations } from "@astra-conductor/contract/graph-agent";
+import { maxModelPackBytes } from "./model-pack.js";
 import {
   createCredentialRoutes,
   createProviderRoutes,
   installCommonMiddleware,
 } from "@astra-conductor/core/http";
+import { customProviderRoutes } from "./custom-provider-routes.js";
+import { createGraphChatRoutes } from "./chat-routes.js";
+import { createModelRoutes } from "./model-routes.js";
 import type { GraphServices } from "./services.js";
 
 /** Both hosts mount the same common application and its single product event stream. */
 export function createGraphHonoApp(services: GraphServices): Hono {
   const app = new Hono();
-  installCommonMiddleware(app);
+  installCommonMiddleware(app, {
+    [graphModelOperations.changeModelPack.routePath]: maxModelPackBytes + 4096,
+  });
   app.use("*", async (c, next) => {
     if (services.stopped)
       return c.json(
@@ -28,6 +35,9 @@ export function createGraphHonoApp(services: GraphServices): Hono {
   };
   app.route("/", createProviderRoutes(services.providers, options));
   app.route("/", createCredentialRoutes(services.credentials, options));
+  app.route("/", customProviderRoutes(services));
+  app.route("/", createModelRoutes(services));
+  app.route("/", createGraphChatRoutes(services));
   app.get("/api/v1/events", (c) => services.eventStream(c.req.raw.signal));
   app.get("/api/v1/status", (c) =>
     c.json({

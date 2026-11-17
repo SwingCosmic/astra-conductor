@@ -12,6 +12,7 @@ import { antigravityDescriptor } from "./antigravity/descriptor.js";
 import { claudeDescriptor } from "./claude/descriptor.js";
 import { opencodeGoDescriptor } from "./opencode-go/descriptor.js";
 import { githubCopilotDescriptor } from "./github-copilot/descriptor.js";
+import { compatibleKeyDescriptor } from "./compatible-api-key/descriptor.js";
 
 /** Unmatched or unpublished plans use the mid 5x rung. */
 export const DEFAULT_PLAN_MULTIPLIER = 5;
@@ -203,6 +204,7 @@ const descriptors: readonly ProviderDescriptor[] = [
   claudeDescriptor,
   opencodeGoDescriptor,
   githubCopilotDescriptor,
+  compatibleKeyDescriptor,
 ];
 
 validateProviderCatalog(descriptors);

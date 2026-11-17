@@ -1,5 +1,11 @@
 import type { PublicAccount } from "./dto/account.js";
 import type {
+  PublicConnection,
+  ModelRouteSummary,
+  CreateConnectionRequest,
+  EditConnectionRequest,
+} from "./dto/connection.js";
+import type {
   AuthStartResult,
   PublicAuthSession,
   PublicProviderDescriptor,
@@ -36,18 +42,18 @@ export interface BackendContext {
   active: "none" | "private" | "shared" | "unavailable";
 }
 
-/** Stage one only publishes summaries of existing accounts; route editing follows in stage two. */
 export interface PublicConnectionSummary {
   accountId: string;
   providerId: string;
   offeringId: string;
   displayName: string;
   recordRevision: string;
-  routes: null;
+  routes: ModelRouteSummary[] | null;
   actions: Record<string, ActionAvailability>;
 }
 
 export interface ProviderManagementSnapshot {
+  modelEndpoints?: readonly import("./dto/model-endpoint.js").ModelEndpointDescriptor[];
   schemaVersion: 1;
   instanceId: string;
   revision: number;
@@ -91,6 +97,16 @@ export type ProviderViewChanged = ProviderChangedEvent;
 export type CommonChangedEvent = ChangedEvent<CommonViewScope, CommonChangeReason>;
 
 export interface IProviderService {
+  getConnection(accountId: string): Promise<ServiceResult<PublicConnection>>;
+  createConnection(
+    request: CreateConnectionRequest,
+    context?: CommandContext,
+  ): Promise<ServiceResult<PublicConnection>>;
+  editConnection(
+    accountId: string,
+    request: EditConnectionRequest,
+    context?: CommandContext,
+  ): Promise<ServiceResult<PublicConnection>>;
   getSnapshot(): Promise<ServiceResult<ProviderManagementSnapshot>>;
   subscribe(listener: (event: ProviderChangedEvent) => void): () => void;
   startAuth(

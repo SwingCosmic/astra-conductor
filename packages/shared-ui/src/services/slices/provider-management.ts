@@ -24,6 +24,27 @@ export const withProviderManagement = defineServiceSlice(
       private readonly authContexts = new Map<string, CommandContext>();
 
       readonly providers: IProviderService = {
+        getConnection: (accountId) =>
+          this.transport.request(providerOperations.getConnection, { accountId }),
+        createConnection: (request, context) => {
+          const baseline = context ?? this.providerContext;
+          return baseline
+            ? this.transport.request(providerOperations.createConnection, {
+                ...request,
+                ...baseline,
+              })
+            : Promise.resolve(missingContext());
+        },
+        editConnection: (accountId, request, context) => {
+          const baseline = context ?? this.providerContext;
+          return baseline
+            ? this.transport.request(providerOperations.editConnection, {
+                ...request,
+                accountId,
+                ...baseline,
+              })
+            : Promise.resolve(missingContext());
+        },
         getSnapshot: async () => {
           const result = await this.transport.request(providerOperations.getSnapshot, undefined);
           if (result.ok) {

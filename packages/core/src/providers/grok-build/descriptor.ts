@@ -4,7 +4,7 @@ import { GROK_CLI_IMPORT_PATH_HINT } from "./auth-flow.js";
 export const grokBuildDescriptor: ProviderDescriptor = {
   provider: "grok-build",
   displayName: "Grok Build",
-  capabilities: ["account", "usage"],
+  capabilities: ["account", "usage", "model-catalog", "inference"],
   offerings: [
     {
       id: "grok-build",

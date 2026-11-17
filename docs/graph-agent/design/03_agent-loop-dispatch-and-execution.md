@@ -257,7 +257,7 @@ TaskAttempt 的 UNKNOWN 效果表现为 BLOCKED 的原因，不新增一个可�
 
 详细协议由[跨设备任务派发设计](./cross-device-dispatch-design.md)统一维护，包含设备身份与资源绑定、独立授权、固定放置、并发预算、ActivityLease、断线恢复和显式产物交付。UI 选择设备不改变其他自主 Worker 的授权；换机通过新 Assignment 交接或依赖子 Task 完成，不热迁移进程。
 
-首版本机闭环不要求实现跨设备调度；该能力属于阶段 3.3，专项设计不代表已经实现。
+首版本机闭环不要求实现跨设备调度；该能力属于阶段 3.3。
 
 ## 4. Agent Loop
 
@@ -281,7 +281,7 @@ flowchart TD
     WAIT --> ADMIT
 ```
 
-1. **Admit**：校验 ExecutionContext、LoopOwner、executionEpoch、推进闸门、模板与 profile；工作所有权另验 Assignment/TaskRevision，讨论另验会话成员与 binding。无有效输入或恢复工作时不空调用模型。
+1. **Admit**：校验 ExecutionContext、LoopOwner、executionEpoch、推进闸门、模板与 profile；工作所有权另验 Assignment/TaskRevision，讨论另验会话成员与 binding。无有效输入时不发起模型调用；恢复路径先核对 checkpoint 与在途效果，再继续执行。
 2. **Claim**：从持久邮箱取得一个 next-turn 输入批次，原子登记 turnId 和已领取输入 ID。领取后输入仍可从 turn 记录恢复。
 3. **Compose**：在安全步骤边界接纳 next-step 输入，取得当前对话视图、任务、工具能力、记忆/技能与环境快照，按 recipe 形成规范请求。先确定可行候选 route 及能力，不开始网络调用。
 4. **Prepare**：内容拦截与 schema 校验后重新估算最终输入，预留调用预算，使用共享平台固定 selection、实现代次和目录 revision。记录实际发出的上下文。
@@ -434,7 +434,7 @@ interface LoopCheckpoint {
 
 重启从 checkpoint 重建邮箱消费和对话视图，核对在途工具/调用效果，递增 epoch，再重新校验授权与预算。历史调用可查看固定旧提示；恢复后的新调用按明确 profile/策略版本重新组合，并记录差异。恢复不执行旧 tool-call；不可核对的效果仍阻塞。
 
-profile/策略更新不回写历史调用记录；后续执行在安全边界使用明确版本。输入可审查不表示模型输出确定。
+profile/策略更新不回写历史调用记录；后续执行在安全边界使用明确版本。
 
 ## 5. 提示词组合
 

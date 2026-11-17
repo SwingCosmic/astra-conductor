@@ -7,6 +7,9 @@ import { createAntigravityProvider } from "./antigravity/bundle.js";
 import { createClaudeProvider } from "./claude/bundle.js";
 import { createOpencodeGoProvider } from "./opencode-go/bundle.js";
 import { createGithubCopilotProvider } from "./github-copilot/bundle.js";
+import { compatibleKeyDescriptor } from "./compatible-api-key/descriptor.js";
+import { discoverRouteModels } from "./model-discovery.js";
+import { previewModelChat, sendModelChat, sendModelChatDetailed } from "./model-chat.js";
 
 /**
  * 与 providerCatalog 同一收集点的聚合：新增供应商时在 `providers/<id>/`
@@ -14,7 +17,7 @@ import { createGithubCopilotProvider } from "./github-copilot/bundle.js";
  * 不出现按供应商命名的构造与映射。
  */
 export function createProviderContributions(services: ServiceResolver): ProviderContribution[] {
-  return [
+  const contributions: ProviderContribution[] = [
     createCodexProvider(services),
     createGlmProvider(services),
     createGrokBuildProvider(services),
@@ -22,5 +25,20 @@ export function createProviderContributions(services: ServiceResolver): Provider
     createClaudeProvider(services),
     createOpencodeGoProvider(services),
     createGithubCopilotProvider(services),
+    { descriptor: compatibleKeyDescriptor },
   ];
+  return contributions.map((contribution) => {
+    const providerId = contribution.descriptor.provider;
+    if (!contribution.descriptor.capabilities.includes("model-catalog")) return contribution;
+    return {
+      ...contribution,
+      models: { providerId, discover: discoverRouteModels },
+      inference: {
+        providerId,
+        preview: previewModelChat,
+        send: sendModelChat,
+        sendDetailed: sendModelChatDetailed,
+      },
+    };
+  });
 }

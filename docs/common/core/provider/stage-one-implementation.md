@@ -42,10 +42,10 @@ pnpm start:graph-agent:web       # 构建后的 GraphAgent 正式 Node/Web
 - 两产品 Electron、PolyQuota 开发 Web 与正式 GraphAgent Web/Hono 验证通过，覆盖静态资源、统一 SSE、私有账号隔离与重启持久化、凭据脱敏、受限状态和断连恢复。
 - 独立 broker 与隔离 profile 的真实共享闭环 **26 项**通过，覆盖导入与接管、双端刷新同步、租约并发、私有副本保护、存储往返和重启恢复；取消导出恢复及新目录重新导出专项 **10 项**通过。
 - 两个 NSIS 安装包构建通过：`apps/polyquota/release/PolyQuota-0.5.1-setup.exe`、`apps/graph-agent/release/GraphAgent Setup 0.1.1.exe`。分发检查通过；本轮未在用户环境执行安装器。
-- 用户已确认当前 PolyQuota 与 GraphAgent 共享正常。受控闭环使用虚构凭据，不等同于七家真实供应商授权验收。
+- 用户已确认当前 PolyQuota 与 GraphAgent 共享正常。受控闭环使用虚构凭据；七家真实供应商授权验收其后已完成。
 
 ## 5. 已知边界
 
-本轮未重新执行七家供应商的真实 OAuth、设备授权或生产 Key 接入；相关协议回归使用受控夹具。干净虚拟机安装验收尚未完成。
+本轮未重新执行七家供应商的真实 OAuth、设备授权或生产 Key 接入，相关协议回归使用受控夹具；七家真实授权验收其后已完成。干净虚拟机安装验收尚未完成。
 
 普通 API Key 连接、多协议地址、模型目录、参数、报价、请求映射与模型页属于供应商阶段二、三。完整共享新增、替换、删除和双向来源角色仍按[凭据共享专项 B2/B3](../credential-sharing/implementation-plan.md)推进，本次不扩大既有共享权限范围；元数据升级后重新导出按 B5 推进。

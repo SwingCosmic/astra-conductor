@@ -149,14 +149,26 @@ UTF-8 bootstrap 不能强迫所有第三方 exe 改变输出。提供显式 `out
 
 `runtimeLimitMs` 是独立的进程运行时限，由权限/预算/资源策略约束；超时可启动取消流程并保留已发生效果。等待时限、工具 RPC 传输时限和进程运行时限不能复用同一个 `timeout` 字段。
 
-```text
-created → starting → running → exited
-                    └→ cancel-requested → exited / lost
-        └→ start-failed
-监督器丢失/无法核对 → lost；对应工具效果另记 unknown-effect
+```mermaid
+stateDiagram-v2
+    state "cancel-requested" as CR
+    state "start-failed" as SF
+    [*] --> created
+    created --> starting
+    created --> SF
+    starting --> running
+    running --> exited
+    running --> CR
+    CR --> exited
+    CR --> lost
+    starting --> lost
+    running --> lost
+    SF --> [*]
+    exited --> [*]
+    lost --> [*]
 ```
 
-`exited` 携带正常/非零/取消/运行超限等原因；“请求取消成功”不等于所有子进程已消失。结束状态与输出尾部一起结算后才发布最终收据。
+监督器丢失或无法核对时进入 `lost`，对应工具效果另记 unknown-effect。`exited` 携带正常/非零/取消/运行超限等原因；“请求取消成功”不等于所有子进程已消失。结束状态与输出尾部一起结算后才发布最终收据。
 
 | 工具             | 主要字段与返回                                                                               |
 | ---------------- | -------------------------------------------------------------------------------------------- |

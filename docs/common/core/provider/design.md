@@ -2,8 +2,8 @@
 
 | 项目     | 内容                                                                                                            |
 | -------- | --------------------------------------------------------------------------------------------------------------- |
-| 状态     | 账号、认证、用量与 PolyQuota 应用服务基线已实现；账号多协议连接、模型目录、请求映射与共用 UI 为目标设计，待实施 |
-| 更新日期 | 2026-11-07                                                                                                      |
+| 状态 | 共用管理页、自定义供应商与多 offering、模型发现、SQLite 配置、价卡试算和单轮对话已实现。自定义参数转换与别名列入供应商阶段三 |
+| 更新日期 | 2026-11-15 |
 | 范围     | 两产品共用的供应商、接入点、账号、凭据、协议路由、模型事实与能力边界                                            |
 | 架构依据 | [项目架构](../../../architecture.md)：包边界、依赖方向、Hono 请求路径和产品交付形态                             |
 
@@ -27,9 +27,9 @@
 
 统一的是注册、能力发现、调用生命周期、错误、安全边界和可序列化事实。认证方式、协议、计费、能力和原生状态的差异保留在接入点、路由、能力 facet 与版本化扩展中。
 
-当前已有七家供应商的账号、认证、刷新和用量能力，通过严格 ProviderRegistry 组合；模型目录、API 协议路由和推理 facet 尚未实现。GraphAgent 已交付凭据共享 A6—A8 的空白主页与设置页，现有 GraphApi 只描述导入和共享刷新。它不等于本轮目标中的 Vue 模型页或 GraphAgent Hono API。
+七个既有供应商继续提供账号与用量能力。阶段二增加普通 Key 接入点，并为具备条件的接入点注册目录与推理实现。GraphAgent 已通过本产品 Hono 提供模型页和单轮对话；各接入点的协议与实机验证结果见[阶段二记录](./implementation-plan.md#本阶段实现与实机验证)，当前注册组合见 [providers/contributions.ts](../../../../packages/core/src/providers/contributions.ts)。
 
-凭据 SDK 与 Windows 宿主合包已由凭据专项 B1 完成；其余共享写入授权、双向切换和发行升级按[凭据实施方案](../credential-sharing/implementation-plan.md)推进。[A6—A8 实施记录](../credential-sharing/a6-a8-sharing-implementation.md) · [B1 实施记录](../credential-sharing/b1-credentials-package-implementation.md)
+两款桌面产品已支持双向导入导出、经授权的共享写入及显式切回私有存储。独立发行和后续升级分别由凭据专项 B4、B5/B6 跟踪。[凭据实施方案](../credential-sharing/implementation-plan.md)
 
 OmniRoute 当前搬运的是认证、刷新和用量协议叶子。推理 translator、Executor 和模型目录仍属后续选择性引入范围。固定来源及产物清单见[手工抽取基线](../omniroute-manual-extraction-baseline.md)，分析与取舍见[迁移沿革](./migration-history.md)。
 
@@ -78,7 +78,7 @@ flowchart LR
 | 产品宿主        | Hono 装配、数据存储、网络与平台端口；Web/Electron 使用同一业务路径                                                    |
 | 独立 broker     | 不透明凭据记录、授权、修订、更新许可与事件；自身仓库、发布与安装周期独立                                              |
 
-GraphAgent 不调用 IPolyQuotaService，不读取 PolyQuota 的数据库、快照或设置。需要的基础用量事实通过 Core 在本产品上下文取得，自己的推理 usage 与成本记录归自己的存储。共用类型和页面不意味着共用产品业务数据库。
+GraphAgent 不调用 IPolyQuotaService，不读取 PolyQuota 的数据库、快照或设置。需要的基础用量事实通过 Core 在本产品上下文取得，自己的推理 usage 与成本记录归自己的存储。共用类型与共用页面不产生共用业务数据库；两产品业务库彼此独立。
 
 ## 4. 前端契约与调用路径
 
@@ -86,7 +86,7 @@ GraphAgent 不调用 IPolyQuotaService，不读取 PolyQuota 的数据库、快�
 
 两端供应商和凭据页复用 contract/common 的管理操作。GraphAgent 模型页使用自己的目录视图、覆盖、手工条目、长期选择和请求预览契约；PolyQuota 用量页使用产品快照与刷新/兑换契约。前端不导入 Core、broker SDK、能力 facet 或 PreparedProviderCall。
 
-GraphAgent 独立 Web 的账号和凭据仅使用 broker；未接入或授权不足时由宿主返回受限操作与原因。Electron 可使用私有加密后端或 broker。模型缓存、参数覆盖和产品设置仍由 GraphAgent 持久保存。两个入口共用 DTO、业务校验与事件语义，按实际后端报告操作能力。
+GraphAgent 独立 Web 的凭据只来自 broker，Electron 可使用私有加密后端或 broker。2B 将账号业务字段、自定义供应商及模型配置放入产品 SQLite，未接入或授权不足时由宿主返回受限操作与原因。两个入口共用 DTO、业务校验与事件语义，按实际后端报告操作能力。
 
 模型配置预览使用受限样本和纯编译器，不触发供应商请求。实际推理只能由受信任的 GraphAgent 服务发起，在执行前校验活动后端、路由和修订。完整聊天、任务、图与逐 token 事件尚待对应产品专项固定，不能以 Core 的 ModelStreamEvent 直接充当前端契约。
 
@@ -107,7 +107,7 @@ GraphAgent 独立 Web 的账号和凭据仅使用 broker；未接入或授权不
 
 ## 6. 实施与验收
 
-本轮交付分三阶段：先迁移统一契约、产品目录与构建，再抽取共用 UI；随后实现 Core 的连接、目录与请求配置；最后接通新页面和双产品联调。历史 A–G 是演进记录，不能代替当前三阶段实施状态。
+本轮交付分三阶段：先迁移统一契约、产品目录与构建，再抽取共用 UI；随后实现 Core 的连接、目录与请求配置；最后接通新页面和双产品联调。历史 A–G 是演进记录；当前实施状态以本方案三阶段为准。
 
 验收需要同时观察服务端和前端：
 
@@ -119,7 +119,7 @@ GraphAgent 独立 Web 的账号和凭据仅使用 broker；未接入或授权不
 6. fixture 与 fake 端口覆盖每个已声明能力。至少四类首要 API 协议具有协议样本；完整 IR、codec 和真实推理接入按后续执行需求逐步交付，不以类型草案冒充实现。
 7. 当前和后续 vendor 产物均保留上游 commit、来源、范围与离线特征测试，references 不成为运行时依赖；renderer、日志和通知不暴露秘密。
 
-各阶段退出条件与凭据 B2/B3 依赖见[实施方案](./implementation-plan.md)，Core 样本见[交付和验证](./core-design.md#11-交付和验证)，前端样本见两款产品的契约文档。
+模型数据包、账号作用域与计费的交付见[供应商数据实施方案](./implementation-plan.md#模型配置改版的数据实施方案)。布局、筛选和组件交付见[GraphAgent UI 实施方案](../../../graph-agent/ui/model-configuration/ui-implementation-plan.md)。各阶段退出条件与凭据 B2/B3 的回归范围见[实施方案](./implementation-plan.md)，Core 样本见[交付和验证](./core-design.md#11-交付和验证)，前端样本见两款产品的契约文档。
 
 ## 7. 范围边界
 

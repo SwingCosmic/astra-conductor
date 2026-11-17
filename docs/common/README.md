@@ -27,6 +27,8 @@
 - [供应商接入、模型目录与请求映射](./core/provider/connections-and-models.md)
 - [Core 功能详细设计](./core/provider/core-design.md)
 - [协议、模型与推理端口详细设计](./core/provider/protocol-design.md)
+- [模型目录、预置数据与迁移](./core/provider/model-structure.md)
+- [模型报价、订阅权益与条件费率](./core/provider/model-pricing.md)
 - [三阶段实施方案](./core/provider/implementation-plan.md)
 - [阶段一结构、共用 UI 与正式宿主交付结果](./core/provider/stage-one-implementation.md)
 - [参考取舍与 A–G 迁移沿革](./core/provider/migration-history.md)

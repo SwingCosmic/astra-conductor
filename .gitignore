@@ -6,6 +6,7 @@ coverage/
 apps/polyquota/renderer/
 apps/graph-agent/renderer/
 apps/polyquota/lib/
+apps/graph-agent/lib/
 *.log
 .env
 .env.*
@@ -14,3 +15,6 @@ apps/polyquota/lib/
 Thumbs.db
 *.exe
 *.blockmap
+
+.tmp
+.agents/skills/

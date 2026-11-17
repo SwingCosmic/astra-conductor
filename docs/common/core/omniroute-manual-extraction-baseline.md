@@ -8,7 +8,7 @@
 2. 哪些文件保持原文，哪些文件做了手工裁剪或改写；
 3. 哪些变化已由现有同步工具维护，哪些仍需在阶段 6 评估自动化程度。
 
-本文不是机器可读 manifest，也不替代逐文件 diff 和特征测试。阶段 6 已在[同步工具形态设计](./omniroute-sync-tool-design.md)中定稿工具形态，并已按其收敛方案完成一次手动迁移：扩大清单闭包、取消成员裁剪、合并 `stage7.ts`、反内联帧解码；Claude Code 与 OpenCode Go 边界验证又把产物从 45 个扩展到 49 个（见第 3、4 节的当前形态）。同步工具本身尚未实现（`tools/omniroute-sync` 只有 README 与空目录，根目录同步脚本不可运行），清单化仍待实施。当前输出、`.diff` 与测试结果仍是实际基线。真实账号验证发现遗漏时，应先修正手工样板和本文，再按工具设计转化为清单条目。
+本文不是机器可读 manifest，也不替代逐文件 diff 和特征测试。阶段 6 已在[同步工具形态设计](./omniroute-sync-tool-design.md)中定稿工具形态，并已按其收敛方案完成一次手动迁移：扩大清单闭包、取消成员裁剪、合并 `stage7.ts`、反内联帧解码；Claude Code 与 OpenCode Go 边界验证又把产物从 45 个扩展到 49 个，2026-10-16 批次再为 Antigravity 扩入共享模型目录与模型别名两个整文件复制产物，当前共 51 个（见第 3、4 节的当前形态）。同步工具本身尚未实现（`tools/omniroute-sync` 只有 README，同步命令尚未注册），清单化仍待实施。当前输出、`.diff` 与测试结果仍是实际基线。真实账号验证发现遗漏时，应先修正手工样板和本文，再按工具设计转化为清单条目。
 
 ## 2. 基线与目录约定
 
@@ -76,7 +76,7 @@ git -c core.safecrlf=false diff --no-index --ignore-space-at-eol --no-ext-diff -
 | `open-sse/services/tokenRefresh.ts`                 | 声明裁剪     | 提前量、全部厂商 lead 成员、废弃 provider 表和 `getRefreshLeadMs` |
 | `open-sse/services/tokenRefresh/providers/codex.ts` | 宿主依赖替换 | Codex 刷新请求、旋转 refresh token 和不可恢复错误分类 |
 
-这一范围只包含稳定授权与用量协议，不包含页面、数据库、桌面宿主或同步工具自身。当前 49 个产物是手工维护的事实基线（含第 3.7 节闭包扩展模块），不是共享 Core 的永久能力上限；阶段 6 的目标是把它们全部纳入同步清单，GraphAgent 所需的 provider/model registry、协议 codec 和 Executor 必须按[跨服务商服务协议设计](./provider/design.md)另立清单分节、固定来源并选择性抽取，不能无记录地扩进本基线。
+这一范围只包含稳定授权与用量协议，不包含页面、数据库、桌面宿主或同步工具自身。当前 51 个产物是手工维护的事实基线（含第 3.7 节闭包扩展模块），不是共享 Core 的永久能力上限；阶段 6 的目标是把它们全部纳入同步清单，GraphAgent 所需的 provider/model registry、协议 codec 和 Executor 必须按[跨服务商服务协议设计](./provider/design.md)另立清单分节、固定来源并选择性抽取，不能无记录地扩进本基线。
 
 ### 3.3 GLM Coding Plan
 
@@ -288,9 +288,9 @@ Claude Code 当前只开放官方 CLI OAuth 凭据只读导入，不增加与现
 
 当前手工输出满足以下条件，后续迁移或同步方式至少需要保持同等约束：
 
-- vendor 共有 49 个 TypeScript 协议产物与一份 LICENSE（含第 3.7 节的 7 个闭包扩展模块与第 3.8 节的 GitHub Copilot 用量叶子），另有 51 份可追溯到上游来源的 `.diff`（50 份产物 diff 与 LICENSE.diff；`github.ts` 的 diff 于 2026-10-15 数据侧批次补建，此前接入时遗漏）；
-- 其中 19 个为零 diff 整文件复制（`grokBuild.ts` 随版本同步转为带补丁偏差）；非空差异合计为 -4327 / +1363 行（2026-10-15 数据侧批次后重算）；
-- 49 个产物当前全部手工维护；阶段 6 的目标是按[同步工具形态设计](./omniroute-sync-tool-design.md)把它们全部纳入清单，工具实现落地前清单完备门禁不生效；
+- vendor 共有 51 个 TypeScript 协议产物与一份 LICENSE（含第 3.7 节的 7 个闭包扩展模块与第 3.8 节的 GitHub Copilot 用量叶子），另有 52 份可追溯到上游来源的 `.diff`（51 份产物 diff 与 LICENSE.diff；`github.ts` 的 diff 于 2026-10-15 数据侧批次补建，此前接入时遗漏）；
+- 其中 19 个为零 diff 整文件复制（`grokBuild.ts` 随版本同步转为带补丁偏差；改名产物 `claude.ts`、`grok.ts` 对照各自上游来源计算差异）；非空差异合计为 -4684 / +1547 行（2026-10-16 批次后按第 2 节命令重算）；
+- 51 个产物当前全部手工维护；阶段 6 的目标是按[同步工具形态设计](./omniroute-sync-tool-design.md)把它们全部纳入清单，工具实现落地前清单完备门禁不生效；
 - 不存在 `references/omniroute` 运行时导入、单个 `@/*` 或外部 `@omniroute/*` 依赖；vendor 的外部依赖只有 Node 内置模块与 `zod`；
 - 浏览器 OAuth、设备授权、CLI 导入、换票、刷新和用量均有无网络特征测试；
 - Core 的类型检查、测试、构建和编译后模块加载通过；

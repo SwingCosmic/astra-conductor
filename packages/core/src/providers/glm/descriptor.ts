@@ -30,7 +30,7 @@ const glmPlans: ProviderDescriptor["offerings"][number]["plans"] = [
 export const glmDescriptor: ProviderDescriptor = {
   provider: "glm",
   displayName: "GLM Coding Plan",
-  capabilities: ["account", "usage"],
+  capabilities: ["account", "usage", "model-catalog", "inference"],
   offerings: [
     {
       id: "bigmodel-coding-plan",

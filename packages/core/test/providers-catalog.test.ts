@@ -36,6 +36,7 @@ describe("provider catalog", () => {
       "claude",
       "opencode-go",
       "github-copilot",
+      "compatible-api-key",
     ]);
     expect(getProviderDescriptor("glm").offerings.map((offering) => offering.id)).toEqual([
       "bigmodel-coding-plan",
@@ -78,7 +79,18 @@ describe("provider catalog", () => {
 
   it("declares only implemented capabilities on every provider", () => {
     for (const descriptor of providerCatalog) {
-      expect(descriptor.capabilities, descriptor.provider).toEqual(["account", "usage"]);
+      const modelProvider = [
+        "codex",
+        "glm",
+        "grok-build",
+        "opencode-go",
+        "compatible-api-key",
+      ].includes(descriptor.provider);
+      expect(descriptor.capabilities.includes("usage")).toBe(
+        descriptor.provider !== "compatible-api-key",
+      );
+      expect(descriptor.capabilities.includes("model-catalog")).toBe(modelProvider);
+      expect(descriptor.capabilities.includes("inference")).toBe(modelProvider);
     }
   });
 
@@ -359,7 +371,9 @@ describe("provider plan catalog", () => {
   it("lists a plan catalog on every registered offering", () => {
     for (const descriptor of providerCatalog) {
       for (const offering of descriptor.offerings) {
-        expect(offering.plans.length, offering.id).toBeGreaterThan(0);
+        expect(offering.plans.length > 0, offering.id).toBe(
+          offering.supportsSubscriptionUsage !== false,
+        );
       }
     }
   });

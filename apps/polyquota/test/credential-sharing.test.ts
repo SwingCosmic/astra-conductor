@@ -285,7 +285,9 @@ async function setup() {
     mutations,
     providers: {
       getUsage: () => ({}),
+      getInference: () => null,
       getAccount: () => ({}),
+      getRefreshAccount: () => ({}),
       findOffering: () => ({
         provider: account.provider,
         offering: { authMethods: [{ method: account.authMethod }] },

@@ -42,6 +42,9 @@ function cloneSnapshot(snapshot: PolyQuotaSnapshot): PolyQuotaSnapshot {
  */
 export class EmptyPolyQuotaService implements IPolyQuotaService {
   readonly providers: IProviderService = {
+    getConnection: unavailable,
+    createConnection: unavailable,
+    editConnection: unavailable,
     getSnapshot: async () => {
       const result = await this.getSnapshot();
       if (!result.ok) return result;

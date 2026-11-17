@@ -137,7 +137,7 @@ void app
         document.querySelector('.settings-page .primary-action').click();
         await wait(() => document.querySelector('.save-message')?.textContent.includes("设置已保存"));
         const saved = await fetch(${JSON.stringify(backendUrl)} + "/v1/polyquota/snapshot").then(response => response.json());
-        if (!saved.ok || saved.value.settings.pollingIntervalMinutes !== 19 || saved.value.accounts.length !== 0 || saved.value.providers.length !== 7) throw new Error("Web UI did not persist real backend settings");
+        if (!saved.ok || saved.value.settings.pollingIntervalMinutes !== 19 || saved.value.accounts.length !== 0 || saved.value.providers.length !== 8) throw new Error("Web UI did not persist real backend settings");
       })()`);
           // Use the mounted App bridge, actual SSE and actual HTTP receipt route.
           // The browser API is controlled so OS notification settings cannot make

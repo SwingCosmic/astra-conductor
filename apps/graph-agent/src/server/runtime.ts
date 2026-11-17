@@ -10,6 +10,7 @@ import {
   SharedCredentialService,
   createProviderContributions,
   sharedCredentialContentType,
+  subscriptionCredentialContentType,
   SwitchingCredentialService,
   type StoragePort,
   type FileService,
@@ -83,9 +84,6 @@ export class GraphCredentialRuntime {
   }
   visibleAccountIds(): ReadonlySet<string> | null {
     return this.sharedSelected ? (this.connected ? this.visibleIds : new Set<string>()) : null;
-  }
-  canRefresh(provider: string): boolean {
-    return !!this.providers.getAccount(provider)?.refreshCredentials;
   }
   async activate(
     binding: { vaultDirectory: string; clientId: string },
@@ -242,6 +240,11 @@ export class GraphCredentialRuntime {
   }
   private acceptsRefresh(description: CredentialDescription): boolean {
     const provider = description.metadata.provider ?? "";
+    if (
+      description.contentType === subscriptionCredentialContentType &&
+      description.payloadFormatVersion === 3
+    )
+      return !!this.providers.getAccount(provider)?.refreshCredentials;
     const offering = this.providers.findOffering(description.metadata.offeringId ?? "");
     return (
       description.contentType === sharedCredentialContentType &&
@@ -251,7 +254,11 @@ export class GraphCredentialRuntime {
       offering.offering.authMethods.some(
         (method) => method.method === description.metadata.authMethod,
       ) &&
-      this.canRefresh(provider)
+      !!this.providers.getRefreshAccount({
+        provider,
+        offeringId: offering.offering.id,
+        authMethod: description.metadata.authMethod ?? "",
+      })?.refreshCredentials
     );
   }
   async refresh(accountId: string): Promise<void> {
@@ -261,7 +268,7 @@ export class GraphCredentialRuntime {
     await this.shared.refreshById(
       accountId,
       (envelope, current) => {
-        const refresh = this.providers.getAccount(current.provider)?.refreshCredentials;
+        const refresh = this.providers.getRefreshAccount(current)?.refreshCredentials;
         requireValue(refresh, "provider-refresh-unavailable");
         return refresh(current, envelope, { force: true });
       },

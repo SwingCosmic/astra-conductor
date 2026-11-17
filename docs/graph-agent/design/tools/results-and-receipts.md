@@ -8,7 +8,7 @@
 
 ## 1. 结果不能只剩一段文本
 
-本轮观察到网页读取只给 Internal Error、长输出截断后需重跑、修改工具只返回空对象，以及打开面板只返回 queued 等情况。它们是当前会话接口的观察，不是所有客户端的普遍结论。GraphAgent 的目标是让 Agent 用短摘要核对结果，并能继续读取完整证据。
+GraphAgent 要求 Agent 能用短摘要核对结果，并继续读取完整证据：长输出截断后从引用继续读取，修改类工具返回逐项命中计数与回执，打开面板类应用区分排队与用户可见，失败返回阶段与效果而不是只有 Internal Error。
 
 公共结果沿用 `{status, data, error, outputRef, truncated}`，新增必需的 operationId、receiptRef；data 必须有工具特定的判定字段。provider 的文本/多模态投影不能把结构化成功/失败收据序列化成 `{}`，也不能只留“成功”一句话。
 

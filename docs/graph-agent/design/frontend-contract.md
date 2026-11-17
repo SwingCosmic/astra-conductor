@@ -1,6 +1,6 @@
 # GraphAgent 前端服务契约
 
-2026-11-08 · 公共管理门面已在供应商阶段一落地，模型页契约待实施。本文只定义 GraphAgent 的产品 Service、模型页投影、命令与事件。双向凭据操作与迁移状态由两款产品共用 [contract/common 凭据契约](../../../packages/contract/src/common/dto/credential-sharing.ts)；模型配置按[三阶段实施方案](../../common/core/provider/implementation-plan.md)阶段二、三交付，聊天与任务 API 随 [02 消息聊天](./02_conversation-and-messaging.md)和 [03 执行层](./03_agent-loop-dispatch-and-execution.md)另行细化。
+2026-11-15 · 公共管理、模型配置与单轮测试聊天已接入同一产品门面。本文只定义 GraphAgent 的产品 Service、模型页投影、命令与事件。双向凭据操作与迁移状态由两款产品共用 [contract/common 凭据契约](../../../packages/contract/src/common/dto/credential-sharing.ts)；模型配置按[三阶段实施方案](../../common/core/provider/implementation-plan.md)阶段二、三交付，聊天与任务 API 随 [02 消息聊天](./02_conversation-and-messaging.md)和 [03 执行层](./03_agent-loop-dispatch-and-execution.md)另行细化。
 
 ## 1. 契约归属与入口
 
@@ -14,6 +14,9 @@
 
 ```ts
 interface IGraphAgentModelService {
+  estimateModelCost(input: EstimateModelCostRequest): Promise<ServiceResult<BillingEstimate>>;
+  saveModelDraft(input: SaveModelDraftRequest): Promise<ServiceResult<GraphModelSnapshot>>;
+  changeModelPack(input: ChangeModelPackRequest): Promise<ServiceResult<GraphModelSnapshot>>;
   getSnapshot(): Promise<ServiceResult<GraphModelSnapshot>>;
   subscribe(listener: (event: GraphModelChangedEvent) => void): () => void;
   refreshCatalog(input: RefreshCatalogRequest): Promise<ServiceResult<GraphModelSnapshot>>;
@@ -33,13 +36,20 @@ interface IGraphAgentService extends ICommonProductService, IGraphAgentModelServ
 
 `service.providers` / `service.credentials` 直接复用[公共 API](../../common/contract/common-api.md#1-供应商与凭据管理-api)，导入和刷新保留 [A6—A8](../../common/core/credential-sharing/a6-a8-sharing-implementation.md) 的状态语义。
 
+### 2.1 GraphAgent 自定义供应商管理（2B）
+
+2B 的自定义供应商管理使用 GraphAgent 产品契约。列表返回本地实例的 `providerId`、名称、可选图标、offerings 和配置修订，创建入口由页面提供。创建返回新实例的 ID，编辑与删除带实例 ID 及预期修订。删除前可查询关联账号及所属 offering，实际提交以事务内的最新绑定为准；仍有引用时返回可定位的冲突，页面据此引导移走或解绑账号。提交成功后通过现有事件流刷新供应商列表和模型选择器。[供应商页交互](../ui/model-configuration/interaction.md#供应商页上的自定义供应商)
+
 ## 3. GraphAgent 模型页的读取 DTO
+
+本节及第 4 节随 2B 交付同步更新：多操作目录、跨账号共享默认、一次提交整份草稿和独立价卡均已进入公开投影，下列接口与 [contract/graph-agent](../../../packages/contract/src/graph-agent/models.ts) 一致。[数据契约与验收](../../common/core/provider/implementation-plan.md#模型配置改版的数据实施方案) · [UI 交付顺序](../ui/model-configuration/ui-implementation-plan.md)
 
 以下投影在[公共模型事实](../../common/contract/common-api.md#2-模型基础事实)上附加字段来源、目录状态、本地修订和选择，公共类型直接从 `contract/common` 导入。
 
 ```ts
 interface FieldSource {
   kind: "remote" | "preset" | "user";
+  scope?: "account" | "offering" | "series";
   revision: string;
   referenceUrl: string | null;
   checkedAt: string | null;
@@ -54,13 +64,39 @@ interface ModelPriceField {
   amount: { value: string | null; source: FieldSource | null };
 }
 
+/** One selectable price row, expanded server-side from base prices or a rate card. */
+interface CatalogQuote {
+  meter: string;
+  meterLabel: string;
+  condition: string;
+  currency: string;
+  amount: string | null;
+  access: string;
+  planKey: string | null;
+}
+
 interface ModelEntryView {
+  modelType: ModelType;
+  operationId: ProviderOperation;
+  profileId: string;
+  ioProfiles: ModelIOProfile[];
+  parameterTemplate: ModelParameterTemplate;
+  parameters: ModelParameters;
+  parameterSources: Partial<Record<keyof ModelParameters, "account" | "offering" | "preset">>;
+  accountOverrides: ModelOverrides;
+  offeringOverrides: ModelOverrides;
+  rateCard: RateCard | null;
+  ratePlanKey: string;
+  rateCards: Record<string, RateCard>;
+  quotes: CatalogQuote[];
+  routeFacts: Partial<ModelFacts>;
   selection: ModelSelection;
   displayName: string;
   presence: "remote" | "manual" | "remote-and-manual" | "missing";
   presetKey: string | null;
   fields: ModelFieldValues;
   prices: ModelPriceField[];
+  referencePrices: ModelPrice[];
   settingsRevision: string;
   actions: {
     select: ActionAvailability;
@@ -80,6 +116,7 @@ type CatalogState =
   | { state: "unavailable"; reason: string };
 
 interface ModelCatalogView {
+  accountDisplayName: string;
   providerId: string;
   offeringId: string;
   accountId: string;
@@ -89,6 +126,8 @@ interface ModelCatalogView {
   refreshing: boolean;
   lastRefreshError: PublicError | null;
   entries: ModelEntryView[];
+  publicEntries: ModelEntryView[];
+  register: ActionAvailability;
   refresh: ActionAvailability;
 }
 
@@ -97,7 +136,12 @@ interface GraphModelSnapshot {
   backend: BackendContext;
   generatedAt: string;
   settingsRevision: string;
-  presets: ModelPresetOption[];
+  pack: { active: string; previous: string | null; updateConfigured: boolean };
+  presets: (ModelPresetOption & {
+    family: string;
+    series: string;
+    operations: ProviderOperation[];
+  })[];
   catalogs: ModelCatalogView[];
   savedSelection: {
     selection: ModelSelection;
@@ -117,6 +161,16 @@ interface ModelPresetOption {
 }
 
 interface ModelParameters {
+  size?: string | null;
+  quality?: string | null;
+  count?: number | null;
+  voice?: string | null;
+  format?: string | null;
+  durationSeconds?: number | null;
+  dimensions?: number | null;
+  topK?: number | null;
+  temperature?: number | null;
+  topP?: number | null;
   effort: string | null;
   contextWindow: number | null;
   maxOutputTokens: number | null;
@@ -127,13 +181,16 @@ interface ModelParameters {
 
 `FieldSource` 标明用户覆盖、账号路由返回或预置及其依据；未知值、能力和计价语义沿用公共契约。预置关联只提供参数参考，不证明账号调用权限。
 
-`settingsRevision` 是 GraphAgent 当前后端命名空间内模型设置的修订。目录刷新只改变目录修订；它不擅自改写保存的四元选择。已保存选择不在新目录时仍以 `missing` 显示原 ID 和原因。换 Key 或改址产生新的 `bindingRevision`，旧目录不能充当新绑定的有效目录。`presence: "missing"` 用于保留已保存选择或覆盖的引用，不是自动补建可执行模型。
+2A 的 `settingsRevision` 来自活动后端的模型设置；2B 改由 profile SQLite 模型仓储返回，后端切换仍由独立的 `contextId` 约束。目录刷新只改变目录修订；它不擅自改写保存的四元选择。已保存选择不在新目录时仍以 `missing` 显示原 ID 和原因。换 Key 或改址产生新的 `bindingRevision`，旧目录不能充当新绑定的有效目录。`presence: "missing"` 用于保留已保存选择或覆盖的引用，不是自动补建可执行模型。条目另携带参数模板、价卡与账号/offering 两层覆盖，支撑三页签编辑器的单草稿保存；`publicEntries` 是「本接入点全部账号」取样生成的公共默认条目，`register` 标记手工登记可用性。`quotes` 由服务端从基础价与全部价卡展开（`planKey` 标记来源卡，无生效卡时为基础价行），目录页只做筛选与排序，不重复实现规则命中。 [2B 表结构](./business-database.md)
 
 ## 4. 模型配置命令与请求预览
 
 | 方法与路径                                         | 输入 → 输出                                        |
 | -------------------------------------------------- | -------------------------------------------------- |
 | `GET /api/v1/graph-agent/models/snapshot`          | 无 → `GraphModelSnapshot`                          |
+| `POST /api/v1/graph-agent/models/draft/save` | `SaveModelDraftRequest` → 原子提交当前作用域的草稿，返回模型快照 |
+| `POST /api/v1/graph-agent/models/packs/change` | `ChangeModelPackRequest` → 导入、更新或回滚后的快照 |
+| `POST /api/v1/graph-agent/models/pricing/estimate` | `EstimateModelCostRequest` → `BillingEstimate` |
 | `POST /api/v1/graph-agent/models/catalogs/refresh` | `RefreshCatalogRequest` → `GraphModelSnapshot`     |
 | `POST /api/v1/graph-agent/models/entries/edit`     | `EditManualModelRequest` → `GraphModelSnapshot`    |
 | `POST /api/v1/graph-agent/models/presets/select`   | `SelectPresetRequest` → `GraphModelSnapshot`       |
@@ -155,7 +212,15 @@ interface RefreshCatalogRequest extends CommandContext {
 
 interface EditManualModelRequest extends BoundModelCommand {
   expectedSettingsRevision: string;
-  change: { operation: "upsert"; displayName: string } | { operation: "remove" };
+  change:
+    | {
+        operation: "upsert";
+        displayName: string;
+        modelType?: ModelType;
+        operationId?: ProviderOperation;
+        profileId?: string;
+      }
+    | { operation: "remove" };
 }
 
 interface SelectPresetRequest extends BoundModelCommand {
@@ -184,11 +249,12 @@ interface SaveModelSelectionRequest extends CommandContext {
   choice: {
     selection: ModelSelection;
     expectedBindingRevision: string;
-    parameters: ModelParameters;
+    parameters?: ModelParameters;
   } | null;
 }
 
 interface PreviewModelRequest extends BoundModelCommand {
+  draft?: SaveModelDraftRequest;
   expectedSettingsRevision: string;
   operation: ProviderOperation;
   parameters: ModelParameters;
@@ -218,7 +284,11 @@ interface ModelRequestPreview {
 
 `savedSelection` 只保存配置页选择与参数，不授权 Agent 执行或改写进行中的任务；模板和任务的模型策略由 01/03 另行校验、绑定，前端不创建 `ModelLease` 或执行句柄。
 
-预览以已登记的选择、操作和参数运行 Core 编译器，使用固定虚构消息与受限样本工具，返回允许展示的结构和 `<redacted>` 秘密占位。页面不能提交任意 URL、消息、Header 或待代发 Body；预览零供应商请求，不返回真实提示词或秘密。规则经公共连接 API 编辑，实际执行仅由受信任运行时调用。[请求编译与安全规则](../../common/core/provider/core-design.md#8-从模型选择到协议请求)
+预览以已登记的选择、操作和参数运行 Core 编译器，使用固定虚构消息与受限样本工具，返回允许展示的结构和 `<redacted>` 秘密占位。页面不能提交任意 URL、消息、Header 或待代发 Body；预览零供应商请求，不返回真实提示词或秘密。规则经公共连接 API 编辑，实际执行仅由受信任运行时调用。当前实现尚未记录被消费的参数，`consumedParameters` 恒为空数组；参数消费的展示随阶段三的参数转换交付。[请求编译与安全规则](../../common/core/provider/core-design.md#8-从模型选择到协议请求)
+
+### 单轮测试聊天
+
+`POST /api/v1/graph-agent/chat` 接收当前上下文、绑定和配置修订及一个 `prompt`。服务端从 profile 业务库读取所选账号、协议、上游 ID 和最新已保存的参数，为当次请求固定参数和价卡。响应含 `callId`、`text`、上游实际提供的 `usage` 与本轮 `charge`。同一笔实扣按回执标识替换估算；当前页面经 SSE 收到通知后，通过 `POST /api/v1/graph-agent/chat/charge` 回读。关闭本轮时释放费用投影。问题和回答均不写入业务库。[单轮接口与费用 DTO](../../../packages/contract/src/graph-agent/chat.ts)
 
 ## 5. 校验、错误与并发写入
 
@@ -229,7 +299,7 @@ interface ModelRequestPreview {
 本产品从 `contract/common` 导入 `ReadyEvent`、`ChangedEvent` 和 `CommonViewScope`，只在 `contract/graph-agent` 组合模型页范围和原因：
 
 ```ts
-type GraphModelChangeReason = "bindings" | "catalogs" | "model-settings" | "selection";
+type GraphModelChangeReason = "bindings" | "catalogs" | "model-settings" | "selection" | "charge";
 type GraphModelChangedEvent = ChangedEvent<"graph-agent.models", GraphModelChangeReason>;
 type GraphReadyEvent = ReadyEvent<CommonViewScope | "graph-agent.models">;
 ```

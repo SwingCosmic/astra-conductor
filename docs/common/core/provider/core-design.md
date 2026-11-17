@@ -1,16 +1,16 @@
 # 供应商平台 Core 功能详细设计
 
-2026-11-07 · 已实现的账号/用量基线与待实施的连接/模型扩展分节说明。本文拥有服务商声明、注册、组合、连接记录、目录缓存、请求编译和离线验证；目标协议类型见[协议与推理端口](./protocol-design.md)。总体边界见[主设计](./design.md)，用户场景见[接入与模型目录](./connections-and-models.md)，交付顺序见[实施方案](./implementation-plan.md)。
+2026-11-15 · 阶段二已实现账号连接、目录发现、字段合并和标准单轮请求。本文同时保留完整注册表与协议的目标形状，第 8 节的自定义映射列入阶段三。数据文件、操作级能力与系列继承的后续契约见[模型结构](./model-structure.md)。[协议边界](./protocol-design.md) · [总体设计](./design.md) · [接入场景](./connections-and-models.md) · [实施方案](./implementation-plan.md)
 
 ## 1. 从现有代码扩展
 
-| 现有落点                                                                       | 拟议改动                                                                                                                                                                                                                      |
+| 代码落点 | 当前实现与后续边界 |
 | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `providers/types.ts`、`catalog.ts`、`registry.ts`                              | 沿用 descriptor、offering、contribution 和启动期完整校验。当前只有可执行的 `account`、`usage` 能力。给 offering 增加用量用途和可选路由声明，给 contribution 增加可选的 `models` 与 `inference` 实现，分别校验声明、实现和归属 |
-| `providers/<provider>/descriptor.ts`、`bundle.ts`、`contributions.ts`          | 新建一个通用兼容供应商目录，登记一个 API Key 接入点。各用户账号实例保存自己的绑定。七个既有供应商保留现有构造方式和固定端点，有经过验证的模型或推理能力时再逐项登记                                                           |
+| `providers/types.ts`、`catalog.ts`、`registry.ts` | 已校验可选账号、用量、模型目录与推理 facet；接入点可显式声明订阅用量资格，账号的协议与地址由路由解析器确定。 |
+| `providers/<provider>/descriptor.ts`、`bundle.ts`、`contributions.ts` | 已在七个既有供应商之外登记普通 API Key 接入点。固定路由和账号自定义路由均按可执行能力装配。 |
 | `credential-service.ts`、`credential-vault.ts`、`shared-credential-service.ts` | 在同一个活动凭据后端提供新连接记录的读取与编辑，保留已有 adapter 使用的 `load/saveAccount/refresh`。私有密文和共享 payload 的格式分派收在这里                                                                                 |
-| `services/contracts.ts`、`ports.ts`                                            | 复用宿主的 HTTP、时钟、日志、加密与存储端口。模型目录另设仓储端口，只有使用目录的产品需要注册实现。GraphAgent 提供本地持久实现，Core 测试使用内存实现                                                                         |
-| 新增 Core 模块                                                                 | 建议 `model-catalog/` 放目录刷新、预置数据和字段合并，`protocols/` 放协议列表解析、请求编码及映射。厂商独有行为回到该厂商目录。通过现有 `./internal` 给 Node 宿主装配服务，浏览器只导入下述中立契约                           |
+| `services/contracts.ts`、`ports.ts` | 复用 HTTP 与存储端口。GraphAgent 模型服务使用活动业务存储保存账号目录、字段覆盖和测试选择。[模型服务](../../../../apps/graph-agent/src/server/model-service.ts) |
+| `model-catalog/`、`providers/model-*.ts` | `facts.ts` 保存字段与报价的分层合并逻辑（`resolveModelFacts`），`model-discovery.ts` 解析列表，`model-chat.ts` 负责标准编码与发送。版本化预置数据包在 GraphAgent 侧交付（`apps/graph-agent/resources/model-presets.json`，按修订导入 SQLite）；自定义映射按阶段三扩展。 |
 
 实现和现状可分别在注册表、后端选择器及端口中核对。[ProviderRegistry](../../../../packages/core/src/providers/registry.ts) · [CredentialService](../../../../packages/core/src/credential-service.ts) · [CoreServices](../../../../packages/core/src/services/contracts.ts) · [StoragePort](../../../../packages/core/src/ports.ts)
 
@@ -68,7 +68,7 @@ interface ProviderPlanDescriptor {
 }
 ```
 
-除 `protocolRoutes`、`extensions` 与接入点的 `protocolRouteIds` 外，上述形状已在 core `providers/<id>/descriptor.ts` 落地（七家：codex、glm、grok-build、antigravity、claude、opencode-go、github-copilot），`capabilities` 当前全部声明 `["account", "usage"]`，`plans` 已随账号持久化 `offeringId` 迁至接入点级（GLM 两个接入点各持一份相同目录，允许独立演进），offering 不再有 `region` 字段。`providers/catalog.ts` 聚合为唯一目录端点并构造期校验：provider id 格式（slug）与重复、offering 归属与 id 格式、offering 内认证方式 id 格式与重复、iconKey 与 sourcePathHint 合法性、capability 取值、接入点内 plan 的 id/multiplier/match 合法性（2026-10 结构侧批次：供应商/认证方式集合改为从注册 descriptors 收集导出，"未知 provider"检查转为结构性校验）。快照经 `PublicProviderDescriptor` 透出 provider/displayName、offerings 全部展示字段（含 iconKey 与 sourcePathHint）与各接入点的 plans（仅 id/displayName——match 键是 core 内部数据层标识，不过 IPC，套餐展示标签由主进程解析固化进 `PublicUsage.planLabel` 下发）；倍率与 `source` 属于运行期评分事实，不进公开目录。
+上表为目标形状。阶段二在原七个 descriptor 外增加 `compatible-api-key`；能力按实际实现声明，协议路由在 `providers/model-routes.ts` 中解析。`plans` 已随账号持久化 `offeringId` 迁至接入点级（GLM 两个接入点各持一份相同目录，允许独立演进），offering 不再有 `region` 字段。`providers/catalog.ts` 聚合为唯一目录端点并构造期校验：provider id 格式（slug）与重复、offering 归属与 id 格式、offering 内认证方式 id 格式与重复、iconKey 与 sourcePathHint 合法性、capability 取值、接入点内 plan 的 id/multiplier/match 合法性（2026-10 结构侧批次：供应商/认证方式集合改为从注册 descriptors 收集导出，"未知 provider"检查转为结构性校验）。快照经 `PublicProviderDescriptor` 透出 provider/displayName、offerings 全部展示字段（含 iconKey 与 sourcePathHint）与各接入点的 plans（仅 id/displayName——match 键是 core 内部数据层标识，不过 IPC，套餐展示标签由主进程解析固化进 `PublicUsage.planLabel` 下发）；倍率与 `source` 属于运行期评分事实，不进公开目录。
 
 `displayName` 与 `description` 是 core 持有的标准表述（语言中立或与产品 UI 语言一致，一份即可）；UI 可以按 `offeringId` 覆盖更适合产品的名称与图标，但不得改变能力或可执行状态，也不得再保存一份供应商事实副本（本地化现阶段不做，归属边界见 §2.5）。
 
@@ -230,15 +230,15 @@ Codex 贡献包含：
 - OAuth 凭据刷新；
 - Codex 用量查询与 `groups + extras` 归一化。
 
-现有 `CodexAdapter` 与 `CodexAccountProvisioner` 已由 account / usage facet 组合；认证完成时仍由 provisioner 保存，统一保存归属的后续工作见 §2.4。已经搬运的认证和用量协议解析本身不重写；Codex 推理 route、codec 和 Executor 在后续选择性搬运阶段单独注册，不塞回这两个 facet。
+现有 `CodexAdapter` 与 `CodexAccountProvisioner` 已由 account / usage facet 组合；认证完成时仍由 provisioner 保存，统一保存归属的后续工作见 §2.4。已经搬运的认证和用量协议解析本身不重写；阶段二已通过独立的模型目录和推理 facet 接入 Codex Responses；完整 codec 与执行器仍由后续推理专项跟进。
 
 ### 4.3 GLM 绑定
 
-GLM 贡献包含一个 `providerId: "glm"` 和两个接入点：`bigmodel-coding-plan`（国内 bigmodel 端点）与 `zai-coding-plan`（国际 z.ai 端点）。两者共享 ZCode 导入与 API Key 认证及同一套账号/用量实现，但上游接口地址不同——它们是两个接入点，不是同一接入的地区变体。端点选择是 GLM 实现内部按 `offeringId` 的私有绑定，不再以 `region` 字段出现在 descriptor、认证输入或账号元数据中；账号持久化 `offeringId` 后，`publicMetadata.region` / `presentationId` 与 UI 的 `accountPresentationId` 恢复逻辑一并删除（阶段 C 第 3、4 条，背景见 §2.2）。GLM 的 OpenAI 兼容推理端点如果以后纳入 GraphAgent，应作为接入点引用的独立 protocol route 和 inference facet 能力声明，不能由“支持 API Key”推断出来。
+GLM 贡献包含一个 `providerId: "glm"` 和两个接入点：`bigmodel-coding-plan`（国内 bigmodel 端点）与 `zai-coding-plan`（国际 z.ai 端点）。两者共享 ZCode 导入与 API Key 认证及同一套账号/用量实现，但上游接口地址不同——它们是两个接入点，不是同一接入的地区变体。端点选择是 GLM 实现内部按 `offeringId` 的私有绑定，不再以 `region` 字段出现在 descriptor、认证输入或账号元数据中；账号持久化 `offeringId` 后，`publicMetadata.region` / `presentationId` 与 UI 的 `accountPresentationId` 恢复逻辑一并删除（阶段 C 第 3、4 条，背景见 §2.2）。阶段二已为两个接入点分别绑定固定的 OpenAI Chat 与 Anthropic Messages 路由，按账号所属接入点解析地址。[GLM 路由](../../../../packages/core/src/providers/model-routes.ts)
 
 ### 4.4 GraphAgent 绑定
 
-GraphAgent 不调用 `IPolyQuotaService`。它通过共享平台完成以下绑定：
+GraphAgent 不调用 `IPolyQuotaService`。单轮测试使用已保存的具体选择。完整 Agent 执行拟通过共享平台完成以下绑定。
 
 ```text
 ModelPolicy
@@ -262,7 +262,7 @@ Grok Build 与 Antigravity 曾按此原则停留在“预告”状态，如今�
 
 ### 身份与路由
 
-创建普通 Key 时生成随机 `accountId`，并以该 ID 构造通用接入点的 `stableIdentity`。现有 SQLite 约束为 `UNIQUE(provider, stable_identity)`。用户可在同一地址建立两把 Key，明确编辑已有账号时沿用账号 ID。名称、URL 和密钥指纹均不参与自动合并。存量供应商保留各自已落盘的身份策略。[账号表](../../../../apps/polyquota/src/platform/common/migrations.ts)
+2A 创建普通 Key 时生成随机 `accountId`，并以该 ID 构造通用接入点的 `stableIdentity`。现有 SQLite 约束为 `UNIQUE(provider, stable_identity)`。用户可在同一地址建立两把 Key，明确编辑已有账号时沿用账号 ID。名称、URL 和密钥指纹均不参与自动合并。存量供应商保留各自已落盘的身份策略。[账号表](../../../../apps/polyquota/src/platform/common/migrations.ts)
 
 拟议的宿主内部类型如下。`ModelCatalogScope`、`ProviderRouteSelection` 和 `ModelSelection` 直接使用[公共模型契约](../../contract/common-api.md#22-来源目录与选择)的定义，公开配置读取另做脱敏投影。
 
@@ -276,13 +276,13 @@ interface RouteBinding {
 }
 ```
 
-协议种类、协议版本、操作及允许的认证形式由注册表声明。每条绑定引用 offering 允许的路由，使用有版本的协议配置。若允许修改协议版本或启用预览参数，必须从该路由支持的选项中选择并保存在绑定中。保存时拒绝同账号内的重复路由或指向其他账号的秘密引用。长期选择保存公共 `ModelSelection` 的四个字段，运行时由账号反查 offering 并验证归属。
+协议种类、协议版本、操作及允许的认证形式由注册表声明。每条绑定引用 offering 允许的路由，使用有版本的协议配置。若允许修改协议版本或启用预览参数，必须从该路由支持的选项中选择并保存在绑定中。2B 保存供应商配置时拒绝同一 offering 中重复的端点种类。调用时按账号绑定的 offering 和路由解析目的地，仅取该账号获准的秘密。2A 的长期选择使用公共 `ModelSelection` 四个字段。2B 的测试选择引用具体账号的模型行，并保存操作、输入输出组合及绑定修订，发送前重验当前 offering 和授权。
 
 配置编辑只接受根地址，例如 `https://relay.example/openai/v1`。宿主允许 HTTP(S) 自建地址、端口及子路径，拒绝 URL 内嵌认证、查询串及片段。先规范化目录结尾的斜线，再拼接协议持有的相对路径 `models`、`chat/completions`、`responses` 或 `messages`。需要的查询项以命名字段独立编码。绝对路径、含跳转段的路径、上游给出的任意下一页 URL 都不能覆盖目标。认证请求关闭自动重定向，3xx 返回可诊断的端点错误。
 
 ### 读写原子性与版本
 
-每次编辑提交记录修订及变更项。对同一账号更新多条路由、修改秘密引用和替换秘密值，在同一记录事务提交。只读表单回显 `configured` 与可编辑的非秘密字段，秘密输入显式区分沿用、替换与删除。仍被路由引用的秘密不可单独删除。两个编辑器同时打开，先提交者更新修订，后提交者收到冲突并重新读取，不能以旧快照覆盖不相关路由。
+2A 的地址和秘密曾在一份凭据记录内提交。2B 将编辑拆回各自的写入边界：修改端点校验本地供应商修订，换 Key 校验私有或 broker 凭据记录修订，改账号展示与绑定校验本地账号。跨业务库与凭据后端的创建、重绑按操作 ID 可重试，任一侧未完成时不开放出站。只读表单回显 `configured` 与可编辑的非秘密字段，秘密输入显式区分沿用、替换与删除。仍被路由引用的秘密不可单独删除。两个编辑器同时打开，先提交者更新修订，后提交者收到冲突并重新读取，不能以旧快照覆盖不相关路由。
 
 | 版本或身份         | 用途                                                                                                                                                          |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -291,9 +291,9 @@ interface RouteBinding {
 | 当前后端身份和代次 | 持久命名空间区分本地 profile 与共享 vault，运行时在切换活动后端/身份后递增代次并停止旧任务。即使私有、共享使用相同账号 ID，也不能共用旧请求或缓存             |
 | 目录修订           | 一次完整成功的模型列表版本。可叠加预置版本和本地覆盖修订生成展示版本。普通目录刷新不改变账号和协议选择                                                        |
 
-在现有后端选择器里以同一个活动引用提供旧凭据服务及新连接记录操作。私有实现先验证、加密候选，再在事务内校验修订并一次写入账号、密文和新修订。共享编辑在记录许可内重新读取、核对编辑基线、修改和提交。公开管理列表采用描述投影，只有需要配置的操作在本次调用内读取记录。凭据刷新仍经现有 `refresh` 许可路径。只读目录请求本身不占供应商刷新许可，若需刷新授权，完成许可内刷新后重新读取绑定再发起发现。共享不可达时复用选择器的 unavailable 状态。
+2A 在后端选择器中以同一个活动引用提供凭据及连接记录操作。私有实现先验证、加密候选，再在事务内校验修订并一次写入账号、密文和新修订。共享编辑在记录许可内重新读取、核对编辑基线、修改和提交。公开管理列表采用描述投影，只有需要配置的操作在本次调用内读取记录。凭据刷新仍经现有 `refresh` 许可路径。只读目录请求本身不占供应商刷新许可，若需刷新授权，完成许可内刷新后重新读取绑定再发起发现。共享不可达时复用选择器的 unavailable 状态。
 
-在 Core 内将以下操作作为最小后端端口。账号创建使用宿主生成的稳定 ID，传输重试沿用同一操作标识。对外返回的编辑结果始终经过脱敏投影。读取回调只交给受信任的宿主适配器，参数中包含同一份记录解出的路由及授权材料，禁止携带到调用结束以后的缓存。
+在 Core 内以以下操作向调用方提供连接端口。账号创建使用宿主生成的稳定 ID，传输重试沿用同一操作标识。对外返回的编辑结果始终经过脱敏投影。读取回调只交给受信任的宿主适配器，2B 在回调内把本地供应商端点与当前凭据后端获准的授权材料组合，禁止携带到调用结束以后的缓存。
 
 ```ts
 interface ConnectionRecordStore {
@@ -306,18 +306,20 @@ interface ConnectionRecordStore {
 }
 ```
 
-`EditConnectionCommand` 携带 `accountId`、预期记录修订和显式变更项。PolyQuota 继续使用本产品的 better-sqlite3。GraphAgent 的业务 SQLite 仓储在服务端。Electron 的私有凭据可使用 safeStorage；独立 Node/Web 的账号与凭据只通过已启用的 broker 保存和读取，不建立 Node 私有凭据后端。未接入、锁定或权限不足时返回对应操作不可用。浏览器只经 Hono 提交本次输入并回读脱敏状态。两种正式宿主分别验证其允许后端的并发写入、失败回滚与重启恢复。[项目架构](../../../architecture.md)
+`EditConnectionCommand` 携带 `accountId`、预期记录修订和显式变更项。PolyQuota 继续使用本产品的 better-sqlite3。GraphAgent 的业务 SQLite 仓储在服务端。Electron 的私有凭据可使用 safeStorage；独立 Node/Web 的认证材料只通过已启用的 broker 保存和读取，账号的展示、启停与接入点绑定进入产品业务库，不建立 Node 私有凭据后端。未接入、锁定或权限不足时返回对应操作不可用。浏览器只经 Hono 提交本次输入并回读脱敏状态。两种正式宿主分别验证其允许后端的并发写入、失败回滚与重启恢复。[项目架构](../../../architecture.md)
 
 ### 数据放在哪里
 
-2026-11-07 的隔离选型检查已验证 Windows Electron 42.11.6 中 SQLite 短事务的提交、回滚及重开。GraphAgent 正式 Web 的 broker 接入、业务数据恢复和两个入口的 Hono/SSE 联调已随供应商阶段一交付，见[阶段一交付结果](./stage-one-implementation.md)；该检查不代表阶段二的连接与模型持久化已经交付。
+GraphAgent 业务库使用产品 SQLite 短事务承载账号、供应商与模型配置，事务提交、回滚与重开行为已在 Electron 与 Node 宿主联调中验证。GraphAgent 正式 Web 的 broker 接入、业务数据恢复和两个入口的 Hono/SSE 联调已随供应商阶段一交付，见[阶段一交付结果](./stage-one-implementation.md)；阶段二的连接与模型持久化随 2B 交付。
+
+**2B 的数据归属。** 2A 的兼容连接使用带 `modelRoutes` 的加密记录。2B 自定义 URL 由本地供应商配置提供，创建账号或重绑时选定 offering。[业务表结构与启动流程](../../../graph-agent/design/business-database.md#业务库启动与验收)
 
 | 数据           | 持有者与格式                                                                                                                                                                | 读取与迁移                                                                                                                                                                                        |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 既有订阅账号   | 原私有 v1 `CredentialEnvelope` 及共享 `application/vnd.astraconductor.account-credential+json`                                                                              | 继续使用原 decoder 及秘密白名单。固定端点由声明提供。旧 provider 只收到其已支持的信封                                                                                                             |
-| 新兼容连接     | 私有凭据表的加密内容使用独立判别字段与 schema。共享使用新的应用 content type，例如 `application/vnd.astraconductor.provider-connection+json`，首版 `payloadFormatVersion=1` | 同一密文内存放账号归属、路由、规则、账号内命名秘密。独立的解码器验证内外账号 ID、provider、offering、认证方式和引用完整性，返回只在当前请求内持有的绑定与材料。加密算法版本和应用 schema 分开维护 |
+| 既有订阅账号   | 原私有 v1 `CredentialEnvelope` 及共享 `application/vnd.astraconductor.account-credential+json`                                                                              | 2A 存量用原 decoder 及秘密白名单读取。新记录遵守最小凭据格式，固定端点由注册表声明提供。旧 provider 只收到其已支持的信封                                                                                                             |
+| 新兼容连接     | 业务库保存账号展示、启停与唯一 offering 绑定。自定义供应商表持有名称、可选图标、各 offering 的端点与未来传参配置 | 凭据记录仅含 `accountId`、`providerId`、账号标识文本及不透明凭据内容。出站按业务账号与端点解析并核验，PolyQuota 自动忽略不认识的自定义供应商 |
 | 描述、事件     | broker 的用途与身份等有限字符串字段，本地保存获准的脱敏事实                                                                                                                 | 支持字符串精确筛选。用途变更后重新列描述。事件只用于失效，不携带或长期镜像秘密                                                                                                                    |
-| 目录、本地参数 | 产品自己的目录缓存、手工条目、预置关联、模型覆盖和选择                                                                                                                      | 迁移/切回只传使连接可用的路由与请求映射。两个产品独立保留目录、覆盖和业务偏好。模型名称到上游名称的出站映射随连接；仅用于挑选预置的本地关联随产品保存                                             |
+| 目录、本地参数 | 产品自己的目录缓存、手工条目、预置关联、模型覆盖和选择                                                                                                                      | 凭据迁移/切回只处理凭据。路由、未来的非秘密传参及出站映射归自定义供应商，参考预置、参数覆盖和测试选择归本地模型配置                                             |
 
 原共享 decoder 对旧 content type 直接执行 v1 白名单校验。新连接若沿用该 content type，旧 GraphAgent 的混合包预览会尝试解码并失败。新类型由老客户端按未知记录处理。新实现先按 content type 和版本分派，未知记录只可显示获准的描述，已知且损坏的记录返回校验错误。只有能完整解码并编码的记录允许写回。按版本迁移的纯函数依输入产生同样的用途字段，保留未知扩展和陌生 payload。双向导出及库级升级另由凭据专项实施。[现有私有校验](../../../../packages/core/src/credential-vault.ts) · [共享编解码](../../../../packages/core/src/shared-credential-service.ts) · [导入预览](../../../../packages/core/src/credential-migration-service.ts) · [凭据专项](../credential-sharing/implementation-plan.md#双向导出与存储切换)
 
@@ -338,7 +340,7 @@ interface ConnectionRecordStore {
 | 存储对象     | 键与内容                                                                                                                                                   |
 | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 路由目录快照 | 键为后端命名空间、账号、路由和绑定版本，保存完整候选列表、目录修订、成功时间及过期时间。模型多时可分主表/明细表，同一事务切换当前快照                      |
-| 本地模型设置 | 按后端命名空间、账号、路由、精确模型 ID 保存手工条目、预置关联、单字段覆盖。保留字段来源与配置修订。出现同 ID 新绑定时重新校验适用性，权限未知时显示待验证 |
+| 本地模型设置 | 2B 按产品 profile、接入点／经核实的账号、路由、精确模型与操作保存。后端切换保留同一账号配置；授权、目录证据和路由修订单独复核。[GraphAgent 业务表](../../../graph-agent/design/business-database.md) |
 
 默认先展示有效缓存，到期返回旧数据并后台刷新；手动刷新跳过 TTL。TTL 由目录服务注入，可在测试中固定时间。同一后端代次与绑定合并正在运行的任务，单个 UI 订阅取消仅释放自身等待。换 Key、改址、删路由或切后端时取消旧任务。写缓存时校验本地仍活动的代次与绑定版本，按版本存储并只查询当前版本。共享事件可能迟到，因此发送前还须从权威后端解析当前修订。失联时缓存仅作为带时点的显示数据。
 
@@ -364,12 +366,36 @@ interface ConnectionRecordStore {
 
 思考模式、强度列表与默认强度分别合并并保留来源；合并后的默认值还须符合有效模式和强度范围。报价按种类、币种、单位、上下文档位与时长条件逐项定位，仅对应金额独立覆盖，不能用一次输入价编辑替换整张价表。远端的未报告或未知不压掉预置的明确值；用户显式设置未知表示遮蔽该字段，清除覆盖才恢复下层事实。共同事实形状见[公共模型契约](../../contract/common-api.md#2-模型基础事实)，产品覆盖命令见 [GraphAgent 契约](../../../graph-agent/design/frontend-contract.md#4-模型配置命令与请求预览)。
 
+### 模型配置改版的数据契约
+
+第一步从当前模型级事实升级到按操作、按绑定解析的结构。实现顺序、OpenAI 双接入点验证和计费交接条件见[供应商数据实施方案](./implementation-plan.md#模型配置改版的数据实施方案)。下表说明各层保存什么，以及服务如何对齐同一条数据。
+
+| 对象 | 持久化与校验 |
+| --- | --- |
+| 型号和操作 | JSON 数据包分发，GraphAgent 校验后按修订导入 SQLite；以 `modelKey` 标识型号，保存原厂、家族、系列、变种。每个 `operationId` 定义自己的输入输出组合、事实、参数模板和来源。只有同代白名单内的字段可回落到系列值。[型号结构](./model-structure.md#身份能力部署与报价) |
+| 部署与目录 | 当前 profile 业务库用供应商、offering、业务账号引用和协议定位部署，当前后端核验可见性和路由，用 `bindingRevision` 固定一次发现或调用。保留精确上游 ID，另行关联预置。公共默认以 offering 为边界，对同协议、同型号和操作逐字段继承；远端列表、授权与账号覆盖归具体账号。 |
+| 基础价格 | 首轮可编辑项为 `input`、`output` 两行，含币种和每百万 tokens 的非负十进制金额。只改当前作用域中对应的普通 token 行，显式零、未知和删除覆盖分别编码。其他计量及条件行保留旧键、来源和原值。 |
+| 条件价卡 | 第三步为部署、操作和接入产品绑定 `rateCardId + revision`。将现有普通价投影为无条件行，再引入缓存、阶梯、日历和订阅权益。Core 计算收费明细，2B 单轮界面临时持有费用投影，关闭即释放。[报价数据结构](./model-pricing.md#一张价目表的结构) |
+
 ## 8. 从模型选择到协议请求
 
+阶段二在已登记的账号路由上按三种标准协议预览和发送。下列步骤中的规则解析、模板消费和自定义头／Body 属于阶段三验收。[标准协议实现](../../../../packages/core/src/providers/model-chat.ts)
+
+```mermaid
+flowchart TD
+  S["ModelSelection<br/>providerId + accountId +<br/>protocolRouteId + modelId"] --> B["1. 绑定<br/>解析账号、路由、目录或手工条目<br/>校验 inference facet 与能力"]
+  B --> R["2. 解析规则<br/>别名、模型名模板、参数消费<br/>（阶段三）"]
+  R --> E["3. 协议编码<br/>Chat Completions / Responses / Messages codec<br/>合并扩展头与非秘密 Body"]
+  E --> P["4a. 预览<br/>同一纯函数输出目标、路径、<br/>脱敏参数与 secret 占位"]
+  E --> X["4b. 执行<br/>重验活动后端与绑定修订<br/>取本次秘密，经宿主 HTTP 端口发送"]
+  X -->|改绑 / 撤权 / 切后端| A["取消在途请求<br/>丢弃迟到响应"]
+  X --> N["错误只投影状态类别<br/>与可重试性"]
+```
+
 1. **绑定。** 从 `ModelSelection` 解析固定账号、路由和当前目录或手工条目。检查本地 `inference` facet、操作、登记变体、能力与参数范围。凭据用途、上游是否列出模型及用户启停分开检查。一个路由失败不替用户改选另一把 Key。
-2. **解析规则。** 规则作用域为该账号的路由、操作、可选的模型集合。对同一字段，模型专属值优先于路由值，相同优先级相冲突则拒绝保存。输入别名精确匹配到登记的目标，拒绝循环、歧义或缺失目标。别名只改变上游名，预置关联只选择参数来源。模板允许固定变量 `model/effort/windowLabel`，替换来自已校验枚举及档位表，配置不可执行脚本。
+2. **解析规则。** 自定义规则保存在供应商的 offering、端点及适用的操作／模型集合下，解析时核实具体账号的绑定。对同一字段，模型专属值优先于路由值，相同优先级相冲突则拒绝保存。输入别名精确匹配到登记的目标，拒绝循环、歧义或缺失目标。别名只改变上游名，预置关联只选择参数来源。模板允许固定变量 `model/effort/windowLabel`，替换来自已校验枚举及档位表，配置不可执行脚本。
 3. **协议编码。** 先将模板消费的强度、上下文参数标记为已处理，再由 Chat Completions、Responses 或 Messages codec 编码剩余原生参数。集成直接协议调用时只发送该协议支持的结构。扩展头按大小写无关的名字合并，额外 Body 仅支持经过验证的 JSON 对象字段，数组整项替换。拒绝改写模型名、消息、工具、流模式、认证头、传输层头、冲突节点、危险对象键和头部换行。发现 GET 请求不应用推理 Body。
-4. **预览与执行。** 同一个纯函数生成目标路由、相对路径、上游模型名、非秘密参数与 secret 引用。给 UI 的预览使用示例消息、脱敏的 header/Body 和秘密占位符。准备对象持有版本和不含秘密的调用计划。执行端在发出调用前检查活动后端与绑定，从一次权威记录读取中取出匹配版本的地址和秘密，再由宿主 HTTP 端口发送。校验前绑定已变化则取消准备结果并返回过期。订阅到另一进程的改绑或撤权事件时停止旧任务，已发送的调用用 `AbortSignal` 取消并丢弃迟到响应，上游可能已经收到请求。调用结束即释放本次解密材料。错误仅投影状态类别、可重试性和安全上下文，日志不记录原始请求、上游错误 Body、密钥或完整 URL。
+4. **预览与执行。** 同一个纯函数生成目标路由、相对路径、上游模型名、非秘密参数与 secret 引用。给 UI 的预览使用示例消息、脱敏的 header/Body 和秘密占位符。准备对象持有版本和不含秘密的调用计划。执行端在发出调用前检查活动后端与绑定，从本地供应商配置或固定注册表解析目的地，并从当前授权的凭据后端取该账号的秘密，复核两侧对应的绑定修订，再由宿主 HTTP 端口发送。校验前绑定已变化则取消准备结果并返回过期。订阅到另一进程的改绑或撤权事件时停止旧任务，已发送的调用用 `AbortSignal` 取消并丢弃迟到响应，上游可能已经收到请求。调用结束即释放本次解密材料。错误仅投影状态类别、可重试性和安全上下文，日志不记录原始请求、上游错误 Body、密钥或完整 URL。
 
 **端到端例子。** 同一账号的 `chat` 路由根地址为 `https://gw.example/team/openai/v1/`，`messages` 路由为 `https://gw.example/team/claude/v1/`。前者返回 `vendor/atlas-pro-high-128k`，后者返回 `atlas-pro`。用户在 Chat 路由显式登记逻辑目标 `atlas-pro`、其可选上游变体及别名 `work-pro → atlas-pro`。模板为 `vendor/{model}-{effort}-{windowLabel}`，窗口表将 131072 映射为 `128k`。选择 `high` 与 131072 时，向 `/team/openai/v1/chat/completions` 发出登记的完整上游 ID。规则已消费 `effort`，故不重复发送强度字段。该操作的非秘密预览头和嵌套开关只在 Chat 上出现。在 Messages 路由按原 ID 请求，保留其缓存与参数来源。换账号 Key 时使两个引用它的路由失效，正在返回的旧目录不能改变新绑定的有效目录。
 
@@ -437,7 +463,7 @@ interface ConnectionRecordStore {
 14. 运行模型目录、codec、流事件顺序、取消、凭据隔离和 GraphAgent lease contract suite；
 15. 最后才以最小真实调用验证 endpoint、认证和流式传输。
 
-因此，“不包含真实网络请求的新供应商测试更简单”仍然成立，但测试对象不再只有用量 DTO：账号/用量和模型/协议/推理各有独立 contract suite，只有服务商真正声明的能力面才需要执行。
+因此新服务商的离线测试保持不依赖真实网络：账号/用量和模型/协议/推理各有独立 contract suite，只有服务商真正声明的能力面才需要执行。
 
 ## 11. 交付和验证
 

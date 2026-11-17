@@ -6,7 +6,7 @@
 | 更新日期 | 2026-10-25                                             |
 | 覆盖范围 | 开发、构建、打包、进程边界、通信、网络、认证与生命周期 |
 
-本文记录 2026-10-25 已交付的 PolyQuota 服务模式及当时的代码路径。目标包边界与产品启动形态以[项目架构](../architecture.md)为准。宿主实现、开发命令与验收分别见[服务模式设计](../common/core/service-mode/design.md)、[开发说明](../common/core/service-mode/development.md)和[验收记录](../common/core/service-mode/acceptance.md)。
+本文记录 2026-10-25 已交付的 PolyQuota 服务模式，源码链接与契约包名已于 2026-11-17 对齐当前目录结构。目标包边界与产品启动形态以[项目架构](../architecture.md)为准。宿主实现、开发命令与验收分别见[服务模式设计](../common/core/service-mode/design.md)、[开发说明](../common/core/service-mode/development.md)和[验收记录](../common/core/service-mode/acceptance.md)。
 
 ## 1. 运行结构
 
@@ -36,7 +36,7 @@ flowchart LR
 
 ## 3. 公共契约与状态同步
 
-`polyquota-contract` 统一 DTO、`IPolyQuotaService`、宿主/通知接口和请求校验，当前 schemaVersion 为 6。Hono 内部只定义 `/v1/...` 逻辑路由；请求字段在入站校验，未知异常转换为安全的 `PublicError`，凭据和供应商原始响应不进入 UI。
+`contract/polyquota` 统一 DTO、`IPolyQuotaService`、宿主/通知接口和请求校验，当前 schemaVersion 为 6。Hono 内部只定义 `/v1/...` 逻辑路由；请求字段在入站校验，未知异常转换为安全的 `PublicError`，凭据和供应商原始响应不进入 UI。
 
 HTTP 返回 `ServiceResult`，void 成功编码为 `value: null`，客户端恢复为 undefined。供应商刷新失败仍是业务 DTO，不等同于请求失败。完整方法与参数见[业务路由表](../common/core/service-mode/design.md#82-业务路由与方法映射)。
 
@@ -98,9 +98,9 @@ Node 默认使用独立开发目录，拒绝 Electron 产品数据目录；两�
 ## 9. 主要实现依据
 
 - [根命令](../../package.json)、[开发编排](../../scripts/dev-polyquota.mjs)
-- [Electron 组合根](../../apps/polyquota/src/main.ts)、[统一生命周期](../../apps/polyquota/src/runtime/start-runtime.ts)
-- [服务注册](../../apps/polyquota/src/runtime/register-common-services.ts)、[宿主适配](../../apps/polyquota/src/platform/)
-- [Hono 路由](../../apps/polyquota/src/http/create-hono-app.ts)、[UI 客户端](../../packages/polyquota-ui/src/services/http-polyquota-service.ts)
-- [公共契约](../../packages/polyquota-contract/src/index.ts)、[认证协调器](../../packages/core/src/auth/coordinator.ts)
-- [调度](../../apps/polyquota/src/refresh-scheduler.ts)、[轮询](../../apps/polyquota/src/polling-service.ts)
+- [Electron 组合根](../../apps/polyquota/src/platform/electron/main.ts)、[统一生命周期](../../apps/polyquota/src/server/runtime/start-runtime.ts)
+- [服务注册](../../apps/polyquota/src/server/runtime/register-common-services.ts)、[宿主适配](../../apps/polyquota/src/platform/)
+- [Hono 路由](../../apps/polyquota/src/server/http/create-hono-app.ts)、[UI 客户端](../../apps/polyquota/ui/src/services/http-polyquota-service.ts)
+- [公共契约](../../packages/contract/src/polyquota/index.ts)、[认证协调器](../../packages/core/src/auth/coordinator.ts)
+- [调度](../../apps/polyquota/src/server/refresh-scheduler.ts)、[轮询](../../apps/polyquota/src/server/polling-service.ts)
 - [原生构建](../../apps/polyquota/scripts/prepare-native.mjs)、[打包](../../apps/polyquota/scripts/package.mjs)、[分发验证](../../apps/polyquota/scripts/run-distribution-smoke.mjs)

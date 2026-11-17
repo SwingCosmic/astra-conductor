@@ -39,6 +39,7 @@ export class AuthCoordinator {
       if (!account) continue;
       const catalogMethods = new Set<AuthMethod>();
       for (const offering of descriptor.offerings) {
+        if (offering.connectionKind) continue;
         for (const authMethod of offering.authMethods) {
           catalogMethods.add(authMethod.method);
         }
@@ -80,6 +81,8 @@ export class AuthCoordinator {
     options: AuthStartOptions,
   ): Promise<AuthStartResult> {
     const found = this.registry.findOffering(offeringId);
+    if (found?.offering.connectionKind)
+      throw new AppError("validation", "此接入点通过 Key 连接创建账号");
     if (!found) throw new AppError("validation", `未知接入点：${offeringId}`);
     const account = this.registry.getAccount(found.provider);
     if (!account) {

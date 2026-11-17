@@ -53,33 +53,35 @@ const refreshOutcome: Extract<RefreshOutcome, { status: "updated" }> = {
 
 /** 从真实目录派生的测试注册表：用量/账号 facet 为桩，glm 可注入兑换桩。 */
 function testRegistry(redeemResetCredit?: Mock): ProviderRegistry {
-  const contributions = providerCatalog.map(
-    (descriptor): ProviderContribution => ({
-      descriptor,
-      account: {
-        providerId: descriptor.provider,
-        supportedMethods: [
-          ...new Set(
-            descriptor.offerings.flatMap((offering) =>
-              offering.authMethods.map((method) => method.method),
+  const contributions = providerCatalog
+    .filter((item) => item.capabilities.includes("usage"))
+    .map(
+      (descriptor): ProviderContribution => ({
+        descriptor: { ...descriptor, capabilities: ["account", "usage"] },
+        account: {
+          providerId: descriptor.provider,
+          supportedMethods: [
+            ...new Set(
+              descriptor.offerings.flatMap((offering) =>
+                offering.authMethods.map((method) => method.method),
+              ),
             ),
-          ),
-        ],
-        startAuth: async () => {
-          throw new Error("not used in this test");
+          ],
+          startAuth: async () => {
+            throw new Error("not used in this test");
+          },
         },
-      },
-      usage: {
-        providerId: descriptor.provider,
-        fetchUsage: async () => {
-          throw new Error("not used in this test");
+        usage: {
+          providerId: descriptor.provider,
+          fetchUsage: async () => {
+            throw new Error("not used in this test");
+          },
+          ...(descriptor.provider === "glm" && redeemResetCredit
+            ? { redeemResetCard: redeemResetCredit }
+            : {}),
         },
-        ...(descriptor.provider === "glm" && redeemResetCredit
-          ? { redeemResetCard: redeemResetCredit }
-          : {}),
-      },
-    }),
-  );
+      }),
+    );
   return new ProviderRegistry(contributions);
 }
 

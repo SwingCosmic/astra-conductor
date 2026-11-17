@@ -2,6 +2,7 @@ export type AppErrorCode =
   | "not-found"
   | "conflict"
   | "stale-context"
+  | "stale-binding"
   | "capability-unavailable"
   | "desktop-unavailable"
   | "service-unavailable"

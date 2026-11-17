@@ -9,14 +9,15 @@ import {
   type SharedBrokerClient,
 } from "@astra-conductor/credentials";
 import type { CredentialAccountPreview } from "@astra-conductor/contract/common";
-import type { Account, EncryptedCredential } from "./models.js";
+import type { Account, CredentialEnvelope, EncryptedCredential } from "./models.js";
 import type { CredentialCipherPort, StoragePort } from "./ports.js";
 import type { ProviderRegistry } from "./providers/registry.js";
 import { CredentialVault } from "./credential-vault.js";
 import {
   decodeSharedCredential,
   encodeSharedCredential,
-  sharedCredentialContentType,
+  isKnownCredentialFormat,
+  recordFormat,
   sharedCredentialMetadata,
   sharedAccountIdentityKey,
 } from "./shared-credential-service.js";
@@ -27,14 +28,13 @@ export function previewRecord(
   providers: ProviderRegistry,
 ): CredentialAccountPreview {
   const d = record.description;
-  const decoded =
-    d.contentType === sharedCredentialContentType ? decodeSharedCredential(record) : null;
+  const decoded = isKnownCredentialFormat(d) ? decodeSharedCredential(record) : null;
   const provider = decoded?.account.provider ?? d.metadata.provider ?? "unknown";
   return {
     id: d.credentialId,
     provider,
     maskedIdentifier: decoded?.account.maskedIdentifier ?? "—",
-    canRefresh: !!decoded && !!providers.getAccount(provider)?.refreshCredentials,
+    canRefresh: !!decoded && !!providers.getRefreshAccount(decoded.account)?.refreshCredentials,
     revision: d.revision,
   };
 }
@@ -85,8 +85,7 @@ export async function exportSnapshot(
     records.push({
       credentialId: account.id,
       uniqueKey: sharedAccountIdentityKey(account),
-      contentType: sharedCredentialContentType,
-      payloadFormatVersion: 1,
+      ...recordFormat(account),
       payload,
       metadata: sharedCredentialMetadata(account, providers),
     });
@@ -122,15 +121,31 @@ export async function readCurrentRecords(
   }
   return records;
 }
+// The signed digest binds exactly the facts entrusted to the vault. Profile-local
+// display names and endpoint bindings may differ between the two products.
+export function privateRecordDigest(
+  account: Account,
+  credentials: CredentialEnvelope,
+  minimal: boolean,
+): string {
+  if (!minimal) return hash([account, credentials]);
+  return hash(["credential/v3", encodeSharedCredential(account, credentials)]);
+}
+
 export async function verifyPrivateSnapshot(
   snapshot: PrivateSnapshot,
   storage: StoragePort,
-  load: (accountId: string) => Promise<unknown>,
+  load: (accountId: string) => Promise<CredentialEnvelope>,
 ) {
   for (const record of snapshot.records) {
     const account = storage.accounts.get(record.id);
+    requireValue(account, "private-snapshot-readback-failed");
+    const credentials = await load(record.id);
+    const full = privateRecordDigest(account, credentials, false);
     requireValue(
-      account && hash([account, await load(record.id)]) === record.digest,
+      full === record.digest ||
+        (recordFormat(account).payloadFormatVersion === 3 &&
+          privateRecordDigest(account, credentials, true) === record.digest),
       "private-snapshot-readback-failed",
     );
   }
@@ -214,6 +229,14 @@ export async function preparePrivateSnapshot(
     const localId = sameIdentity?.id ?? (existing ? randomUUID() : decoded.account.id);
     const account = {
       ...decoded.account,
+      ...(record.description.payloadFormatVersion === 3 && sameIdentity
+        ? {
+            displayName: sameIdentity.displayName,
+            enabled: sameIdentity.enabled,
+            offeringId: sameIdentity.offeringId,
+            updatedAt: sameIdentity.updatedAt,
+          }
+        : {}),
       id: localId,
       createdAt: sameIdentity?.createdAt ?? decoded.account.createdAt,
     };
@@ -224,7 +247,15 @@ export async function preparePrivateSnapshot(
       canonical(JSON.parse(readback.plaintext)) === canonical(credentials),
       "private-snapshot-readback-failed",
     );
-    staged.push({ account, encrypted, digest: hash([account, credentials]) });
+    staged.push({
+      account,
+      encrypted,
+      digest: privateRecordDigest(
+        account,
+        credentials,
+        record.description.payloadFormatVersion === 3,
+      ),
+    });
   }
   requireValue((await snapshotWatermark(broker, binding)) === watermark, "shared-snapshot-changed");
   const ids = new Set(staged.map((item) => item.account.id));

@@ -28,10 +28,18 @@ app.whenReady().then(async () => {
   let services;
   let hono;
   const secret = "FICTIONAL-GRAPH-STAGE-ONE-SECRET";
+  const modelSecret = "FICTIONAL-GRAPH-MODEL-KEY";
+  const prompts = [];
+  let releaseDelayedReply;
+  let signalDelayedRequest;
+  const delayedRequest = new Promise((resolve) => {
+    signalDelayedRequest = resolve;
+  });
   try {
     assert(safeStorage.isEncryptionAvailable(), "OS credential protection must be available");
     const createServices = () =>
       createGraphServices({
+        nativeBinding: path.resolve("lib", "better-sqlite3", "better_sqlite3.node"),
         directory: profile,
         host: {
           localPackageDirectory: path.join(root, "package"),
@@ -57,12 +65,52 @@ app.whenReady().then(async () => {
           }),
         },
         http: {
-          fetch: async () =>
-            Response.json({
+          fetch: async (input, init) => {
+            const url = new URL(input instanceof Request ? input.url : input);
+            if (url.hostname === "models.example.test") {
+              assert.equal(new Headers(init.headers).get("authorization"), `Bearer ${modelSecret}`);
+              if (url.pathname === "/v1/models")
+                return Response.json({ object: "list", data: [{ id: "fixture-chat" }] });
+              assert.equal(url.pathname, "/v1/chat/completions");
+              const request = JSON.parse(init.body);
+              assert.equal(request.model, "fixture-chat");
+              assert.equal(request.temperature, 0.25);
+              assert.equal(request.max_completion_tokens, 128);
+              const questions = request.messages.filter((item) => item.role === "user");
+              assert.equal(questions.length, 1);
+              prompts.push(questions[0].content);
+              if (questions[0].content === "取消等待")
+                await new Promise((resolve) => {
+                  releaseDelayedReply = resolve;
+                  signalDelayedRequest();
+                });
+              return Response.json({
+                usage: { prompt_tokens: 10, completion_tokens: 2 },
+                ...(prompts.length === 2
+                  ? {
+                      billing: {
+                        actual_charge: {
+                          amount: "0.015",
+                          currency: "USD",
+                          event_id: "fixture-receipt",
+                        },
+                      },
+                    }
+                  : {}),
+                choices: [
+                  {
+                    message: { role: "assistant", content: `答复 ${prompts.length}` },
+                    finish_reason: "stop",
+                  },
+                ],
+              });
+            }
+            return Response.json({
               success: true,
               code: 200,
               data: { planName: "GLM Coding Pro Plan", limits: [] },
-            }),
+            });
+          },
         },
         files: { readText: async () => "{}" },
         callbackServer: {
@@ -89,8 +137,11 @@ app.whenReady().then(async () => {
     await window.loadURL(`${origin}/`);
     const evaluate = (body) =>
       window.webContents.executeJavaScript(`(async () => {
-      const wait = async predicate => { const deadline = Date.now() + 15000; while (!predicate()) { if (Date.now() > deadline) throw new Error('render-timeout: '+document.body.innerText); await new Promise(resolve => setTimeout(resolve, 25)); } };
-      const button = (root, label) => [...root.querySelectorAll('button')].find(item => item.textContent.trim().endsWith(label));
+      const wait = async predicate => { const deadline = Date.now() + 15000; while (!predicate()) { if (Date.now() > deadline) throw new Error('render-timeout: '+String(predicate)+' (focused '+document.activeElement?.tagName+' '+document.activeElement?.id+') '+document.body.innerText); await new Promise(resolve => setTimeout(resolve, 25)); } };
+      const button = (root, label) => [...(root?.querySelectorAll('button')??[])].find(item => item.textContent.trim().endsWith(label));
+      const fill = (selector, value) => { const input = document.querySelector(selector); input.value = value; input.dispatchEvent(new Event('input', { bubbles: true })); };
+      const field=(root,label)=>[...(root?.querySelectorAll('label')??[])].filter(el=>el.firstElementChild?.matches('span')?el.firstElementChild.textContent.trim()===label:el.firstChild?.textContent.trim()===label).map(el=>el.querySelector('input,select,textarea')).find(Boolean);
+      const set=(el,value)=>{if(!el)throw Error('field-missing: '+value); el.value=value; el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));};
       ${body}
     })()`);
     await evaluate(`
@@ -146,12 +197,216 @@ app.whenReady().then(async () => {
       path.join(root, "graph-credentials-incompatible.png"),
       (await window.webContents.capturePage()).toPNG(),
     );
+    await evaluate(`
+      button(document.querySelector('nav'),'供应商').click();
+      await wait(() => button(document,'创建自定义供应商'));
+      button(document,'创建自定义供应商').click();
+      await wait(() => document.querySelector('dialog[open]'));
+      const dialog = document.querySelector('dialog');
+      set(field(dialog,'供应商名称'),'Smoke 中转站');
+      set(field(dialog,'接入点名称'),'CN');
+      let routes = dialog.querySelectorAll('.endpoint-row');
+      set(field(routes[0],'API 根地址'),'https://models.example.test/v1');
+      for(const id of ['openai-images-generations','openai-images-edits']){
+        button(dialog,'添加端点').click();
+        await wait(()=>dialog.querySelectorAll('.endpoint-row').length===routes.length+1);
+        routes=dialog.querySelectorAll('.endpoint-row');
+        const row=routes[routes.length-1];
+        set(field(row,'端点种类'),id);
+        set(field(row,'API 根地址'),'https://models.example.test/v1');
+      }
+      button(dialog,'保存供应商').click();
+      await wait(()=>!document.querySelector('dialog')&&document.querySelector('.custom-providers .provider-row'));
+      const provider=document.querySelector('.custom-providers .provider-row');
+      button(provider,'查看接入点').click();
+      await wait(()=>button(provider,'添加账号')&&!button(provider,'添加账号').disabled);
+      button(provider,'添加账号').click();
+      await wait(()=>document.querySelector('#connection-key'));
+      fill('#connection-name','Smoke 模型连接');
+      fill('#connection-key',${JSON.stringify(modelSecret)});
+      await wait(()=>!button(document.querySelector('dialog'),'保存连接').disabled);
+      button(document.querySelector('dialog'),'保存连接').click();
+      await wait(()=>!document.querySelector('dialog')&&button(provider,'编辑账号'));
+      button(provider,'编辑账号').click();
+      await wait(()=>document.querySelector('#connection-name')?.value==='Smoke 模型连接');
+      if(document.querySelector('#connection-key').value)throw Error('edit-returned-key');
+      fill('#connection-name','Smoke 模型连接（编辑）');
+      await wait(()=>!button(document.querySelector('dialog'),'保存连接').disabled);
+      button(document.querySelector('dialog'),'保存连接').click();
+      await wait(()=>!document.querySelector('dialog')&&provider.textContent.includes('Smoke 模型连接（编辑）'));
+      button(provider,'删除供应商').click();await wait(()=>document.querySelector('dialog')?.textContent.includes('Smoke 模型连接（编辑）'));
+      if(!button(document.querySelector('dialog'),'删除供应商').disabled)throw Error('provider-delete-enabled-with-reference');
+      button(document.querySelector('dialog'),'取消').click();
+      button(provider,'模型配置').click();
+      await wait(()=>document.querySelector('.scope-picker') && field(document,'协议端点')?.options.length>=4);
+      for(const route of ['openai-images-generations','openai-images-edits']){
+        set(field(document,'协议端点'),route);
+        const title=route==='openai-images-edits'?'OpenAI 图片编辑':'OpenAI 图片生成';
+        await wait(()=>document.querySelector('.catalog-browser .setting-hint')?.textContent.includes(title)&&document.querySelector('.catalog-browser details form'));
+        const form=document.querySelector('.catalog-browser form');
+        form.closest('details').open=true;
+        set(field(form,'上游模型 ID'),'fixture-image');
+        await wait(()=>!button(form,'登记模型').disabled);
+        button(form,'登记模型').click();
+        await wait(()=>document.querySelector('.graph-editor h2')?.textContent==='fixture-image');
+        if(button(document.querySelector('.graph-editor'),'用于测试对话'))throw Error('media-offered-as-chat');
+        if(route==='openai-images-generations'){
+          const editor=document.querySelector('.graph-editor');button(editor,'价格').click();await wait(()=>field(editor,'接入方案 / 套餐'));
+          set(field(editor,'接入方案 / 套餐'),'relay-api');
+          const pricing=editor.querySelector('.rate-card-editor');pricing.open=true;
+          button(pricing,'新建条件价卡').click();await wait(()=>field(pricing,'计量项'));
+          set(field(pricing,'接入与计费方式'),'api');set(field(pricing,'计量项'),'images');set(field(pricing,'单位'),'image');set(field(pricing,'金额'),'0.06');
+          button(pricing,'添加条件覆盖').click();await wait(()=>pricing.querySelector('.rate-rule'));
+          const rule=pricing.querySelector('.rate-rule');set(field(rule,'质量'),'HD');set(field(rule,'时区'),'Asia/Shanghai');set(field(rule,'排除日历'),'business');set(field(rule,'覆盖金额'),'0.08');
+          button(rule,'添加时段').click();
+          await wait(()=>field(pricing,'business · 排除日期'));
+          const trial=pricing.querySelector('.workload-fields');
+          set(field(trial,'图像张数'),'5');set(field(trial,'质量'),'HD');set(field(trial,'business · 排除日期'),'2026-11-17');
+          const setLocalDate=(iso)=>{const t=new Date(iso);set(field(trial,'计费时间'),new Date(+t-t.getTimezoneOffset()*60000).toISOString().slice(0,16))};
+          setLocalDate('2026-11-16T10:00:00+08:00');button(pricing,'试算费用').click();
+          await wait(()=>pricing.querySelector('[role=status]')?.textContent.includes('0.4 USD'));
+          setLocalDate('2026-11-17T10:00:00+08:00');button(pricing,'试算费用').click();
+          await wait(()=>pricing.querySelector('[role=status]')?.textContent.includes('0.3 USD'));
+          button(editor,'保存配置').click();await wait(()=>button(editor,'保存配置').disabled&&!editor.querySelector('[role=alert]'));
+        }
+      }
+      set(field(document,'协议端点'),'openai-chat');
+      await wait(()=>document.querySelector('.catalog-list button')?.textContent.includes('fixture-chat'));
+      document.querySelector('.catalog-list button').click();
+      await wait(()=>document.querySelector('.graph-editor'));
+      const editor=document.querySelector('.graph-editor');
+      set(field(editor,'上下文窗口'),'2048');
+      button(editor,'调用参数').click();await wait(()=>field(editor,'温度（temperature）'));
+      set(field(editor,'请求输出预算（tokens）'),'128');set(field(editor,'温度（temperature）'),'0.25');
+      button(editor,'价格').click();await wait(()=>field(editor,'输入单价 / 每 1,000,000 tokens'));
+      set(field(editor,'输入单价 / 每 1,000,000 tokens'),'0');set(field(editor,'输出单价 / 每 1,000,000 tokens'),'2.50');
+      await wait(()=>!button(editor,'预览请求').disabled);
+      button(editor,'预览请求').click();await wait(()=>editor.querySelector('[aria-label="请求预览"]')?.textContent.includes('max_completion_tokens'));
+      button(editor,'保存配置').click();await wait(()=>!button(editor,'用于测试对话').disabled);
+      const priceCard=editor.querySelector('.rate-card-editor'); priceCard.open=true;
+      await wait(()=>field(priceCard,'普通输入 tokens')&&field(priceCard,'输出 tokens'));
+      set(field(priceCard,'普通输入 tokens'),'100');set(field(priceCard,'输出 tokens'),'1000000');button(priceCard,'试算费用').click();
+      await wait(()=>priceCard.querySelector('[role=status]')?.textContent.includes('2.5 USD'));priceCard.open=false;
+      button(editor,'用于测试对话').click();await wait(()=>button(editor,'前往测试对话'));
+    `);
+    const captureAfterPaint = async (name) => {
+      await window.webContents.executeJavaScript(
+        "new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+      );
+      await writeFile(path.join(root, name), (await window.webContents.capturePage()).toPNG());
+    };
+    await captureAfterPaint("graph-models.png");
+    await evaluate(`
+      button(document,'前往测试对话').click();
+      await wait(() => document.body.innerText.includes('fixture-chat') && document.querySelector('[aria-label="消息草稿"]'));
+      for (const sequence of [1,2]) {
+        fill('[aria-label="消息草稿"]','问题 ' + sequence);
+        await wait(() => !document.querySelector('[aria-label="发送消息"]').disabled);
+        document.querySelector('[aria-label="发送消息"]').click();
+        await wait(() => document.body.innerText.includes('答复 ' + sequence));
+        await wait(()=>document.body.innerText.includes(sequence===1?'0.000005 USD':'0.015 USD'));
+      }
+      if (document.body.innerText.includes('问题 1') || document.body.innerText.includes('答复 1')) throw new Error('chat-history-retained');
+    `);
+    assert.deepEqual(prompts, ["问题 1", "问题 2"]);
+    await captureAfterPaint("graph-test-chat.png");
+    await evaluate(`
+      fill('[aria-label="消息草稿"]','取消等待');
+      await wait(() => !document.querySelector('[aria-label="发送消息"]').disabled);
+      document.querySelector('[aria-label="发送消息"]').click();
+      await wait(() => document.querySelector('[aria-label="停止回复"]'));
+    `);
+    await delayedRequest;
+    await evaluate(`
+      document.querySelector('[aria-label="停止回复"]').click();
+      await wait(() => document.body.innerText.includes('已停止等待回复'));
+      fill('[aria-label="消息草稿"]','下一次请求');
+    `);
+    releaseDelayedReply();
+    const modelAccount = (await services.providers.getSnapshot()).accounts.find(
+      (account) => account.displayName === "Smoke 模型连接（编辑）",
+    );
+    assert(modelAccount);
+    await services.providers.setAccountEnabled(modelAccount.id, false);
+    await evaluate(`
+      await wait(() => document.querySelector('[aria-label="消息草稿"]').value === '' && document.querySelector('[aria-label="发送消息"]').disabled);
+      if (document.body.innerText.includes('答复 3')) throw new Error('late-cancelled-answer');
+    `);
+    await evaluate(`
+      button(document.querySelector('nav'),'供应商').click();
+      await wait(()=>document.querySelector('.custom-providers .provider-row'));
+      let provider=document.querySelector('.custom-providers .provider-row');
+      button(provider,'删除供应商').click();await wait(()=>document.querySelector('dialog')?.textContent.includes('已停用'));
+      button(document.querySelector('dialog'),'变更绑定').click();
+      await wait(()=>field(document.querySelector('dialog'),'接入点'));
+      set(field(document.querySelector('dialog'),'接入点'),'');
+      await wait(()=>!button(document.querySelector('dialog'),'保存绑定').disabled);
+      button(document.querySelector('dialog'),'保存绑定').click();
+      await wait(()=>!document.querySelector('dialog')&&document.querySelector('.custom-providers').textContent.includes('待绑定账号'));
+      button(provider,'删除供应商').click();await wait(()=>document.querySelector('dialog')?.textContent.includes('确认删除'));
+      button(document.querySelector('dialog'),'删除供应商').click();
+      await wait(()=>!document.querySelector('dialog')&&!document.querySelector('.custom-providers .provider-row'));
+      button(document.querySelector('.custom-providers'),'配置此账号的供应商').click();
+      await wait(()=>document.querySelector('dialog[open]'));const restored=document.querySelector('dialog');
+      set(field(restored,'供应商名称'),'重新配置的 Smoke 中转站');set(field(restored,'接入点名称'),'US');set(field(restored,'API 根地址'),'https://models.example.test/v1');
+      button(restored,'保存供应商').click();
+      await wait(()=>!document.querySelector('dialog')&&button(document.querySelector('.custom-providers'),'选择接入点'));
+      button(document.querySelector('.custom-providers'),'选择接入点').click();await wait(()=>field(document.querySelector('dialog'),'接入点')?.options.length===2);
+      const picker=field(document.querySelector('dialog'),'接入点');set(picker,picker.options[1].value);
+      await wait(()=>!button(document.querySelector('dialog'),'保存绑定').disabled);button(document.querySelector('dialog'),'保存绑定').click();
+      await wait(()=>!document.querySelector('dialog')&&!document.querySelector('.custom-providers').textContent.includes('待绑定账号'));
+    `);
+    assert.equal(
+      (await services.providers.getSnapshot()).accounts.find((a) => a.id === modelAccount.id)
+        ?.provider,
+      modelAccount.provider,
+    );
+    window.setSize(640, 840);
+    const keyboard = window.webContents.debugger;
+    keyboard.attach("1.3");
+    await keyboard.sendCommand("Emulation.setFocusEmulationEnabled", { enabled: true });
+    const press = async (key) => {
+      const code = { Enter: 13, Tab: 9, Escape: 27 }[key];
+      const params = { key, code: key, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code };
+      await keyboard.sendCommand("Input.dispatchKeyEvent", {
+        ...params,
+        type: key === "Enter" ? "keyDown" : "rawKeyDown",
+        ...(key === "Enter" ? { text: "\r", unmodifiedText: "\r" } : {}),
+      });
+      await keyboard.sendCommand("Input.dispatchKeyEvent", { ...params, type: "keyUp" });
+    };
+    await evaluate(`
+      await wait(()=>innerWidth<720);
+      button(document.querySelector('.custom-providers'),'创建自定义供应商').focus();
+    `);
+    await press("Enter");
+    await evaluate(
+      `await wait(()=>document.querySelector('dialog[open]')?.contains(document.activeElement));`,
+    );
+    await press("Tab");
+    await evaluate(
+      `if(!document.querySelector('dialog[open]')?.contains(document.activeElement))throw Error('focus-outside-modal');`,
+    );
+    await press("Escape");
+    await evaluate(`await wait(()=>!document.querySelector('dialog')&&document.activeElement===button(document.querySelector('.custom-providers'),'创建自定义供应商'));
+      const p=document.querySelector('.custom-providers .provider-row');if(!button(p,'模型配置'))button(p,'查看接入点').click();
+      await wait(()=>button(p,'模型配置'));button(p,'模型配置').focus();`);
+    await press("Enter");
+    await evaluate(
+      `await wait(()=>document.querySelector('.model-page'));button(document,'管理供应商').focus();`,
+    );
+    await press("Enter");
+    await evaluate(
+      `await wait(()=>document.activeElement?.id==='model-for-'+${JSON.stringify(modelAccount.id)});`,
+    );
+    keyboard.detach();
+    await captureAfterPaint("graph-providers-narrow.png");
+    await services.providers.deleteAccount(modelAccount.id);
     await services.providers.deleteAccount(accountId);
     await services.stop();
     services = await createServices();
     assert.equal((await services.providers.getSnapshot()).accounts.length, 0);
     await services.stop();
-    window.destroy();
     await writeFile(
       path.join(root, "result.json"),
       JSON.stringify(
@@ -166,17 +421,30 @@ app.whenReady().then(async () => {
           restartIdentity: true,
           deletionPersistence: true,
           incompatibleBrokerDisabled: true,
+          savedCatalogChat: true,
+          singleTurnOnly: true,
+          preservedKeyOnEdit: true,
+          numericAndPriceOverrides: true,
+          estimatedAndActualCharges: true,
+          conditionalMediaPlanAndCalendar: true,
+          imageEndpointBindings: true,
+          providerReferenceCheck: true,
+          explicitRebindOriginalProvider: true,
+          narrowKeyboardAndFocus: true,
+          cancelledReplyAndClearedDraft: true,
         },
         null,
         2,
       ),
     );
     console.log("GraphAgent private Hono and sandboxed Vue desktop smoke passed");
+    window.destroy();
     app.exit(0);
   } catch (error) {
+    releaseDelayedReply?.();
     console.error(error instanceof Error ? error.stack : "desktop-smoke-failed");
-    window?.destroy();
     await services?.stop();
+    window?.destroy();
     app.exit(1);
   }
 });

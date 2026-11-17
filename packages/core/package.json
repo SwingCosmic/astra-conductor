@@ -29,9 +29,10 @@
     "vitest": "catalog:"
   },
   "dependencies": {
-    "@astra-conductor/credentials": "workspace:*",
     "@astra-conductor/contract": "workspace:*",
-    "zod": "4.5.4",
-    "hono": "^4.13.13"
+    "@astra-conductor/credentials": "workspace:*",
+    "decimal.js": "10.6.0",
+    "hono": "^4.13.13",
+    "zod": "4.5.4"
   }
 }

@@ -10,7 +10,7 @@
 
 原生支持视觉的模型需要主动调用 media_view，将获准文件/制品的真实像素或视频内容放入下一次原生模型请求。仅返回路径、Markdown 图片、Base64 字符串或对用户打开预览面板，都不能证明模型看到图片。首版不强制先交另一个模型生成描述；外部视觉分析服务若后续提供，作为明确的另一次推理和费用，不冒充当前模型的直接观察。
 
-首版仅提供原生图片与短视频查看，视频采用产品默认不超过 30s 的边界，并取实际 route 时长/字节/分辨率/上下文限制的更小值。30 秒是本产品首版范围，不断言所有平台都有同一上限，并且可能存在文件大小上限。image-input、多图、video-input、原生工具结果媒体块和上传能力分别查实际 route 能力；支持图片不等于支持视频。例如 [Gemini 图片](https://ai.google.dev/gemini-api/docs/image-understanding)与[视频说明](https://ai.google.dev/gemini-api/docs/video-understanding)有不同输入选项，实际支持仍须经过协议/代理/codec 样本验证。
+首版仅提供原生图片与短视频查看，视频采用产品默认不超过 30s 的边界，并取实际 route 时长/字节/分辨率/上下文与文件大小限制的更小值。image-input、多图、video-input、原生工具结果媒体块和上传能力分别查实际 route 能力；支持图片不等于支持视频。例如 [Gemini 图片](https://ai.google.dev/gemini-api/docs/image-understanding)与[视频说明](https://ai.google.dev/gemini-api/docs/video-understanding)有不同输入选项，实际支持仍须经过协议/代理/codec 样本验证。
 
 ## 2. media_view：唯一内置查看入口
 
@@ -51,7 +51,7 @@ native-video 仅在实际 route 支持时生成原生视频块/受管上传引�
 
 返回 `deliveryState=prepared` 表示媒体已准备；实际请求发出后 PromptSnapshot 记录 delivered refs、route、处理参数和大小/用量事实。codec 无法无损投影时返回 UNSUPPORTED_CAPABILITY，不能只留下文本“图片已显示”。切模型或上下文压缩时保留视图引用、实际时长/片段与摘要，重新附加仍复核权限和预算，不自动重发整段视频。图片中的秘密不能只靠日志脱敏，需在外发前按策略拒绝或进行有记录的像素遮挡。
 
-结果过大可通过 result_read 读 metadata/处理清单，通过 media_view 的 source/viewId 重新附加同一固定图片或短视频，避免让模型把 bytes 引用当图片。资源预检/必要解码使用受限组件并检查像素、时长、内存、时限和子资源访问；这不意味着首版实现网页本地浏览器渲染或媒体转换工具。
+结果过大可通过 result_read 读 metadata/处理清单，通过 media_view 的 source/viewId 重新附加同一固定图片或短视频，避免让模型把 bytes 引用当图片。资源预检/必要解码使用受限组件并检查像素、时长、内存、时限和子资源访问。
 
 ## 5. 验收
 

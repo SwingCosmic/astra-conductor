@@ -6,15 +6,17 @@ GraphAgent 是以执行图为中心的智能体协作产品。产品级入口与
 
 ## 产品文档
 
+- [GraphAgent SQLite 业务表结构](./design/business-database.md)说明每个 profile 中账号、自定义供应商与模型配置的表结构、凭据共享边界，以及 2B 的建库与重开流程。
+- [模型配置 UI 实施方案](./ui/model-configuration/ui-implementation-plan.md)与[供应商及 Core 数据实施方案](../common/core/provider/implementation-plan.md#模型配置改版的数据实施方案)。[专题现状](./ui/model-configuration/README.md)。
 - [概念设计](./concept-design.md)：产品构想与范围；首页 2.5D 办公室属于概念宣传，不进入排期。
 - [功能设计总览](./design/README.md)：领域对象、六层模块、运行主路径、工具专项与跨设备设计的阅读入口。
-- [前端服务契约](./design/frontend-contract.md)：`IGraphAgentService`、模型页 DTO、专属操作及产品事件；公共管理门面已在阶段一落地，模型页契约按阶段二、三交付。
+- [前端服务契约](./design/frontend-contract.md)：`IGraphAgentService`、模型页 DTO、专属操作及产品事件；阶段二已提供目录、覆盖、选择、预览与单轮测试对话。
 - [启动与验收计划](./plan.md)：阶段 1–4 的目标、步骤、交付与退出条件。
 - [参考源码映射](./reference-code-map.md)：固定 commit、已核对的源码入口与采用边界。
 
 ## 已实现的凭据共享接入
 
-GraphAgent 已在供应商阶段一中交付同一 Vue/Hono 的 Node/Web 与 Electron 入口、共用供应商和凭据页面、持久业务仓储及 Electron 私有安全存储，详见[阶段一交付结果](../common/core/provider/stage-one-implementation.md)与[启动说明](../../apps/graph-agent/README.md)。导入流程沿用 A6—A8，支持接收 PolyQuota 导出的凭据、共享接入和手动刷新。宿主、安全缓存、导入流程与验收证据统一见 [A6—A8 实施记录](../common/core/credential-sharing/a6-a8-sharing-implementation.md#graphagent-最小宿主)，后续双向管理见[凭据共享实施方案](../common/core/credential-sharing/implementation-plan.md)。
+GraphAgent Web 与 Electron 共用 Vue/Hono 入口和产品业务存储接口。Web 使用服务端已有的 broker 授权，Electron 也可使用自己的加密私有库。两款桌面产品已支持双向导入导出、接入共享和显式切回。单向闭环的历史记录与当前双向管理分别见 [A6—A8](../common/core/credential-sharing/a6-a8-sharing-implementation.md#graphagent-最小宿主) 和[凭据共享 B2/B3](../common/core/credential-sharing/implementation-plan.md#双向导出与存储切换)。[启动说明](../../apps/graph-agent/README.md)
 
 ## 共用能力与研究资料
 

@@ -45,6 +45,9 @@ describe("service mode backend", () => {
         "GET /api/v1/polyquota/snapshot",
         "GET /api/v1/events",
         "GET /api/v1/providers",
+        "GET /api/v1/accounts/:accountId/connection",
+        "POST /api/v1/accounts/connections/create",
+        "POST /api/v1/accounts/:accountId/connection/edit",
         "POST /api/v1/accounts/:accountId/set-enabled",
         "POST /api/v1/accounts/:accountId/delete",
         "POST /api/v1/accounts/:accountId/refresh-credentials",
@@ -195,7 +198,7 @@ describe("service mode backend", () => {
     const initial = await fetch(`${instance.url}/v1/polyquota/snapshot`).then(
       (response) => response.json() as Promise<{ ok: true; value: PolyQuotaSnapshot }>,
     );
-    expect(initial.value.providers).toHaveLength(7);
+    expect(initial.value.providers).toHaveLength(8);
     expect(initial.value.instanceId).toBe(instance.runtime.application.instanceId);
     expect(
       (

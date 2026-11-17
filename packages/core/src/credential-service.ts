@@ -16,7 +16,13 @@ export interface CredentialRefreshOptions {
 export interface CredentialService {
   load(accountId: string): Promise<CredentialEnvelope>;
   save(account: Account, envelope: CredentialEnvelope): Promise<void>;
-  saveAccount(account: Account, envelope: CredentialEnvelope): Promise<void>;
+  saveAccount(
+    account: Account,
+    envelope: CredentialEnvelope,
+    expectedRevision?: string,
+  ): Promise<void>;
+  /** Verify a shared record revision before using an outbound binding. */
+  loadCurrent?(accountId: string): Promise<CredentialEnvelope>;
   recordRevision?(accountId: string): string | undefined;
   /** Expiry from an already observed credential for display; never initiates a read. */
   knownExpiry?(accountId: string): string | null | undefined;
@@ -67,8 +73,15 @@ export class SwitchingCredentialService implements CredentialService {
   save(account: Account, envelope: CredentialEnvelope): Promise<void> {
     return this.active.save(account, envelope);
   }
-  saveAccount(account: Account, envelope: CredentialEnvelope): Promise<void> {
-    return this.active.saveAccount(account, envelope);
+  saveAccount(
+    account: Account,
+    envelope: CredentialEnvelope,
+    expectedRevision?: string,
+  ): Promise<void> {
+    return this.active.saveAccount(account, envelope, expectedRevision);
+  }
+  loadCurrent(accountId: string): Promise<CredentialEnvelope> {
+    return this.active.loadCurrent?.(accountId) ?? this.active.load(accountId);
   }
   recordRevision(accountId: string): string | undefined {
     return this.shared?.recordRevision?.(accountId);

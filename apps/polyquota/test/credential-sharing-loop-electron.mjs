@@ -180,6 +180,7 @@ async function start() {
       ...dependencies,
       host,
       directory,
+      nativeBinding,
       cipher,
       selectDirectory: async () => chosen,
     });
@@ -205,13 +206,28 @@ async function start() {
     hono = createHonoApp(runtime);
   }
   const scopedRequests = new AbortController();
+  let relocation;
   protocol.handle(scheme, (request) => {
     const url = new URL(request.url);
     if (url.hostname !== "app") return new Response(null, { status: 404 });
-    if (url.pathname.startsWith("/api/"))
-      return hono.fetch(
+    if (url.pathname.startsWith("/api/")) {
+      const response = hono.fetch(
         new Request(request, { signal: AbortSignal.any([request.signal, scopedRequests.signal]) }),
       );
+      if (url.pathname === "/api/v1/credential-sharing/relocate" && relocation) {
+        const pending = relocation;
+        void Promise.resolve(response)
+          .then(async (reply) => {
+            const result = await reply.clone().json();
+            if (!result.ok)
+              throw new Error(
+                "relocate response: " + result.error.code + " " + result.error.message,
+              );
+          })
+          .then(pending.resolve, pending.reject);
+      }
+      return response;
+    }
     return graphUiResource(path.join(apps, product, "ui/dist"), url.pathname);
   });
   const win = new BrowserWindow({
@@ -359,6 +375,7 @@ async function start() {
     web = await createGraphServices({
       ...dependencies,
       directory: path.join(root, "web"),
+      nativeBinding,
       host: existing,
       brokerBinding: binding,
     });
@@ -490,9 +507,109 @@ async function start() {
         return state("private");
       case "list":
         return (await api(providers)).accounts.map((a) => ({ id: a.id, name: a.displayName }));
+      case "model-key-create": {
+        let providerId = "codex",
+          offeringId = "openai-api-key";
+        if (arg === "custom") {
+          assert(graph);
+          const provider = await api("/api/v1/graph-agent/custom-providers/create", {
+            operationId: "model-loop-relay",
+            name: "Fixture private relay",
+            icon: null,
+            offerings: [
+              {
+                offeringId: "cn",
+                name: "CN",
+                routes: [{ protocolRouteId: "openai-chat", baseUrl: "https://relay.example/v1" }],
+              },
+            ],
+          });
+          providerId = provider.providerId;
+          offeringId = "cn";
+        }
+        const result = await api("/api/v1/accounts/connections/create", {
+          operationId:
+            arg === "custom" ? "model-loop-custom-account" : "model-loop-official-account",
+          providerId,
+          offeringId,
+          displayName: arg === "custom" ? "Local relay account" : "Local official account",
+          accountIdentifier: "fixture-login",
+          apiKey: "FICTIONAL-MODEL-ORIGINAL",
+          routes: [],
+        });
+        return result.accountId;
+      }
+      case "model-key-read": {
+        await wait("peer model connection", async () =>
+          (await api(providers)).accounts.some((a) => a.id === arg.id),
+        );
+        const current = await api("/api/v1/accounts/" + arg.id + "/connection");
+        assert.equal(current.routes.length, 2);
+        assert(current.routes.every((r) => r.baseUrl === "https://api.openai.com/v1"));
+        return current;
+      }
+      case "model-key-edit": {
+        const connection = await api("/api/v1/accounts/" + arg + "/connection");
+        return api("/api/v1/accounts/" + arg + "/connection/edit", {
+          expectedRecordRevision: connection.recordRevision,
+          displayName: "Receiver nickname",
+          providerId: connection.providerId,
+          offeringId: connection.offeringId,
+          apiKey: "FICTIONAL-MODEL-ROTATED",
+          routes: [],
+        });
+      }
+      case "verify-opaque-relay": {
+        return withSharing(async (_shared, broker) => {
+          const record = await broker.getCredential(arg);
+          const raw = Buffer.from(record.payload, "base64url");
+          try {
+            assert.equal(record.description.payloadFormatVersion, 3);
+            const value = JSON.parse(raw.toString("utf8"));
+            assert.deepEqual(Object.keys(value).sort(), [
+              "accountId",
+              "accountIdentifier",
+              "credential",
+              "providerId",
+              "version",
+            ]);
+            assert.equal(value.accountIdentifier, "fixture-login");
+            assert(!raw.includes("relay.example"));
+            assert(!raw.includes("Local relay"));
+            assert(!raw.includes("offeringId"));
+            assert.deepEqual(Object.keys(record.description.metadata), ["provider"]);
+          } finally {
+            raw.fill(0);
+          }
+          return true;
+        });
+      }
+      case "ignores-custom-provider": {
+        assert(!graph);
+        assert(!(await api(providers)).accounts.some((a) => a.id === arg));
+        assert(!(await api("/api/v1/polyquota/snapshot")).accounts.some((a) => a.id === arg));
+        return true;
+      }
+      case "model-key-no-usage": {
+        assert(!graph);
+        assert((await api(providers)).accounts.some((a) => a.id === arg));
+        assert(!(await api("/api/v1/polyquota/snapshot")).accounts.some((a) => a.id === arg));
+        const before = upstreamAttempts;
+        const response = await hono.request("/api/v1/polyquota/accounts/" + arg + "/refresh", {
+          method: "POST",
+        });
+        assert.equal((await response.json()).value?.status, "skipped");
+        assert.equal(upstreamAttempts, before);
+        return true;
+      }
       case "refresh": {
         const before = refreshCalls;
-        await api("/api/v1/accounts/" + accountId + "/refresh-credentials", {});
+        const outcome = await api("/api/v1/accounts/" + accountId + "/refresh-credentials", {});
+        assert.equal(
+          outcome.status,
+          "updated",
+          outcome.error?.message ?? "expected a committed refresh",
+        );
         assert.equal(refreshCalls, before + 1);
         return true;
       }
@@ -631,25 +748,17 @@ async function start() {
       case "web-stop":
         await stopWeb();
         return true;
-      case "relocate":
+      case "relocate": {
         chosen = arg;
-        await click("变更共享目录");
-        await wait("new binding", async () => {
-          if ((await profile()).binding.vaultDirectory === arg) return true;
-          const error = await evaluate(() => {
-            const manager = document.querySelector(".credential-storage-manager");
-            const checking = [...manager.querySelectorAll("button")].find(
-              (b) => b.textContent.trim() === "重新检查",
-            );
-            return (
-              !checking?.disabled &&
-              manager.querySelector('[role="status"]:last-child')?.textContent.trim()
-            );
-          });
-          if (error) throw Error("relocate: " + error);
-          return false;
-        });
-        return true;
+        relocation = Promise.withResolvers();
+        try {
+          await Promise.all([relocation.promise, click("变更共享目录")]);
+          assert.equal((await profile()).binding.vaultDirectory, arg);
+          return true;
+        } finally {
+          relocation = undefined;
+        }
+      }
       case "screenshot": {
         assert(!(await evaluate(() => !!document.querySelector("textarea[readonly]"))));
         await writeFile(

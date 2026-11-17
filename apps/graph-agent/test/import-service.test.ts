@@ -154,7 +154,9 @@ async function fixture() {
     switcher,
     providers: {
       getUsage: () => ({}),
+      getInference: () => null,
       getAccount: () => ({ refreshCredentials: () => {} }),
+      getRefreshAccount: () => ({ refreshCredentials: () => {} }),
       findOffering: () => ({
         provider: "codex",
         offering: { authMethods: [{ method: "cli-import" }] },

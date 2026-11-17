@@ -24,18 +24,10 @@ Windows 宿主实现从原 `packages/credential-host/src/index.ts` 原样迁入�
 
 ## 验证记录
 
-- `pnpm install --offline --ignore-scripts --frozen-lockfile` 通过。
-- `pnpm typecheck`、`pnpm test`（436 项）、`pnpm build` 通过。
-- 本次修改的代码与配置通过 Prettier。全仓 `pnpm format:check` 报告 92 个既有未修改文件的格式问题，未批量改写这些文件。
+- 锁定依赖安装（离线、跳过脚本）通过；类型检查、全量测试（436 项）与构建通过。
+- 本次修改的代码与配置通过格式检查；仓库既有未修改文件的格式问题未在 B1 批量改写。
 
-本地 broker 沿用一期候选 `E:/dev/js/astra-credential-broker/artifacts/publish/versions-separated-win-x64`（组件 0.2.0、协议 1、API level 2、存储格式 1）：
-
-```powershell
-pnpm --filter @astra-conductor/polyquota test:credential-sharing --publish E:/dev/js/astra-credential-broker/artifacts/publish/versions-separated-win-x64
-pnpm --filter @astra-conductor/polyquota test:credential-sharing-loop --publish E:/dev/js/astra-credential-broker/artifacts/publish/versions-separated-win-x64
-```
-
-两项均在全量构建后通过。安装 smoke 覆盖未安装检测、本地安装、真实 safeStorage 导出、重启恢复相同 storageVersion、既有客户端授权复用、取消共享、卸载及重装后的密钥保留。双进程闭环 17 项全部通过，覆盖错误密钥零导入、两端刷新/事件、同修订并发只执行一次上游更新、私有快照/重入、两端重启与成功版本复用。实际供应商网络请求为 0。
+本地 broker 沿用一期候选产物（组件 0.2.0、协议 1、API level 2、存储格式 1），经 `--publish <完整发布目录>` 提供给 `test:credential-sharing` 与 `test:credential-sharing-loop` 两个验收入口，均在全量构建后通过。安装 smoke 覆盖未安装检测、本地安装、真实 safeStorage 导出、重启恢复相同 storageVersion、既有客户端授权复用、取消共享、卸载及重装后的密钥保留。双进程闭环 17 项全部通过，覆盖错误密钥零导入、两端刷新/事件、同修订并发只执行一次上游更新、私有快照/重入、两端重启与成功版本复用。实际供应商网络请求为 0。
 
 `pnpm package` 与 `pnpm package:graph-agent` 通过，生成：
 
@@ -44,7 +36,7 @@ pnpm --filter @astra-conductor/polyquota test:credential-sharing-loop --publish 
 
 对两个 `win-unpacked/resources/app.asar` 的检查通过：package exports 包含主入口与 Windows 子入口；SDK 的 8 个 JS 文件逐一与当前构建一致；应用依赖和包内均无 `credential-host`，asar 及外部 resources 中无 broker/.NET runtime。类型声明由独立 SDK consumer 验证，Electron 安装包按默认规则不携带 `.d.ts`。
 
-`pnpm test:distribution` 通过 PolyQuota 打包版的真实安全存储、桌面启动与已有密文恢复检查。`git diff --check` 通过，改动未提交。
+`pnpm test:distribution` 通过 PolyQuota 打包版的真实安全存储、桌面启动与已有密文恢复检查。
 
 ## 后续接口
 

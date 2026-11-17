@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { supportsSubscriptionUsage } from "./providers/usage-eligibility.js";
 import { existsSync } from "node:fs";
 import { lstat, readFile, readdir, realpath, rm } from "node:fs/promises";
 import path from "node:path";
@@ -35,7 +36,8 @@ import type { ProviderRegistry } from "./providers/registry.js";
 import {
   SharedCredentialService,
   decodeSharedCredential,
-  sharedCredentialContentType,
+  isKnownCredentialFormat,
+  credentialPurposeMetadata,
 } from "./shared-credential-service.js";
 import {
   keyFile,
@@ -51,6 +53,7 @@ import {
 import {
   exportSnapshot,
   preparePrivateSnapshot,
+  privateRecordDigest,
   protectManifest,
   verifyManifest,
   previewRecord,
@@ -623,7 +626,7 @@ export class CredentialMigrationService {
     );
     const conflicts = accounts.filter((_, index) => {
       const record = snapshot.records[index]!;
-      if (record.description.contentType !== sharedCredentialContentType) return false;
+      if (!isKnownCredentialFormat(record.description)) return false;
       const { account } = decodeSharedCredential(record);
       return (
         !!this.options.storage.accounts.get(account.id) ||
@@ -773,8 +776,9 @@ export class CredentialMigrationService {
       accounts
         .filter(
           (account) =>
-            descriptions.get(account.id)?.metadata.supportsUsage === "true" &&
-            !!this.options.providers.getUsage(account.provider),
+            (descriptions.get(account.id)?.metadata.supportsUsage ??
+              credentialPurposeMetadata(account, this.options.providers).supportsUsage) ===
+              "true" && supportsSubscriptionUsage(account, this.options.providers),
         )
         .map((account) => account.id),
     );
@@ -782,13 +786,14 @@ export class CredentialMigrationService {
       id: account.id,
       provider: account.provider,
       maskedIdentifier: account.maskedIdentifier,
-      canRefresh: !!this.options.providers.getAccount(account.provider)?.refreshCredentials,
+      canRefresh: !!this.options.providers.getRefreshAccount(account)?.refreshCredentials,
       revision: descriptions.get(account.id)?.revision ?? "1",
     }));
   }
   private async activate(binding: MigrationBinding, broker: SharedBrokerClient) {
     this.selectUnavailable(binding);
     const shared = new SharedCredentialService(broker, {
+      includeCustomProviders: this.options.product === "graph-agent",
       providers: this.options.providers,
       storage: this.sharedStorage,
       persistProjectionRevisions: true,
@@ -922,7 +927,11 @@ export class CredentialMigrationService {
                     const decoded = decodeSharedCredential(r);
                     return {
                       id: r.description.credentialId,
-                      digest: hash([decoded.account, decoded.credentials]),
+                      digest: privateRecordDigest(
+                        decoded.account,
+                        decoded.credentials,
+                        r.description.payloadFormatVersion === 3,
+                      ),
                     };
                   }),
                 },

@@ -3,7 +3,10 @@ import type { ResetCreditRedemption } from "../dto/usage.js";
 import type { CommandContext } from "../service.js";
 
 export class ContractValidationError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly fieldPath?: string,
+  ) {
     super(message);
     this.name = "ContractValidationError";
   }
@@ -15,7 +18,7 @@ export class ContractValidationError extends Error {
  */
 
 export function fail(path: string): never {
-  throw new ContractValidationError(`Invalid contract value at ${path}`);
+  throw new ContractValidationError(`Invalid contract value at ${path}`, path);
 }
 
 export function object(value: unknown, path: string): Record<string, unknown> {

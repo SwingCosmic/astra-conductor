@@ -101,8 +101,8 @@ const codexPlans: ProviderDescriptor["offerings"][number]["plans"] = [
 
 export const codexDescriptor: ProviderDescriptor = {
   provider: "codex",
-  displayName: "OpenAI Codex",
-  capabilities: ["account", "usage"],
+  displayName: "OpenAI",
+  capabilities: ["account", "usage", "model-catalog", "inference"],
   offerings: [
     {
       id: "codex",
@@ -121,6 +121,17 @@ export const codexDescriptor: ProviderDescriptor = {
         },
       ],
       plans: codexPlans,
+    },
+    {
+      id: "openai-api-key",
+      provider: "codex",
+      displayName: "OpenAI API",
+      description: "使用官方 API Key 访问 OpenAI 模型。",
+      iconKey: "codex",
+      supportsSubscriptionUsage: false,
+      connectionKind: "fixed-routes",
+      authMethods: [{ method: "api-key", interaction: "secret-form", sourceLabel: "API Key" }],
+      plans: [],
     },
   ],
 };

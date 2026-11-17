@@ -20,10 +20,11 @@ import {
   type UsageSnapshot,
 } from "@astra-conductor/core/internal";
 
+type PrivateCredential = EncryptedCredential & { providerId?: string; accountIdentifier?: string };
 interface StoredState {
   version: 1;
   accounts: Account[];
-  credentials: Array<Omit<EncryptedCredential, "ciphertext"> & { ciphertext: string }>;
+  credentials: Array<Omit<PrivateCredential, "ciphertext"> & { ciphertext: string }>;
   snapshots: UsageSnapshot[];
   notifications: NotificationState[];
   settings: Array<[string, SettingValue]>;
@@ -32,22 +33,50 @@ interface StoredState {
 /** Product-owned repository. CredentialVault supplies only OS-protected ciphertext. */
 export class GraphStorage implements StoragePort {
   private readonly memory = new MemoryStorage();
-  private readonly settingKeys = new Set<string>();
+  private encrypted = new Map<string, PrivateCredential>();
+  private settingKeys = new Set<string>();
   private depth = 0;
+  private dirty = false;
   private closed = false;
 
-  constructor(private readonly filename: string) {
+  constructor(
+    private readonly filename: string,
+    private format: "legacy" | "credentials" | "settings" = "legacy",
+  ) {
     mkdirSync(path.dirname(filename), { recursive: true });
     if (!existsSync(filename)) return;
-    const state = JSON.parse(readFileSync(filename, "utf8")) as StoredState;
-    if (state.version !== 1 || !Array.isArray(state.accounts) || !Array.isArray(state.settings))
-      throw new Error("Unsupported GraphAgent business storage");
+    const raw = JSON.parse(readFileSync(filename, "utf8")) as
+      | StoredState
+      | {
+          version: 2;
+          credentials?: StoredState["credentials"];
+          settings?: StoredState["settings"];
+        };
+    let state: StoredState;
+    if (raw.version === 1 && Array.isArray(raw.accounts) && Array.isArray(raw.settings)) {
+      this.format = "legacy";
+      state = raw;
+    } else if (
+      raw.version === 2 &&
+      ((format === "credentials" && Array.isArray(raw.credentials)) ||
+        (format === "settings" && Array.isArray(raw.settings)))
+    ) {
+      state = {
+        version: 1,
+        accounts: [],
+        snapshots: [],
+        notifications: [],
+        credentials: raw.credentials ?? [],
+        settings: raw.settings ?? [],
+      };
+    } else throw new Error("Unsupported GraphAgent private storage");
     for (const account of state.accounts) this.memory.accounts.save(account);
-    for (const credential of state.credentials)
-      this.memory.credentials.save({
+    for (const credential of state.credentials) {
+      this.encrypted.set(credential.accountId, {
         ...credential,
         ciphertext: Buffer.from(credential.ciphertext, "base64"),
       });
+    }
     for (const snapshot of state.snapshots) this.memory.snapshots.save(snapshot);
     for (const notification of state.notifications) this.memory.notifications.save(notification);
     for (const [key, value] of state.settings) {
@@ -57,13 +86,9 @@ export class GraphStorage implements StoragePort {
   }
 
   private mutate<T>(operation: () => T): T {
-    if (this.closed) throw new Error("GraphAgent storage is closed");
-    if (this.depth) return operation();
-    return this.memory.transaction(() => {
-      const value = operation();
-      this.flush();
-      return value;
-    });
+    if (this.depth === 0) return this.transaction(() => this.mutate(operation));
+    this.dirty = true;
+    return operation();
   }
 
   readonly accounts = {
@@ -76,12 +101,18 @@ export class GraphStorage implements StoragePort {
       this.mutate(() => this.memory.accounts.setEnabled(id, enabled, updatedAt)),
     setCredentialState: (id: string, state: Account["credentialState"], updatedAt: string) =>
       this.mutate(() => this.memory.accounts.setCredentialState(id, state, updatedAt)),
-    delete: (id: string) => this.mutate(() => this.memory.accounts.delete(id)),
+    delete: (id: string) =>
+      this.mutate(() => {
+        this.encrypted.delete(id);
+        this.memory.accounts.delete(id);
+      }),
   };
   readonly credentials = {
-    get: (id: string) => this.memory.credentials.get(id),
-    save: (credential: EncryptedCredential) =>
-      this.mutate(() => this.memory.credentials.save(credential)),
+    get: (id: string) => structuredClone(this.encrypted.get(id) ?? null),
+    save: (credential: PrivateCredential) =>
+      this.mutate(() => {
+        this.encrypted.set(credential.accountId, structuredClone(credential));
+      }),
   };
   readonly snapshots = {
     get: (id: string) => this.memory.snapshots.get(id),
@@ -102,27 +133,46 @@ export class GraphStorage implements StoragePort {
   };
 
   transaction<T>(operation: () => T): T {
-    return this.mutate(() => {
-      this.depth++;
-      try {
-        return this.memory.transaction(operation);
-      } finally {
-        this.depth--;
-      }
-    });
+    if (this.closed) throw new Error("GraphAgent storage is closed");
+    const previousCredentials = this.encrypted,
+      previousKeys = this.settingKeys,
+      previousDirty = this.dirty;
+    this.encrypted = new Map(previousCredentials);
+    this.settingKeys = new Set(previousKeys);
+    this.depth++;
+    try {
+      return this.memory.transaction(() => {
+        const value = operation();
+        if (this.depth === 1 && this.dirty) this.flush();
+        return value;
+      });
+    } catch (error) {
+      this.encrypted = previousCredentials;
+      this.settingKeys = previousKeys;
+      this.dirty = previousDirty;
+      throw error;
+    } finally {
+      this.depth--;
+      if (this.depth === 0) this.dirty = false;
+    }
   }
 
+  savePrivateCredential(credential: EncryptedCredential, account: Account) {
+    this.credentials.save({
+      ...credential,
+      providerId: account.provider,
+      accountIdentifier: account.maskedIdentifier,
+    });
+  }
   private flush(): void {
     const accounts = this.memory.accounts.list();
     const state: StoredState = {
       version: 1,
       accounts,
-      credentials: accounts.flatMap(({ id }) => {
-        const credential = this.memory.credentials.get(id);
-        return credential
-          ? [{ ...credential, ciphertext: Buffer.from(credential.ciphertext).toString("base64") }]
-          : [];
-      }),
+      credentials: [...this.encrypted.values()].map((credential) => ({
+        ...credential,
+        ciphertext: Buffer.from(credential.ciphertext).toString("base64"),
+      })),
       snapshots: accounts.flatMap(({ id }) => this.memory.snapshots.get(id) ?? []),
       notifications: accounts.flatMap(({ id }) => this.memory.notifications.list(id)),
       settings: [...this.settingKeys].flatMap((key) => {
@@ -132,7 +182,13 @@ export class GraphStorage implements StoragePort {
     };
     const staged = `${this.filename}.${randomUUID()}.next`;
     try {
-      writeFileSync(staged, JSON.stringify(state), { flag: "wx", mode: 0o600 });
+      const data =
+        this.format === "credentials"
+          ? { version: 2, credentials: state.credentials }
+          : this.format === "settings"
+            ? { version: 2, settings: state.settings }
+            : state;
+      writeFileSync(staged, JSON.stringify(data), { flag: "wx", mode: 0o600 });
       renameSync(staged, this.filename);
     } finally {
       if (existsSync(staged)) unlinkSync(staged);
