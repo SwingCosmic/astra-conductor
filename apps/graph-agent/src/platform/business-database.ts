@@ -11,7 +11,17 @@ import {
   type StoragePort,
 } from "@astra-conductor/core/internal";
 import { GraphStorage } from "./storage.js";
-import { GraphModelRepository, modelSchema } from "../server/model-repository.js";
+import {
+  BUNDLED_PACK_TOKEN,
+  GraphModelRepository,
+  modelSchema,
+} from "../server/model-repository.js";
+import {
+  bundledModelPack,
+  migrateLegacyModelPackJson,
+  migrateLegacyRateCardJson,
+} from "../server/model-pack.js";
+import type { ModelRoute } from "@astra-conductor/contract/common";
 
 const accountSchema = `
 CREATE TABLE accounts (
@@ -32,6 +42,133 @@ CREATE TABLE custom_providers (
   provider_id TEXT PRIMARY KEY, name TEXT NOT NULL, icon TEXT, offerings_json TEXT NOT NULL,
   revision INTEGER NOT NULL, operation_id TEXT UNIQUE NOT NULL, creation_hash TEXT NOT NULL
 );`;
+
+const customProviderTemplateSchema = `
+ALTER TABLE custom_providers ADD COLUMN template_kind TEXT NOT NULL DEFAULT 'generic'
+  CHECK(template_kind IN ('generic','new-api'));`;
+const familyCatalogSchema = `
+ALTER TABLE custom_providers ADD COLUMN family_policies_json TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE model_catalogs RENAME TO legacy_model_catalogs;
+CREATE TABLE model_catalogs (
+  visibility_ref TEXT NOT NULL, provider_id TEXT NOT NULL, offering_id TEXT NOT NULL,
+  account_id TEXT NOT NULL REFERENCES accounts(account_id) ON DELETE CASCADE,
+  protocol_family_id TEXT NOT NULL, family_binding_revision TEXT NOT NULL,
+  retrieved_at TEXT NOT NULL,catalog_revision TEXT NOT NULL,entries_json TEXT NOT NULL,
+  PRIMARY KEY(visibility_ref,provider_id,offering_id,account_id,protocol_family_id,family_binding_revision)
+);`;
+
+const enumNamingMigrationSchema = `
+CREATE TABLE model_state_next (
+  id INTEGER PRIMARY KEY CHECK(id=1),
+  settings_revision TEXT NOT NULL,
+  active_pack TEXT NOT NULL,
+  previous_pack TEXT,
+  selected_config_id INTEGER REFERENCES model_configs(id) ON DELETE SET NULL,
+  operation_id TEXT,
+  profile_id TEXT,
+  binding_revision TEXT
+);
+INSERT INTO model_state_next
+  SELECT id,settings_revision,active_pack,previous_pack,selected_config_id,operation_id,profile_id,binding_revision
+  FROM model_state;
+DROP TABLE model_state;
+ALTER TABLE model_state_next RENAME TO model_state;`;
+
+function migrateLegacyEnumDocuments(db: Database.Database) {
+  // 1. Detach bundled preset pack from SQLite (read directly from packaged resource);
+  //    migrate any remaining user-imported packs in model_packs to the new enum schema.
+  const bundledRevision = bundledModelPack().document.revision;
+  db.prepare("UPDATE model_state SET active_pack=? WHERE id=1 AND active_pack=?").run(
+    BUNDLED_PACK_TOKEN,
+    bundledRevision,
+  );
+  db.prepare("UPDATE model_state SET previous_pack=? WHERE id=1 AND previous_pack=?").run(
+    BUNDLED_PACK_TOKEN,
+    bundledRevision,
+  );
+  db.prepare("DELETE FROM model_packs WHERE revision=?").run(bundledRevision);
+
+  const packs = db.prepare("SELECT revision,content_json FROM model_packs").all() as {
+    revision: string;
+    content_json: string;
+  }[];
+  const updatePack = db.prepare("UPDATE model_packs SET digest=?,content_json=? WHERE revision=?");
+  for (const row of packs) {
+    const migrated = migrateLegacyModelPackJson(JSON.parse(row.content_json));
+    if (migrated) {
+      updatePack.run(migrated.digest, JSON.stringify(migrated.document), row.revision);
+    }
+  }
+
+  // 2. Migrate model_rate_cards (scope.operationId -> operation, planId -> planKey, protocolRouteId -> protocol)
+  const cards = db
+    .prepare("SELECT rate_card_id,revision,card_json FROM model_rate_cards")
+    .all() as { rate_card_id: string; revision: string; card_json: string }[];
+  const updateCard = db.prepare(
+    "UPDATE model_rate_cards SET card_json=? WHERE rate_card_id=? AND revision=?",
+  );
+  for (const row of cards) {
+    const migrated = migrateLegacyRateCardJson(JSON.parse(row.card_json));
+    if (migrated.changed) {
+      updateCard.run(JSON.stringify(migrated.card), row.rate_card_id, row.revision);
+    }
+  }
+
+  // 3. Migrate custom_providers offerings_json (protocolRouteId -> protocol, protocolFamilyId -> protocolFamily)
+  const providers = db.prepare("SELECT provider_id,offerings_json FROM custom_providers").all() as {
+    provider_id: string;
+    offerings_json: string;
+  }[];
+  const updateProvider = db.prepare(
+    "UPDATE custom_providers SET offerings_json=? WHERE provider_id=?",
+  );
+  for (const row of providers) {
+    const offerings = JSON.parse(row.offerings_json) as {
+      routes: Record<string, unknown>[];
+    }[];
+    let changed = false;
+    for (const offering of offerings) {
+      for (const route of offering.routes ?? []) {
+        if ("protocolRouteId" in route) {
+          if (!("protocol" in route)) route.protocol = route.protocolRouteId;
+          delete route.protocolRouteId;
+          changed = true;
+        }
+        if ("protocolFamilyId" in route) {
+          if (!("protocolFamily" in route)) route.protocolFamily = route.protocolFamilyId;
+          delete route.protocolFamilyId;
+          changed = true;
+        }
+      }
+    }
+    if (changed) updateProvider.run(JSON.stringify(offerings), row.provider_id);
+  }
+}
+
+function freezeLegacyChatFields(db: Database.Database) {
+  const rows = db.prepare("SELECT provider_id,offerings_json FROM custom_providers").all() as {
+    provider_id: string;
+    offerings_json: string;
+  }[];
+  const update = db.prepare("UPDATE custom_providers SET offerings_json=? WHERE provider_id=?");
+  for (const row of rows) {
+    const offerings = JSON.parse(row.offerings_json) as {
+      routes: (ModelRoute & { protocolRouteId?: string })[];
+    }[];
+    let changed = false;
+    for (const offering of offerings)
+      for (const route of offering.routes) {
+        const protocol = route.protocol ?? route.protocolRouteId;
+        if (protocol !== "openai-chat" || route.chatOutputLimitField) continue;
+        route.chatOutputLimitField =
+          new URL(route.baseUrl).hostname === "api.deepseek.com"
+            ? "max_tokens"
+            : "max_completion_tokens";
+        changed = true;
+      }
+    if (changed) update.run(JSON.stringify(offerings), row.provider_id);
+  }
+}
 
 interface AccountRow {
   account_id: string;
@@ -60,7 +197,13 @@ export class GraphBusinessDatabase {
       db.pragma("foreign_keys = ON");
       db.pragma("journal_mode = WAL");
       db.pragma("busy_timeout = 5000");
-      const migrations = [accountSchema, modelSchema];
+      const migrations = [
+        accountSchema,
+        modelSchema,
+        customProviderTemplateSchema,
+        familyCatalogSchema,
+        enumNamingMigrationSchema,
+      ];
       this.models = db.transaction(() => {
         db.exec(
           "CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, checksum TEXT NOT NULL, applied_at TEXT NOT NULL)",
@@ -78,6 +221,8 @@ export class GraphBusinessDatabase {
             return;
           }
           db.exec(sql);
+          if (index === 3) freezeLegacyChatFields(db);
+          if (index === 4) migrateLegacyEnumDocuments(db);
           db.prepare("INSERT INTO schema_migrations VALUES (?,?,?)").run(
             index + 1,
             hash,

@@ -203,14 +203,16 @@ export class RefreshCoordinator {
   withModelCredential<T>(
     account: Account,
     operation: (envelope: CredentialEnvelope) => Promise<T>,
+    beforeRefresh?: (envelope: CredentialEnvelope) => void,
   ): Promise<T> {
-    return this.withCurrentCredential(account, operation, true);
+    return this.withCurrentCredential(account, operation, true, beforeRefresh);
   }
 
   private async withCurrentCredential<T>(
     account: Account,
     operation: (envelope: CredentialEnvelope) => Promise<T>,
     queueRefresh = false,
+    beforeRefresh?: (envelope: CredentialEnvelope) => void,
   ): Promise<T> {
     const capability = this.registry.getRefreshAccount(account);
     const refresh = capability?.refreshCredentials;
@@ -218,6 +220,8 @@ export class RefreshCoordinator {
       this.vault.loadCurrent?.(account.id) ?? this.vault.load(account.id);
     if (!refresh)
       return operation(await (queueRefresh ? currentEnvelope() : this.vault.load(account.id)));
+    // A rejected native selection must not initiate an upstream credential refresh.
+    if (beforeRefresh) beforeRefresh(await currentEnvelope());
     const rotate = (
       reason: "usage" | "authentication",
       canUseCurrent?: (a: Account, e: CredentialEnvelope) => boolean,

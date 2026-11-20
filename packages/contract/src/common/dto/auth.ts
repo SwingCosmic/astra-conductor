@@ -1,4 +1,5 @@
 import type { PublicAccount } from "./account.js";
+import type { OfferingRouteConfig } from "./connection.js";
 import type { PublicAuthInteraction } from "../vocabularies.js";
 
 export interface PublicAuthMethodDescriptor {
@@ -13,12 +14,13 @@ export interface PublicAuthMethodDescriptor {
  * 内部事实，不跨传输边界：匹配只发生在主进程构造快照时，前端只消费解析结果。
  */
 export interface PublicPlanDescriptor {
-  id: string;
+  key: string;
   displayName: string;
 }
 
 export interface PublicOfferingDescriptor {
   connectionKind?: "editable-routes" | "fixed-routes";
+  routeConfig?: OfferingRouteConfig;
   id: string;
   provider: string;
   displayName: string;

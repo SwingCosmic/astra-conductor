@@ -6,6 +6,8 @@ import {
   type ProviderOperation,
 } from "@astra-conductor/contract/graph-agent";
 const parameterTypes: Record<keyof ModelParameters, ModelParameterRule["type"]> = {
+  thinkingEnabled: "boolean",
+  returnFullReasoning: "boolean",
   contextWindow: "integer",
   maxOutputTokens: "integer",
   effort: "string",
@@ -41,7 +43,8 @@ export function checkParameterValues(
       invalid(field);
   }
 }
-function validType(v: unknown, type: ModelParameterRule["type"]): v is number | string {
+function validType(v: unknown, type: ModelParameterRule["type"]): v is number | string | boolean {
+  if (type === "boolean") return typeof v === "boolean";
   return type === "string"
     ? typeof v === "string" && v.length > 0 && v.length <= 128
     : type === "integer"
@@ -54,13 +57,13 @@ export function readTemplate(
 ): ModelParameterTemplate {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return invalid("template");
   const d = raw as Record<string, unknown>;
-  if (Object.keys(d).some((k) => !["id", "operationId", "fields"].includes(k)))
+  if (Object.keys(d).some((k) => !["id", "operation", "fields"].includes(k)))
     return invalid("template");
   if (
     typeof d.id !== "string" ||
     !/^[-a-z0-9_.]+$/.test(d.id) ||
     d.id.length > 128 ||
-    !operations.includes(d.operationId as ProviderOperation) ||
+    !operations.includes(d.operation as ProviderOperation) ||
     !d.fields ||
     typeof d.fields !== "object" ||
     Array.isArray(d.fields)
@@ -108,5 +111,9 @@ export function readTemplate(
     }
     fields[field] = rule;
   }
-  return { id: d.id, operationId: d.operationId as ProviderOperation, fields };
+  if (d.operation === "chat") {
+    fields.thinkingEnabled ??= { type: "boolean" };
+    fields.returnFullReasoning ??= { type: "boolean" };
+  }
+  return { id: d.id, operation: d.operation as ProviderOperation, fields };
 }

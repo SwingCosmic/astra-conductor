@@ -106,7 +106,7 @@ const routeTypes = computed(
   () =>
     new Set(
       scopeRows.value
-        .map((c) => modelEndpointDescriptors.find((d) => d.id === c.protocolRouteId)?.modelType)
+        .map((c) => modelEndpointDescriptors.find((d) => d.protocol === c.protocol)?.modelType)
         .filter((v) => !!v),
     ),
 );
@@ -116,10 +116,10 @@ const protocols = computed(() => [
       .filter(
         (c) =>
           !typeFilter.value ||
-          modelEndpointDescriptors.find((d) => d.id === c.protocolRouteId)?.modelType ===
+          modelEndpointDescriptors.find((d) => d.protocol === c.protocol)?.modelType ===
             typeFilter.value,
       )
-      .map((c) => c.protocolRouteId),
+      .map((c) => c.protocol),
   ),
 ]);
 async function changeType(event: Event) {
@@ -128,17 +128,18 @@ async function changeType(event: Event) {
   el.value = typeFilter.value;
   if (!(await mayLeave())) return;
   typeFilter.value = value;
-  if (!protocols.value.includes(protocol.value)) protocol.value = "";
+  if (!protocols.value.some((p) => p === protocol.value)) protocol.value = "";
   setSingle();
 }
-const samples = computed(() => scopeRows.value.filter((c) => c.protocolRouteId === protocol.value));
+const samples = computed(() => scopeRows.value.filter((c) => c.protocol === protocol.value));
 const catalog = computed(
   () =>
     samples.value.find((c) => c.accountId === source.value && c.refresh.state === "enabled") ??
     samples.value.find((c) => c.refresh.state === "enabled") ??
     samples.value[0],
 );
-const routeName = (id: string) => modelEndpointDescriptors.find((d) => d.id === id)?.label ?? id;
+const routeName = (id: string) =>
+  modelEndpointDescriptors.find((d) => d.protocol === id)?.label ?? id;
 const sampleKey = () => JSON.stringify([owner.value, offering.value, protocol.value]);
 function setSingle() {
   if (!offering.value && offerings.value.length === 1) offering.value = offerings.value[0]!.id;
@@ -196,7 +197,7 @@ async function openSaved() {
   owner.value = r.providerId;
   offering.value = r.offeringId;
   account.value = r.accountId;
-  protocol.value = r.protocolRouteId;
+  protocol.value = r.protocol;
   initialModel.value = sel.modelId;
 }
 const val = (e: Event) => (e.target as HTMLSelectElement).value;
@@ -217,29 +218,24 @@ const refreshKey = computed(() =>
         snapshot.value.backend.contextId,
         account.value,
         catalog.value.accountId,
-        catalog.value.protocolRouteId,
-        catalog.value.bindingRevision,
+        catalog.value.protocolFamily,
+        catalog.value.familyBindingRevision,
+        catalog.value.refresh.state,
       ])
     : "",
 );
 watch(refreshKey, async (key) => {
   const r = catalog.value,
     s = snapshot.value;
-  if (
-    !key ||
-    !r ||
-    !s ||
-    r.refresh.state !== "enabled" ||
-    !modelEndpointDescriptors.find((d) => d.id === r.protocolRouteId)?.canDiscover
-  )
+  if (!key || !r?.protocolFamily || !r.familyBindingRevision || !s || r.refresh.state !== "enabled")
     return;
   if (r.catalog.state === "not-loaded" || (r.catalog.state === "ready" && r.catalog.stale)) {
     const result = await service.refreshCatalog({
       instanceId: s.stamp.instanceId,
       contextId: s.backend.contextId,
       accountId: r.accountId,
-      protocolRouteId: r.protocolRouteId,
-      expectedBindingRevision: r.bindingRevision,
+      protocolFamily: r.protocolFamily,
+      expectedFamilyBindingRevision: r.familyBindingRevision,
     });
     if (!disposed && key === refreshKey.value) {
       if (!result.ok) controlsError.value = result.error.message;

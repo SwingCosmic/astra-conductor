@@ -1,3 +1,4 @@
+import type { OfferingRouteConfig } from "@astra-conductor/contract/common";
 import type { AuthMethod, ProviderId } from "../models.js";
 
 export type AuthMethodInteraction =
@@ -35,6 +36,7 @@ export interface ProviderOfferingDescriptor {
   /** Existing subscription offerings default to their provider's usage capability. */
   supportsSubscriptionUsage?: boolean;
   connectionKind?: "editable-routes" | "fixed-routes";
+  routeConfig?: OfferingRouteConfig;
   /** core 声明键、UI 持有资产映射；缺失映射时 UI 使用自己的视觉回退。 */
   iconKey?: string;
   authMethods: ProviderAuthMethodDescriptor[];
@@ -50,7 +52,7 @@ export interface ProviderOfferingDescriptor {
 export type ProviderPlanSource = "published" | "inferred";
 
 export interface ProviderPlanDescriptor {
-  id: string;
+  key: string;
   displayName: string;
   /**
    * Data-layer identifiers that map to this entry: either raw `usage.plan`

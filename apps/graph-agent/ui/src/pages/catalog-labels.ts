@@ -44,12 +44,16 @@ export const factLabels: Record<keyof ModelFacts, string> = {
   structuredOutput: "结构化输出",
   promptCacheRead: "缓存读取",
   promptCacheWrite: "缓存写入",
+  reasoningOutputMode: "公开思考内容",
   reasoningMode: "推理模式",
   effortLevels: "可选推理强度",
   defaultEffort: "默认推理强度",
   unsupportedParameters: "不支持的参数",
 };
 export const valueLabels: Record<string, string> = {
+  full: "全文",
+  summary: "摘要",
+  "activity-only": "仅阶段",
   unknown: "未知",
   unsupported: "不支持",
   supported: "支持",
@@ -66,6 +70,8 @@ export const parameterLabels: Partial<Record<keyof ModelParameters, string>> = {
   contextWindow: "上下文预算（tokens）",
   temperature: "温度（temperature）",
   topP: "Top P",
+  thinkingEnabled: "支持思考",
+  returnFullReasoning: "返回完整思考内容",
   effort: "推理强度",
   size: "尺寸",
   quality: "质量",
@@ -77,7 +83,15 @@ export const parameterLabels: Partial<Record<keyof ModelParameters, string>> = {
   topK: "返回数量",
 };
 export const paramKeys: Record<string, (keyof ModelParameters)[]> = {
-  chat: ["maxOutputTokens", "contextWindow", "effort", "temperature", "topP"],
+  chat: [
+    "thinkingEnabled",
+    "returnFullReasoning",
+    "maxOutputTokens",
+    "contextWindow",
+    "effort",
+    "temperature",
+    "topP",
+  ],
   "image-generation": ["size", "quality", "count", "format"],
   "video-generation": ["size", "quality", "durationSeconds", "format"],
   "audio-speech": ["voice", "format"],

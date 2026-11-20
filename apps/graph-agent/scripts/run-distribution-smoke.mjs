@@ -109,7 +109,7 @@ async function runPass(expected) {
         const response=await fetch("/api/v1/graph-agent/custom-providers/create",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
           instanceId:snap.stamp.instanceId,contextId:snap.backend.contextId,
           operationId:"distribution-smoke",name:"Distribution smoke",icon:null,
-          offerings:[{offeringId:"local",name:"Local",routes:[{protocolRouteId:"openai-chat",baseUrl:"https://example.invalid/v1"}]}]
+          offerings:[{offeringId:"local",name:"Local",routes:[{protocol:"openai-chat",baseUrl:"https://example.invalid/v1"}]}]
         })});
         const saved=await response.json();
         if(!saved.ok)throw new Error("Provider creation failed: "+saved.error?.code);

@@ -137,7 +137,7 @@ describe("model pricing", () => {
   it("requires the specified card region and effective period", () => {
     const rates: RateCard = {
       ...card,
-      scope: { providerId: "relay", offeringId: "cn", operationId: "chat", region: "CN" },
+      scope: { providerId: "relay", offeringId: "cn", operation: "chat", region: "CN" },
       chargeLines: [line("requests", "2")],
       effectiveFrom: "2026-01-01T00:00:00Z",
       effectiveUntil: "2027-01-01T00:00:00Z",

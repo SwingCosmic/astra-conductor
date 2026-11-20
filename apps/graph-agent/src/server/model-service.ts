@@ -1,7 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
+  familyVersion,
+  modelEndpointDescriptor,
   modelEndpointDescriptors,
+  protocolFamilyDescriptors,
+  type EndpointProtocol,
   type ModelEndpointDescriptor,
+  type ModelRoute,
+  type ModelRouteSummary,
   type ModelSelection,
   type ActionAvailability,
   type CommandContext,
@@ -16,6 +22,7 @@ import {
   type SelectPresetRequest,
   type EditModelOverrideRequest,
   type RefreshCatalogRequest,
+  type RouteBindingRequest,
   type SaveModelSelectionRequest,
   type EstimateModelCostRequest,
   type PreviewModelRequest,
@@ -24,12 +31,25 @@ import {
 } from "@astra-conductor/contract/graph-agent";
 import {
   AppError,
+  compileModelRequestPlan,
+  computeFamilyBindingRevision,
+  computeRouteBindingRevision,
+  defaultRoutesFromConfig,
+  discoverRouteModels,
+  isCustomProviderId,
+  isLocalKeyAccount,
+  previewModelChat,
+  projectDiscoveredModels,
+  projectNewApiFamilyModels,
   resolveModelRoutes,
   toPublicError,
   estimateCharge,
   parseRateCard,
   parseBillingWorkload,
+  type CatalogModelHint,
+  type ProviderOfferingModelPolicy,
   type ProviderRegistry,
+  type RequestPlan,
   type Account,
   type CommonProviderApplicationService,
   type CredentialEnvelope,
@@ -44,6 +64,7 @@ import {
   GraphModelRepository,
   settingsConflict,
   type ConfigKey,
+  type CatalogKey,
   type ConfigRow,
   type ModelState,
   type ModelConfigDocument,
@@ -51,6 +72,7 @@ import {
 import { validateModelPack, fetchPack, type ValidatedPack } from "./model-pack.js";
 import {
   projectEntry,
+  extractEntryFacts,
   basicCardRows,
   validateParameters,
   priceKey,
@@ -75,19 +97,19 @@ interface Options {
   visible(): ReadonlySet<string> | null;
   publish(reason: GraphModelChangeReason): void;
 }
-function endpoint(id: string) {
-  const item = modelEndpointDescriptors.find((ep) => ep.id === id);
+function endpoint(protocol: EndpointProtocol) {
+  const item = modelEndpointDescriptors.find((ep) => ep.protocol === protocol);
   if (!item) throw new AppError("validation", "未注册的模型端点");
   return item;
 }
 function assertCompatible(
   ep: ModelEndpointDescriptor,
-  input: { modelType?: string; operationId?: string; profileId?: string },
+  input: { modelType?: string; operation?: string; ioProfile?: string },
 ) {
   if (
     (input.modelType !== undefined && input.modelType !== ep.modelType) ||
-    (input.operationId !== undefined && input.operationId !== ep.operationId) ||
-    (input.profileId !== undefined && input.profileId !== ep.profileId)
+    (input.operation !== undefined && input.operation !== ep.operation) ||
+    (input.ioProfile !== undefined && input.ioProfile !== ep.ioProfile)
   )
     throw new AppError("validation", "模型类型、操作和输入输出组合必须匹配所选端点");
 }
@@ -107,7 +129,7 @@ function selection(row: ConfigRow): ModelSelection {
   return {
     providerId: row.providerId,
     accountId: row.accountId!,
-    protocolRouteId: row.protocolRouteId,
+    protocol: row.protocol,
     modelId: row.modelId,
   };
 }
@@ -116,7 +138,7 @@ export class GraphModelService {
   private readonly observers = new Set<(stopping?: boolean) => void>();
   private readonly tasks = new Map<
     string,
-    { input: RefreshCatalogRequest; stop: AbortController; done: Promise<void> }
+    { check: () => void; stop: AbortController; done: Promise<void> }
   >();
   private readonly failures = new Map<string, PublicError>();
   constructor(private readonly options: Options) {}
@@ -134,7 +156,7 @@ export class GraphModelService {
   bindingsChanged() {
     for (const task of this.tasks.values()) {
       try {
-        this.boundAccount(task.input);
+        task.check();
       } catch {
         task.stop.abort();
       }
@@ -169,38 +191,224 @@ export class GraphModelService {
     if (this.options.mutations.isFrozen) return disabled("凭据存储正在切换");
     return enabled;
   }
-  private boundAccount(input: RefreshCatalogRequest) {
+  private visibleAccount(input: CommandContext & { accountId: string }) {
     this.options.providers.assertContext(input);
     const account = this.options.storage.accounts.get(input.accountId);
     if (!account || this.options.visible()?.has(account.id) === false)
       throw new AppError("not-found", "账号不存在或不可访问");
     available(this.access(account));
-    const route = resolveModelRoutes(account, undefined, this.options.connectionProviders).find(
-      (r) => r.protocolRouteId === input.protocolRouteId,
-    );
+    return account;
+  }
+  private resolvePolicy(providerId: string, offeringId: string): ProviderOfferingModelPolicy {
+    return this.options.registry.resolveModelPolicy({
+      providerId,
+      offeringId,
+      templateKind: this.options.connectionProviders?.templateKind?.(providerId),
+    });
+  }
+  private getPolicy(providerId: string, offeringId: string): ProviderOfferingModelPolicy | null {
+    return this.options.registry.getModelPolicy({
+      providerId,
+      offeringId,
+      templateKind: this.options.connectionProviders?.templateKind?.(providerId),
+    });
+  }
+  private policyContext(providerId: string, offeringId: string) {
+    return {
+      registry: this.options.registry,
+      templateKind: this.options.connectionProviders?.templateKind?.(providerId),
+      policy: this.getPolicy(providerId, offeringId),
+    };
+  }
+  private receiptPoliciesFor(
+    policy: ProviderOfferingModelPolicy,
+  ): readonly ProviderOfferingModelPolicy[] {
+    const shared = this.options.registry.listReceiptPolicies();
+    return policy.transformReceipt && !shared.includes(policy) ? [...shared, policy] : shared;
+  }
+  private enrichFamilyRoutes(
+    routes: ModelRoute[],
+    account: Account,
+    credentialRevision: string,
+    policy: ProviderOfferingModelPolicy | null,
+  ): ModelRoute[] {
+    return routes.map((route) => {
+      const protocolFamily = modelEndpointDescriptor(route.protocol).protocolFamily;
+      const peers = routes.filter(
+        (r) => modelEndpointDescriptor(r.protocol).protocolFamily === protocolFamily,
+      );
+      const consistent = peers.every(
+        (r) => r.baseUrl === route.baseUrl && familyVersion(r) === familyVersion(route),
+      );
+      const familyBindingRevision = consistent
+        ? computeFamilyBindingRevision({
+            accountId: account.id,
+            providerId: account.provider,
+            offeringId: account.offeringId,
+            protocolFamily,
+            baseUrl: route.baseUrl,
+            protocolVersion: familyVersion(route),
+            endpointRevisions: route.familyBindingRevision ?? peers.map((r) => r.bindingRevision),
+            credentialRevision,
+          })
+        : undefined;
+      const familyCatalog =
+        !consistent ||
+        !protocolFamilyDescriptors[protocolFamily].catalogPath ||
+        route.familyPolicy?.catalog === "none" ||
+        policy?.catalogMode === "none"
+          ? "none"
+          : policy?.catalogMode === "vendor"
+            ? "vendor"
+            : "native";
+      return { ...route, protocolFamily, familyBindingRevision, familyCatalog };
+    });
+  }
+  private resolveLocalRoutes(
+    account: Account,
+    policy: ProviderOfferingModelPolicy | null,
+  ): ModelRoute[] | null {
+    const source = this.options.connectionProviders;
+    const isLocalKey =
+      isLocalKeyAccount(account, (id) => this.options.registry.findOffering(id)) ||
+      (account.authMethod === "api-key" &&
+        typeof account.publicMetadata.credentialBindingRevision === "string" &&
+        Boolean(policy?.routeConfig));
+
+    if (isLocalKey) {
+      const revision = account.publicMetadata.credentialBindingRevision;
+      if (!revision || typeof revision !== "string") return [];
+      let endpoints: ModelRoute[];
+      if (isCustomProviderId(account.provider)) {
+        endpoints = source?.routes(account.provider, account.offeringId) ?? [];
+      } else if (policy?.routeConfig) {
+        if (policy.routeConfig.mode === "fixed") {
+          endpoints = defaultRoutesFromConfig(
+            policy.routeConfig,
+            account.offeringId,
+            "official-v1",
+          );
+        } else if (revision.startsWith("default-") || revision.startsWith("official-")) {
+          endpoints = defaultRoutesFromConfig(policy.routeConfig, account.offeringId, "default-v1");
+        } else {
+          endpoints = source?.accountRoutes?.(account.id) ?? [];
+        }
+      } else {
+        endpoints = [];
+      }
+      return this.enrichFamilyRoutes(endpoints, account, revision, policy).map((item) => ({
+        ...item,
+        bindingRevision: computeRouteBindingRevision({
+          accountId: account.id,
+          providerId: account.provider,
+          offeringId: account.offeringId,
+          protocol: item.protocol,
+          endpointRevision: item.bindingRevision,
+          credentialRevision: revision,
+        }),
+      }));
+    }
+
+    const owner = this.options.registry.findOffering(account.offeringId);
+    const routeConfig = policy?.routeConfig ?? owner?.offering.routeConfig;
+    if (routeConfig) {
+      if (
+        !policy &&
+        (owner?.provider !== account.provider ||
+          !owner.offering.authMethods.some((method) => method.method === account.authMethod))
+      ) {
+        return [];
+      }
+      const fixed = defaultRoutesFromConfig(routeConfig, account.offeringId);
+      return this.enrichFamilyRoutes(fixed, account, account.stableIdentity, policy);
+    }
+
+    return null;
+  }
+  private resolveLocalRoute(
+    account: Account,
+    protocol: EndpointProtocol,
+    expectedBindingRevision: string,
+    policy: ProviderOfferingModelPolicy | null,
+  ): ModelRoute | null {
+    const routes = this.resolveLocalRoutes(account, policy);
+    if (routes === null) return null;
+    const found = routes.find((r) => r.protocol === protocol);
+    if (!found || found.bindingRevision !== expectedBindingRevision)
+      throw new AppError("stale-binding", "模型连接已变更");
+    return found;
+  }
+  private boundAccount(input: RouteBindingRequest) {
+    const account = this.visibleAccount(input);
+    const policy = this.getPolicy(account.provider, account.offeringId) ?? undefined;
+    const route = resolveModelRoutes(
+      account,
+      undefined,
+      this.options.connectionProviders,
+      policy,
+    ).find((r) => r.protocol === input.protocol);
     if (!route || route.bindingRevision !== input.expectedBindingRevision)
       throw new AppError("stale-binding", "模型连接已变更，请重新选择");
     return account;
   }
-  private taskKey(input: RefreshCatalogRequest) {
+  private taskKey(contextId: string, key: CatalogKey) {
     return JSON.stringify([
-      input.contextId,
-      input.accountId,
-      input.protocolRouteId,
-      input.expectedBindingRevision,
+      contextId,
+      key.visibilityRef,
+      key.providerId,
+      key.accountId,
+      key.offeringId,
+      key.protocolFamily,
+      key.familyBindingRevision,
     ]);
   }
   private configKey(s: ModelSelection, offeringId: string, pub = false): ConfigKey {
     return { ...s, offeringId, accountId: pub ? null : s.accountId };
   }
-  private catalogKey(account: Account, ep: string, bindingRevision: string) {
+  private catalogRoute(account: Account, ep: ModelEndpointDescriptor, binding: string) {
+    const policy = this.getPolicy(account.provider, account.offeringId) ?? undefined;
+    return resolveModelRoutes(account, undefined, this.options.connectionProviders, policy).find(
+      (r) => r.protocol === ep.protocol && r.bindingRevision === binding,
+    );
+  }
+  private catalogKey(
+    account: Account,
+    ep: ModelEndpointDescriptor,
+    route: ModelRouteSummary | undefined,
+  ) {
     return {
       accountId: account.id,
       offeringId: account.offeringId,
-      protocolRouteId: ep,
-      bindingRevision,
+      providerId: account.provider,
+      protocolFamily: ep.protocolFamily,
+      familyBindingRevision: route?.familyBindingRevision ?? "",
       visibilityRef: this.options.visibilityRef(),
     };
+  }
+  private readCatalog(
+    key: CatalogKey,
+    ep: ModelEndpointDescriptor,
+    policy?: ProviderOfferingModelPolicy | null,
+  ) {
+    const catalog = key.familyBindingRevision ? this.repo.getCatalog(key) : undefined;
+    if (!catalog) return undefined;
+    const entries = policy?.discoverableProtocols?.length
+      ? projectNewApiFamilyModels(catalog.entries, ep.protocol)
+      : projectDiscoveredModels(catalog.entries, ep.protocol);
+    return { ...catalog, entries };
+  }
+  private catalogModelHints(
+    account: Account,
+    ep: ModelEndpointDescriptor,
+    binding: string,
+  ): readonly CatalogModelHint[] | undefined {
+    const key = this.catalogKey(account, ep, this.catalogRoute(account, ep, binding));
+    const catalog = key.familyBindingRevision ? this.repo.getCatalog(key) : undefined;
+    if (!catalog?.entries.length) return undefined;
+    return catalog.entries.map((entry) => ({
+      modelId: entry.modelId,
+      ...(entry.endpointTypes ? { endpointTypes: entry.endpointTypes } : {}),
+    }));
   }
   private resolve(
     s: ModelSelection,
@@ -214,8 +422,13 @@ export class GraphModelService {
     const common = isPublicOffering(s.providerId)
       ? this.repo.get({ ...key, accountId: null })
       : undefined;
-    const ep = endpoint(s.protocolRouteId),
-      catalog = this.repo.getCatalog(this.catalogKey(account, ep.id, binding));
+    const ep = endpoint(s.protocol);
+    const pCtx = this.policyContext(account.provider, account.offeringId);
+    const catalog = this.readCatalog(
+      this.catalogKey(account, ep, this.catalogRoute(account, ep, binding)),
+      ep,
+      pCtx.policy,
+    );
     return projectEntry(
       this.repo,
       s,
@@ -228,6 +441,8 @@ export class GraphModelService {
       common,
       catalog?.entries.find((e) => e.modelId === s.modelId),
       catalog,
+      undefined,
+      pCtx,
     );
   }
   private validateSelection(context: CommandContext, s: ModelSelection, binding: string) {
@@ -235,32 +450,42 @@ export class GraphModelService {
     if (account.provider !== s.providerId) throw new AppError("validation", "模型与所选账号不匹配");
     return account;
   }
+  private canDiscover(
+    account: Account,
+    ep: ModelEndpointDescriptor,
+    route: ModelRouteSummary | undefined,
+  ) {
+    if (!route?.familyBindingRevision || route.familyCatalog === "none") return false;
+    const policy = this.getPolicy(account.provider, account.offeringId);
+    if (!policy || policy.catalogMode === "none") return false;
+    return ep.canDiscover || Boolean(policy.discoverableProtocols?.includes(ep.protocol));
+  }
   private catalogView(
     account: Account,
     ep: ModelEndpointDescriptor,
-    binding: string,
+    route: ModelRouteSummary,
     state: ModelState,
   ): ModelCatalogView {
     const source = this.access(account);
-    const key = this.catalogKey(account, ep.id, binding),
-      catalog = source.state === "enabled" ? this.repo.getCatalog(key) : undefined;
+    const binding = route.bindingRevision;
+    const canDiscover = this.canDiscover(account, ep, route);
+    const pCtx = this.policyContext(account.provider, account.offeringId);
+    const key = this.catalogKey(account, ep, route),
+      catalog =
+        source.state === "enabled" && canDiscover
+          ? this.readCatalog(key, ep, pCtx.policy)
+          : undefined;
     const common = isPublicOffering(account.provider)
-      ? this.repo.list(account.provider, account.offeringId, ep.id, null)
+      ? this.repo.list(account.provider, account.offeringId, ep.protocol, null)
       : [];
     const local = this.repo
-      .list(account.provider, account.offeringId, ep.id, account.id)
+      .list(account.provider, account.offeringId, ep.protocol, account.id)
       .filter((r) => r.accountIdentity === identity(account));
     const overrides = new Map(local.map((r) => [r.modelId, r])),
       defaults = new Map(common.map((r) => [r.modelId, r])),
       remote = new Map(catalog?.entries.map((r) => [r.modelId, r]));
     const models = new Set([...remote.keys(), ...overrides.keys(), ...defaults.keys()]);
-    const task = this.taskKey({
-      instanceId: this.options.providers.instanceId,
-      contextId: this.options.providers.getBackend().contextId,
-      accountId: account.id,
-      protocolRouteId: ep.id,
-      expectedBindingRevision: binding,
-    });
+    const task = this.taskKey(this.options.providers.getBackend().contextId, key);
     const err = this.failures.get(task) ?? null;
     const entries = (pub: boolean) =>
       [...(pub ? new Set([...remote.keys(), ...defaults.keys()]) : models)].sort().map((modelId) =>
@@ -269,7 +494,7 @@ export class GraphModelService {
           {
             accountId: account.id,
             providerId: account.provider,
-            protocolRouteId: ep.id,
+            protocol: ep.protocol,
             modelId,
           },
           account.offeringId,
@@ -282,6 +507,7 @@ export class GraphModelService {
           remote.get(modelId),
           catalog,
           state,
+          pCtx,
         ),
       );
     return {
@@ -289,7 +515,9 @@ export class GraphModelService {
       providerId: account.provider,
       offeringId: account.offeringId,
       accountId: account.id,
-      protocolRouteId: ep.id,
+      protocol: ep.protocol,
+      protocolFamily: ep.protocolFamily,
+      familyBindingRevision: key.familyBindingRevision || undefined,
       bindingRevision: binding,
       catalog: catalog
         ? {
@@ -304,7 +532,11 @@ export class GraphModelService {
       refreshing: this.tasks.has(task),
       lastRefreshError: err,
       register: source,
-      refresh: ep.canDiscover ? source : disabled("该端点通过手工登记模型"),
+      refresh: !key.familyBindingRevision
+        ? disabled("请先统一同一协议族的地址和版本")
+        : canDiscover
+          ? source
+          : disabled("该端点通过手工登记模型"),
       entries: entries(false),
       publicEntries: isPublicOffering(account.provider) ? entries(true) : [],
     };
@@ -319,9 +551,12 @@ export class GraphModelService {
       .filter((a) => visible?.has(a.id) ?? true)
       .sort((a, b) => a.id.localeCompare(b.id))
       .flatMap((a) =>
-        resolveModelRoutes(a, undefined, this.options.connectionProviders).map((r) =>
-          this.catalogView(a, endpoint(r.protocolRouteId), r.bindingRevision, state),
-        ),
+        resolveModelRoutes(
+          a,
+          undefined,
+          this.options.connectionProviders,
+          this.getPolicy(a.provider, a.offeringId) ?? undefined,
+        ).map((r) => this.catalogView(a, endpoint(r.protocol), r, state)),
       );
     for (const group of this.repo.publicRoutes()) {
       if (
@@ -329,14 +564,15 @@ export class GraphModelService {
           (c) =>
             c.providerId === group.providerId &&
             c.offeringId === group.offeringId &&
-            c.protocolRouteId === group.protocolRouteId,
+            c.protocol === group.protocol,
         )
       )
         continue;
       const action = disabled("暂无可用于读取目录的账号"),
-        ep = endpoint(group.protocolRouteId);
+        ep = endpoint(group.protocol);
+      const pCtx = this.policyContext(group.providerId, group.offeringId);
       const publicEntries = this.repo
-        .list(group.providerId, group.offeringId, group.protocolRouteId, null)
+        .list(group.providerId, group.offeringId, group.protocol, null)
         .map((row) =>
           projectEntry(
             this.repo,
@@ -348,6 +584,10 @@ export class GraphModelService {
             action,
             undefined,
             row,
+            undefined,
+            undefined,
+            state,
+            pCtx,
           ),
         );
       catalogs.push({
@@ -374,7 +614,7 @@ export class GraphModelService {
             c.accountId === chosen.accountId &&
             c.providerId === chosen.providerId &&
             c.offeringId === chosen.offeringId &&
-            c.protocolRouteId === chosen.protocolRouteId,
+            c.protocol === chosen.protocol,
         );
         const entry = current?.entries.find((e) => e.selection.modelId === chosen.modelId);
         savedSelection = {
@@ -408,7 +648,7 @@ export class GraphModelService {
             key,
             modelId,
             displayName,
-            vendorId,
+            vendor,
             revision,
             checkedAt,
             referenceUrl,
@@ -419,62 +659,112 @@ export class GraphModelService {
             key,
             modelId,
             displayName,
-            vendorId,
+            vendor,
             revision,
             checkedAt,
             referenceUrl,
             family,
             series,
-            operations: capabilities.map((c) => c.operationId),
+            operations: capabilities.map((c) => c.operation),
           }),
         ),
       catalogs,
       savedSelection,
     };
   }
-  async refreshCatalog(input: RefreshCatalogRequest) {
+  async refreshCatalog(request: RefreshCatalogRequest) {
+    let input: RouteBindingRequest;
+    if ("expectedFamilyBindingRevision" in request) {
+      const account = this.visibleAccount(request);
+      const policy = this.getPolicy(account.provider, account.offeringId) ?? undefined;
+      const routes = resolveModelRoutes(
+        account,
+        undefined,
+        this.options.connectionProviders,
+        policy,
+      ).filter(
+        (r) =>
+          r.protocolFamily === request.protocolFamily &&
+          r.familyBindingRevision === request.expectedFamilyBindingRevision,
+      );
+      if (!routes.length) throw new AppError("stale-binding", "目录所属协议族或绑定已更新");
+      const route = routes.find((r) => this.canDiscover(account, endpoint(r.protocol), r));
+      if (!route) throw new AppError("capability-unavailable", "该协议族未提供模型列表");
+      input = {
+        instanceId: request.instanceId,
+        contextId: request.contextId,
+        accountId: account.id,
+        protocol: route.protocol,
+        expectedBindingRevision: route.bindingRevision,
+      };
+    } else input = request;
     const account = this.boundAccount(input),
-      key = this.taskKey(input),
-      ep = endpoint(input.protocolRouteId),
-      cap = this.options.registry.getModels(account.provider);
-    if (!ep.canDiscover || !cap)
+      ep = endpoint(input.protocol),
+      route = this.catalogRoute(account, ep, input.expectedBindingRevision),
+      storeKey = this.catalogKey(account, ep, route),
+      key = this.taskKey(input.contextId, storeKey),
+      policy = this.getPolicy(account.provider, account.offeringId);
+    if (!storeKey.familyBindingRevision)
+      throw new AppError("conflict", "请先统一同一协议族的地址和版本");
+    if (!this.canDiscover(account, ep, route) || !policy)
       throw new AppError("capability-unavailable", "该端点没有模型列表，请手工登记");
     let task = this.tasks.get(key);
     if (!task) {
-      const stop = new AbortController(),
-        storeKey = this.catalogKey(account, ep.id, input.expectedBindingRevision);
+      const stop = new AbortController();
+      const check = () => {
+        this.options.providers.assertContext(input);
+        const current = this.options.storage.accounts.get(account.id);
+        if (
+          !current ||
+          this.options.visible()?.has(account.id) === false ||
+          current.offeringId !== account.offeringId ||
+          identity(current) !== identity(account) ||
+          this.options.visibilityRef() !== storeKey.visibilityRef
+        )
+          throw new AppError("stale-binding", "目录绑定已变化");
+        available(this.access(current));
+        const currentPolicy = this.getPolicy(current.provider, current.offeringId) ?? undefined;
+        if (
+          !resolveModelRoutes(
+            current,
+            undefined,
+            this.options.connectionProviders,
+            currentPolicy,
+          ).some(
+            (r) =>
+              r.protocolFamily === ep.protocolFamily &&
+              r.familyBindingRevision === storeKey.familyBindingRevision,
+          )
+        )
+          throw new AppError("stale-binding", "协议族连接已变化");
+      };
       const done = this.options.mutations
         .run(async () => {
           const entries = await this.options.refresh.withModelCredential(
             account,
             async (envelope) => {
-              const { account: current, route } = this.decryptedRoute(input, envelope);
-              return cap.discover(
+              const { account: current, route } = this.decryptedRoute(input, envelope, policy);
+              if (route.familyBindingRevision !== storeKey.familyBindingRevision)
+                throw new AppError("stale-binding", "族连接已变化或地址冲突，请重新配置");
+              return discoverRouteModels(
                 this.options.http,
                 current,
                 envelope,
                 route,
                 stop.signal,
                 this.options.connectionProviders,
+                "family",
+                policy,
               );
             },
           );
-          this.boundAccount(input);
+          check();
           stop.signal.throwIfAborted();
-          if (storeKey.visibilityRef !== this.options.visibilityRef()) settingsConflict();
-          this.repo.saveCatalog(
-            storeKey,
-            entries.map((entry) => ({
-              ...entry,
-              modelType: ep.modelType,
-              operationId: ep.operationId,
-              profileId: ep.profileId,
-            })),
-          );
+          this.repo.saveCatalog(storeKey, entries);
           this.failures.delete(key);
         })
         .catch((err) => {
-          this.boundAccount(input);
+          check();
           this.failures.set(key, toPublicError(err));
           throw err;
         })
@@ -482,18 +772,28 @@ export class GraphModelService {
           this.tasks.delete(key);
           this.changed("catalogs");
         });
-      task = { input, done, stop };
+      task = { check, done, stop };
       this.tasks.set(key, task);
       this.changed("catalogs");
     }
     await task.done;
+    this.boundAccount(input);
     return this.getSnapshot();
   }
-  private decryptedRoute(input: RefreshCatalogRequest, envelope: CredentialEnvelope) {
+  private decryptedRoute(
+    input: RouteBindingRequest,
+    envelope: CredentialEnvelope,
+    policy?: ProviderOfferingModelPolicy,
+  ) {
     const account = this.boundAccount(input);
-    const route = resolveModelRoutes(account, envelope, this.options.connectionProviders).find(
-      (r) => r.protocolRouteId === input.protocolRouteId,
-    );
+    const activePolicy =
+      policy ?? this.getPolicy(account.provider, account.offeringId) ?? undefined;
+    const route = resolveModelRoutes(
+      account,
+      envelope,
+      this.options.connectionProviders,
+      activePolicy,
+    ).find((r) => r.protocol === input.protocol);
     if (!route || route.bindingRevision !== input.expectedBindingRevision)
       throw new AppError("stale-binding", "模型连接已变更");
     return { account, route };
@@ -512,7 +812,7 @@ export class GraphModelService {
   ) {
     this.settings(input);
     const account = this.validateSelection(input, input.selection, input.expectedBindingRevision),
-      ep = endpoint(input.selection.protocolRouteId),
+      ep = endpoint(input.selection.protocol),
       key = this.configKey(input.selection, account.offeringId, pub);
     if (pub && !isPublicOffering(account.provider))
       throw new AppError("validation", "自定义接入仅支持账号配置");
@@ -539,10 +839,14 @@ export class GraphModelService {
     return this.mutate(
       input,
       (doc, ep, account) => {
-        assertCompatible(ep, input);
+        assertCompatible(ep, {
+          modelType: input.modelType,
+          operation: input.operation,
+          ioProfile: input.ioProfile,
+        });
         if (input.expectedPackRevision && input.expectedPackRevision !== this.repo.state().active)
           settingsConflict();
-        const key = scopeKey(ep.operationId, ep.profileId),
+        const key = scopeKey(ep.operation, ep.ioProfile),
           layer = (doc.operations[key] ??= {
             facts: {},
             prices: [],
@@ -576,7 +880,7 @@ export class GraphModelService {
           if (input.presetKey === null) delete layer.presetKey;
           else {
             const preset = this.repo.activePack().byKey.get(input.presetKey);
-            if (!preset?.capabilities.some((c) => c.operationId === ep.operationId))
+            if (!preset?.capabilities.some((c) => c.operation === ep.operation))
               throw new AppError("validation", "该预置不支持所选端点操作");
             layer.presetKey = input.presetKey;
           }
@@ -593,6 +897,10 @@ export class GraphModelService {
         for (const c of input.parameterChanges) {
           if (c.operation === "clear") delete layer.parameters[c.field];
           else Object.assign(layer.parameters, { [c.field]: c.value });
+        }
+        if (layer.parameters.thinkingEnabled === false) {
+          layer.parameters.effort = null;
+          layer.parameters.returnFullReasoning = false;
         }
         if (input.ratePlanKey !== undefined) {
           if (["__proto__", "constructor", "prototype"].includes(input.ratePlanKey))
@@ -612,10 +920,10 @@ export class GraphModelService {
               scope &&
               (scope.providerId !== account.provider ||
                 scope.offeringId !== account.offeringId ||
-                scope.operationId !== ep.operationId ||
-                (scope.protocolRouteId && scope.protocolRouteId !== ep.id) ||
+                scope.operation !== ep.operation ||
+                (scope.protocol && scope.protocol !== ep.protocol) ||
                 (scope.upstreamModelId && scope.upstreamModelId !== input.selection.modelId) ||
-                (scope.planId && scope.planId !== plan))
+                (scope.planKey && scope.planKey !== plan))
             )
               throw new AppError("validation", "价卡声明的渠道或操作与当前绑定不符");
             // A full-card edit can also explicitly change a previously overridden base price.
@@ -668,7 +976,11 @@ export class GraphModelService {
           delete doc.displayName;
           delete doc.manualBinding;
         } else {
-          assertCompatible(ep, input.change);
+          assertCompatible(ep, {
+            modelType: input.change.modelType,
+            operation: input.change.modelOperation,
+            ioProfile: input.change.ioProfile,
+          });
           doc.displayName = input.change.displayName;
           doc.manualBinding = {
             visibilityRef: this.options.visibilityRef(),
@@ -701,7 +1013,7 @@ export class GraphModelService {
         return;
       }
       const account = this.validateSelection(input, c.selection, c.expectedBindingRevision),
-        ep = endpoint(c.selection.protocolRouteId),
+        ep = endpoint(c.selection.protocol),
         key = this.configKey(c.selection, account.offeringId);
       const entry = this.resolve(c.selection, account, c.expectedBindingRevision);
       available(entry.actions.select);
@@ -709,7 +1021,7 @@ export class GraphModelService {
         doc = row?.document ?? { operations: {} };
       // The deprecated parameters property is accepted for wire compatibility. Only saved drafts change model defaults.
       const id = this.repo.save(key, identity(account), ep.modelType, doc);
-      this.repo.select(id, ep.operationId, ep.profileId, c.expectedBindingRevision);
+      this.repo.select(id, ep.operation, ep.ioProfile, c.expectedBindingRevision);
     });
     this.changed("selection");
     return this.getSnapshot();
@@ -735,7 +1047,54 @@ export class GraphModelService {
   assertContext(context: CommandContext) {
     this.options.providers.assertContext(context);
   }
-  readSavedCall(input: TestChatRequest) {
+  readFamilyDirectory(
+    input: CommandContext & { accountId: string; family: "openai" | "anthropic"; revision: string },
+  ) {
+    const source = this.options.connectionProviders;
+    const current = () => {
+      this.options.providers.assertContext(input);
+      const account = this.options.storage.accounts.get(input.accountId);
+      if (!account || this.options.visible()?.has(account.id) === false)
+        throw new AppError("not-found", "账号不存在或不可访问");
+      available(this.access(account));
+      const policy = this.getPolicy(account.provider, account.offeringId);
+      const routes = resolveModelRoutes(account, undefined, source, policy ?? undefined);
+      const route = routes.find(
+        (r) => r.protocolFamily === input.family && r.familyBindingRevision === input.revision,
+      );
+      if (!route || !policy) throw new AppError("stale-binding", "该协议族目录不可用或绑定已更新");
+      if (route.familyCatalog !== "native")
+        throw new AppError("capability-unavailable", "该供应商未开放此族的原生目录");
+      return { account, route, policy };
+    };
+    const { account, route, policy } = current();
+    const check = () => {
+      const active = current();
+      if (
+        identity(active.account) !== identity(account) ||
+        active.account.offeringId !== account.offeringId
+      )
+        settingsConflict();
+    };
+    return {
+      account,
+      policy,
+      source,
+      check,
+      route: (envelope: CredentialEnvelope) => {
+        check();
+        const target = resolveModelRoutes(account, envelope, source, policy).find(
+          (r) =>
+            r.protocol === route.protocol &&
+            r.familyBindingRevision === input.revision &&
+            r.familyCatalog === "native",
+        );
+        if (!target) throw new AppError("stale-binding", "协议族目录绑定已更新");
+        return target;
+      },
+    };
+  }
+  readSavedCall(input: Omit<TestChatRequest, "prompt">) {
     this.settings(input);
     const state = this.repo.state(),
       row = this.repo.byId(state.selectedId);
@@ -748,13 +1107,22 @@ export class GraphModelService {
     const entry = this.resolve(s, account, input.expectedBindingRevision);
     available(entry.actions.select);
     validateParameters(entry, entry.parameters);
-    const inference = this.options.registry.getInference(account.provider);
-    if (!inference) throw new AppError("capability-unavailable", "所选供应商尚未提供推理能力");
-    const routeInput = {
+    const policy = this.resolvePolicy(account.provider, account.offeringId);
+    const ep = endpoint(s.protocol);
+    const facts = extractEntryFacts(entry);
+    const catalogModels = this.catalogModelHints(account, ep, input.expectedBindingRevision);
+    const localRoute = this.resolveLocalRoute(
+      account,
+      s.protocol,
+      input.expectedBindingRevision,
+      policy,
+    );
+    const receiptPolicies = this.receiptPoliciesFor(policy);
+    const routeInput: RouteBindingRequest = {
         instanceId: input.instanceId,
         contextId: input.contextId,
         accountId: s.accountId,
-        protocolRouteId: s.protocolRouteId,
+        protocol: s.protocol,
         expectedBindingRevision: input.expectedBindingRevision,
       },
       source = this.options.connectionProviders;
@@ -763,17 +1131,46 @@ export class GraphModelService {
       if (current.offeringId !== row.offeringId || identity(current) !== row.accountIdentity)
         settingsConflict();
     };
+    const compilePlan = (route: ModelRoute): RequestPlan => {
+      const plan = compileModelRequestPlan({
+        providerId: account.provider,
+        offeringId: account.offeringId,
+        route,
+        localModelId: s.modelId,
+        facts,
+        parameters: entry.parameters,
+        policy,
+        catalogModels,
+      });
+      if (route.requestRule) validateParameters(entry, plan.parameters);
+      return plan;
+    };
     return {
       account,
       entry,
-      inference,
+      policy,
+      receiptPolicies,
+      facts,
+      catalogModels,
+      localRoute,
       modelId: s.modelId,
       parameters: entry.parameters,
+      compilePlan,
       check,
+      checkSelection: () => {
+        check();
+        const selected = this.repo.state();
+        if (
+          selected.selectedId !== state.selectedId ||
+          selected.bindingRevision !== input.expectedBindingRevision
+        )
+          settingsConflict();
+        available(this.resolve(s, account, input.expectedBindingRevision).actions.select);
+      },
       source,
       route: (envelope: CredentialEnvelope) => {
         check();
-        return this.decryptedRoute(routeInput, envelope).route;
+        return this.decryptedRoute(routeInput, envelope, policy).route;
       },
     };
   }
@@ -791,7 +1188,7 @@ export class GraphModelService {
             draft.selection.providerId !== input.selection.providerId ||
             draft.selection.accountId !== input.selection.accountId ||
             draft.selection.modelId !== input.selection.modelId ||
-            draft.selection.protocolRouteId !== input.selection.protocolRouteId
+            draft.selection.protocol !== input.selection.protocol
           )
             settingsConflict();
           this.applyDraft(draft, false);
@@ -799,16 +1196,69 @@ export class GraphModelService {
         })
       : this.resolve(input.selection, account, input.expectedBindingRevision);
     available(entry.actions.preview);
-    const parameters = input.draft ? entry.parameters : input.parameters;
+    const parameters = input.draft
+      ? entry.parameters
+      : {
+          ...input.parameters,
+          thinkingEnabled:
+            entry.fields.reasoningMode.value !== "none" &&
+            (input.parameters.thinkingEnabled ?? entry.parameters.thinkingEnabled ?? true),
+          returnFullReasoning:
+            input.parameters.returnFullReasoning ?? entry.parameters.returnFullReasoning ?? false,
+        };
+    if (!parameters.thinkingEnabled) {
+      parameters.effort = null;
+      parameters.returnFullReasoning = false;
+    }
     if (input.operation !== "chat")
       throw new AppError("capability-unavailable", "媒体端点仅支持配置");
     validateParameters(entry, parameters);
-    const inference = this.options.registry.getInference(account.provider);
-    if (!inference) throw new AppError("capability-unavailable", "所选供应商尚未提供推理能力");
-    const envelope = await (this.options.credentials.loadCurrent?.(account.id) ??
-      this.options.credentials.load(account.id));
-    this.settings(input);
-    const current = this.decryptedRoute({ ...input, ...input.selection }, envelope);
+    const policy = this.resolvePolicy(account.provider, account.offeringId);
+    const facts = extractEntryFacts(entry);
+    const ep = endpoint(input.selection.protocol);
+    const catalogModels = this.catalogModelHints(account, ep, input.expectedBindingRevision);
+
+    // Local custom providers and built-in offerings resolve routes locally with zero credential reads.
+    let routeAccount = account;
+    let route = this.resolveLocalRoute(
+      account,
+      input.selection.protocol,
+      input.expectedBindingRevision,
+      policy,
+    );
+    if (!route) {
+      // Legacy v2 encrypted connections (compatible-api-key) keep routes inside the credential envelope.
+      const envelope = await (this.options.credentials.loadCurrent?.(account.id) ??
+        this.options.credentials.load(account.id));
+      this.settings(input);
+      const current = this.decryptedRoute({ ...input, ...input.selection }, envelope, policy);
+      routeAccount = current.account;
+      route = current.route;
+    }
+
+    if (route.requestRule) {
+      const plan = compileModelRequestPlan({
+        providerId: routeAccount.provider,
+        offeringId: routeAccount.offeringId,
+        route,
+        localModelId: input.selection.modelId,
+        facts,
+        parameters,
+        policy,
+        catalogModels,
+      });
+      validateParameters(entry, plan.parameters);
+    }
+
+    const compiled = previewModelChat(
+      routeAccount,
+      route,
+      input.selection.modelId,
+      parameters,
+      this.options.connectionProviders,
+      { facts, policy, catalogModels },
+    );
+
     return {
       instanceId: input.instanceId,
       contextId: input.contextId,
@@ -816,14 +1266,15 @@ export class GraphModelService {
       bindingRevision: input.expectedBindingRevision,
       settingsRevision: input.expectedSettingsRevision,
       operation: input.operation,
-      consumedParameters: [],
-      ...inference.preview(
-        current.account,
-        current.route,
-        input.selection.modelId,
-        parameters,
-        this.options.connectionProviders,
-      ),
+      method: compiled.method,
+      baseUrl: compiled.baseUrl,
+      relativePath: compiled.relativePath,
+      upstreamModelId: compiled.upstreamModelId,
+      consumedParameters: compiled.consumedParameters,
+      ruleSources: compiled.ruleSources,
+      headers: compiled.headers,
+      body: compiled.body,
+      warnings: compiled.warnings,
     };
   }
 }

@@ -337,7 +337,7 @@ function demoUsage(): Record<string, PublicUsage | null> {
     // codex Plus：健康档 + 聚合重置额度（分桶）+ 额外额度附加信息。
     "demo-codex-plus": usage({
       plan: "plus",
-      planId: "plus",
+      planKey: "plus",
       planLabel: "Plus",
       overallRemainingPercentage: 72,
       groups: [
@@ -361,7 +361,7 @@ function demoUsage(): Record<string, PublicUsage | null> {
     // codex Pro 100：临界用量场景。
     "demo-codex-pro-100": usage({
       plan: "prolite",
-      planId: "pro-100",
+      planKey: "pro-100",
       planLabel: "Pro 100",
       overallRemainingPercentage: 8,
       groups: [
@@ -379,7 +379,7 @@ function demoUsage(): Record<string, PublicUsage | null> {
     // BigModel Pro：真实原始量刻度（积分）+ 分体重置额度（带过期时间）。
     "demo-bigmodel-pro": usage({
       plan: "Glm Coding Pro",
-      planId: "pro",
+      planKey: "pro",
       planLabel: "Pro",
       overallRemainingPercentage: 38,
       groups: [
@@ -437,7 +437,7 @@ function demoUsage(): Record<string, PublicUsage | null> {
     // 附加信息三件套（重置计数走 extras）。
     "demo-grok-legacy": usage({
       plan: "SuperGrok Pro",
-      planId: "supergrok-pro",
+      planKey: "supergrok-pro",
       planLabel: "SuperGrok Pro",
       planLegacy: true,
       overallRemainingPercentage: 45,
@@ -459,7 +459,7 @@ function demoUsage(): Record<string, PublicUsage | null> {
     // Grok Ultra：新档位、健康用量。
     "demo-grok-ultra": usage({
       plan: "ultra",
-      planId: "ultra",
+      planKey: "ultra",
       planLabel: "Ultra",
       overallRemainingPercentage: 88,
       groups: [
@@ -475,7 +475,7 @@ function demoUsage(): Record<string, PublicUsage | null> {
     // 模型族（族级周配额 + 按模型 5 小时额度，对齐 vendor 叶子三源组装）。
     "demo-antigravity-edge": usage({
       plan: "Antigravity Edge Quota",
-      planId: null,
+      planKey: null,
       planLabel: "Antigravity Edge Quota",
       overallRemainingPercentage: 30,
       groups: [
@@ -533,7 +533,7 @@ function demoUsage(): Record<string, PublicUsage | null> {
     // Claude Max 20x：会话 + 周/按模型周配额（adapter 实际都归 default 组）。
     "demo-claude-max": usage({
       plan: "max 20x",
-      planId: "max-20x",
+      planKey: "max-20x",
       planLabel: "Max 20x",
       overallRemainingPercentage: 76,
       groups: [
@@ -556,7 +556,7 @@ function demoUsage(): Record<string, PublicUsage | null> {
     // OpenCode Go：三窗口 + 无限额度场景。
     "demo-opencode-go": usage({
       plan: "OpenCode Go",
-      planId: "opencode-go",
+      planKey: "opencode-go",
       planLabel: "OpenCode Go",
       overallRemainingPercentage: 64,
       groups: [
@@ -578,7 +578,7 @@ function demoUsage(): Record<string, PublicUsage | null> {
     // Copilot Pro+：月度请求配额（无重置额度）。
     "demo-copilot-pro-plus": usage({
       plan: "copilot_pro_plus",
-      planId: "copilot-pro-plus",
+      planKey: "copilot-pro-plus",
       planLabel: "Copilot Pro+",
       overallRemainingPercentage: 68,
       groups: [

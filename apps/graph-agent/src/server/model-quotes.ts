@@ -43,7 +43,7 @@ function cardQuotes(card: RateCard, planKey: string): CatalogQuote[] {
     const entitlement = card.entitlements.find((e) => e.meter === line.meter);
     const basis = [
       card.scope?.region,
-      card.scope?.planId,
+      card.scope?.planKey,
       entitlement
         ? "权益 " +
           entitlement.included.quantity +

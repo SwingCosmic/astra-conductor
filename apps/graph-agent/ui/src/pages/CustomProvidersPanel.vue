@@ -5,8 +5,14 @@ import type { ProviderManagementSnapshot, PublicAccount } from "@astra-conductor
 import type {
   CustomProvider,
   CustomProviderReference,
+  NewApiAccountRequest,
+  NewApiOfferingRequest,
+  CustomOffering,
+  NewApiSiteCatalogQuery,
 } from "@astra-conductor/contract/graph-agent";
 import CustomProviderEditor from "./CustomProviderEditor.vue";
+import NewApiSiteCatalog from "./NewApiSiteCatalog.vue";
+import NewApiAccountDialog from "./NewApiAccountDialog.vue";
 import { graphServiceKey } from "../services/graph-agent-service";
 const props = defineProps<{ snapshot: ProviderManagementSnapshot | null; focusAccount?: string }>();
 const emit = defineEmits<{ reload: []; models: [account: PublicAccount] }>();
@@ -22,6 +28,13 @@ const deletion = ref<{ provider: CustomProvider; references: CustomProviderRefer
   null,
 );
 const connection = ref<{ providerId: string; offeringId: string; accountId?: string } | null>(null);
+const catalog = ref<{ query: NewApiSiteCatalogQuery; label: string } | null>(null);
+const keyDialog = ref<{
+  target: NewApiAccountRequest | NewApiOfferingRequest;
+  label: string;
+  site: string;
+  editable: boolean;
+} | null>(null);
 const impact = ref<Record<string, string[]>>({});
 const binding = ref<PublicAccount | null>(null),
   target = ref("");
@@ -67,6 +80,36 @@ async function reload() {
 }
 watch(() => props.snapshot?.revision, reload, { immediate: true });
 onBeforeUnmount(() => generation++);
+watch([list, () => props.snapshot], () => {
+  const q = catalog.value?.query;
+  if (
+    q &&
+    !list.value.some((p) => p.providerId === q.providerId && p.revision === q.expectedRevision)
+  )
+    catalog.value = null;
+  const a = keyDialog.value?.target;
+  if (
+    a &&
+    (!list.value.some(
+      (p) => p.providerId === a.providerId && p.revision === a.expectedProviderRevision,
+    ) ||
+      ("accountId" in a &&
+        (!props.snapshot?.connections.some(
+          (c) => c.accountId === a.accountId && c.recordRevision === a.expectedRecordRevision,
+        ) ||
+          !props.snapshot.accounts.some(
+            (row) =>
+              row.id === a.accountId &&
+              row.enabled &&
+              row.credentialState === "available" &&
+              row.provider === a.providerId &&
+              row.offeringId === a.offeringId,
+          ))) ||
+      ctx.value?.instanceId !== a.instanceId ||
+      ctx.value?.contextId !== a.contextId)
+  )
+    keyDialog.value = null;
+});
 watch(
   () => props.snapshot?.backend.contextId,
   () => {
@@ -82,6 +125,8 @@ async function changed() {
   editor.value = null;
   deletion.value = null;
   connection.value = null;
+  keyDialog.value = null;
+  catalog.value = null;
   binding.value = null;
   await reload();
   emit("reload");
@@ -118,8 +163,8 @@ function references(provider: CustomProvider) {
             e.accountOverrides.rateCard ||
             e.accountOverrides.presetKey
           )
-            rows.push(e.displayName + " · " + c.protocolRouteId);
-        if (chosen?.accountId === c.accountId && chosen.protocolRouteId === c.protocolRouteId)
+            rows.push(e.displayName + " · " + c.protocol);
+        if (chosen?.accountId === c.accountId && chosen.protocol === c.protocol)
           rows.push("当前测试模型 · " + chosen.modelId);
       }
     }
@@ -211,6 +256,28 @@ function toggle(a: PublicAccount) {
 function members(p: string, o: string) {
   return props.snapshot?.accounts.filter((a) => a.provider === p && a.offeringId === o) ?? [];
 }
+function openKeys(p: CustomProvider, offering: CustomOffering, a?: PublicAccount) {
+  if (!ctx.value || !offering.siteBaseUrl) return;
+  const record = a && props.snapshot?.connections.find((c) => c.accountId === a.id);
+  if (a && !record) return;
+  const target = {
+    ...ctx.value,
+    providerId: p.providerId,
+    offeringId: offering.offeringId,
+    expectedProviderRevision: p.revision,
+  };
+  keyDialog.value = {
+    target:
+      a && record
+        ? { ...target, accountId: a.id, expectedRecordRevision: record.recordRevision }
+        : target,
+    label: a?.displayName ?? p.name + " / " + offering.name,
+    site: offering.siteBaseUrl,
+    editable: record
+      ? record.actions.editConnection?.state === "enabled"
+      : props.snapshot?.actions.createConnection?.state === "enabled",
+  };
+}
 function openGroup(id: string) {
   expanded.value = expanded.value.includes(id)
     ? expanded.value.filter((v) => v !== id)
@@ -249,11 +316,35 @@ function openGroup(id: string) {
               <small>{{ o.routes.length }} 个协议端点</small>
             </div>
             <button
+              v-if="p.templateKind === 'new-api' && o.siteBaseUrl"
+              class="outline-action"
+              @click="
+                catalog = {
+                  query: {
+                    providerId: p.providerId,
+                    offeringId: o.offeringId,
+                    expectedRevision: p.revision,
+                  },
+                  label: p.name + ' / ' + o.name,
+                }
+              "
+            >
+              站点模型目录
+            </button>
+            <button
               class="outline-action"
               :disabled="snapshot?.actions.createConnection?.state !== 'enabled'"
               @click="connection = { providerId: p.providerId, offeringId: o.offeringId }"
             >
               添加账号
+            </button>
+            <button
+              v-if="p.templateKind === 'new-api' && o.siteBaseUrl"
+              class="outline-action"
+              :disabled="snapshot?.actions.createConnection?.state !== 'enabled'"
+              @click="openKeys(p, o)"
+            >
+              从站点 Key 添加账号
             </button>
           </div>
           <div
@@ -264,6 +355,18 @@ function openGroup(id: string) {
             <strong>{{ a.displayName }}</strong
             ><span class="method-chip">API Key</span>
             <button class="outline-action" @click="changeBinding(a)">变更绑定</button>
+            <button
+              v-if="p.templateKind === 'new-api' && o.siteBaseUrl"
+              class="outline-action"
+              :disabled="
+                !a.enabled ||
+                a.credentialState !== 'available' ||
+                snapshot?.backend.active === 'unavailable'
+              "
+              @click="openKeys(p, o, a)"
+            >
+              Key 与用量
+            </button>
             <button
               class="outline-action"
               :disabled="
@@ -319,6 +422,13 @@ function openGroup(id: string) {
       :provider="editor.provider"
       :account="editor.account"
       @close="editor = null"
+      @saved="changed"
+    />
+    <NewApiSiteCatalog v-if="catalog" v-bind="catalog" @close="catalog = null" />
+    <NewApiAccountDialog
+      v-if="keyDialog"
+      v-bind="keyDialog"
+      @close="keyDialog = null"
       @saved="changed"
     />
     <ConnectionDialog

@@ -156,6 +156,13 @@ export interface EventChannel<TEvent> {
 }
 
 export interface IServiceTransport extends IProductServiceLifecycle {
+  requestRaw<T>(
+    operation: Pick<ApiOperation<T, unknown>, "method" | "path" | "body"> & {
+      headers(input: T): Record<string, string>;
+    },
+    input: T,
+    signal?: AbortSignal,
+  ): Promise<Response>;
   request<TInput, TOutput>(
     operation: ApiOperation<TInput, TOutput>,
     input: TInput,

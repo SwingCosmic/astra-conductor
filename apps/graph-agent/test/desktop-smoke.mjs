@@ -30,6 +30,7 @@ app.whenReady().then(async () => {
   const secret = "FICTIONAL-GRAPH-STAGE-ONE-SECRET";
   const modelSecret = "FICTIONAL-GRAPH-MODEL-KEY";
   const prompts = [];
+  let finishStreamingReply;
   let releaseDelayedReply;
   let signalDelayedRequest;
   const delayedRequest = new Promise((resolve) => {
@@ -72,13 +73,39 @@ app.whenReady().then(async () => {
               if (url.pathname === "/v1/models")
                 return Response.json({ object: "list", data: [{ id: "fixture-chat" }] });
               assert.equal(url.pathname, "/v1/chat/completions");
-              const request = JSON.parse(init.body);
+              const request = JSON.parse(
+                typeof init.body === "string" ? init.body : new TextDecoder().decode(init.body),
+              );
               assert.equal(request.model, "fixture-chat");
               assert.equal(request.temperature, 0.25);
               assert.equal(request.max_completion_tokens, 128);
               const questions = request.messages.filter((item) => item.role === "user");
               assert.equal(questions.length, 1);
               prompts.push(questions[0].content);
+              if (prompts.length === 1) {
+                assert.equal(request.stream, true);
+                const body = new ReadableStream({
+                  start(controller) {
+                    const send = (data) =>
+                      controller.enqueue(
+                        new TextEncoder().encode(
+                          "data: " +
+                            (typeof data === "string" ? data : JSON.stringify(data)) +
+                            "\n\n",
+                        ),
+                      );
+                    send({ choices: [{ delta: { reasoning_content: "虚构的公开思考" } }] });
+                    send({ choices: [{ delta: { content: "**答复 1**" } }] });
+                    finishStreamingReply = () => {
+                      send({ choices: [{ delta: { content: " 完成" }, finish_reason: "stop" }] });
+                      send({ choices: [], usage: { prompt_tokens: 10, completion_tokens: 2 } });
+                      send("[DONE]");
+                      controller.close();
+                    };
+                  },
+                });
+                return new Response(body, { headers: { "Content-Type": "text/event-stream" } });
+              }
               if (questions[0].content === "取消等待")
                 await new Promise((resolve) => {
                   releaseDelayedReply = resolve;
@@ -299,13 +326,32 @@ app.whenReady().then(async () => {
     await evaluate(`
       button(document,'前往测试对话').click();
       await wait(() => document.body.innerText.includes('fixture-chat') && document.querySelector('[aria-label="消息草稿"]'));
-      for (const sequence of [1,2]) {
+    `);
+    for (const sequence of [1, 2]) {
+      await evaluate(`
+        const sequence = ${sequence};
         fill('[aria-label="消息草稿"]','问题 ' + sequence);
         await wait(() => !document.querySelector('[aria-label="发送消息"]').disabled);
         document.querySelector('[aria-label="发送消息"]').click();
         await wait(() => document.body.innerText.includes('答复 ' + sequence));
-        await wait(()=>document.body.innerText.includes(sequence===1?'0.000005 USD':'0.015 USD'));
+      `);
+      if (sequence === 1) {
+        await evaluate(`
+          await wait(()=>document.querySelector('.stream-message strong')?.textContent==='答复 1');
+          const toggle=document.querySelector('.ai-activity__summary');
+          if(toggle?.getAttribute('aria-expanded')!=='false') throw Error('思考节点未折叠');
+          toggle.click();
+          await wait(()=>!!document.querySelector('.ai-activity__thought'));
+          if(!document.querySelector('[aria-label="停止回复"]'))throw Error('上游结束前未显示正文');
+        `);
+        await captureAfterPaint("graph-test-chat-streaming.png");
+        finishStreamingReply();
       }
+      await evaluate(
+        `await wait(()=>document.body.innerText.includes('${sequence === 1 ? "0.000005 USD" : "0.015 USD"}'));`,
+      );
+    }
+    await evaluate(`
       if (document.body.innerText.includes('问题 1') || document.body.innerText.includes('答复 1')) throw new Error('chat-history-retained');
     `);
     assert.deepEqual(prompts, ["问题 1", "问题 2"]);

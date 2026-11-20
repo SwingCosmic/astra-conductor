@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
-import type { ModelOverrides, ModelType, RateCard } from "@astra-conductor/contract/graph-agent";
+import type {
+  EndpointProtocol,
+  ModelOverrides,
+  ModelType,
+  RateCard,
+} from "@astra-conductor/contract/graph-agent";
 import { AppError, type DiscoveredModel } from "@astra-conductor/core/internal";
 import { bundledModelPack, validateModelPack, type ValidatedPack } from "./model-pack.js";
 
@@ -15,11 +20,12 @@ CREATE TABLE model_state (id INTEGER PRIMARY KEY CHECK(id=1), settings_revision 
 `;
 
 export interface CatalogKey {
+  providerId: string;
   accountId: string;
   offeringId: string;
-  protocolRouteId: string;
+  protocolFamily: string;
   visibilityRef: string;
-  bindingRevision: string;
+  familyBindingRevision: string;
 }
 export interface RemoteCatalog {
   revision: string;
@@ -29,7 +35,7 @@ export interface RemoteCatalog {
 export interface ConfigKey {
   providerId: string;
   offeringId: string;
-  protocolRouteId: string;
+  protocol: EndpointProtocol;
   modelId: string;
   accountId: string | null;
 }
@@ -56,8 +62,8 @@ export interface ConfigRow extends ConfigKey {
 interface ConfigRecord extends Omit<ConfigRow, "document"> {
   configJson: string;
 }
-const columns = `id,provider_id AS providerId,offering_id AS offeringId,route_id AS protocolRouteId,upstream_model_id AS modelId,account_id AS accountId,account_identity AS accountIdentity,model_type AS modelType,config_json AS configJson`;
-const predicate = `provider_id=@providerId AND offering_id=@offeringId AND route_id=@protocolRouteId AND upstream_model_id=@modelId AND account_id IS @accountId`;
+const columns = `id,provider_id AS providerId,offering_id AS offeringId,route_id AS protocol,upstream_model_id AS modelId,account_id AS accountId,account_identity AS accountIdentity,model_type AS modelType,config_json AS configJson`;
+const predicate = `provider_id=@providerId AND offering_id=@offeringId AND route_id=@protocol AND upstream_model_id=@modelId AND account_id IS @accountId`;
 function config(row: ConfigRecord): ConfigRow {
   const { configJson, ...values } = row;
   return { ...values, document: JSON.parse(configJson) as ModelConfigDocument };
@@ -67,38 +73,51 @@ export interface ModelState {
   active: string;
   previous: string | null;
   selectedId: number | null;
-  operationId: string | null;
-  profileId: string | null;
+  operation: string | null;
+  ioProfile: string | null;
   bindingRevision: string | null;
 }
 export function settingsConflict(): never {
   throw new AppError("conflict", "配置修订已变更，请重新读取后再保存");
 }
+export const BUNDLED_PACK_TOKEN = "$bundled";
+
 export class GraphModelRepository {
   private cachedPack?: ValidatedPack;
   constructor(private readonly db: Database.Database) {
     this.db.transaction(() => {
       if (this.db.prepare("SELECT 1 FROM model_state WHERE id=1").get()) return;
-      const pack = bundledModelPack();
-      this.savePack(pack);
       this.db
         .prepare("INSERT INTO model_state(id,settings_revision,active_pack) VALUES(1,?,?)")
-        .run("0", pack.document.revision);
-      this.cachedPack = pack;
+        .run("0", BUNDLED_PACK_TOKEN);
     })();
   }
-  state(): ModelState {
+  private rawState(): ModelState {
     return this.db
       .prepare(
-        `SELECT settings_revision AS revision,active_pack AS active,previous_pack AS previous,selected_config_id AS selectedId,operation_id AS operationId,profile_id AS profileId,binding_revision AS bindingRevision FROM model_state WHERE id=1`,
+        `SELECT settings_revision AS revision,active_pack AS active,previous_pack AS previous,selected_config_id AS selectedId,operation_id AS operation,profile_id AS ioProfile,binding_revision AS bindingRevision FROM model_state WHERE id=1`,
       )
       .get() as ModelState;
   }
+  state(): ModelState {
+    const raw = this.rawState();
+    const bundledRevision = bundledModelPack().document.revision;
+    return {
+      ...raw,
+      active: raw.active === BUNDLED_PACK_TOKEN ? bundledRevision : raw.active,
+      previous: raw.previous === BUNDLED_PACK_TOKEN ? bundledRevision : raw.previous,
+    };
+  }
   activePack(active = this.state().active): ValidatedPack {
+    const bundled = bundledModelPack();
+    if (active === BUNDLED_PACK_TOKEN || active === bundled.document.revision) {
+      return bundled;
+    }
     if (this.cachedPack?.document.revision !== active) {
       const row = this.db
         .prepare("SELECT digest,content_json FROM model_packs WHERE revision=?")
-        .get(active) as { digest: string; content_json: string };
+        .get(active) as { digest: string; content_json: string } | undefined;
+      if (!row) return bundled;
       const pack = validateModelPack(JSON.parse(row.content_json));
       if (pack.document.revision !== active || pack.digest !== row.digest)
         throw new AppError("storage", "业务库的活动预置与保存的修订或摘要不符");
@@ -106,8 +125,14 @@ export class GraphModelRepository {
     }
     return this.cachedPack;
   }
-  private savePack(pack: ValidatedPack) {
+  private savePack(pack: ValidatedPack): string {
+    const bundled = bundledModelPack();
     const { revision } = pack.document;
+    if (revision === bundled.document.revision) {
+      if (pack.digest !== bundled.digest)
+        throw new AppError("validation", "此预置修订已存在且内容不同");
+      return BUNDLED_PACK_TOKEN;
+    }
     const old = this.db.prepare("SELECT digest FROM model_packs WHERE revision=?").get(revision) as
       | { digest: string }
       | undefined;
@@ -117,16 +142,16 @@ export class GraphModelRepository {
       this.db
         .prepare("INSERT INTO model_packs VALUES(?,?,?,?)")
         .run(revision, 2, pack.digest, JSON.stringify(pack.document));
+    return revision;
   }
   activate(pack?: ValidatedPack) {
-    const state = this.state();
-    if (pack) this.savePack(pack);
-    const revision = pack?.document.revision ?? state.previous;
-    if (!revision) throw new AppError("not-found", "没有可回滚的预置清单");
-    if (revision !== state.active)
+    const state = this.rawState();
+    const nextToken = pack ? this.savePack(pack) : state.previous;
+    if (!nextToken) throw new AppError("not-found", "没有可回滚的预置清单");
+    if (nextToken !== state.active)
       this.db
         .prepare("UPDATE model_state SET previous_pack=active_pack,active_pack=? WHERE id=1")
-        .run(revision);
+        .run(nextToken);
   }
   simulate<T>(readCandidate: () => T): T {
     this.db.exec("SAVEPOINT model_preview");
@@ -148,22 +173,31 @@ export class GraphModelRepository {
   getCatalog(key: CatalogKey): RemoteCatalog | undefined {
     const row = this.db
       .prepare(
-        `SELECT catalog_revision AS revision,retrieved_at AS fetchedAt,entries_json AS json FROM model_catalogs WHERE visibility_ref=@visibilityRef AND account_id=@accountId AND offering_id=@offeringId AND route_id=@protocolRouteId AND binding_revision=@bindingRevision`,
+        `SELECT catalog_revision AS revision,retrieved_at AS fetchedAt,entries_json AS json FROM model_catalogs WHERE visibility_ref=@visibilityRef AND provider_id=@providerId AND account_id=@accountId AND offering_id=@offeringId AND protocol_family_id=@protocolFamily AND family_binding_revision=@familyBindingRevision`,
       )
       .get(key) as { revision: string; fetchedAt: string; json: string } | undefined;
     if (row)
       return { revision: row.revision, fetchedAt: row.fetchedAt, entries: JSON.parse(row.json) };
   }
+  removeCatalogs(keys: CatalogKey[]) {
+    if (!keys.length) return;
+    const remove = this.db.prepare(
+      "DELETE FROM model_catalogs WHERE visibility_ref=@visibilityRef AND provider_id=@providerId AND account_id=@accountId AND offering_id=@offeringId AND protocol_family_id=@protocolFamily AND family_binding_revision=@familyBindingRevision",
+    );
+    this.db.transaction(() => {
+      for (const key of keys) remove.run(key);
+    })();
+  }
   saveCatalog(key: CatalogKey, entries: DiscoveredModel[]) {
     this.db.transaction(() => {
       this.db
         .prepare(
-          `DELETE FROM model_catalogs WHERE visibility_ref=@visibilityRef AND account_id=@accountId AND offering_id=@offeringId AND route_id=@protocolRouteId`,
+          `DELETE FROM model_catalogs WHERE visibility_ref=@visibilityRef AND provider_id=@providerId AND account_id=@accountId AND offering_id=@offeringId AND protocol_family_id=@protocolFamily`,
         )
         .run(key);
       this.db
         .prepare(
-          "INSERT INTO model_catalogs VALUES(@visibilityRef,@accountId,@offeringId,@protocolRouteId,@bindingRevision,@now,@revision,@entries)",
+          "INSERT INTO model_catalogs VALUES(@visibilityRef,@providerId,@offeringId,@accountId,@protocolFamily,@familyBindingRevision,@now,@revision,@entries)",
         )
         .run({
           ...key,
@@ -189,7 +223,7 @@ export class GraphModelRepository {
   list(
     providerId: string,
     offeringId: string,
-    protocolRouteId: string,
+    protocol: EndpointProtocol,
     accountId: string | null,
   ): ConfigRow[] {
     return (
@@ -197,15 +231,15 @@ export class GraphModelRepository {
         .prepare(
           `SELECT ${columns} FROM model_configs WHERE provider_id=? AND offering_id=? AND route_id=? AND account_id IS ?`,
         )
-        .all(providerId, offeringId, protocolRouteId, accountId) as ConfigRecord[]
+        .all(providerId, offeringId, protocol, accountId) as ConfigRecord[]
     ).map(config);
   }
   publicRoutes() {
     return this.db
       .prepare(
-        "SELECT DISTINCT provider_id AS providerId,offering_id AS offeringId,route_id AS protocolRouteId FROM model_configs WHERE account_id IS NULL",
+        "SELECT DISTINCT provider_id AS providerId,offering_id AS offeringId,route_id AS protocol FROM model_configs WHERE account_id IS NULL",
       )
-      .all() as Array<{ providerId: string; offeringId: string; protocolRouteId: string }>;
+      .all() as Array<{ providerId: string; offeringId: string; protocol: EndpointProtocol }>;
   }
   save(
     key: ConfigKey,
@@ -226,7 +260,7 @@ export class GraphModelRepository {
     return Number(
       this.db
         .prepare(
-          "INSERT INTO model_configs(provider_id,offering_id,route_id,upstream_model_id,account_id,account_identity,model_type,config_json) VALUES(@providerId,@offeringId,@protocolRouteId,@modelId,@accountId,@accountIdentity,@modelType,@json)",
+          "INSERT INTO model_configs(provider_id,offering_id,route_id,upstream_model_id,account_id,account_identity,model_type,config_json) VALUES(@providerId,@offeringId,@protocol,@modelId,@accountId,@accountIdentity,@modelType,@json)",
         )
         .run({ ...key, accountIdentity, modelType, json }).lastInsertRowid,
     );

@@ -51,12 +51,12 @@ export interface RateCard {
   scope?: {
     providerId: string;
     offeringId: string;
-    operationId: string;
+    operation: string;
     upstreamModelId?: string;
     access?: "api" | "subscription";
-    planId?: string;
+    planKey?: string;
     region?: string;
-    protocolRouteId?: string;
+    protocol?: string;
   };
   subscriptionFee?: { amount: string; period: "month" | "year" };
 }

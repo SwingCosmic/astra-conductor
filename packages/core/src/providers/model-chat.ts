@@ -1,116 +1,267 @@
-import type { JsonValue, ModelParameters, ModelRoute } from "@astra-conductor/contract/common";
-import { GROK_BUILD_REASONING_INCLUDE } from "@omniroute/open-sse/config/grokBuild.ts";
-import { readModelJson } from "./model-response.js";
+import type {
+  EndpointProtocol,
+  JsonValue,
+  ModelFacts,
+  ModelParameters,
+  ModelRoute,
+} from "@astra-conductor/contract/common";
 import { AppError } from "../errors.js";
 import type { Account, CredentialEnvelope } from "../models.js";
 import type { HttpPort } from "../ports.js";
-import { modelAuthorization, type ConnectionProviderSource } from "./model-routes.js";
-import { usesLegacyOutputLimitField } from "./model-destination.js";
+import { getBuiltInModelPolicy } from "./catalog.js";
 import {
-  rejectUnsupportedGrokEffort,
-  grokBuildFallbackEffort,
-} from "./grok-build/model-profile.js";
+  applyAsyncPolicyChain,
+  applyPolicyChain,
+  validateNativeBody,
+  type ActualChargeReceipt,
+  type ModelChatUsage,
+  type ProtocolRequestContext,
+  type ProtocolRequestDraft,
+  type ProviderOfferingModelPolicy,
+  type RequestPlan,
+  type RequestPlanContext,
+} from "./model-policy.js";
 import {
-  decimalAmount,
-  isGenerationId,
-  openRouterReceiptRoute,
-  receiptCurrency,
-} from "./model-chat-receipt.js";
+  applyUserExtensions,
+  compileModelRequestPlan,
+  resolveEffectiveModelRule,
+} from "./model-request-rule.js";
+import { decimalAmount } from "./model-response.js";
+import {
+  applyModelRouteQuery,
+  modelAuthorization,
+  type ConnectionProviderSource,
+} from "./model-routes.js";
 
 const maxResponseBytes = 8 * 1024 * 1024;
 const previewPrompt = "Hello from GraphAgent.";
 
-function compile(
+export interface ModelChatOptions {
+  readonly facts?: Partial<ModelFacts>;
+  readonly policy?: ProviderOfferingModelPolicy;
+  readonly extraPolicies?: readonly ProviderOfferingModelPolicy[];
+  readonly receiptPolicies?: readonly ProviderOfferingModelPolicy[];
+  readonly catalogModels?: RequestPlanContext["catalogModels"];
+  readonly outputMode?: ModelFacts["reasoningOutputMode"];
+}
+
+function normalizeChatOptions(
+  outputModeOrOptions?: ModelFacts["reasoningOutputMode"] | ModelChatOptions,
+): ModelChatOptions {
+  if (!outputModeOrOptions) return {};
+  if (typeof outputModeOrOptions === "string") {
+    return { outputMode: outputModeOrOptions, facts: { reasoningOutputMode: outputModeOrOptions } };
+  }
+  if (outputModeOrOptions.outputMode && !outputModeOrOptions.facts?.reasoningOutputMode) {
+    return {
+      ...outputModeOrOptions,
+      facts: { ...outputModeOrOptions.facts, reasoningOutputMode: outputModeOrOptions.outputMode },
+    };
+  }
+  return outputModeOrOptions;
+}
+
+function resolveChatPolicy(
   account: Account,
+  source: ConnectionProviderSource | undefined,
+  options: ModelChatOptions,
+): ProviderOfferingModelPolicy | undefined {
+  if (options.policy) return options.policy;
+  return (
+    getBuiltInModelPolicy({
+      providerId: account.provider,
+      offeringId: account.offeringId,
+      templateKind: source?.templateKind?.(account.provider),
+    }) ?? undefined
+  );
+}
+
+/** Step 3a: Pure protocol encoder for openai-chat, openai-responses, and anthropic-messages. */
+export function encodeProtocolDraft(
+  plan: RequestPlan,
   route: ModelRoute,
-  modelId: string,
-  parameters: ModelParameters,
   prompt: string,
-) {
-  const codex = account.provider === "codex" && account.offeringId === "codex";
-  const grok = account.provider === "grok-build";
-  const { effort, maxOutputTokens, temperature, topP } = parameters;
+  facts: Partial<ModelFacts> = {},
+): ProtocolRequestDraft {
+  const { maxOutputTokens, temperature, topP } = plan.parameters;
+  const effort =
+    plan.thinkingActive && !plan.suppressEffortField && !plan.consumedParameters.includes("effort")
+      ? plan.parameters.effort
+      : null;
+  const outputMode = facts.reasoningOutputMode;
   const messages = [{ role: "user", content: prompt }];
-  const body: Record<string, JsonValue> = { model: modelId };
+  const body: Record<string, JsonValue> = { model: plan.upstreamModelId };
   let relativePath: string;
-  switch (route.protocolRouteId) {
+
+  switch (route.protocol) {
     case "openai-chat":
       relativePath = "chat/completions";
       body.messages = messages;
       if (effort !== null) body.reasoning_effort = effort;
-      if (maxOutputTokens !== null)
-        body[usesLegacyOutputLimitField(account, route) ? "max_tokens" : "max_completion_tokens"] =
-          maxOutputTokens;
+      if (maxOutputTokens !== null) {
+        body[plan.outputLimitField ?? "max_completion_tokens"] = maxOutputTokens;
+      }
       break;
     case "openai-responses":
       relativePath = "responses";
       body.input = [{ role: "user", content: [{ type: "input_text", text: prompt }] }];
       body.store = false;
       if (effort !== null) body.reasoning = { effort };
-      if (codex) {
-        if (maxOutputTokens != null || temperature != null || topP != null) {
-          throw new AppError("validation", "Codex 订阅接口不接受最大输出 token、温度或 top P");
-        }
-        body.instructions = "Answer the user's question.";
-        body.stream = true;
-      } else if (maxOutputTokens !== null) body.max_output_tokens = maxOutputTokens;
-      if (grok) {
-        body.stream = true;
-        body.include = [GROK_BUILD_REASONING_INCLUDE];
-        if (effort) rejectUnsupportedGrokEffort(modelId, effort);
-        if (!effort) {
-          const fallback = grokBuildFallbackEffort(modelId);
-          if (fallback) body.reasoning = { effort: fallback };
-        }
+      if (
+        plan.thinkingActive &&
+        !plan.suppressSummaryRequest &&
+        effort !== "none" &&
+        outputMode === "summary"
+      ) {
+        body.reasoning = { ...(effort ? { effort } : {}), summary: "auto" };
       }
+      if (maxOutputTokens !== null) body.max_output_tokens = maxOutputTokens;
       break;
     case "anthropic-messages":
       relativePath = "messages";
       body.messages = messages;
       body.max_tokens = maxOutputTokens ?? 1024;
       if (effort !== null) body.output_config = { effort };
+      if (plan.thinkingActive && !plan.suppressSummaryRequest && outputMode === "summary") {
+        body.thinking = { type: "adaptive", display: "summarized" };
+      }
       break;
     default:
       throw new AppError("capability-unavailable", "所选路由不支持测试对话");
   }
+
   if (temperature != null) body.temperature = temperature;
   if (topP != null) body.top_p = topP;
-  const headers: Record<string, string> = {
-    "content-type": "application/json",
-    accept: body.stream === true ? "text/event-stream" : "application/json",
+
+  return {
+    relativePath,
+    body,
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json",
+    },
+    query: { ...(route.familyPolicy?.query ?? {}) },
   };
-  return { relativePath, body, headers };
 }
 
+function compileChatRequest(
+  account: Account,
+  route: ModelRoute,
+  modelId: string,
+  parameters: ModelParameters,
+  prompt: string,
+  source?: ConnectionProviderSource,
+  outputModeOrOptions?: ModelFacts["reasoningOutputMode"] | ModelChatOptions,
+) {
+  const options = normalizeChatOptions(outputModeOrOptions);
+  const policy = resolveChatPolicy(account, source, options);
+  const facts = options.facts ?? {};
+
+  // Step 1 + Step 2: Build base plan and run transformRequestPlan chain
+  const plan = compileModelRequestPlan({
+    providerId: account.provider,
+    offeringId: account.offeringId,
+    route,
+    localModelId: modelId,
+    facts,
+    parameters,
+    policy,
+    extraPolicies: options.extraPolicies,
+    catalogModels: options.catalogModels,
+  });
+
+  // Step 3: Encode standard protocol draft and run transformProtocolRequest chain
+  const baseDraft = encodeProtocolDraft(plan, route, prompt, facts);
+  const draftContext: ProtocolRequestContext = {
+    providerId: account.provider,
+    offeringId: account.offeringId,
+    protocol: route.protocol,
+    route,
+    plan,
+    facts,
+    requestRule: route.requestRule,
+    prompt,
+  };
+  const draft = applyPolicyChain(baseDraft, draftContext, [
+    ...(options.extraPolicies ?? []).map((p) => p.transformProtocolRequest),
+    policy?.transformProtocolRequest,
+    applyUserExtensions,
+  ]);
+
+  // Verify the compiled draft satisfies all declared RequestPlan constraints
+  validateNativeBody(draft.body, plan, route.protocol);
+
+  const { rule, hasByModel } = resolveEffectiveModelRule(modelId, route.requestRule);
+  const ruleSources = [
+    ...(route.familyPolicy ? ["family"] : []),
+    ...(rule ? ["endpoint"] : []),
+    ...(hasByModel ? ["model"] : []),
+    ...(policy?.transformRequestPlan || policy?.transformProtocolRequest
+      ? ["policy:" + policy.offeringId]
+      : []),
+  ];
+
+  return { plan, draft, policy, options, ruleSources };
+}
+
+export interface CompiledModelChatPreview {
+  readonly method: "POST";
+  readonly baseUrl: string;
+  readonly relativePath: string;
+  readonly upstreamModelId: string;
+  readonly consumedParameters: ("effort" | "window")[];
+  readonly ruleSources: string[];
+  readonly headers: Record<string, string>;
+  readonly body: Record<string, JsonValue>;
+  readonly warnings: { code: string; message: string }[];
+}
+
+/** Step 4a: Pure preview (zero credential reads, strict DTO fields with no leaked internal headers). */
 export function previewModelChat(
   account: Account,
   route: ModelRoute,
   modelId: string,
   parameters: ModelParameters,
   source?: ConnectionProviderSource,
-) {
-  const compiled = compile(account, route, modelId, parameters, previewPrompt);
+  outputModeOrOptions?: ModelFacts["reasoningOutputMode"] | ModelChatOptions,
+): CompiledModelChatPreview {
+  const { plan, draft, policy, ruleSources } = compileChatRequest(
+    account,
+    route,
+    modelId,
+    parameters,
+    previewPrompt,
+    source,
+    outputModeOrOptions,
+  );
+  const url = applyDraftQuery(new URL(route.baseUrl), draft.query);
+  const authHeaders = modelAuthorization(
+    account,
+    null,
+    route,
+    plan.upstreamModelId,
+    "chat",
+    source,
+    policy,
+  );
   return {
-    ...compiled,
-    headers: Object.fromEntries(
-      mergeRequestHeaders(
-        compiled.headers,
-        modelAuthorization(account, null, route, modelId, "chat", source),
-      ),
-    ),
-    method: "POST" as const,
+    method: "POST",
     baseUrl: route.baseUrl,
-    upstreamModelId: modelId,
-    warnings:
-      parameters.contextWindow === null
-        ? []
-        : [
-            {
-              code: "context-window",
-              message: "上下文窗口作为本地配置保存，标准聊天协议没有对应的请求字段",
-            },
-          ],
+    relativePath: draft.relativePath + url.search,
+    upstreamModelId: plan.upstreamModelId,
+    consumedParameters: [...plan.consumedParameters],
+    ruleSources,
+    headers: Object.fromEntries(mergeRequestHeaders(draft.headers, authHeaders)),
+    body: draft.body,
+    warnings: [...plan.warnings],
   };
+}
+
+function applyDraftQuery(url: URL, query: Record<string, string>): URL {
+  for (const [name, value] of Object.entries(query)) {
+    url.searchParams.set(name, value);
+  }
+  return url;
 }
 
 function replyError(message: string): never {
@@ -134,8 +285,9 @@ function blocks(value: unknown, type: string): string {
 
 function responsesText(value: unknown): string {
   const response = object(value);
-  if (response.status && !["completed", "incomplete"].includes(String(response.status)))
+  if (response.status && !["completed", "incomplete"].includes(String(response.status))) {
     return replyError("模型服务未完成本次回答");
+  }
   if (!Array.isArray(response.output)) return "";
   return response.output
     .map(object)
@@ -144,7 +296,7 @@ function responsesText(value: unknown): string {
     .join("");
 }
 
-function readReply(protocol: ModelRoute["protocolRouteId"], value: unknown): string {
+function readReply(protocol: EndpointProtocol, value: unknown): string {
   const result = object(value);
   if (protocol === "anthropic-messages") return blocks(result.content, "text");
   if (protocol === "openai-responses") return responsesText(result);
@@ -166,22 +318,25 @@ function json(text: string): unknown {
 
 export interface ModelChatResult {
   text: string;
-  usage?: {
-    inputTokens?: number;
-    outputTokens?: number;
-    cacheReadTokens?: number;
-    cacheWriteTokens?: number;
-    reasoningTokens?: number;
-  };
-  actualCharge?: { amount: string; currency: string; eventId?: string };
-  receiptLookup?: { generationId: string };
+  usage?: ModelChatUsage;
+  actualCharge?: ActualChargeReceipt;
+  responseId?: string;
 }
 
 function count(value: unknown): number | undefined {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 }
 
-function measuredReply(text: string, value: unknown, route: ModelRoute): ModelChatResult {
+export function measuredReply(
+  text: string,
+  value: unknown,
+  route: ModelRoute,
+  options?: {
+    providerId?: string;
+    offeringId?: string;
+    policies?: readonly (ProviderOfferingModelPolicy | undefined)[];
+  },
+): ModelChatResult {
   const response = object(value);
   const usage = object(response.usage);
   const inputDetails = object(usage.input_tokens_details ?? usage.prompt_tokens_details);
@@ -193,22 +348,42 @@ function measuredReply(text: string, value: unknown, route: ModelRoute): ModelCh
     usage.cache_creation_input_tokens ?? inputDetails.cache_write_tokens,
   );
   let inputTokens = count(usage.input_tokens ?? usage.prompt_tokens);
-  if (route.protocolRouteId === "anthropic-messages" && inputTokens !== undefined)
+  if (route.protocol === "anthropic-messages" && inputTokens !== undefined) {
     inputTokens = count(inputTokens + (cacheReadTokens ?? 0) + (cacheWriteTokens ?? 0));
+  }
   const outputTokens = count(usage.output_tokens ?? usage.completion_tokens);
   const reasoningTokens = count(outputDetails.reasoning_tokens);
-  const tokens = {
+  const baseUsage: ModelChatUsage = {
     ...(inputTokens !== undefined && { inputTokens }),
     ...(outputTokens !== undefined && { outputTokens }),
     ...(cacheReadTokens !== undefined && { cacheReadTokens }),
     ...(cacheWriteTokens !== undefined && { cacheWriteTokens }),
     ...(reasoningTokens !== undefined && { reasoningTokens }),
   };
-  const result: ModelChatResult = { text, ...(Object.keys(tokens).length && { usage: tokens }) };
+
+  const finalUsage = options?.policies?.length
+    ? applyPolicyChain(
+        baseUsage,
+        {
+          providerId: options.providerId ?? "",
+          offeringId: options.offeringId ?? "",
+          protocol: route.protocol,
+          route,
+          rawResponse: value,
+        },
+        options.policies.map((p) => p?.transformUsage),
+      )
+    : baseUsage;
+
+  const result: ModelChatResult = {
+    text,
+    ...(Object.keys(finalUsage).length && { usage: finalUsage }),
+  };
+
   const billing = object(response.billing);
   const charge = object(billing.actual_charge);
   const raw = charge.amount ?? usage.cost;
-  const currency = charge.currency ?? usage.currency ?? receiptCurrency(route);
+  const currency = charge.currency ?? usage.currency;
   const amount = decimalAmount(raw);
   if (typeof currency === "string" && /^[A-Z]{3}$/.test(currency) && amount !== undefined) {
     const id = charge.event_id ?? response.id;
@@ -218,8 +393,9 @@ function measuredReply(text: string, value: unknown, route: ModelRoute): ModelCh
       ...(typeof id === "string" && /^[a-zA-Z0-9_:-]{1,128}$/.test(id) && { eventId: id }),
     };
   }
-  if (!result.actualCharge && openRouterReceiptRoute(route) && isGenerationId(response.id))
-    result.receiptLookup = { generationId: response.id };
+  if (typeof response.id === "string" && /^[a-zA-Z0-9_:-]{1,128}$/.test(response.id)) {
+    result.responseId = response.id;
+  }
   return result;
 }
 
@@ -228,7 +404,8 @@ async function readResponse(
   response: Response,
   route: ModelRoute,
   stream: boolean,
-): Promise<ModelChatResult> {
+  usageOptions?: Parameters<typeof measuredReply>[3],
+): Promise<{ result: ModelChatResult; rawResponse: unknown }> {
   const reader = response.body?.getReader();
   if (!reader) return replyError("模型服务返回了空响应");
   const decoder = new TextDecoder();
@@ -254,17 +431,31 @@ async function readResponse(
           .join("\n");
         if (!data || data === "[DONE]") continue;
         const event = object(json(data));
-        if (event.type === "response.output_text.delta" && typeof event.delta === "string")
+        if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
           deltas += event.delta;
-        if (event.type === "response.completed")
-          return measuredReply(responsesText(event.response) || deltas, event.response, route);
-        if (["error", "response.failed", "response.incomplete"].includes(String(event.type)))
+        }
+        if (event.type === "response.completed") {
+          return {
+            result: measuredReply(
+              responsesText(event.response) || deltas,
+              event.response,
+              route,
+              usageOptions,
+            ),
+            rawResponse: event.response,
+          };
+        }
+        if (["error", "response.failed", "response.incomplete"].includes(String(event.type))) {
           return replyError("模型服务未完成本次回答");
+        }
       }
     }
     if (stream) return replyError("模型流在回答完成前结束");
     const value = json(buffer);
-    return measuredReply(readReply(route.protocolRouteId, value), value, route);
+    return {
+      result: measuredReply(readReply(route.protocol, value), value, route, usageOptions),
+      rawResponse: value,
+    };
   } finally {
     if (!done) await reader.cancel().catch(() => undefined);
     reader.releaseLock();
@@ -279,6 +470,7 @@ function rejectStatus(status: number): never {
   throw new AppError("upstream", message, status >= 500);
 }
 
+/** Step 4b: Host-generated single-turn chat send with auth, usage, and optional receipt chains. */
 export async function sendModelChatDetailed(
   http: HttpPort,
   account: Account,
@@ -289,45 +481,111 @@ export async function sendModelChatDetailed(
   prompt: string,
   signal: AbortSignal,
   source?: ConnectionProviderSource,
+  outputModeOrOptions?: ModelFacts["reasoningOutputMode"] | ModelChatOptions,
 ): Promise<ModelChatResult> {
-  const { relativePath, headers, body } = compile(account, route, modelId, parameters, prompt);
-  const url = route.baseUrl.replace(/\/+$/, "") + "/" + relativePath;
-  const auth = modelAuthorization(account, envelope, route, modelId, "chat", source);
+  const { plan, draft, policy, options } = compileChatRequest(
+    account,
+    route,
+    modelId,
+    parameters,
+    prompt,
+    source,
+    outputModeOrOptions,
+  );
+  const url = applyDraftQuery(
+    applyModelRouteQuery(
+      new URL(route.baseUrl.replace(/\/+$/, "") + "/" + draft.relativePath),
+      route,
+    ),
+    draft.query,
+  ).href;
+  const auth = modelAuthorization(
+    account,
+    envelope,
+    route,
+    plan.upstreamModelId,
+    "chat",
+    source,
+    policy,
+  );
+  const activePolicies = [...(options.extraPolicies ?? []), policy];
+
   try {
     signal.throwIfAborted();
     const response = await http.fetch(url, {
       method: "POST",
-      headers: mergeRequestHeaders(headers, auth),
+      headers: mergeRequestHeaders(draft.headers, auth),
       redirect: "manual",
       credentials: "omit",
-      body: JSON.stringify(body),
+      body: JSON.stringify(draft.body),
       signal,
     });
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
       rejectStatus(response.status);
     }
-    const result = await readResponse(response, route, body.stream === true);
+    const { result, rawResponse } = await readResponse(
+      response,
+      route,
+      draft.body.stream === true,
+      {
+        providerId: account.provider,
+        offeringId: account.offeringId,
+        policies: activePolicies,
+      },
+    );
     let text = result.text;
     signal.throwIfAborted();
     if (!text.trim()) return replyError("模型服务没有返回可显示的回答");
+
     // A gateway can echo request headers in a success payload as well as in an error.
     for (const secret of Object.values(envelope.secrets)) {
       if (typeof secret === "string" && secret) text = text.replaceAll(secret, "<redacted>");
     }
-    const eventId = result.actualCharge?.eventId;
-    if (
-      eventId &&
-      Object.values(envelope.secrets).some((s) => typeof s === "string" && s && eventId.includes(s))
-    )
-      delete result.actualCharge!.eventId;
-    if (
-      result.receiptLookup &&
+
+    const containsSecret = (value: string) =>
       Object.values(envelope.secrets).some(
-        (s) => typeof s === "string" && s && result.receiptLookup?.generationId.includes(s),
-      )
-    )
-      delete result.receiptLookup;
+        (secret) => typeof secret === "string" && secret && value.includes(secret),
+      );
+
+    if (result.actualCharge?.eventId && containsSecret(result.actualCharge.eventId)) {
+      delete result.actualCharge.eventId;
+    }
+    if (result.responseId && containsSecret(result.responseId)) {
+      delete result.responseId;
+    }
+
+    const receiptPolicies = [
+      ...(options.receiptPolicies ?? []),
+      ...(policy?.transformReceipt ? [policy] : []),
+    ];
+    if (!result.actualCharge && receiptPolicies.length) {
+      const receipt = await applyAsyncPolicyChain<
+        ActualChargeReceipt | null,
+        Parameters<NonNullable<ProviderOfferingModelPolicy["transformReceipt"]>>[1]
+      >(
+        null,
+        {
+          http,
+          account,
+          envelope,
+          route,
+          modelId: plan.upstreamModelId,
+          rawResponse,
+          generationId: result.responseId,
+          signal,
+          headers: auth,
+        },
+        receiptPolicies.map((p) => p.transformReceipt),
+      );
+      if (receipt) {
+        if (receipt.eventId && containsSecret(receipt.eventId)) {
+          delete receipt.eventId;
+        }
+        result.actualCharge = receipt;
+      }
+    }
+
     return { ...result, text };
   } catch (error) {
     if (signal.aborted) throw new AppError("network", "模型请求已取消或超时", true);

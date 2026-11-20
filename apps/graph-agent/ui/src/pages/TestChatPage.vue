@@ -1,13 +1,22 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import type {
   ChatCharge,
   ChatResultRequest,
   TestChatUsage,
 } from "@astra-conductor/contract/graph-agent";
-import { OmniChat, type ChatMessage } from "@lovekicher/omnichat";
+import {
+  OmniChat,
+  type ChatMessage,
+  type InputContext,
+  type MessageOperations,
+  type MessageSegment,
+} from "@lovekicher/omnichat";
 import "@lovekicher/omnichat/dist/omnichat.css";
 import { disabledReason, routeLabel, sameRoute, useModelView } from "./model-view";
+import ActivityPanel from "./ActivityPanel.vue";
+import { appendDelta, finishContent, type ActivityState } from "./chat-content";
+import { readNativeReply } from "../services/native-chat-reply";
 
 const emit = defineEmits<{ configure: [] }>();
 const { service, snapshot, loadError, reload } = useModelView();
@@ -61,7 +70,7 @@ async function readCharge() {
 }
 let stopReceipts: undefined | (() => void);
 onMounted(() => {
-  window.addEventListener("pagehide", releaseResult);
+  window.addEventListener("pagehide", leave);
   stopReceipts = service.subscribe((e) => {
     if (e.resync || e.reasons.includes("charge")) void readCharge();
   });
@@ -76,6 +85,7 @@ const identity = computed(() =>
     snapshot.value?.stamp.instanceId,
     snapshot.value?.backend.contextId,
     choice.value?.selection,
+    snapshot.value?.settingsRevision,
     catalog.value?.bindingRevision,
     choice.value?.availability.state,
   ]),
@@ -104,90 +114,170 @@ function resize() {
   textarea.value.style.height = `${Math.min(200, Math.max(64, textarea.value.scrollHeight))}px`;
 }
 watch(draft, resize, { flush: "post" });
-function keydown(event: KeyboardEvent) {
+function keydown(event: KeyboardEvent, context: InputContext) {
   if (event.key !== "Enter" || event.shiftKey || event.isComposing || event.keyCode === 229) return;
   event.preventDefault();
-  void send();
+  void submit(context);
 }
-function message(role: "user" | "assistant", text: string): ChatMessage {
-  return {
-    // Each submission replaces the pair, so role is a unique key even on HTTP LAN hosts.
-    id: role,
-    createUser: role,
-    role,
-    timestamp: Date.now(),
-    content: [{ type: "text", data: { text } }],
-  };
+const expanded = ref<Record<string, boolean>>({});
+let generation = 0;
+function finish(state: ActivityState) {
+  messages.value = messages.value.map((m) =>
+    m.role === "assistant" ? { ...m, content: finishContent(m.content, state) } : m,
+  );
 }
-async function send() {
-  const view = snapshot.value,
-    route = catalog.value,
-    prompt = draft.value.trim();
-  if (!view || !route || blocked.value || controller.value || !prompt) return;
-  const request = new AbortController();
+async function submit(context: InputContext) {
+  const prompt = draft.value.trim();
+  if (blocked.value || controller.value || !prompt) return;
+  const guard = identity.value;
   releaseResult();
-  controller.value = request;
+  expanded.value = {};
+  messages.value = [];
   error.value = "";
-  state.value = "正在等待模型回复…";
-  messages.value = [message("user", prompt)];
-  draft.value = "";
-  try {
-    const result = await service.testChat(
-      {
-        instanceId: view.stamp.instanceId,
-        contextId: view.backend.contextId,
-        expectedSettingsRevision: view.settingsRevision,
-        expectedBindingRevision: route.bindingRevision,
-        prompt,
-      },
-      request.signal,
-    );
-    if (request.signal.aborted) {
-      if (result.ok)
-        void service
-          .closeChatResult({
-            instanceId: view.stamp.instanceId,
-            contextId: view.backend.contextId,
-            callId: result.value.callId,
-          })
-          .catch(() => {});
-      return;
-    }
-    if (!result.ok) {
-      error.value = result.error.message;
-      state.value = "";
-      void reload();
-      return;
-    }
-    currentCall.value = {
+  await nextTick();
+  if (guard !== identity.value || blocked.value || controller.value) return;
+  context.currentText = prompt;
+  await context.sendMessage();
+}
+const operations: MessageOperations = {
+  async sendMessage(input) {
+    const view = snapshot.value,
+      route = catalog.value,
+      saved = choice.value;
+    const text = input.content.find((s) => s.type === "text")?.data.text;
+    if (!view || !route || !saved || blocked.value || controller.value || !text) return null;
+    const run = ++generation;
+    const user: ChatMessage = {
+      ...input,
+      createUser: currentUser.id,
+      id: "user-" + run,
+      role: "user",
+      timestamp: Date.now(),
+    };
+    const request = new AbortController();
+    controller.value = request;
+    state.value = "正在等待模型回复…";
+    draft.value = "";
+    const protocol = saved.selection.protocol;
+    const baseline = {
       instanceId: view.stamp.instanceId,
       contextId: view.backend.contextId,
-      callId: result.value.callId,
+      expectedBindingRevision: route.bindingRevision,
+      expectedSettingsRevision: view.settingsRevision,
     };
-    keepAlive = setInterval(() => void readCharge(), 60_000);
-    charge.value = result.value.charge;
-    usage.value = result.value.usage ?? null;
-    void readCharge();
-    messages.value = [...messages.value, message("assistant", result.value.text)];
-    state.value = "";
-  } catch {
-    if (!request.signal.aborted) {
-      error.value = "无法读取模型回复";
-      state.value = "";
+    const entry = route.entries.find((e) => e.selection.modelId === saved.selection.modelId);
+    const display = {
+      thinkingEnabled:
+        saved.parameters.thinkingEnabled !== false && entry?.fields.reasoningMode.value !== "none",
+      returnFullReasoning: saved.parameters.returnFullReasoning === true,
+      mode: entry?.fields.reasoningOutputMode?.value ?? ("unknown" as const),
+    };
+    async function receive() {
+      try {
+        if (
+          protocol !== "openai-chat" &&
+          protocol !== "openai-responses" &&
+          protocol !== "anthropic-messages"
+        )
+          throw Error("该端点不支持测试对话");
+        const preview = await service.previewRequest({
+          ...baseline,
+          selection: saved!.selection,
+          operation: "chat",
+          parameters: saved!.parameters,
+        });
+        if (request.signal.aborted || generation !== run) return;
+        if (!preview.ok) throw Error(preview.error.message);
+        const body = { ...preview.value.body };
+        if (!entry?.fields.unsupportedParameters.value?.includes("stream")) body.stream ??= true;
+        const native =
+          protocol === "openai-responses"
+            ? { ...body, input: [{ role: "user", content: [{ type: "input_text", text: text! }] }] }
+            : {
+                ...body,
+                messages: [{ role: "user", content: text! }],
+                ...(protocol === "openai-chat" &&
+                  body.stream &&
+                  !entry?.fields.unsupportedParameters.value?.includes("stream_options") && {
+                    stream_options: {
+                      include_usage: true,
+                      ...((preview.value.body.stream_options as Record<string, boolean>) ?? {}),
+                    },
+                  }),
+              };
+        const response = await service.nativeChat(
+          { ...baseline, protocol, body: native },
+          request.signal,
+        );
+        const callId = response.headers.get("X-GraphAgent-Call-Id");
+        const call = callId
+          ? { instanceId: baseline.instanceId, contextId: baseline.contextId, callId }
+          : null;
+        if (request.signal.aborted || generation !== run) {
+          if (call) void service.closeChatResult(call).catch(() => {});
+          await response.body?.cancel();
+          return;
+        }
+        if (call) {
+          currentCall.value = call;
+          keepAlive = setInterval(() => void readCharge(), 60_000);
+        }
+        let content: MessageSegment[] = [];
+        const reply: ChatMessage = {
+          id: "assistant-" + run,
+          createUser: "assistant",
+          role: "assistant",
+          timestamp: Date.now(),
+          content,
+        };
+        const result = await readNativeReply(
+          protocol,
+          response,
+          display,
+          (change) => {
+            if (request.signal.aborted || generation !== run) return;
+            content = appendDelta(content, change);
+            messages.value = [user, { ...reply, content }];
+            state.value = "正在回复…";
+          },
+          request.signal,
+        );
+        if (request.signal.aborted || generation !== run) return;
+        finish("completed");
+        state.value = result.notice;
+        usage.value = result.usage;
+      } catch (reason) {
+        if (!request.signal.aborted && generation === run) {
+          finish("failed");
+          state.value = "";
+          error.value = reason instanceof Error ? reason.message : "无法读取模型回复";
+          void reload();
+        }
+      } finally {
+        if (controller.value === request) {
+          controller.value = null;
+          void readCharge();
+        }
+      }
     }
-  } finally {
-    if (controller.value === request) controller.value = null;
-  }
-}
+    void receive();
+    return user;
+  },
+};
 function stop() {
   cancel();
+  finish("cancelled");
   state.value = "已停止等待回复";
+  releaseResult();
+}
+function leave() {
+  cancel();
+  releaseResult();
 }
 onBeforeUnmount(() => {
-  cancel();
-  window.removeEventListener("pagehide", releaseResult);
+  leave();
+  window.removeEventListener("pagehide", leave);
   stopReceipts?.();
-  releaseResult();
 });
 </script>
 <template>
@@ -229,16 +319,26 @@ onBeforeUnmount(() => {
         </button>
       </div>
       <OmniChat
-        :model-value="messages"
+        :key="identity"
+        v-model="messages"
         :current-user="currentUser"
         :users="users"
+        :operations="operations"
+        :send-disabled="blocked || !!controller"
         :options="{ allowEditMessage: false, allowRecallMessage: false }"
       >
         <template #message-text="{ message: segment }"
           ><span class="chat-text">{{ segment.data.text }}</span></template
         >
-        <template #input>
-          <form class="ai-composer-wrap" @submit.prevent="send">
+        <template #message-ai-activity="{ message: segment }">
+          <ActivityPanel
+            :activity="segment.data"
+            :expanded="!!expanded[segment.id!]"
+            @toggle="expanded[segment.id!] = !expanded[segment.id!]"
+          />
+        </template>
+        <template #input="{ context }">
+          <form class="ai-composer-wrap" @submit.prevent="submit(context)">
             <div class="ai-composer">
               <textarea
                 ref="textarea"
@@ -247,7 +347,7 @@ onBeforeUnmount(() => {
                 placeholder="输入问题…"
                 rows="2"
                 maxlength="16384"
-                @keydown="keydown"
+                @keydown="keydown($event, context)"
               />
               <div class="ai-composer-toolbar">
                 <small>Enter 发送 · Shift + Enter 换行</small>
@@ -325,6 +425,12 @@ onBeforeUnmount(() => {
 }
 .chat-empty + :deep(.omnichat) {
   flex: none;
+}
+.graph-chat :deep(.omnichat-message__bubble) {
+  pointer-events: none;
+}
+.graph-chat :deep(.omnichat-message__content > *) {
+  position: relative;
 }
 .chat-text {
   white-space: pre-wrap;

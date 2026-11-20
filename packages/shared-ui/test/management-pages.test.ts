@@ -4,12 +4,15 @@ import type {
   CredentialManagementStatus,
   ICredentialManagementService,
   IProviderService,
+  OfferingRouteConfig,
   ProviderManagementSnapshot,
+  PublicConnection,
   ServiceResult,
 } from "@astra-conductor/contract/common";
 import {
   AppShell,
   AuthDialog,
+  ConnectionDialog,
   CredentialsPage,
   ProvidersPage,
   credentialServiceKey,
@@ -332,6 +335,234 @@ describe("shared management pages", () => {
     );
     expect((wrapper.get('input[type="password"]').element as HTMLInputElement).value).toBe("");
     expect(sessionStorage.getItem("graphagent.auth.test")).toBeNull();
+    wrapper.unmount();
+  });
+
+  const connectionResult = (overrides: Partial<PublicConnection> = {}): PublicConnection => ({
+    instanceId: "inst-1",
+    contextId: "ctx-1",
+    accountId: "acc-1",
+    providerId: "vendor-fixed",
+    offeringId: "vendor-fixed-api-key",
+    displayName: "Main Key",
+    recordRevision: "rev-1",
+    routes: [],
+    ...overrides,
+  });
+
+  it("renders fixed-route offerings from routeConfig without route inputs and submits empty routes", async () => {
+    const service = providers();
+    const createConnection = vi.spyOn(service, "createConnection").mockResolvedValue({
+      ok: true,
+      value: connectionResult(),
+    });
+    const routeConfig: OfferingRouteConfig = {
+      mode: "fixed",
+      allowedProtocols: ["openai-chat", "openai-responses"],
+      defaults: [
+        { protocol: "openai-chat", baseUrl: "https://api.vendor.example/v1" },
+        { protocol: "openai-responses", baseUrl: "https://api.vendor.example/v1" },
+      ],
+    };
+    const wrapper = mount(ConnectionDialog, {
+      props: {
+        context: { instanceId: "inst-1", contextId: "ctx-1" },
+        providerId: "vendor-fixed",
+        offeringId: "vendor-fixed-api-key",
+        offeringLabel: "Vendor Fixed",
+        routeConfig,
+      },
+      global: { provide: { [providerServiceKey as symbol]: service } },
+    });
+    expect(wrapper.findAll('input[type="url"]')).toHaveLength(0);
+    await wrapper.get("#connection-name").setValue("Main Key");
+    await wrapper.get("#connection-key").setValue("fictional-key");
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    expect(createConnection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "vendor-fixed",
+        offeringId: "vendor-fixed-api-key",
+        displayName: "Main Key",
+        apiKey: "fictional-key",
+        routes: [],
+      }),
+      { instanceId: "inst-1", contextId: "ctx-1" },
+    );
+    wrapper.unmount();
+  });
+
+  it("renders groupByFamily editable routeConfig and preserves requestRule and chatOutputLimitField on edit", async () => {
+    const service = providers();
+    const createConnection = vi.spyOn(service, "createConnection").mockResolvedValue({
+      ok: true,
+      value: connectionResult({
+        accountId: "acc-2",
+        providerId: "vendor-grouped",
+        offeringId: "vendor-grouped-api-key",
+        displayName: "Grouped Key",
+      }),
+    });
+    const routeConfig: OfferingRouteConfig = {
+      mode: "editable",
+      groupByFamily: true,
+      allowedProtocols: ["openai-chat", "openai-responses", "anthropic-messages"],
+      defaults: [
+        { protocol: "openai-chat", baseUrl: "https://api.vendor.example" },
+        { protocol: "openai-responses", baseUrl: "https://api.vendor.example" },
+        {
+          protocol: "anthropic-messages",
+          baseUrl: "https://api.vendor.example/anthropic/v1",
+          protocolVersion: "2023-06-01",
+        },
+      ],
+    };
+    const wrapper = mount(ConnectionDialog, {
+      props: {
+        context: { instanceId: "inst-1", contextId: "ctx-1" },
+        providerId: "vendor-grouped",
+        offeringId: "vendor-grouped-api-key",
+        routeConfig,
+      },
+      global: { provide: { [providerServiceKey as symbol]: service } },
+    });
+    expect((wrapper.get("#route-family-openai").element as HTMLInputElement).value).toBe(
+      "https://api.vendor.example",
+    );
+    expect((wrapper.get("#route-family-anthropic").element as HTMLInputElement).value).toBe(
+      "https://api.vendor.example/anthropic/v1",
+    );
+    expect((wrapper.get("#anthropic-version").element as HTMLInputElement).value).toBe(
+      "2023-06-01",
+    );
+    const checkboxes = wrapper.findAll('input[type="checkbox"]');
+    expect(checkboxes).toHaveLength(2);
+    await checkboxes[1]!.setValue(false);
+    await wrapper.get("#connection-name").setValue("Grouped Key");
+    await wrapper.get("#connection-key").setValue("fictional-grouped-key");
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    expect(createConnection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        routes: [
+          {
+            protocol: "openai-chat",
+            baseUrl: "https://api.vendor.example",
+            protocolVersion: null,
+          },
+          {
+            protocol: "anthropic-messages",
+            baseUrl: "https://api.vendor.example/anthropic/v1",
+            protocolVersion: "2023-06-01",
+          },
+        ],
+      }),
+      { instanceId: "inst-1", contextId: "ctx-1" },
+    );
+    wrapper.unmount();
+
+    const requestRule = { operation: "chat" as const, body: { custom_flag: true } };
+    vi.spyOn(service, "getConnection").mockResolvedValue({
+      ok: true,
+      value: connectionResult({
+        accountId: "acc-2",
+        providerId: "vendor-grouped",
+        offeringId: "vendor-grouped-api-key",
+        displayName: "Grouped Key",
+        routes: [
+          {
+            protocol: "openai-chat",
+            baseUrl: "https://gateway.example",
+            protocolVersion: null,
+            bindingRevision: "bind-1",
+            chatOutputLimitField: "max_tokens",
+            requestRule,
+          },
+        ],
+      }),
+    });
+    const editConnection = vi.spyOn(service, "editConnection").mockResolvedValue({
+      ok: true,
+      value: connectionResult({
+        accountId: "acc-2",
+        providerId: "vendor-grouped",
+        offeringId: "vendor-grouped-api-key",
+        displayName: "Grouped Key Renamed",
+        recordRevision: "rev-2",
+      }),
+    });
+    const editWrapper = mount(ConnectionDialog, {
+      props: {
+        context: { instanceId: "inst-1", contextId: "ctx-1" },
+        accountId: "acc-2",
+        providerId: "vendor-grouped",
+        offeringId: "vendor-grouped-api-key",
+        routeConfig,
+      },
+      global: { provide: { [providerServiceKey as symbol]: service } },
+    });
+    await flushPromises();
+    await editWrapper.get("#connection-name").setValue("Grouped Key Renamed");
+    await editWrapper.get("form").trigger("submit");
+    await flushPromises();
+    expect(editConnection).toHaveBeenCalledWith(
+      "acc-2",
+      expect.objectContaining({
+        displayName: "Grouped Key Renamed",
+        expectedRecordRevision: "rev-1",
+        routes: [
+          {
+            protocol: "openai-chat",
+            baseUrl: "https://gateway.example",
+            protocolVersion: null,
+            chatOutputLimitField: "max_tokens",
+            requestRule,
+          },
+        ],
+      }),
+      { instanceId: "inst-1", contextId: "ctx-1" },
+    );
+    editWrapper.unmount();
+  });
+
+  it("renders per-protocol URL inputs for legacy compatible-api-key without routeConfig", async () => {
+    const service = providers();
+    const createConnection = vi.spyOn(service, "createConnection").mockResolvedValue({
+      ok: true,
+      value: connectionResult({
+        accountId: "acc-3",
+        providerId: "compatible-api-key",
+        offeringId: "compatible-api-key",
+        displayName: "Legacy Relay",
+      }),
+    });
+    const wrapper = mount(ConnectionDialog, {
+      props: {
+        context: { instanceId: "inst-1", contextId: "ctx-1" },
+        providerId: "compatible-api-key",
+        offeringId: "compatible-api-key",
+      },
+      global: { provide: { [providerServiceKey as symbol]: service } },
+    });
+    expect(wrapper.findAll('input[type="url"]')).toHaveLength(3);
+    await wrapper.get("#connection-name").setValue("Legacy Relay");
+    await wrapper.get("#connection-key").setValue("fictional-legacy-key");
+    await wrapper.get("#route-openai-chat").setValue("https://relay.example/v1");
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    expect(createConnection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        displayName: "Legacy Relay",
+        routes: [
+          {
+            protocol: "openai-chat",
+            baseUrl: "https://relay.example/v1",
+            protocolVersion: null,
+          },
+        ],
+      }),
+      { instanceId: "inst-1", contextId: "ctx-1" },
+    );
     wrapper.unmount();
   });
 });

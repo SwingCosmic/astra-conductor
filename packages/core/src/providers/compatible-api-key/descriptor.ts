@@ -1,17 +1,9 @@
+import { isCustomProviderId } from "../model-policy.js";
 import type { ProviderDescriptor } from "../types.js";
 
+export { isCustomProviderId };
 export const compatibleKeyId = "compatible-api-key";
 export const officialOpenAiOffering = "openai-api-key";
-export const isCustomProviderId = (providerId: string): boolean =>
-  /^custom-[a-z0-9][a-z0-9-]{0,55}$/.test(providerId);
-export const isLocalKeyAccount = (account: {
-  provider: string;
-  offeringId: string;
-  authMethod: string;
-}): boolean =>
-  account.authMethod === "api-key" &&
-  (isCustomProviderId(account.provider) ||
-    (account.provider === "codex" && account.offeringId === officialOpenAiOffering));
 export const compatibleKeyDescriptor: ProviderDescriptor = {
   provider: compatibleKeyId,
   displayName: "兼容 API Key",

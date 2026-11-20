@@ -2,7 +2,7 @@
 
 | 项目 | 内容                                                                          |
 | ---- | ----------------------------------------------------------------------------- |
-| 状态 | 2026-10-03 本地固定源码核对记录                                               |
+| 状态 | 固定提交的源码核对记录，New API 模板基线见第 1 节 |
 | 用途 | 支撑功能模块设计，提供后续特征测试和选择性提取入口                            |
 | 边界 | references 只作研究输入；不导入运行时，不把参考能力当成 GraphAgent 已实现能力 |
 
@@ -15,8 +15,9 @@
 | ZCode            | `29628c9acdb81b703bbd4080c207a0e7ce5e276e` |
 | Hermes Agent     | `6a6766fb896043ab3757a30713f1248b6054e0a6` |
 | OpenClaw         | `47a026ea3fe6201de974628a7c80228a4434a0e4` |
+| New API          | `669d774976369e986f03b6e24fff1042f6f94832` |
 
-本轮没有更新原有参考版本，新增 OpenClaw 固定提交子模块用于记忆系统核对。Hermes 的 `.gitmodules` 条目与 gitlink 已于 2026-10-12 登记入主仓库索引（`main` @ `6a6766fb896043ab3757a30713f1248b6054e0a6`），新检出可通过 `git submodule update --init references/hermes-agent` 取得固定 HEAD。
+OpenClaw 用于核对记忆系统，New API 用于核对中转站模型目录和账号能力。各参考仓库可按需初始化，例如 `git submodule update --init references/new-api`。
 
 ## 2. 从源码观察到的机制
 
@@ -85,3 +86,20 @@ browser use 首版改选按需安装的 Chrome DevTools MCP：复用产品 Elect
 [文件操作、Patch 与 Git](./design/tools/file-operations-and-git.md)、[HTTP 请求下载](./design/tools/web-and-network.md#9-http_download)和[媒体查看](./design/tools/media-view.md)分别核对 Git 官方 diff/merge-file、RFC 9110 与 Gemini 媒体说明；前期 FFmpeg 资料只作为资源操作研究，不构成首批内置工具/组件依赖。独立文件计算 API、收据/继续读取和多模态投影边界是设计新增。这些工具均为目标设计，真实模型/API 兼容验收待实施。
 
 上述协议与核心目录仍是设计决策；未搬运运行代码或修改产品依赖。rg 展开与 Electron/MCP 探测只证明参考能力本身；GraphAgent 的工具实现与真实 Tavily API、模型成功率验收待实施。
+
+## 单轮试聊的原生代理与展示
+
+六个参考项目中与同构链式策略回调、生成/原生校验分离及调用生命周期相关的取舍另见[请求管道的扩展点取舍与出站契约](../common/core/provider/request-hooks.md#1-为何收敛为同构链式回调设计取舍)。
+
+下表按主仓库登记的六个 gitlink 核对与本阶段直接相关的实现。服务端参考原生转发、响应生命周期和计量，前端的组件接线以产品所用 OmniChat 的 AI 示例为准。[单轮测试对话设计](./design/test-chat-streaming.md)
+
+| 参考项目与固定提交 | 源码行为 | 本阶段采用的部分 |
+| --- | --- | --- |
+| Hermes Agent · `6a6766f` | `handle_proxy` 检查允许路径，读取请求体字节，替换认证头，禁用重定向，再按上游状态和响应头逐块写回。 | 用于设计“原生 Body 通过、凭据在宿主注入”的主流程。GraphAgent 另按本地选择核验绑定，限制转发的头和路径。[代理实现](../../references/hermes-agent/hermes_cli/proxy/server.py) · [代理测试](../../references/hermes-agent/tests/hermes_cli/test_proxy.py) |
+| OmniRoute · `3ee283b` | Chat、Responses 和 Messages 有独立入口。其 Chat 中继的 `finalizeReadableStream` 按 pull 转交原始字节，完成、报错和取消共用一次清理；完整网关另外提供格式转换和流修饰。 | 采用入口分派、背压与取消。思考签名保真可直接作为原生帧样本。[Chat 入口](../../references/omniroute/src/app/api/v1/chat/completions/route.ts) · [Responses 入口](../../references/omniroute/src/app/api/v1/responses/route.ts) · [Messages 入口](../../references/omniroute/src/app/api/v1/messages/route.ts) · [中继读流](../../references/omniroute/src/app/api/v1/relay/chat/completions/streamFinalizer.ts) · [签名回归](../../references/omniroute/tests/unit/claude-passthrough-thinking-2454.test.ts) |
+| ZCode · `29628c9` | `offPeakMockGateway.handleMessages` 的在线分支向 Anthropic 转发原始请求字节与版本头，读取上游流并写回。它的离线分支使用合成响应。 | 参考 Messages 的协议头和同格式转发，以在线分支为对照。[测试网关](../../references/zcode/packages/services/src/session/offPeakMockGateway.ts) |
+| OpenClaw · `47a026e` | Chat Completions 与 Responses 分开注册 handler，关联客户端断开与取消。handler 在内部执行 Agent 并生成各自的输出。 | 借用分开的入口与取消测试。GraphAgent 单轮代理直接返回所选上游的响应。[Chat handler](../../references/openclaw/src/gateway/openai-http.ts) · [Responses handler](../../references/openclaw/src/gateway/openresponses-http.ts) |
+| DeepSeek Harness · `477b4f4` | 浏览器夹具在 Markdown 代码围栏尚未闭合时暂停生成，待页面断言通过后再放行后续内容。 | 用可控上游证明 OmniChat 在调用完成前已渲染，而非仅对最终文本做快照。[分段渲染测试](../../references/deepseek-harness/apps/web/tests/streaming-fence-highlight.e2e.ts) |
+| New API · `669d774` | 站点价表、携带推理 Key 的模型清单、个人令牌管理和额度查询具有各自的权限和响应结构。 | [New API 中转站模板](../common/core/provider/new-api-template.md)按站点和接入账号分别显示目录。[站点价表](../../references/new-api/controller/pricing.go) · [模型清单](../../references/new-api/controller/model.go) · [个人令牌](../../references/new-api/controller/token.go) |
+
+GraphAgent 试聊以 OmniChat AI 示例提交 `6441602` 对应的组件版本为实施基线。升级后外层插槽直接挂接 `StreamMessage` 和 `ActivityPanel`，消息段由示例的 `appendDelta` 与 `finishContent` 更新。[页面接线](./design/test-chat-streaming.md#从原生响应更新-omnichat)

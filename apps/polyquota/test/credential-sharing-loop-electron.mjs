@@ -520,7 +520,7 @@ async function start() {
               {
                 offeringId: "cn",
                 name: "CN",
-                routes: [{ protocolRouteId: "openai-chat", baseUrl: "https://relay.example/v1" }],
+                routes: [{ protocol: "openai-chat", baseUrl: "https://relay.example/v1" }],
               },
             ],
           });

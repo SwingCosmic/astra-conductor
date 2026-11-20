@@ -1,36 +1,50 @@
 # 供应商接入、模型目录与双产品共用界面
 
-2026-11-15 · 阶段二已实现普通 Key、OpenAI 与 Anthropic 协议地址、目录发现、手工登记和标准协议调用；2B 补充按模型类型的自定义端点配置、条件计费与共用表单组件。第 3 节描述供应商阶段三拟增加的请求映射。[项目架构](../../../architecture.md) · [Core 详细设计](./core-design.md) · [阶段二验证与阶段三计划](./implementation-plan.md)
+阶段二已实现普通 Key、按明细路由保存的协议地址、目录发现、手工登记和标准协议调用；2B 补充按模型类型的自定义端点配置、条件计费与共用表单组件。第 1、2 节同时说明按协议族管理连接与目录的实现。第 3 节描述供应商阶段三的请求映射。[项目架构](../../../architecture.md) · [Core 详细设计](./core-design.md) · [实施计划](./implementation-plan.md)
 
 ## 1. 一个账号可绑定多个协议地址
 
-供应商注册表继续保存内置实现。新增一个通用兼容接入点，复用 `api-key` 认证。2A 用户为每次接入填写名称、Key 和至少一条协议路由。2B 改为先在 GraphAgent 配置自定义供应商和各 offering 的端点，再把账号绑定到一个 offering。同一中转站的两把 Key 各有独立 `accountId` 与模型权限。现有 GLM Coding Plan 等订阅接入保留自己的 `offeringId` 和认证流程。
+GraphAgent 提供「通用兼容接口」和「New API 中转站」两种自定义模板。后者为各接入点保存独立站址，支持添加账号前浏览站点模型广场，以及绑定 Key 后按协议刷新可见目录。[New API 中转站模板](./new-api-template.md)
 
-```mermaid
-flowchart LR
-  F["接入页表单<br/>名称 + API Key + 协议路由"] --> A["账号 accountId<br/>providerId + offeringId"]
-  A --> R1["openai-chat 路由绑定<br/>baseUrl + bindingRevision"]
-  A --> R2["anthropic-messages 路由绑定<br/>baseUrl + bindingRevision"]
-  R1 --> D1["目录快照与手工条目"]
-  R2 --> D2["目录快照与手工条目"]
-  D1 --> M["模型选择四元组<br/>providerId + accountId +<br/>protocolRouteId + modelId"]
-  M --> X["请求编译与发送"]
-  R1 --> X
-  A --> Q{"订阅用量资格"}
-  Q -->|eligible| P["PolyQuota 用量视图与轮询"]
-  Q -->|ineligible| S["仅共用凭据管理"]
-```
+供应商注册表继续保存内置实现。新增一个通用兼容接入点，复用 `api-key` 认证。2A 用户为每次接入填写名称、Key 和至少一条协议路由。2B 改为先在 GraphAgent 配置自定义供应商和各 offering 的端点，再把账号绑定到一个 offering。同一中转站的两把 Key 各有独立 `accountId` 与模型权限。现有 GLM Coding Plan 等订阅接入保留自己的 `offeringId` 和认证流程。
 
 | 数据 | 标识和归属 | 编辑或使用规则 |
 | --- | --- | --- |
-| 实现与接入点 | Core 注册 `providerId`、`offeringId`、支持的 `protocolRouteId` 和认证方式 | 用户创建账号实例即可复用内置实现。已有订阅账号继续使用声明的固定端点 |
-| 连接配置 | 2B 在本地自定义供应商的 offering 下按 `protocolRouteId` 保存协议版本、`baseUrl` 和端点修订，再结合账号授权解析有效绑定。阶段三的非秘密请求规则保存在同一供应商记录 | 账号 ID 在改名、换 Key 和改地址时保持稳定。每次改变目标、授权身份或出站规则都使相应路由的绑定版本失效 |
-| 模型选择 | `providerId + accountId + protocolRouteId + modelId` | Core 同时校验账号所属 offering 和路由。版本用于校验缓存与在途请求，保存的选择不随一次刷新改名 |
+| 实现与接入点 | Core 注册 `providerId`、`offeringId`、支持的 `protocol`（`EndpointProtocol`）和认证方式 | 用户创建账号实例即可复用内置实现。已有订阅账号继续使用声明的固定端点 |
+| 连接配置 | 2B 在本地自定义供应商的 offering 下按 `protocol` 保存协议版本、`baseUrl` 和端点修订，再结合账号授权解析有效绑定。阶段三的非秘密请求规则保存在同一供应商记录 | 账号 ID 在改名、换 Key 和改地址时保持稳定。每次改变目标、授权身份或出站规则都使相应路由的绑定版本失效 |
+| 模型选择 | `providerId + accountId + protocol + modelId` | Core 同时校验账号所属 offering 和路由。版本用于校验缓存与在途请求，保存的选择不随一次刷新改名 |
 | 机密 | 当前凭据后端持有 API Key 及敏感头的值 | 设置页接受一次性输入，回读只返回是否已设置。账号名称、URL、日志、公开元数据和模型缓存均不存秘密 |
 
-例如，一条 OpenAI Chat 路由填 `https://relay.example/oai/v1`，另一条 Anthropic Messages 路由填 `https://relay.example/claude/v1`，分别向各自前缀下的 `models` 发请求。OpenAI Responses 可显式复用 OpenAI 地址，但与 Chat Completions 各自声明可用操作。未配置的路由不参与发现或选择。
-
 `baseUrl` 是含可选路径前缀的 API 根地址。宿主接受自建域名、局域网、localhost 与非默认端口，保留路径前缀并统一尾部斜线；协议操作以相对路径拼接。URL 不接受用户信息、查询串、片段或密钥，请求与重定向都不能把凭据带到未绑定地址。完整校验与路径拼接规则见 [Core 详细设计 · 连接、记录与并发写入](./core-design.md#5-连接记录与并发写入)。
+
+### 协议族连接与存量升级
+
+同一供应商在 `(providerId, protocolFamily)` 上集中声明认证机制和公共额外参数，包括适用的 header、query 和原生 Body 扩展。族级扩展可以在明细协议和型号规则中细化，预览与实际请求共用合并结果。offering 采用该族配置，绑定本接入点的上游 API 根地址、协议版本、目录获取方式与启用的明细协议。Core 根据实际账号、活动凭据后端和授权解析秘密。不同账号可以使用同一个族配置，但各自保有自己的 Key、可见模型和绑定修订。[公共协议族与明细协议枚举](../../contract/common-api.md#21-协议族与明细协议枚举)
+
+```mermaid
+flowchart LR
+  P["供应商及其 offering"] --> O["openai 族绑定"]
+  P --> A["anthropic 族绑定"]
+  U["已授权的同一账号"] --> O
+  U --> A
+  O --> OC["POST /openai/v1/chat/completions"]
+  O --> OR["POST /openai/v1/responses"]
+  O --> OM["GET /openai/v1/models"]
+  A --> AM["POST /anthropic/v1/messages"]
+  A --> AL["GET /anthropic/v1/models"]
+```
+
+图中路径省略产品前缀 `/api/v1/graph-agent/proxy`。例如 OpenAI 的族根为 `https://relay.example/oai/v1`，Chat、Responses 和模型列表分别追加 `chat/completions`、`responses`、`models`。Anthropic 的族根为 `https://relay.example/claude/v1`，`messages` 与 `models` 都使用该族绑定。宿主从族描述取得上游相对路径，保留根地址的版本段和前缀。族 ID 与 HTTP 方法、已登记的原生路径共同决定入口。
+
+专用族只登记一个模型业务端点并声明默认路由时，模型配置页可直接选择族，省略明细；服务端将其解析成该端点的已登记 ID。此规则适用于有目录或无目录的专用族。通用 LLM 输出始终选择具体明细端点，包括只有一条聊天路由、模型由用户手工登记的接入点。原生代理始终按已登记的具体路径转发。[默认选择与验收](../../contract/common-api.md#专用单端点族的默认选择)
+
+共用参数声明各字段的适用位置。模型发现和推理使用同一套族认证和适用的公共 header/query，分页游标和单次推理输入归相应的原生操作。Body 默认值只在准备适用的原生 POST 时使用，原生代理收到的有效 Body 原样转发。Codex 订阅的工作空间头、Grok Build 的身份头及其 models/session 差异由已登记的供应商族绑定处理。认证值按本次账号解析，明细端点只声明自己的方法、相对路径及原生操作参数。协议相同的另一家供应商可以采用自己的认证方式与公共参数。[现有绑定与供应商专用头](../../../../packages/core/src/providers/model-routes.ts)
+
+族地址、认证绑定或公共额外参数变化，均使依赖它的 `familyBindingRevision` 与明细有效 `bindingRevision` 失效。只改单个明细的相对路径或适用操作时，更新该明细修订并重新校验它的选择；兄弟端点与族目录保留有效性。可公开的读取投影只含族/端点 ID、能力、修订和禁用原因；秘密仍在当前凭据后端。
+
+升级时按注册表明列的路由与族映射归组旧数据。仅合并同一供应商、offering 内，规范化根地址、版本与族公共设置等价的旧绑定，保留原始端点 ID、启停状态、模型选择与覆盖。多条旧路由的族级设置冲突，或某旧路由还未登记族归属时，保留原配置及引用并显示受影响项。用户可统一该族配置或把不同接入地址明确拆入独立 offering。消歧前不通过新族入口访问冲突目的地。
+
+管理刷新接受账号、协议族和期望族修订，兼容原有明细刷新请求。同族并发合并为一次分页读取，New API 再按各明细的原生端点证据投影条目。写入新绑定与兼容引用一次提交，重开或重试不会重复创建。旧客户端提交明细配置时只更新它能表达的字段，若修改会导致同族公共配置分歧则返回冲突并保留原值。旧的明细目录按原作用域保留来源与时点，首次族刷新以新绑定重新取数。
 
 ### PolyQuota 如何判断是否监控
 
@@ -52,26 +66,30 @@ Core 按接入点声明和账号适用性计算“可查询订阅用量”，供
 
 ## 2. 从协议目录得到可用模型
 
-阶段二注册表已支持 `model-catalog` 和 `inference`。目录发现由可选的 `models` facet 提供，请求准备与执行由 `inference` facet 提供，注册表分别校验能力声明与实现的归属。发现请求携带账号、offering、路由、绑定版本和取消信号，在请求作用域内取得凭据。有些网关可执行模型请求却不提供模型列表：接入页允许保存有效配置、标出失败原因，并允许 GraphAgent 手工登记模型。[当前注册表](../../../../packages/core/src/providers/registry.ts)
+现有管理目录按族绑定合并刷新任务与快照，按明细端点投影使用资格。`discoverRouteModels` 和 `projectFamilyModels` 仍直接处理私有目录和模板差异；迁移后，刷新与读缓存共用该绑定登记的目录策略。[现有发现实现](../../../../packages/core/src/providers/model-discovery.ts) · [宿主刷新](../../../../apps/graph-agent/src/server/model-service.ts) · [分派设计](./request-dispatch.md)
 
 | 目录来源 | 适配规则 |
 | --- | --- |
-| OpenAI 兼容路由 | 从该路由的 `GET models` 读取 `data[].id` 等基础信息。标准列表不保证返回上下文、模态或价格，只接纳适配器识别的扩展字段。[OpenAI Docs · List models](https://developers.openai.com/api/reference/resources/models/methods/list) |
-| Anthropic 兼容路由 | 使用该路由的认证和协议版本。根据 `has_more`、`last_id` 和 `after_id` 完成分页。按实际版本和返回值提取输入上限、输出上限、视觉及思考档位。[Claude API · List Models](https://platform.claude.com/docs/en/api/models/list) |
+| OpenAI 族 | 原生 `GET .../proxy/openai/v1/models` 返回该族绑定上游的一页原生响应。标准 OpenAI 列表按 `object: "list"` 与 `data[].id` 读取。Codex、Grok Build 等接入点的私有目录在管理刷新中沿用已登记的解析器、身份头和查询参数。只有绑定也支持标准列表时才开放这个原生 GET。标准列表未提供的模态、操作与价格保持未知。[OpenAI Docs · List models](https://developers.openai.com/api/reference/resources/models/methods/list) |
+| Anthropic 族 | 原生 `GET .../proxy/anthropic/v1/models` 使用本族认证与协议版本，传递允许的分页参数及原生 `data`、`first_id`、`last_id`、`has_more`。内部完整刷新按 `has_more`、`last_id` 构造下一页的 `after_id`。[Claude API · List Models](https://platform.claude.com/docs/en/api/models/list) |
 | 无列表或部署名不同 | 用户可以录入精确的上游模型 ID 或部署名，标记来源为手工。发现成功后按完整 ID 对齐，保留用户覆盖和来源 |
 
-刷新采用“完整成功才替换、失败保留旧快照、换绑定丢弃迟到结果”；TTL、并发合并、分页上限与失效细节见 [Core 详细设计 · 发现与刷新](./core-design.md#发现与刷新)。模型能力与价格按“用户覆盖 → 账号路由明确值 → 精确预置 → 未知”逐字段合并，界面显示来源；字段定义与预置示例见 [Core 详细设计 · 参数事实与合并规则](./core-design.md#参数事实与合并规则)。
+族级列表通过调用方所选的具体账号及路径中的协议族取得授权，宿主从账号读出 provider 和 offering，可以先取目录再选择聊天模型。原生 GET 仅转发请求的一页，完整刷新则由目录服务处理分页和模型事实解析。缓存按可见性范围、provider、offering、账号、`protocolFamily` 和 `familyBindingRevision` 隔离，在途刷新还限定在同一活动上下文。Chat 与 Responses 对同一有效 OpenAI 绑定的并发刷新只产生一轮上游分页；另一个账号或 Anthropic 族独立查询。同族各明细共用候选模型 ID，执行资格仍逐个核对明细路由、操作与能力。无列表的族可按明细端点手工登记，Suno Music、Doubao Video 等扩展也只开放实际声明的发现能力。
+
+完整刷新成功才替换快照，失败保留原时点，切换绑定后丢弃迟到结果。模型能力与价格继续按用户覆盖、明确的绑定事实、精确预置、未知逐字段合并，界面显示来源。[发现与刷新](./core-design.md#发现与刷新) · [参数事实与合并规则](./core-design.md#参数事实与合并规则)
 
 ## 3. 中转站请求映射
 
-阶段三拟在 Core 的请求准备阶段执行声明式规则，保存时按供应商、offering、路由、操作和模型集合校验，调用时再核实账号绑定。名称解析、别名、模型名模板、Body 合并与安全限制的实现规则见 [Core 详细设计 · 从模型选择到协议请求](./core-design.md#8-从模型选择到协议请求)。配置预览与实际发送共用同一解析器。
+GraphAgent 在自定义接入点的聊天端点下提供「模型别名与请求规则」编辑能力，在 Core 的固定 4 步链式请求管道（Step 2 与 Step 3）中执行声明式规则，保存时按供应商、offering、协议、操作和模型集合校验，调用时再核实账号绑定。配置预览与实际发送共用同一套 `applyPolicyChain` 解析。仅使用 `modelTemplate` 动态拼接上游型号时要求填写 `targets` 白名单；纯静态 `aliases` 允许省略 `targets`。协议字段编码、供应商策略回调链和用户规则的执行顺序及冲突处理见[请求参数的转换、映射与自定义调整](./protocol-design.md#5-请求参数的转换映射与自定义调整)；校验规则见[数据结构、预置资源与校验规则](./request-dispatch.md#7-数据结构预置资源与校验规则)。
 
-下面是一个虚构的网关规则。用户为网关的 `atlas-pro` 和 `atlas-mini` 系列登记了可用变体，包括 `vendor/atlas-pro-high-128k`。上下文选项 `131072` 对应该网关的 `128k` 标签。
+下面是一个虚构的网关规则。规则只作用于所选端点。族级公共 Body、端点扩展和 `byModel` 中精确型号的扩展按此顺序合并。`defaults` 可为尚未配置的参数提供默认值。用户为网关的 `atlas-pro` 和 `atlas-mini` 系列登记了可用变体，包括 `vendor/atlas-pro-high-128k`。上下文选项 `131072` 对应该网关的 `128k` 标签。
 
 ```json
 {
   "operation": "chat",
   "aliases": { "work-pro": "atlas-pro", "work-fast": "atlas-mini" },
+  "models": ["work-pro", "work-fast"],
+  "targets": ["vendor/atlas-pro-high-128k", "vendor/atlas-mini-high-128k"],
   "modelTemplate": "vendor/{model}-{effort}-{windowLabel}",
   "windowLabels": { "131072": "128k" },
   "consume": ["effort", "window"],
@@ -80,7 +98,7 @@ Core 按接入点声明和账号适用性计算“可查询订阅用量”，供
 }
 ```
 
-选择 `work-pro`、`high`、131072 时，OpenAI Chat 请求向该绑定的 `chat/completions` 发送 `model: "vendor/atlas-pro-high-128k"`，附加上例的 header 和 Body 字段；不会重复发送 `reasoning_effort`。Anthropic 路由和模型发现请求各自使用自己的规则。GraphAgent 保存的选择仍能显示本地名称、原始目录名和实际发送名供核对。
+选择 `work-pro`、`high`、131072 时，OpenAI Chat 请求向该绑定的 `chat/completions` 发送 `model: "vendor/atlas-pro-high-128k"`，附加上例按 `chat` 操作限定的 header 和 Body 字段；不会重复发送 `reasoning_effort`。模型发现使用所属族的认证与目录适用的公共 header/query。GraphAgent 保存的选择仍能显示本地名称、原始目录名和实际发送名供核对。
 
 ## 4. 两个产品共用哪些界面
 

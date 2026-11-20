@@ -6,6 +6,7 @@ import type {
   ActionAvailability,
   ModelEntryView,
   ModelEndpointDescriptor,
+  ModelFacts,
   ModelOverrides,
   ModelParameters,
   ModelSelection,
@@ -14,9 +15,16 @@ import type {
   ModelPriceKey,
 } from "@astra-conductor/contract/graph-agent";
 import {
+  applyPolicyChain,
+  getBuiltInModelPolicy,
+  isCustomProviderId,
+  providerCatalog,
   resolveModelFacts,
+  type ChatAvailabilityContext,
   type DiscoveredModel,
   type ModelFactLayer,
+  type ProviderOfferingModelPolicy,
+  type ProviderRegistry,
 } from "@astra-conductor/core/internal";
 import type {
   ModelState,
@@ -24,12 +32,32 @@ import type {
   GraphModelRepository,
   RemoteCatalog,
 } from "./model-repository.js";
+
+export interface ProjectEntryPolicyContext {
+  readonly policy?: ProviderOfferingModelPolicy | null;
+  readonly registry?: ProviderRegistry;
+  readonly templateKind?: "generic" | "new-api";
+}
+
+export function extractEntryFacts(entry: ModelEntryView): Partial<ModelFacts> {
+  const facts: Partial<ModelFacts> = {};
+  for (const [key, field] of Object.entries(entry.fields) as [
+    keyof ModelFacts,
+    ModelEntryView["fields"][keyof ModelFacts],
+  ][]) {
+    if (field.value !== null && field.value !== undefined) {
+      Object.assign(facts, { [key]: field.value });
+    }
+  }
+  return facts;
+}
+
 const none: ModelParameters = { maxOutputTokens: null, contextWindow: null, effort: null };
 export const enabled = { state: "enabled" } as const;
 export const disabled = (reason: string) => ({ state: "disabled", reason }) as const;
 export const scopeKey = (op: string, profile: string) => JSON.stringify([op, profile]);
 export function isPublicOffering(provider: string) {
-  return !provider.startsWith("custom-") && provider !== "compatible-api-key";
+  return !isCustomProviderId(provider) && provider !== "compatible-api-key";
 }
 export function priceUnit(unit: string) {
   return /^(million[- ]tokens|1m\s*tokens|1,?000,?000\s*tokens)$/i.test(unit.trim())
@@ -155,9 +183,34 @@ export function projectEntry(
   remote?: DiscoveredModel,
   catalog?: RemoteCatalog,
   state: ModelState = repo.state(),
+  policyContext?: ProjectEntryPolicyContext,
 ): ModelEntryView {
-  const opKey = scopeKey(ep.operationId, ep.profileId),
+  const opKey = scopeKey(ep.operation, ep.ioProfile),
     pack = repo.activePack(state.active);
+  const policy =
+    policyContext?.policy !== undefined
+      ? policyContext.policy
+      : policyContext?.registry
+        ? policyContext.registry.getModelPolicy({
+            providerId: selection.providerId,
+            offeringId,
+            templateKind: policyContext.templateKind,
+          })
+        : getBuiltInModelPolicy({
+            providerId: selection.providerId,
+            offeringId,
+            templateKind: policyContext?.templateKind,
+          });
+  const providerDescriptor =
+    policyContext?.registry?.getDescriptor(selection.providerId) ??
+    providerCatalog.find((item) => item.provider === selection.providerId);
+  const offeringDescriptor = providerDescriptor?.offerings.find((item) => item.id === offeringId);
+  const matchesVendor = (vendor: string) => {
+    const normalized = vendor.toLowerCase();
+    if (normalized === selection.providerId.toLowerCase()) return true;
+    const displayName = providerDescriptor?.displayName.toLowerCase();
+    return Boolean(displayName && normalized === displayName);
+  };
   const ratePlanKey =
     local?.document.operations[opKey]?.ratePlanKey ??
     common?.document.operations[opKey]?.ratePlanKey ??
@@ -195,18 +248,20 @@ export function projectEntry(
   const chosen = a.presetKey ?? o.presetKey;
   const matches = pack.byExactId.get(selection.modelId) ?? [];
   const preset = chosen ? pack.byKey.get(chosen) : matches.length === 1 ? matches[0] : undefined;
-  const cap = preset?.capabilities.find((c) => c.operationId === ep.operationId);
+  const cap = preset?.capabilities.find((c) => c.operation === ep.operation);
   const layers: ModelFactLayer[] = [];
+  let inheritedFacts: Partial<ModelFacts> | undefined;
   if (preset?.inherit && cap) {
     const parent = pack.byKey.get(preset.inherit.presetKey);
-    const inherited = parent?.capabilities.find((c) => c.operationId === ep.operationId);
-    if (parent && inherited)
+    const inherited = parent?.capabilities.find((c) => c.operation === ep.operation);
+    if (parent && inherited) {
+      inheritedFacts = Object.fromEntries(
+        preset.inherit.fields
+          .filter((k) => Object.hasOwn(inherited.facts, k))
+          .map((k) => [k, inherited.facts[k]]),
+      ) as Partial<ModelFacts>;
       layers.push({
-        facts: Object.fromEntries(
-          preset.inherit.fields
-            .filter((k) => Object.hasOwn(inherited.facts, k))
-            .map((k) => [k, inherited.facts[k]]),
-        ),
+        facts: inheritedFacts,
         prices: [],
         source: {
           kind: "preset",
@@ -216,14 +271,56 @@ export function projectEntry(
           referenceUrl: preset.inherit.referenceUrl,
         },
       });
+    }
+  }
+  if (policy?.transformModelFacts) {
+    const baselineFacts: Partial<ModelFacts> = {
+      ...(inheritedFacts ?? {}),
+      ...(cap?.facts ?? {}),
+      ...(remote?.facts ?? {}),
+      ...(o.facts ?? {}),
+      ...(a.facts ?? {}),
+    };
+    const transformed = applyPolicyChain(
+      baselineFacts,
+      {
+        providerId: selection.providerId,
+        offeringId,
+        protocol: ep.protocol,
+        operation: ep.operation,
+        modelId: selection.modelId,
+      },
+      [policy.transformModelFacts],
+    );
+    const policyFacts: Partial<ModelFacts> = {};
+    for (const [k, v] of Object.entries(transformed) as [
+      keyof ModelFacts,
+      ModelFacts[keyof ModelFacts],
+    ][]) {
+      if (v !== undefined && baselineFacts[k] !== v) {
+        Object.assign(policyFacts, { [k]: v });
+      }
+    }
+    if (Object.keys(policyFacts).length) {
+      layers.push({
+        facts: policyFacts,
+        prices: [],
+        source: {
+          kind: "preset",
+          revision: "provider-profile-v1",
+          referenceUrl: null,
+          checkedAt: null,
+        },
+      });
+    }
   }
   if (preset && cap)
     layers.push({
       facts: cap.facts,
       prices:
-        selection.providerId === "codex" &&
-        offeringId === "openai-api-key" &&
-        preset.vendorId === "openai"
+        isPublicOffering(selection.providerId) &&
+        offeringDescriptor?.supportsSubscriptionUsage === false &&
+        matchesVendor(preset.vendor)
           ? preset.prices
           : [],
       source: {
@@ -286,6 +383,12 @@ export function projectEntry(
     })),
   );
   const params = { ...none, ...cap?.parameters, ...o.parameters, ...a.parameters };
+  if (ep.operation === "chat") {
+    params.thinkingEnabled =
+      params.thinkingEnabled !== false && effective.fields.reasoningMode.value !== "none";
+    params.returnFullReasoning = params.thinkingEnabled && params.returnFullReasoning === true;
+    if (!params.thinkingEnabled) params.effort = null;
+  }
   const sources: ModelEntryView["parameterSources"] = {};
   for (const [items, scope] of [
     [cap?.parameters ?? {}, "preset"],
@@ -294,22 +397,37 @@ export function projectEntry(
   ] as const)
     for (const field of Object.keys(items) as (keyof ModelParameters)[]) sources[field] = scope;
   const knownOperations = effective.fields.operations.value;
-  const official = selection.providerId === "codex" && offeringId === "openai-api-key";
-  const exactOfficial = matches.find((p) => p.vendorId === "openai");
+  const exactVendorMatch = matches.find((p) => matchesVendor(p.vendor));
+  const exactVendorPreset = exactVendorMatch
+    ? { operations: exactVendorMatch.capabilities.map((c) => c.operation) }
+    : null;
   function chatAction(): ActionAvailability {
     if (presence === "missing") return disabled("此型号尚未在当前账号的绑定上发现或登记");
     if (!ep.chatExecutable) return disabled("媒体端点仅支持配置与校验");
+    if (remote?.routeSupport === "unconfirmed" && !manual)
+      return disabled(
+        "当前 Key 可见此型号，站点尚未声明此聊天端点。可在该账号和端点手工登记确认。",
+      );
     if (
       (knownOperations && !knownOperations.includes("chat")) ||
       (remote?.facts.operations && !remote.facts.operations.includes("chat"))
     )
       return disabled("此模型不支持聊天");
-    if (official) {
-      if (exactOfficial && !exactOfficial.capabilities.some((c) => c.operationId === "chat"))
-        return disabled("该官方型号属于其他操作");
-      if (!manual && !exactOfficial && !remote?.facts.operations?.includes("chat"))
-        return disabled("目录仅返回型号 ID，请在此账号和端点手工确认聊天用途");
-    } else if (
+    const availability = applyPolicyChain<ActionAvailability, ChatAvailabilityContext>(
+      access,
+      {
+        providerId: selection.providerId,
+        offeringId,
+        protocol: ep.protocol,
+        modelId: selection.modelId,
+        manual,
+        remoteOperations: remote?.facts.operations ?? null,
+        exactVendorPreset,
+      },
+      [policy?.transformChatAvailability],
+    );
+    if (availability.state !== "enabled") return availability;
+    if (
       preset &&
       !cap &&
       !remote?.facts.operations?.includes("chat") &&
@@ -317,13 +435,13 @@ export function projectEntry(
       !o.facts.operations?.includes("chat")
     )
       return disabled("该型号的预置未声明聊天能力");
-    return access;
+    return availability;
   }
   const use = chatAction();
-  const presetProfile = cap?.ioProfiles.find((p) => p.id === ep.profileId);
+  const presetProfile = cap?.ioProfiles.find((p) => p.kind === ep.ioProfile);
   const ioProfiles = [
     {
-      id: ep.profileId,
+      kind: ep.ioProfile,
       requiredInputs: [...ep.requiredInputs],
       optionalInputs: [...ep.optionalInputs].filter(
         (v) =>
@@ -336,7 +454,7 @@ export function projectEntry(
     },
   ];
   const revision = state.revision;
-  const parameterTemplate = pack.templates.get(cap?.parameterTemplateRef ?? ep.operationId)!;
+  const parameterTemplate = pack.templates.get(cap?.parameterTemplateRef ?? ep.operation)!;
   const presetCards: Record<string, RateCard> = {};
   for (const ref of cap?.rateCardRefs ?? []) {
     const card = pack.rates.get(JSON.stringify([ref.rateCardId, ref.revision]));
@@ -346,10 +464,10 @@ export function projectEntry(
       !scope ||
       scope.providerId !== selection.providerId ||
       scope.offeringId !== offeringId ||
-      scope.operationId !== ep.operationId ||
-      (scope.protocolRouteId && scope.protocolRouteId !== ep.id) ||
+      scope.operation !== ep.operation ||
+      (scope.protocol && scope.protocol !== ep.protocol) ||
       (scope.upstreamModelId && scope.upstreamModelId !== selection.modelId) ||
-      (scope.planId && scope.planId !== ref.planKey)
+      (scope.planKey && scope.planKey !== ref.planKey)
     )
       continue;
     presetCards[ref.planKey] = card;
@@ -358,17 +476,11 @@ export function projectEntry(
   if (Object.hasOwn(rateCards, ratePlanKey)) {
     rateCards[ratePlanKey] = applyBasicPrices(rateCards[ratePlanKey], effective.prices);
   }
-  const rateCard = Object.hasOwn(rateCards, ratePlanKey) ? rateCards[ratePlanKey] : null;
   const cardId =
     "base-" +
     createHash("sha256")
       .update(
-        JSON.stringify([
-          selection.providerId,
-          offeringId,
-          selection.protocolRouteId,
-          selection.modelId,
-        ]),
+        JSON.stringify([selection.providerId, offeringId, selection.protocol, selection.modelId]),
       )
       .digest("hex");
   const currencies = new Set(effective.prices.map((p) => p.key.currency));
@@ -380,6 +492,7 @@ export function projectEntry(
     const key = currencies.size === 1 ? "default" : currency;
     if (basic && !Object.hasOwn(rateCards, key)) rateCards[key] = basic;
   }
+  const rateCard = Object.hasOwn(rateCards, ratePlanKey) ? rateCards[ratePlanKey] : null;
   return {
     selection,
     displayName: local?.document.displayName ?? remote?.displayName ?? selection.modelId,
@@ -387,8 +500,8 @@ export function projectEntry(
     presetKey: preset?.key ?? null,
     ...effective,
     modelType: ep.modelType,
-    operationId: ep.operationId,
-    profileId: ep.profileId,
+    operation: ep.operation,
+    ioProfile: ep.ioProfile,
     ioProfiles,
     parameters: params,
     accountOverrides: a,
@@ -452,6 +565,11 @@ export function validateParameters(entry: ModelEntryView, params: ModelParameter
       "默认思考强度与当前推理模式或强度列表不匹配",
       "defaultEffort",
     );
+  if (
+    params.returnFullReasoning &&
+    (params.thinkingEnabled === false || f.reasoningOutputMode.value !== "full")
+  )
+    throw new ContractValidationError("当前绑定尚未声明可返回完整思考内容", "returnFullReasoning");
   checkParameterValues(entry.parameterTemplate, params);
   for (const [field, value] of Object.entries(params)) {
     if (

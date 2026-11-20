@@ -55,12 +55,12 @@ interface ProviderOfferingDescriptor {
   websiteUrl?: string;
   authMethods: ProviderAuthMethodDescriptor[];
   plans: readonly ProviderPlanDescriptor[]; // 接入点级，已实现
-  protocolRouteIds?: readonly ProtocolRouteId[]; // 待实施：接入点可用的协议端点
+  routeConfig?: OfferingRouteConfig; // 已实现：接入点允许的协议与默认路由配置
   extensions?: PublicExtension[];
 }
 
 interface ProviderPlanDescriptor {
-  id: string;
+  key: string;
   displayName: string;
   match: readonly (string | RegExp)[]; // 仅 Core 内部使用，不进入公开 DTO
   multiplier: number;
@@ -72,7 +72,7 @@ interface ProviderPlanDescriptor {
 
 `displayName` 与 `description` 是 core 持有的标准表述（语言中立或与产品 UI 语言一致，一份即可）；UI 可以按 `offeringId` 覆盖更适合产品的名称与图标，但不得改变能力或可执行状态，也不得再保存一份供应商事实副本（本地化现阶段不做，归属边界见 §2.5）。
 
-`plans` 已位于接入点级，按账号保存的 `offeringId` 查表。运行期将上游 `usage.plan` 归一化后匹配 `match`，取得评分倍率；`source` 区分官方公布与一次性推断。目录不在运行期猜测新套餐。服务端将解析的 `planId` / `planLabel` 固化进公开用量，标签按目录 `displayName` → 上游原始展示名 → 原始标识串回退；未识别档位保留 `planId: null`。UI 展示结果和未知提示，不另建套餐名称表。
+`plans` 已位于接入点级，按账号保存的 `offeringId` 查表。运行期将上游 `usage.plan` 归一化后匹配 `match`，取得评分倍率；`source` 区分官方公布与一次性推断。目录不在运行期猜测新套餐。服务端将解析的 `planKey` / `planLabel` 固化进公开用量，标签按目录 `displayName` → 上游原始展示名 → 原始标识串回退；未识别档位保留 `planKey: null`。UI 展示结果和未知提示，不另建套餐名称表。
 
 BigModel 与 Z.ai 已由两个 offering 承载。`region` 不再出现在公开 descriptor、认证输入或账号元数据中；GLM 实现内部按 `offeringId` 选择端点。未来协议路由与模型目录继续按接入点扩展，不能恢复 `region` / `presentationId` 的展示猜测。旧问题与迁移结果见[迁移沿革](./migration-history.md#3-当前问题)。
 
@@ -167,7 +167,7 @@ interface ProviderAuthFlow {
 
 ### 3.1 构造规则
 
-应用组合根一次性提交全部 `ProviderContribution`。贡献同时携带声明和可选能力 facet，不再用一个以 PolyQuota 用量需求为中心的万能 runtime 包装所有服务商行为。
+应用组合根一次性提交全部 `ProviderContribution`。账号和用量 facet 已通过该注册表分派。当前目录和推理 facet 的实现签名仍引用公共模型函数，组合工厂也会按目录能力统一补齐两项；下列构造规则包含尚待落实的模型策略校验。注册项、调用时选择条件和现有公共分支的对应关系见[供应商请求策略的注册与分派](./request-dispatch.md)。
 
 注册表构造必须完整校验：
 
@@ -175,7 +175,7 @@ interface ProviderAuthFlow {
 2. `providerId` 全局唯一；
 3. `offeringId` 全局唯一，并且 `offering.provider` 指向当前贡献；
 4. 一个 offering 内 `authMethodId` 唯一；
-5. `protocolRouteId` 全局唯一，并且 route 指向当前贡献；
+5. 每个 `protocol` 在端点注册表中唯一且只属于一个 `protocolFamily`。不同供应商可以实现同一族，offering 只能启用该绑定已声明的明细端点。
 6. capability、认证方式与实际 facet 完整相符；
 7. route 的 operation、协议与 inference capability 声明相容；
 8. 所有公开 URL、扩展和默认值符合 schema；
@@ -183,7 +183,7 @@ interface ProviderAuthFlow {
 
 任一错误都使整个注册表构造失败。禁止后注册覆盖、跳过坏条目后继续启动，或把请求交给默认实现。
 
-动态模型目录不能在同步构造时预知。每个目录 snapshot 进入缓存前另行校验：模型引用的 route 必须存在，operation 必须相容，`providerId` 必须属于产生该 snapshot 的 facet；无效 snapshot 整体拒绝，不部分合并。
+动态模型目录在运行时发现。写入快照前核对产生目录的供应商、offering、可见账号及族绑定。返回的显式端点能力另行校验。模型仅出现在族列表时，成员端点的可执行性仍按该型号、操作与绑定的证据判定。
 
 ### 3.2 当前运行形态
 
@@ -195,7 +195,7 @@ interface ProviderAuthFlow {
 
 - 新增认证：先由 `offeringId` 找声明，再取得其唯一 `providerId` 和实现；
 - 已有账号操作按账号保存的 `providerId` 找对应 facet，再校验 `offeringId` 与账号用途，以决定可执行的认证、用量或协议操作。
-- 模型选择先核对账号归属及其 offering 下的路由，再在该账号与路由的目录内解析 `modelId`。执行前校验目录绑定版本与当前 `bindingRevision` 一致。
+- 模型选择先核对账号归属及 offering，再从端点注册表核对明细路由所属协议族。专用单端点族可在输入时按[默认选择规则](../../contract/common-api.md#专用单端点族的默认选择)解析缺省明细。通用 LLM 始终要求具体端点。随后在该账号的族目录或手工来源中解析 `modelId`，执行前检查端点操作能力与当前 `bindingRevision`。
 - 缺少实现：账号进入 `provider-unavailable` 状态，保留本地数据，禁止刷新和认证；
 - 未知 offering：拒绝新增认证，不按 provider 的第一个 offering 猜测；
 - 未知账号 provider：拒绝执行并保留可诊断错误，不迁移到相似标识。
@@ -214,7 +214,7 @@ const refreshCoordinator = new RefreshCoordinator(storage, credentialService, pr
 // 后续模型目录与推理服务使用同一个 providerRegistry 和活动凭据后端。
 ```
 
-`providers/<id>/bundle.ts` 接受 `ServiceResolver` 并返回 contribution，`createProviderContributions(services)` 在 Core 内集中收集。新增供应商只修改 Core 的目录、组合工厂和收集点，不在产品组合根增加按供应商命名的分支。[当前工厂收集点](../../../../packages/core/src/providers/contributions.ts) · [注册表](../../../../packages/core/src/providers/registry.ts)
+`providers/<id>/bundle.ts` 接受 `ServiceResolver` 并返回 contribution，`createProviderContributions(services)` 在 Core 内集中收集。模型路径完成策略拆分后，新增供应商仅需提交其 Core 实现与一条组合清单项。[当前工厂收集点](../../../../packages/core/src/providers/contributions.ts) · [注册表](../../../../packages/core/src/providers/registry.ts)
 
 同一个 `providerRegistry` 同时交给认证、刷新、模型目录、推理准备、公共快照和诊断服务。不得为每个子系统重新构造服务商表。
 
@@ -258,6 +258,20 @@ Grok Build 与 Antigravity 曾按此原则停留在“预告”状态，如今�
 
 如果产品确实需要主进程返回“已知但未安装”的目录，应建立独立 `ProviderCatalogEntry` 并把 `availability: "unavailable"` 作为明确状态；它不能出现在可执行注册表，也不能接受认证请求。
 
+### 4.6 DeepSeek 内置 API Key 绑定
+
+DeepSeek 的完整详细设计——包括数据驱动的 `routeConfig`、统一账号路由存储 `account.routes.<accountId>`、三条路由的参数与思考映射真值表、非推理/未知型号边界、原生只读校验及预期出站 JSON——见[DeepSeek 详细设计](./request-dispatch.md#4-deepseek-详细设计)。
+
+DeepSeek 按内置普通 API Key 接入，注册 ID 为 `deepseek`，offering 为 `deepseek-api-key`。官方默认地址与用户自建网关地址均复用同一份 `deepSeekModelPolicy`。自定义地址保存在本机 profile，不进入共享凭据（共享凭据仅携带最小 `provider-key+json` v3 的 Key 与修订）；普通 Key 不参与 PolyQuota 订阅用量刷新。
+
+| 明细协议 (`protocol`) | 预置地址及用途 | DeepSeek 协议行为（归属 `deepSeekModelPolicy`） |
+| --- | --- | --- |
+| `openai-chat` | OpenAI 族根 `https://api.deepseek.com`，追加 `chat/completions`；同族目录 `GET models`。 | 输出上限固定为 `max_tokens`；仅当型号未明确 `reasoningMode="none"` 时按开关写入 `thinking.type`（`enabled`/`disabled`），开启且未消费时写入 `reasoning_effort`。响应公开全文在 `message.reasoning_content` / `delta.reasoning_content`。 |
+| `openai-responses` | 同一 OpenAI 族根，追加 `responses`，共用账号认证与目录。 | 输出上限用 `max_output_tokens`，开启时写 `reasoning.effort`，关闭时写 `reasoning.effort="none"`；抑制 `reasoning.summary`。响应公开全文在 `response.reasoning_text.delta` / `.done`。 |
+| `anthropic-messages` | Anthropic 族根 `https://api.deepseek.com/anthropic/v1`，追加 `messages`（`x-api-key` + `anthropic-version: 2023-06-01`）。 | 输出上限用 `max_tokens`，按开关写入 `thinking.type`（`enabled`/`disabled`），抑制 `thinking.display: "summarized"`，开启且未消费时写入 `output_config.effort`。官方端点无目录时允许手工登记。 |
+
+三个端点均属通用 LLM，选择中显式保存明细。共用的 `ConnectionDialog` 按 `offering.routeConfig` 数据驱动渲染，不保留任何针对 `deepseek` 的代码特判。已有指向相同域名的 `custom-*` 通用账号保留原身份与 v4 迁移固化的 `chatOutputLimitField`，不自动启用 DeepSeek 思考字段规则。
+
 ## 5. 连接、记录与并发写入
 
 ### 身份与路由
@@ -268,15 +282,20 @@ Grok Build 与 Antigravity 曾按此原则停留在“预告”状态，如今�
 
 ```ts
 interface RouteBinding {
-  protocolRouteId: string;
-  baseUrl: string;
+  protocol: EndpointProtocol;
+  protocolFamily: ProtocolFamily; // 从端点注册表核对归属
   bindingRevision: string;
-  auth: { scheme: "bearer" | "x-api-key" | "api-key"; secretRef: string };
+  familyBinding: { // 以下为当前账号解析的族绑定，仅在宿主使用
+    familyBindingRevision: string;
+    baseUrl: string;
+    auth: { scheme: string; secretRef: string };
+    rules: readonly RequestRule[];
+  };
   rules: readonly RequestRule[];
 }
 ```
 
-协议种类、协议版本、操作及允许的认证形式由注册表声明。每条绑定引用 offering 允许的路由，使用有版本的协议配置。若允许修改协议版本或启用预览参数，必须从该路由支持的选项中选择并保存在绑定中。2B 保存供应商配置时拒绝同一 offering 中重复的端点种类。调用时按账号绑定的 offering 和路由解析目的地，仅取该账号获准的秘密。2A 的长期选择使用公共 `ModelSelection` 四个字段。2B 的测试选择引用具体账号的模型行，并保存操作、输入输出组合及绑定修订，发送前重验当前 offering 和授权。
+结构以 `providerId + protocolFamily` 声明公共认证机制和非秘密额外参数。offering 提供已启用的族、受控根地址和厂商适用配置，具体账号在当前授权下提供认证材料。族目录和所属明细共享这份有效绑定，按操作应用适用的版本头、查询项等参数。测试选择引用具体账号的模型行、操作及明细协议，执行前核验协议所属族及账号授权。
 
 配置编辑只接受根地址，例如 `https://relay.example/openai/v1`。宿主允许 HTTP(S) 自建地址、端口及子路径，拒绝 URL 内嵌认证、查询串及片段。先规范化目录结尾的斜线，再拼接协议持有的相对路径 `models`、`chat/completions`、`responses` 或 `messages`。需要的查询项以命名字段独立编码。绝对路径、含跳转段的路径、上游给出的任意下一页 URL 都不能覆盖目标。认证请求关闭自动重定向，3xx 返回可诊断的端点错误。
 
@@ -287,9 +306,10 @@ interface RouteBinding {
 | 版本或身份         | 用途                                                                                                                                                          |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 记录修订           | 整条记录的乐观并发条件。私有库用受事务保护的修订列，共享用 broker 记录修订、许可和 fence。后台换密文与旧表单写入也应校验观察到的记录，避免迟到写入            |
-| `bindingRevision`  | 每条路由不透明的配置版本。改地址、认证身份、协议选项或适用映射均生成新值。换/删共享 secret 时更新所有引用它的路由。仅改显示名不变。删除再新建路由不能复用旧值 |
+| `familyBindingRevision` | 固定获准账号的有效族绑定。族根地址、认证、影响目录或调用的公共参数变更时，失效该范围的目录与所有所属端点。换 Key 时失效该账号引用该 Key 的每个族。 |
+| `bindingRevision` | 明细端点的有效修订，包含当前族绑定与该端点自身的配置修订。仅调整某个端点的操作映射时更新该端点；族目录和其他端点可继续使用。删除再建生成新修订。 |
 | 当前后端身份和代次 | 持久命名空间区分本地 profile 与共享 vault，运行时在切换活动后端/身份后递增代次并停止旧任务。即使私有、共享使用相同账号 ID，也不能共用旧请求或缓存             |
-| 目录修订           | 一次完整成功的模型列表版本。可叠加预置版本和本地覆盖修订生成展示版本。普通目录刷新不改变账号和协议选择                                                        |
+| `catalogRevision` | 一次完整成功的族目录快照版本。刷新成功后更新目录修订；单纯刷新不会改变族绑定或明细执行修订。 |
 
 2A 在后端选择器中以同一个活动引用提供凭据及连接记录操作。私有实现先验证、加密候选，再在事务内校验修订并一次写入账号、密文和新修订。共享编辑在记录许可内重新读取、核对编辑基线、修改和提交。公开管理列表采用描述投影，只有需要配置的操作在本次调用内读取记录。凭据刷新仍经现有 `refresh` 许可路径。只读目录请求本身不占供应商刷新许可，若需刷新授权，完成许可内刷新后重新读取绑定再发起发现。共享不可达时复用选择器的 unavailable 状态。
 
@@ -333,23 +353,25 @@ GraphAgent 业务库使用产品 SQLite 短事务承载账号、供应商与模�
 
 ### 发现与刷新
 
-目录服务接收 `ModelCatalogScope`。入口先检查账号/路由的归属和操作能力，再从同一活动后端读取绑定及凭据的请求期快照，固定后端代次、`bindingRevision`。模型 facet 交给对应的协议实现读取完整列表。OpenAI 兼容路由按实际响应读取 `data[].id` 等支持字段。Anthropic 兼容路由按绑定的协议版本和认证读取，处理 `has_more`、`last_id` 和 `after_id`。每页只累积白名单字段，设置页数/条数上限，拒绝重复游标和矛盾的重复 ID。协议事实和来源见[产品设计中的目录适配表](./connections-and-models.md#2-从协议目录得到可用模型)。
+管理刷新按后端可见范围、供应商、offering、账号与 `protocolFamily` 解析族绑定并固定 `familyBindingRevision`；目录查询参数、单页解析与候选过滤统一委托给 `ProviderOfferingModelPolicy` 的 `transformCatalogQuery`、`transformCatalogPage` 与 `transformCatalogCandidates` 回调链，写入完整族目录后按明细投影。[发现与分页](../../../../packages/core/src/providers/model-discovery.ts) · [快照仓储](../../../../apps/graph-agent/src/server/model-repository.ts)
+
+原生代理的 `GET /openai/v1/models` 和 `GET /anthropic/v1/models`（均相对产品代理前缀）分别请求对应族的一页。采用该族认证、允许的原生查询项和响应格式，调用方负责续页。GraphAgent 管理目录的刷新独立读取完整列表；Anthropic 用 `has_more`、`last_id` 和 `after_id` 续页，OpenAI 族遵循实际 offering 的列表契约。只在管理投影内提取白名单字段，限制页数与条数，拒绝重复游标或内容冲突的重复 ID。未注册目录能力的协议族允许手工登记。[目录适配依据](./connections-and-models.md#2-从协议目录得到可用模型)
 
 建议先用产品 SQLite 的两类数据实现仓储端口，内存适配器执行同一组 contract tests。
 
 | 存储对象     | 键与内容                                                                                                                                                   |
 | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 路由目录快照 | 键为后端命名空间、账号、路由和绑定版本，保存完整候选列表、目录修订、成功时间及过期时间。模型多时可分主表/明细表，同一事务切换当前快照                      |
+| 协议族目录快照 | 按 profile、后端可见范围、供应商、offering、账号、`protocolFamily` 及 `familyBindingRevision` 隔离。整份候选列表连同目录修订和成功时间原子替换；有同一模型的多个明细端点共用此快照。 |
 | 本地模型设置 | 2B 按产品 profile、接入点／经核实的账号、路由、精确模型与操作保存。后端切换保留同一账号配置；授权、目录证据和路由修订单独复核。[GraphAgent 业务表](../../../graph-agent/design/business-database.md) |
 
-默认先展示有效缓存，到期返回旧数据并后台刷新；手动刷新跳过 TTL。TTL 由目录服务注入，可在测试中固定时间。同一后端代次与绑定合并正在运行的任务，单个 UI 订阅取消仅释放自身等待。换 Key、改址、删路由或切后端时取消旧任务。写缓存时校验本地仍活动的代次与绑定版本，按版本存储并只查询当前版本。共享事件可能迟到，因此发送前还须从权威后端解析当前修订。失联时缓存仅作为带时点的显示数据。
+默认先展示当前族的有效缓存，到期后台刷新；手动刷新跳过 TTL。相同作用域、后端代次和族绑定修订合并为一个在途刷新，切换同族端点沿用该任务。换 Key、改变族根地址或公共参数、撤权和切后端时取消受影响的旧任务。写缓存前重新核验可见性、后端代次和族修订，迟到结果丢弃。目录仅作为来源证据，过滤端点适用性后才向具体模型操作投影。
 
 | 结果                               | 对目录与选择的影响                                                                                                                 |
 | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | 全部分页成功                       | 一次提交，合法空列表也替换旧远端结果。已移除的选中模型仍能按 ID 显示“当前目录不可用”。新发现与手工条目按精确 ID 合并并保留手工来源 |
 | 暂时失败、分页中断、限流或格式错误 | 不发布半个目录，保留相同绑定上次成功快照，记录可重试原因与时点。401/403 显示授权异常，重新授权后重新发现                           |
 | 网关缺少列表端点                   | 返回发现不可用。允许保存连接并手工登记该路由的上游 ID/部署名。手工和预置均不能将一次授权失败变成可用证明                           |
-| 刷新期间变更配置或退出账号         | 丢弃过时结果，原请求完成也不能恢复已删除的绑定。两个协议路由可独立刷新，失败及取消只影响对应路由                                   |
+| 刷新期间变更配置或退出账号 | 丢弃过时结果。同族所有明细端点共同观察目录刷新状态；另一协议族及其他账号各自独立。 |
 
 ### 参数事实与合并规则
 
@@ -373,17 +395,19 @@ GraphAgent 业务库使用产品 SQLite 短事务承载账号、供应商与模�
 | 对象 | 持久化与校验 |
 | --- | --- |
 | 型号和操作 | JSON 数据包分发，GraphAgent 校验后按修订导入 SQLite；以 `modelKey` 标识型号，保存原厂、家族、系列、变种。每个 `operationId` 定义自己的输入输出组合、事实、参数模板和来源。只有同代白名单内的字段可回落到系列值。[型号结构](./model-structure.md#身份能力部署与报价) |
-| 部署与目录 | 当前 profile 业务库用供应商、offering、业务账号引用和协议定位部署，当前后端核验可见性和路由，用 `bindingRevision` 固定一次发现或调用。保留精确上游 ID，另行关联预置。公共默认以 offering 为边界，对同协议、同型号和操作逐字段继承；远端列表、授权与账号覆盖归具体账号。 |
+| 部署与目录 | 部署保留具体账号、offering、明细协议与上游型号，参数、价格和操作能力仍按端点区分。目录读取固定 `familyBindingRevision`，执行固定有效 `bindingRevision`，完整目录替换更新 `catalogRevision`。公共默认以 offering 为范围，权限和远端证据归实际账号。 |
 | 基础价格 | 首轮可编辑项为 `input`、`output` 两行，含币种和每百万 tokens 的非负十进制金额。只改当前作用域中对应的普通 token 行，显式零、未知和删除覆盖分别编码。其他计量及条件行保留旧键、来源和原值。 |
 | 条件价卡 | 第三步为部署、操作和接入产品绑定 `rateCardId + revision`。将现有普通价投影为无条件行，再引入缓存、阶梯、日历和订阅权益。Core 计算收费明细，2B 单轮界面临时持有费用投影，关闭即释放。[报价数据结构](./model-pricing.md#一张价目表的结构) |
 
 ## 8. 从模型选择到协议请求
 
-阶段二在已登记的账号路由上按三种标准协议预览和发送。下列步骤中的规则解析、模板消费和自定义头／Body 属于阶段三验收。[标准协议实现](../../../../packages/core/src/providers/model-chat.ts)
+阶段二在已登记的账号路由上按三种标准协议预览和发送。单轮测试页接入[原生代理](./protocol-design.md#41-单轮试聊使用同协议代理)后直接提交本协议 Body，服务端复用下述绑定与认证步骤。下图的请求编译流程适用于配置预览与由服务端构造请求的执行端口。下列步骤中的规则解析、模板消费和自定义头／Body 属于阶段三验收。[标准协议实现](../../../../packages/core/src/providers/model-chat.ts)
+
+协议族与明细端点拥有原生字段结构。型号映射、厂商字段、强制参数、公开输出与回执由对应贡献的 `ProviderOfferingModelPolicy` 回调提供。预览、旧执行、原生校验和异步回查共用同一绑定策略。见[策略分派设计](./request-dispatch.md)及[请求准备顺序](./protocol-design.md#5-请求参数的转换映射与自定义调整)。
 
 ```mermaid
 flowchart TD
-  S["ModelSelection<br/>providerId + accountId +<br/>protocolRouteId + modelId"] --> B["1. 绑定<br/>解析账号、路由、目录或手工条目<br/>校验 inference facet 与能力"]
+  S["ModelSelection<br/>providerId + accountId +<br/>protocol + modelId"] --> B["1. 绑定与计划门控<br/>解析账号、策略链、目录或手工条目"]
   B --> R["2. 解析规则<br/>别名、模型名模板、参数消费<br/>（阶段三）"]
   R --> E["3. 协议编码<br/>Chat Completions / Responses / Messages codec<br/>合并扩展头与非秘密 Body"]
   E --> P["4a. 预览<br/>同一纯函数输出目标、路径、<br/>脱敏参数与 secret 占位"]
@@ -397,7 +421,7 @@ flowchart TD
 3. **协议编码。** 先将模板消费的强度、上下文参数标记为已处理，再由 Chat Completions、Responses 或 Messages codec 编码剩余原生参数。集成直接协议调用时只发送该协议支持的结构。扩展头按大小写无关的名字合并，额外 Body 仅支持经过验证的 JSON 对象字段，数组整项替换。拒绝改写模型名、消息、工具、流模式、认证头、传输层头、冲突节点、危险对象键和头部换行。发现 GET 请求不应用推理 Body。
 4. **预览与执行。** 同一个纯函数生成目标路由、相对路径、上游模型名、非秘密参数与 secret 引用。给 UI 的预览使用示例消息、脱敏的 header/Body 和秘密占位符。准备对象持有版本和不含秘密的调用计划。执行端在发出调用前检查活动后端与绑定，从本地供应商配置或固定注册表解析目的地，并从当前授权的凭据后端取该账号的秘密，复核两侧对应的绑定修订，再由宿主 HTTP 端口发送。校验前绑定已变化则取消准备结果并返回过期。订阅到另一进程的改绑或撤权事件时停止旧任务，已发送的调用用 `AbortSignal` 取消并丢弃迟到响应，上游可能已经收到请求。调用结束即释放本次解密材料。错误仅投影状态类别、可重试性和安全上下文，日志不记录原始请求、上游错误 Body、密钥或完整 URL。
 
-**端到端例子。** 同一账号的 `chat` 路由根地址为 `https://gw.example/team/openai/v1/`，`messages` 路由为 `https://gw.example/team/claude/v1/`。前者返回 `vendor/atlas-pro-high-128k`，后者返回 `atlas-pro`。用户在 Chat 路由显式登记逻辑目标 `atlas-pro`、其可选上游变体及别名 `work-pro → atlas-pro`。模板为 `vendor/{model}-{effort}-{windowLabel}`，窗口表将 131072 映射为 `128k`。选择 `high` 与 131072 时，向 `/team/openai/v1/chat/completions` 发出登记的完整上游 ID。规则已消费 `effort`，故不重复发送强度字段。该操作的非秘密预览头和嵌套开关只在 Chat 上出现。在 Messages 路由按原 ID 请求，保留其缓存与参数来源。换账号 Key 时使两个引用它的路由失效，正在返回的旧目录不能改变新绑定的有效目录。
+**端到端例子。** 同一账号在所绑定的 offering 启用 OpenAI 和 Anthropic 两个族，根地址分别为 `https://gw.example/team/openai/v1/` 和 `https://gw.example/team/claude/v1/`。OpenAI 族目录返回 `vendor/atlas-pro-high-128k`，Anthropic 族目录返回 `atlas-pro`。在阶段三预览或宿主主动编译的 Chat 请求中，用户显式登记别名 `work-pro → atlas-pro` 和模板 `vendor/{model}-{effort}-{windowLabel}`，选择 `high` 与 `128k` 后得到 OpenAI 族根地址下的 `chat/completions` 及完整上游 ID。Chat 的操作规则保留在该端点；同一族的公共头和适用的查询项也用于该族目录。修改一族的通用参数仅影响该族；轮换此账号的 Key 会使所有引用该 Key 的族绑定失效。
 
 对于 Azure 风格路由，部署名可作为手工目标，特定 API 的非秘密查询参数与预览头可以在对应操作上配置，认证通过 `api-key` 或该路由支持的其他绑定注入。需要不同部署路径形状时由受支持的协议实现提供分段编码的路径模板，用户输入不直接成为 URL 路径模板。
 
@@ -418,8 +442,8 @@ flowchart TD
 共享迁移向导允许一次性显示系统生成的迁移密钥，并由用户填入接受方后台；这是显式设计的迁移交互，不开放供应商 token 或存储主密钥读取。加密包只在后台解密，UI 取得脱敏预览；迁移密钥不进入普通查询、事件、缓存或日志，具体规则见[凭据共享设计](../credential-sharing/design.md)。
 
 - 所有标识使用长度和字符集受限的 schema；
-- `offeringId`、`authMethodId` 必须从注册表交叉验证；
-- `providerId`、`accountId`、`modelId` 和 `protocolRouteId` 必须作为一个 selection 交叉验证；
+- `offeringId`、`authMethod` 必须从注册表交叉验证；
+- `providerId`、`accountId`、`modelId` 和 `protocol` 必须作为一个 selection 交叉验证；
 - `fields` 只允许 descriptor 声明的键，并限制字符串长度；
 - 重置额度分体 `itemId` 只回传给所属 provider 的兑换协议并限制长度，不做跨 provider 解释；
 - secret 字段只在当前调用中存在，不写日志和公开操作状态；
@@ -447,7 +471,7 @@ flowchart TD
 3. 使用注入的 fake `HttpPort` 实现 account 与 usage facet，不接 Electron；
 4. 声明 descriptor、offering、认证方式、能力和扩展 schema；
 5. 运行通用 Provider contract suite；
-6. 在应用组合根注册 contribution；
+6. 在 Core 的贡献清单登记工厂，由各宿主现有的组合根构建注册表；
 7. 为 UI 增加 `iconKey` 图标映射等前端侧物料（本地化现阶段不做）；
 8. 验证主进程公开快照与服务调用绑定到正确实现；
 9. 只有在协议与绑定通过后，才做一次可选的真实凭据烟测。
@@ -484,7 +508,7 @@ flowchart TD
 
 - descriptor 与任一 facet 的 `providerId` 不一致时拒绝；
 - 重复 `providerId`、`offeringId`、认证方式时拒绝；
-- 重复 `protocolRouteId`、模型引用未知 route 或声明能力缺少 facet 时拒绝；
+- 重复 `protocol`、模型引用未知协议或声明能力缺少实现时拒绝；
 - 候选集合中任一项无效时没有部分注册；
 - 未知 offering、provider、account 明确失败；
 - GLM 两个 offering 都解析到同一组账号/用量 facet；

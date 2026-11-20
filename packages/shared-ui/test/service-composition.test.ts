@@ -21,6 +21,7 @@ import {
 
 function fakeTransport(): IServiceTransport {
   return {
+    requestRaw: vi.fn(),
     request: async <I, O>(
       _operation: ApiOperation<I, O>,
       _input: I,
@@ -32,6 +33,32 @@ function fakeTransport(): IServiceTransport {
 }
 
 describe("service slice composition", () => {
+  it("keeps a native response body streaming and cancels it with the transport lifetime", async () => {
+    const body = new ReadableStream<Uint8Array>();
+    let observed: RequestInit | undefined;
+    const transport = new FetchServiceTransport({
+      baseUrl: "http://127.0.0.1:4877/api",
+      fetchImpl: async (url, init) => {
+        expect(url).toBe("http://127.0.0.1:4877/api/v1/fixture");
+        observed = init;
+        return new Response(body, { headers: { "Content-Type": "text/event-stream" } });
+      },
+    });
+    const operation = {
+      method: "POST" as const,
+      path: () => "/api/v1/fixture",
+      headers: () => ({ "Content-Type": "application/json" }),
+      body: (s: string) => ({ model: s }),
+    };
+    expect((await transport.requestRaw(operation, "model")).body).toBe(body);
+    expect(observed?.body).toBe('{"model":"model"}');
+    expect(observed?.redirect).toBe("error");
+    expect(() =>
+      transport.requestRaw({ ...operation, path: () => "//foreign.invalid/" }, "model"),
+    ).toThrow();
+    transport.dispose();
+    expect(observed?.signal?.aborted).toBe(true);
+  });
   it("sends the captured credential context for recovery and preserves a confirmed delivery's null result", async () => {
     const calls: { path: string; body?: unknown }[] = [];
     const delivery = { migrationKey: "fictional", storageVersion: "new-version" };

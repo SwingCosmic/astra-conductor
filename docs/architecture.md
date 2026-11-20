@@ -72,6 +72,10 @@ flowchart LR
 
 客户端实现按方向拆成独立功能切片类，通过共享泛型 mixin 辅助方法合成最终 `HttpPolyQuotaService` / `HttpGraphAgentService`，由 `implements` 校验产品接口；最终类文件只保留组合清单，创建工厂只负责实例化。基类统一持有传输与生命周期，具体切片及类型推断约定见[Service 切片组合设计](./common/contract/service-composition.md#11-通过泛型-mixin-合成功能切片类)。
 
+**GraphAgent 按协议族挂载原生代理。** Web 与 Electron 共用同一 Hono 应用。以 `/api/v1/graph-agent/proxy/openai/v1` 和 `/api/v1/graph-agent/proxy/anthropic/v1` 为独立根，各自提供原生 `GET /models`。前者另挂 Chat Completions 与 Responses，后者挂 Messages。Hono 按族、方法和路径派发，Core 按同一供应商的族配置解析所选账号的认证与公共附加参数。唯一的 `GET /api/v1/events` 继续承载视图失效。族描述符由公共契约提供，GraphAgent 负责代理与试聊，PolyQuota 经既有供应商管理接口读取其获准范围。[协议族与代理入口](./common/core/provider/protocol-design.md#41-单轮试聊使用同协议代理)
+
+**供应商行为的依赖方向。** GraphAgent 和 PolyQuota 的公共请求入口依赖 Core 的能力接口。具体供应商的可执行策略由 Core 组合入口从 `providers/<id>/` 注册，公共模型、认证、传输、计量和界面代码禁止自行识别厂商并选择实现。按协议族选择原生格式、按当前授权核对绑定及凭据所有权由公共层负责。策略接口与 4 步链式分派流程见[请求策略设计](./common/core/provider/request-dispatch.md)。
+
 ### 2.2 公共与专属 Hono 子应用
 
 Core 提供无框架的公共应用服务；可选子入口 `@astra-conductor/core/http` 仅封装这些服务的公共 Hono handler、契约校验和结果投影。两产品在各自 `src/server/` 中挂载同一个公共子应用工厂，再组合产品专属子应用、统一中间件和唯一 SSE 端点。Core 主入口不重导出 `/http`，浏览器和纯业务调用方不加载 Hono，公共适配器也不引用产品包。

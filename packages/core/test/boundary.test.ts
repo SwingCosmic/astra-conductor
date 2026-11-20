@@ -77,4 +77,28 @@ describe("core boundary", () => {
       expect(text, file).not.toMatch(/from\s+["']@\//);
     }
   });
+
+  it("keeps common provider pipeline files free of concrete vendor imports, IDs, and hostnames", () => {
+    const commonProviderFiles = [
+      "packages/core/src/providers/model-policy.ts",
+      "packages/core/src/providers/model-routes.ts",
+      "packages/core/src/providers/model-discovery.ts",
+      "packages/core/src/providers/model-chat.ts",
+      "packages/core/src/providers/model-request-rule.ts",
+      "packages/core/src/providers/registry.ts",
+    ];
+    const forbiddenImport =
+      /from\s+["'](?:\.\/(?:codex|deepseek|grok-build|glm|opencode-go|claude|antigravity|github-copilot|new-api|custom-templates|compatible-api-key|openrouter-receipt)(?:\/|\.js)?|@omniroute\/)/;
+    const forbiddenVendorLiteral =
+      /["'](?:deepseek|deepseek-api-key|codex|openai-api-key|grok-build|bigmodel-coding-plan|zai-coding-plan|opencode-go|compatible-api-key|openrouter-receipt)["']/;
+    const forbiddenHostname =
+      /(?:api\.deepseek\.com|api\.openai\.com|chatgpt\.com|open\.bigmodel\.cn|api\.z\.ai|cli-chat-proxy\.grok\.com|opencode\.ai|openrouter\.ai)/;
+
+    for (const relativePath of commonProviderFiles) {
+      const text = readFileSync(path.join(repoRoot, relativePath), "utf8");
+      expect(text, `${relativePath} imports concrete provider`).not.toMatch(forbiddenImport);
+      expect(text, `${relativePath} hardcodes vendor ID`).not.toMatch(forbiddenVendorLiteral);
+      expect(text, `${relativePath} hardcodes vendor hostname`).not.toMatch(forbiddenHostname);
+    }
+  });
 });

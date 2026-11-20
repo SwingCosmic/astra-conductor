@@ -68,10 +68,10 @@ export interface PublicUsage {
   /** 上游原始 plan 标识（数据层标识符）：审计与最后回退用，展示走 `planLabel`。 */
   plan: string;
   /**
-   * 主进程经目录匹配解析出的档位 id；`null` 即未识别档位——倍率按默认档
+   * 主进程经目录匹配解析出的档位键；`null` 即未识别档位——倍率按默认档
    * 估算（既有行为），UI 需给出可见提示而不是静默兜底。
    */
-  planId: string | null;
+  planKey: string | null;
   /**
    * 主进程固化进快照的展示标签，回退顺序：目录 `displayName` → 上游原始
    * 展示名（叶子附带时）→ 原始标识串；`null` 表示上游没有 plan 信息。

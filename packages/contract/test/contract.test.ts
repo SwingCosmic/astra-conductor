@@ -8,7 +8,21 @@ import {
   parseCredentialExportRequest,
   parseStartAuthRequest,
   parseCommandContext,
+  endpointProtocols,
+  protocolFamilies,
+  protocolFamilyDescriptors,
+  resolveEndpointProtocol,
+  modelEndpointDescriptor,
+  parseFamilyPolicy,
+  parseModelRouteInput,
+  parseConnectionRequest,
+  resolveProviderRouteSelection,
 } from "../src/polyquota/index";
+import {
+  parseModelExtensionBody,
+  parseModelRequestRule,
+} from "../src/common/dto/model-request-rule";
+import { graphModelOperations, nativeChatOperation } from "../src/graph-agent/index";
 
 /**
  * 请求侧（renderer → main）校验用例。响应方向零运行期解析（2026-10 校验
@@ -188,5 +202,413 @@ describe("PolyQuota contract request validation", () => {
     expect(() =>
       parseRedeemResetCreditRequest({ accountId: "glm-1", selectionToken: "record-42" }),
     ).toThrow(ContractValidationError);
+  });
+});
+
+describe("Contract naming refactor and simplified request validation", () => {
+  it("exports renamed protocol enums, family descriptors, and resolver helpers", () => {
+    expect(endpointProtocols).toContain("openai-chat");
+    expect(protocolFamilies).toEqual(["openai", "anthropic", "gemini", "grok-video", "cohere"]);
+    expect(protocolFamilyDescriptors.openai.family).toBe("openai");
+    expect(protocolFamilyDescriptors["grok-video"].defaultProtocol).toBe("grok-video-generations");
+    expect(resolveEndpointProtocol(null, "grok-video")).toBe("grok-video-generations");
+    expect(resolveEndpointProtocol("openai-chat", "openai")).toBe("openai-chat");
+    expect(() => resolveEndpointProtocol(null, "openai")).toThrow(ContractValidationError);
+
+    const chatDesc = modelEndpointDescriptor("openai-chat");
+    expect(chatDesc.protocol).toBe("openai-chat");
+    expect(chatDesc.protocolFamily).toBe("openai");
+    expect(chatDesc.operation).toBe("chat");
+    expect(chatDesc.ioProfile).toBe("text");
+
+    expect(
+      resolveProviderRouteSelection({
+        providerId: "openai",
+        accountId: "acc-1",
+        modelId: "grok-video-1",
+        protocolFamily: "grok-video",
+      }),
+    ).toEqual({
+      providerId: "openai",
+      accountId: "acc-1",
+      modelId: "grok-video-1",
+      protocol: "grok-video-generations",
+    });
+  });
+
+  it("rejects top-level protocol reserved keys in requestRule.body while allowing nested extension keys", () => {
+    expect(
+      parseModelExtensionBody({
+        metadata: {
+          store_id: "store-42",
+          include_meta: true,
+          cache_key: "k-1",
+          target_url: "https://example.test",
+          thinking: { mode: "custom" },
+        },
+        extra_option: "ok",
+      }),
+    ).toEqual({
+      metadata: {
+        store_id: "store-42",
+        include_meta: true,
+        cache_key: "k-1",
+        target_url: "https://example.test",
+        thinking: { mode: "custom" },
+      },
+      extra_option: "ok",
+    });
+
+    for (const key of [
+      "model",
+      "thinking",
+      "messages",
+      "store",
+      "reasoning_effort",
+      "output_config",
+    ]) {
+      expect(() => parseModelExtensionBody({ [key]: "x" })).toThrow(ContractValidationError);
+    }
+
+    // Prototype pollution keys are rejected at every depth
+    expect(() => parseModelExtensionBody(JSON.parse('{"nested":{"__proto__":{}}}'))).toThrow(
+      ContractValidationError,
+    );
+    expect(() => parseModelExtensionBody({ nested: { constructor: "x" } })).toThrow(
+      ContractValidationError,
+    );
+    expect(() => parseModelExtensionBody({ nested: { prototype: "x" } })).toThrow(
+      ContractValidationError,
+    );
+
+    // Secret-like values remain rejected
+    expect(() => parseModelExtensionBody({ note: "sk-abcdefgh1234" })).toThrow(
+      ContractValidationError,
+    );
+  });
+
+  it("allows pure static aliases without targets while requiring targets for modelTemplate and rejecting cycles", () => {
+    const parseHeaders = (headers: unknown) => parseFamilyPolicy({ headers }).headers ?? {};
+
+    expect(
+      parseModelRequestRule(
+        {
+          operation: "chat",
+          aliases: { "fast-chat": "deepseek-chat" },
+        },
+        parseHeaders,
+      ),
+    ).toEqual({
+      operation: "chat",
+      aliases: { "fast-chat": "deepseek-chat" },
+    });
+
+    // Cycle in aliases without targets is still rejected
+    expect(() =>
+      parseModelRequestRule(
+        {
+          operation: "chat",
+          aliases: { a: "b", b: "a" },
+        },
+        parseHeaders,
+      ),
+    ).toThrow(ContractValidationError);
+
+    // Explicit targets list is still enforced against alias final targets when present
+    expect(() =>
+      parseModelRequestRule(
+        {
+          operation: "chat",
+          aliases: { a: "b" },
+          targets: ["c"],
+        },
+        parseHeaders,
+      ),
+    ).toThrow(ContractValidationError);
+
+    // modelTemplate without targets is still rejected
+    expect(() =>
+      parseModelRequestRule(
+        {
+          operation: "chat",
+          modelTemplate: "{model}-{effort}",
+        },
+        parseHeaders,
+      ),
+    ).toThrow(ContractValidationError);
+
+    expect(
+      parseModelRequestRule(
+        {
+          operation: "chat",
+          modelTemplate: "{model}-{effort}",
+          targets: ["gpt-5-high"],
+        },
+        parseHeaders,
+      ),
+    ).toEqual({
+      operation: "chat",
+      modelTemplate: "{model}-{effort}",
+      targets: ["gpt-5-high"],
+    });
+  });
+
+  it("validates familyPolicy headers via explicit blacklist and preserves query restrictions", () => {
+    expect(
+      parseFamilyPolicy({
+        headers: {
+          "X-Idempotency-Key": "idem-123",
+          "X-Cache-Key": "cache-abc",
+          "HTTP-Referer": "https://app.example",
+          "Anthropic-Beta": "prompt-caching-2024-07-31",
+          "X-Title": "GraphAgent",
+          "Accept-Language": "en-US",
+        },
+        query: {
+          region: "us",
+          api_version: "2026-01",
+        },
+      }),
+    ).toEqual({
+      headers: {
+        "accept-language": "en-US",
+        "anthropic-beta": "prompt-caching-2024-07-31",
+        "http-referer": "https://app.example",
+        "x-cache-key": "cache-abc",
+        "x-idempotency-key": "idem-123",
+        "x-title": "GraphAgent",
+      },
+      query: {
+        api_version: "2026-01",
+        region: "us",
+      },
+    });
+
+    for (const forbidden of [
+      "authorization",
+      "Authorization",
+      "x-api-key",
+      "x-goog-api-key",
+      "proxy-authorization",
+      "host",
+      "cookie",
+      "set-cookie",
+      "content-length",
+      "transfer-encoding",
+      "connection",
+      "keep-alive",
+      "upgrade",
+      "te",
+      "trailer",
+      "proxy-connection",
+      "x-graphagent-call-id",
+      "X-GraphAgent-Context-Id",
+      "constructor",
+      "prototype",
+    ]) {
+      expect(() => parseFamilyPolicy({ headers: { [forbidden]: "value" } })).toThrow(
+        ContractValidationError,
+      );
+    }
+
+    expect(() => parseFamilyPolicy({ headers: { "x-custom": "Bearer sk-1234567890" } })).toThrow(
+      ContractValidationError,
+    );
+    expect(() => parseFamilyPolicy({ headers: { "x-custom": "bad\nvalue" } })).toThrow(
+      ContractValidationError,
+    );
+
+    for (const reservedParam of [
+      "limit",
+      "after",
+      "before",
+      "before_id",
+      "after_id",
+      "client_version",
+      "constructor",
+    ]) {
+      expect(() => parseFamilyPolicy({ query: { [reservedParam]: "1" } })).toThrow(
+        ContractValidationError,
+      );
+    }
+  });
+
+  it("parses scoped and unscoped connection requests without provider-specific hardcoding", () => {
+    // Scoped request with omitted or empty routes
+    expect(
+      parseConnectionRequest(
+        {
+          providerId: "acme",
+          offeringId: "acme-api-key",
+          displayName: "Acme",
+          apiKey: "secret-key",
+          operationId: "op-1",
+        },
+        "create",
+      ),
+    ).toEqual({
+      providerId: "acme",
+      offeringId: "acme-api-key",
+      displayName: "Acme",
+      apiKey: "secret-key",
+      operationId: "op-1",
+      routes: [],
+    });
+
+    // Scoped request with arbitrary valid routes (no DeepSeek-only exception needed)
+    expect(
+      parseConnectionRequest(
+        {
+          providerId: "acme",
+          offeringId: "acme-api-key",
+          displayName: "Acme Custom",
+          apiKey: "secret-key",
+          operationId: "op-2",
+          routes: [
+            { protocol: "openai-chat", baseUrl: "https://relay.acme.test/v1/" },
+            { protocol: "openai-responses", baseUrl: "https://relay.acme.test/v1" },
+            { protocol: "anthropic-messages", baseUrl: "https://relay.acme.test/anthropic/v1" },
+          ],
+        },
+        "create",
+      ),
+    ).toEqual({
+      providerId: "acme",
+      offeringId: "acme-api-key",
+      displayName: "Acme Custom",
+      apiKey: "secret-key",
+      operationId: "op-2",
+      routes: [
+        { protocol: "openai-chat", baseUrl: "https://relay.acme.test/v1", protocolVersion: null },
+        {
+          protocol: "openai-responses",
+          baseUrl: "https://relay.acme.test/v1",
+          protocolVersion: null,
+        },
+        {
+          protocol: "anthropic-messages",
+          baseUrl: "https://relay.acme.test/anthropic/v1",
+          protocolVersion: "2023-06-01",
+        },
+      ],
+    });
+
+    // Scoped request still enforces family root consistency
+    expect(() =>
+      parseConnectionRequest(
+        {
+          providerId: "acme",
+          offeringId: "acme-api-key",
+          displayName: "Acme Bad",
+          apiKey: "secret-key",
+          operationId: "op-3",
+          routes: [
+            { protocol: "openai-chat", baseUrl: "https://a.example/v1" },
+            { protocol: "openai-responses", baseUrl: "https://b.example/v1" },
+          ],
+        },
+        "create",
+      ),
+    ).toThrow(ContractValidationError);
+
+    // Unscoped legacy compatible-api-key request still requires >= 1 route
+    expect(() =>
+      parseConnectionRequest(
+        {
+          displayName: "Legacy",
+          apiKey: "secret-key",
+          operationId: "op-4",
+          routes: [],
+        },
+        "create",
+      ),
+    ).toThrow(ContractValidationError);
+
+    expect(
+      parseModelRouteInput({
+        protocolFamily: "grok-video",
+        baseUrl: "https://video.example/v1",
+      }),
+    ).toEqual({
+      protocol: "grok-video-generations",
+      baseUrl: "https://video.example/v1",
+      protocolVersion: null,
+    });
+  });
+
+  it("validates GraphAgent model and native chat operations with renamed fields", () => {
+    const manual = graphModelOperations.editManualModel.parseInput({
+      instanceId: "inst-1",
+      contextId: "ctx-1",
+      selection: {
+        providerId: "deepseek",
+        accountId: "acc-1",
+        protocol: "openai-chat",
+        modelId: "deepseek-chat",
+      },
+      expectedBindingRevision: "rev-1",
+      expectedSettingsRevision: "set-1",
+      change: {
+        operation: "upsert",
+        displayName: "DeepSeek Chat",
+        modelType: "text-llm",
+        modelOperation: "chat",
+        ioProfile: "text",
+      },
+    });
+    expect(manual.change).toEqual({
+      operation: "upsert",
+      displayName: "DeepSeek Chat",
+      modelType: "text-llm",
+      modelOperation: "chat",
+      ioProfile: "text",
+    });
+
+    const draft = graphModelOperations.saveModelDraft.parseInput({
+      instanceId: "inst-1",
+      contextId: "ctx-1",
+      selection: {
+        providerId: "deepseek",
+        accountId: "acc-1",
+        protocol: "openai-chat",
+        modelId: "deepseek-chat",
+      },
+      expectedBindingRevision: "rev-1",
+      expectedSettingsRevision: "set-1",
+      scope: "account",
+      operation: "chat",
+      ioProfile: "text",
+      changes: [],
+      priceChanges: [],
+      parameterChanges: [],
+    });
+    expect(draft.operation).toBe("chat");
+    expect(draft.ioProfile).toBe("text");
+
+    const familyRefresh = graphModelOperations.refreshCatalog.parseInput({
+      instanceId: "inst-1",
+      contextId: "ctx-1",
+      accountId: "acc-1",
+      protocolFamily: "openai",
+      expectedFamilyBindingRevision: "frev-1",
+    });
+    expect(familyRefresh).toEqual({
+      instanceId: "inst-1",
+      contextId: "ctx-1",
+      accountId: "acc-1",
+      protocolFamily: "openai",
+      expectedFamilyBindingRevision: "frev-1",
+    });
+
+    expect(
+      nativeChatOperation.path({
+        instanceId: "inst-1",
+        contextId: "ctx-1",
+        expectedBindingRevision: "rev-1",
+        expectedSettingsRevision: "set-1",
+        protocol: "anthropic-messages",
+        body: { model: "claude-3" },
+      }),
+    ).toBe("/api/v1/graph-agent/proxy/anthropic/v1/messages");
   });
 });

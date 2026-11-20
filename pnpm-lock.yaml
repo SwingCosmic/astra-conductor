@@ -84,8 +84,8 @@ importers:
         specifier: ^1.19.17
         version: 1.19.17(hono@4.13.13)
       '@lovekicher/omnichat':
-        specifier: 0.4.4
-        version: 0.4.4(typescript@5.6.3)
+        specifier: 0.4.5
+        version: 0.4.5(typescript@5.6.3)
       better-sqlite3:
         specifier: 'catalog:'
         version: 12.11.1
@@ -507,8 +507,8 @@ packages:
   '@jridgewell/sourcemap-codec@1.6.0':
     resolution: {integrity: sha512-T7jf+5zgsZHwNJ4lvQ7/aezbyk0nNX+zJVWpmHA7VYsEx7a7qr5Rg5IbtJFqkgze5Y2sruq1RUY8Q837Od7iFw==}
 
-  '@lovekicher/omnichat@0.4.4':
-    resolution: {integrity: sha512-mdxPfsZHczBLj9UFu0FJ4BjMYWs7eNSNWABNS0dxexcL5ACbI/u0G9qaQgfrhZfToldyKk8ltv/8V0dgn12wXg==}
+  '@lovekicher/omnichat@0.4.5':
+    resolution: {integrity: sha512-OJNRfU2alSnjTh7kNQaP+Kpf+9SrSvHWYNwr40xuKa+TGdpKx+S/uDr/XCi6SIr+NfnXd7IXqLXc8nA4ibVk3w==}
 
   '@malept/cross-spawn-promise@2.0.0':
     resolution: {integrity: sha512-1DpKU0Z5ThltBwjNySMC14g0CkbyhCaz9FkhxqNsZI6uAPJXFS8cMXlBKo26FJ8ZuW6S9GCMcR9IO5k2X5/9Fg==}
@@ -2441,7 +2441,7 @@ snapshots:
 
   '@jridgewell/sourcemap-codec@1.6.0': {}
 
-  '@lovekicher/omnichat@0.4.4(typescript@5.6.3)':
+  '@lovekicher/omnichat@0.4.5(typescript@5.6.3)':
     dependencies:
       dompurify: 3.4.18
       lodash-es: 4.18.1

@@ -37,6 +37,7 @@ export interface NotificationStateRepository {
 export interface SettingsRepository {
   get(key: string): SettingValue | null;
   save(key: string, value: SettingValue, updatedAt: string): void;
+  delete?(key: string): void;
 }
 
 export interface StoragePort {

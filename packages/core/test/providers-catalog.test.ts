@@ -37,6 +37,7 @@ describe("provider catalog", () => {
       "opencode-go",
       "github-copilot",
       "compatible-api-key",
+      "deepseek",
     ]);
     expect(getProviderDescriptor("glm").offerings.map((offering) => offering.id)).toEqual([
       "bigmodel-coding-plan",
@@ -85,9 +86,10 @@ describe("provider catalog", () => {
         "grok-build",
         "opencode-go",
         "compatible-api-key",
+        "deepseek",
       ].includes(descriptor.provider);
       expect(descriptor.capabilities.includes("usage")).toBe(
-        descriptor.provider !== "compatible-api-key",
+        !["deepseek", "compatible-api-key"].includes(descriptor.provider),
       );
       expect(descriptor.capabilities.includes("model-catalog")).toBe(modelProvider);
       expect(descriptor.capabilities.includes("inference")).toBe(modelProvider);
@@ -143,9 +145,9 @@ describe("provider catalog", () => {
     );
   });
 
-  it("rejects duplicate plan ids, match keys, and invalid multipliers per offering", () => {
+  it("rejects duplicate plan keys, match keys, and invalid multipliers per offering", () => {
     const plan = {
-      id: "plus",
+      key: "plus",
       displayName: "Plus",
       match: ["plus"],
       multiplier: 1,
@@ -168,7 +170,7 @@ describe("provider catalog", () => {
           offerings: [
             {
               ...catalogFixture.offerings[0]!,
-              plans: [plan, { ...plan, id: "plus-2", match: ["PLUS"] }],
+              plans: [plan, { ...plan, key: "plus-2", match: ["PLUS"] }],
             },
           ],
         },
@@ -186,7 +188,7 @@ describe("provider catalog", () => {
 
   it("enforces legacy pairing, ISO dates, and source URLs on plan entries", () => {
     const plan = {
-      id: "legacy-tier",
+      key: "legacy-tier",
       displayName: "Legacy",
       match: ["legacy tier"],
       multiplier: 5,
@@ -216,7 +218,7 @@ describe("provider catalog", () => {
 
   it("rejects regex keys that would swallow every unrecognized tier", () => {
     const plan = {
-      id: "catch-all",
+      key: "catch-all",
       displayName: "Catch All",
       multiplier: 1,
       source: "inferred" as const,
@@ -328,54 +330,54 @@ describe("provider plan catalog", () => {
     // The X Subscription）。改版后 Premium 上报 `GrokPro`，精确键归 premium。
     expect(planMultiplier("grok-build", "plus")).toBe(1);
     expect(planMultiplier("grok-build", "GrokPro")).toBe(4);
-    expect(matchOfferingPlan("grok-build", "GrokPro")?.id).toBe("premium");
+    expect(matchOfferingPlan("grok-build", "GrokPro")?.key).toBe("premium");
     expect(matchOfferingPlan("grok-build", "GrokPro")?.legacy).toBeFalsy();
     // 同形态的 `Grok<X>` 串由防御正则接住，宽泛 `\b<X>\b` 只兜未知单词形态。
-    expect(matchOfferingPlan("grok-build", "GrokUltra")?.id).toBe("ultra");
+    expect(matchOfferingPlan("grok-build", "GrokUltra")?.key).toBe("ultra");
     expect(planMultiplier("grok-build", "super")).toBe(15);
     expect(planMultiplier("grok-build", "ultra")).toBe(50);
     // tier 缺失时的兜底合成标识照常命中。
     expect(planMultiplier("grok-build", "Grok Build")).toBe(5);
     const legacyPro = matchOfferingPlan("grok-build", "SuperGrok Pro");
-    expect(legacyPro).toMatchObject({ id: "supergrok-pro", legacy: true });
+    expect(legacyPro).toMatchObject({ key: "supergrok-pro", legacy: true });
     const legacyHeavy = matchOfferingPlan("grok-build", "SuperGrok Heavy");
-    expect(legacyHeavy).toMatchObject({ id: "supergrok-heavy", legacy: true });
+    expect(legacyHeavy).toMatchObject({ key: "supergrok-heavy", legacy: true });
   });
 
   it("adds Codex promax and folds B-side variants through regex fallback keys", () => {
     // Pro 500（`promax`）：2026-10-29 allowance 翻倍，按官方 ~25x 口径推算为 50x。
     expect(planMultiplier("codex", "promax")).toBe(50);
     expect(matchOfferingPlan("codex", "promax")).toMatchObject({
-      id: "promax",
+      key: "promax",
       displayName: "Pro 500",
     });
     expect(planMultiplier("codex", "self_serve_business_prolite")).toBe(5);
-    expect(matchOfferingPlan("codex", "self_serve_business_usage_based")?.id).toBe("business");
+    expect(matchOfferingPlan("codex", "self_serve_business_usage_based")?.key).toBe("business");
     expect(planMultiplier("codex", "ent26")).toBe(5);
-    expect(matchOfferingPlan("codex", "enterprise_cbp_automation")?.id).toBe("enterprise");
+    expect(matchOfferingPlan("codex", "enterprise_cbp_automation")?.key).toBe("enterprise");
     expect(planMultiplier("codex", "edu_plus")).toBe(5);
-    expect(matchOfferingPlan("codex", "edu_pro")?.id).toBe("edu");
+    expect(matchOfferingPlan("codex", "edu_pro")?.key).toBe("edu");
     expect(planMultiplier("codex", "business")).toBe(5);
   });
 
   it("keeps exact string keys ahead of regex fallback keys", () => {
     // 先精确后正则：`starter` 精确键必须赢过同为子串语义的正则顺序竞争，
     // 而未声明的宽泛模式（如 /pro/）抢不走 `prolite` 的精确命中。
-    expect(matchOfferingPlan("antigravity", "starter")?.id).toBe("starter");
-    expect(matchOfferingPlan("codex", "prolite")?.id).toBe("pro-100");
+    expect(matchOfferingPlan("antigravity", "starter")?.key).toBe("starter");
+    expect(matchOfferingPlan("codex", "prolite")?.key).toBe("pro-100");
     // 正则只作用于规范化后的小写串：声明端按小写书写。
-    expect(matchOfferingPlan("antigravity", "Antigravity Starter Quota")?.id).toBe("starter");
-    expect(matchOfferingPlan("antigravity", "ANTIGRAVITY ULTRA 5X (BETA)")?.id).toBe("ultra-5x");
+    expect(matchOfferingPlan("antigravity", "Antigravity Starter Quota")?.key).toBe("starter");
+    expect(matchOfferingPlan("antigravity", "ANTIGRAVITY ULTRA 5X (BETA)")?.key).toBe("ultra-5x");
     // ultra-5x 声明在 ultra 之前，具体正则先于宽泛兜底求值。
-    expect(matchOfferingPlan("antigravity", "Antigravity Ultra (Yearly)")?.id).toBe("ultra");
+    expect(matchOfferingPlan("antigravity", "Antigravity Ultra (Yearly)")?.key).toBe("ultra");
     // 单词边界：`super` 正则不得吞掉 `supergrok` 形态（旧档走 legacy 精确键）。
     expect(matchOfferingPlan("grok-build", "SuperGrok Pro")?.legacy).toBe(true);
     // grok 的 \bsuper\b 不命中 "supergrok"（无边界），也不命中任何已声明键。
     expect(matchOfferingPlan("grok-build", "supergrok")).toBeNull();
-    expect(matchOfferingPlan("grok-build", "Super Tier X")?.id).toBe("super");
+    expect(matchOfferingPlan("grok-build", "Super Tier X")?.key).toBe("super");
     // 多个兜底词同时命中时按条目声明顺序取第一个（正则只是纯兜底，真实
     // subscriptionTier 预期为单词档位形态，此类输入本就未识别）。
-    expect(matchOfferingPlan("grok-build", "X Premium Plus")?.id).toBe("plus");
+    expect(matchOfferingPlan("grok-build", "X Premium Plus")?.key).toBe("plus");
   });
 
   it("lists a plan catalog on every registered offering", () => {

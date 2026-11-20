@@ -41,7 +41,7 @@ async function mayLeave() {
 }
 defineExpose({ mayLeave });
 const endpoint = computed(() =>
-  modelEndpointDescriptors.find((d) => d.id === props.catalog.protocolRouteId),
+  modelEndpointDescriptors.find((d) => d.protocol === props.catalog.protocol),
 );
 const mediaType = ref(endpoint.value?.modelType),
   manualId = ref(""),
@@ -110,7 +110,7 @@ const filtered = computed(() => {
             ? e.fields.toolCalling.value === "supported"
             : e.fields.structuredOutput.value === "schema" ||
               e.fields.structuredOutput.value === "json")) &&
-      (!operation.value || e.operationId === operation.value) &&
+      (!operation.value || e.operation === operation.value) &&
       ((!input.value && !output.value) ||
         e.ioProfiles.some(
           (p) =>
@@ -162,19 +162,23 @@ async function mutate(action: "refresh" | "upsert" | "remove") {
     expectedBindingRevision: c.bindingRevision,
   };
   try {
+    if (action === "refresh" && (!c.protocolFamily || !c.familyBindingRevision))
+      throw Error("请先统一协议族配置再刷新目录");
     const r =
       action === "refresh"
         ? await service.refreshCatalog({
-            ...base,
+            instanceId: base.instanceId,
+            contextId: base.contextId,
             accountId: c.accountId,
-            protocolRouteId: c.protocolRouteId,
+            protocolFamily: c.protocolFamily!,
+            expectedFamilyBindingRevision: c.familyBindingRevision!,
           })
         : await service.editManualModel({
             ...base,
             selection: {
               providerId: c.providerId,
               accountId: c.accountId,
-              protocolRouteId: c.protocolRouteId,
+              protocol: c.protocol,
               modelId: selected,
             },
             expectedSettingsRevision: s.settingsRevision,
@@ -184,8 +188,8 @@ async function mutate(action: "refresh" | "upsert" | "remove") {
                     operation: "upsert",
                     displayName: manualName.value.trim() || selected,
                     modelType: mediaType.value,
-                    operationId: endpoint.value?.operationId,
-                    profileId: endpoint.value?.profileId,
+                    modelOperation: endpoint.value?.operation,
+                    ioProfile: endpoint.value?.ioProfile,
                   }
                 : { operation: "remove" },
           });
@@ -210,12 +214,7 @@ async function mutate(action: "refresh" | "upsert" | "remove") {
         <h2>模型目录</h2>
         <button
           class="outline-action"
-          :disabled="
-            busy ||
-            catalog.refreshing ||
-            catalog.refresh.state !== 'enabled' ||
-            !endpoint?.canDiscover
-          "
+          :disabled="busy || catalog.refreshing || catalog.refresh.state !== 'enabled'"
           @click="mutate('refresh')"
         >
           {{ catalog.refreshing ? "读取中…" : "刷新目录" }}
@@ -321,7 +320,7 @@ async function mutate(action: "refresh" | "upsert" | "remove") {
               item.selection.modelId
             }}</small
             ><span
-              >{{ operationLabels[item.operationId] }} ·
+              >{{ operationLabels[item.operation] }} ·
               {{
                 {
                   remote: "目录",

@@ -42,7 +42,17 @@
 
 `StartAuthRequest`、`AuthStartResult`、`PublicAuthSession`、`PublicAccount` 和凭据刷新结果从现有契约迁移，保持七家供应商的交互与脱敏含义。现有定义见[认证 DTO](../../../packages/contract/src/common/dto/auth.ts)、[账号 DTO](../../../packages/contract/src/common/dto/account.ts)及[操作 DTO](../../../packages/contract/src/common/dto/operations.ts)。凭据管理状态与专用密钥交付结果见[公共 DTO](../../../packages/contract/src/common/dto/credential-sharing.ts)。
 
-新增的通用公开形状如下。代码块使用的 `PublicProviderDescriptor`、`PublicAccount`、`ServiceResult` 为迁入 `contract/common` 的既有类型。
+现有连接与管理 DTO 的节选如下。代码块使用的 `PublicProviderDescriptor`、`PublicAccount`、`ServiceResult` 为 `contract/common` 的既有类型。
+
+下表是固定协议族与明细协议枚举的映射关系。命名约定：`xxxId` 仅用于数据库主键、运行时动态业务标识或上游动态条目编号（如 `accountId`、`providerId`、`offeringId`、`modelId`）；固定代码枚举不以 `Id` 结尾，统一使用 `ProtocolFamily`（字段 `protocolFamily`）、`EndpointProtocol`（字段 `protocol`）与 `ProviderOperation`（字段 `operation`）。
+
+| `protocolFamily` (`ProtocolFamily`) | `protocol` (`EndpointProtocol`) |
+| --- | --- |
+| `openai` | `openai-chat`、`openai-responses`、`openai-images-generations`、`openai-images-edits`、`openai-audio-speech`、`openai-audio-transcriptions`、`openai-embeddings` |
+| `anthropic` | `anthropic-messages` |
+| `gemini` | `gemini-tts`、`gemini-interactions-tts` |
+| `grok-video` | `grok-video-generations` |
+| `cohere` | `cohere-rerank` |
 
 ```ts
 interface CommandContext {
@@ -82,7 +92,7 @@ interface PublicConnectionSummary {
   offeringId: string;
   displayName: string;
   recordRevision: string;
-  routes: { protocolRouteId: ProtocolRouteId; bindingRevision: string }[] | null;
+  routes: ModelRouteSummary[] | null;
   actions: Record<string, ActionAvailability>;
 }
 
@@ -95,18 +105,33 @@ interface PublicConnection extends CommandContext {
   routes: ModelRoute[];
 }
 
-type ProtocolRouteId = "openai-chat" | "openai-responses" | "anthropic-messages";
+// EndpointProtocol 的完整枚举见 model-endpoint.ts，含聊天与媒体等明细协议。
 
 interface ModelRouteInput {
-  protocolRouteId: ProtocolRouteId;
+  protocol: EndpointProtocol;
   baseUrl: string;
   protocolVersion?: string | null;
+  chatOutputLimitField?: "max_tokens" | "max_completion_tokens";
+  requestRule?: ModelRequestRule;
 }
 
 interface ModelRoute extends ModelRouteInput {
   protocolVersion: string | null;
   bindingRevision: string;
+  protocolFamily?: ProtocolFamily;
+  familyBindingRevision?: string;
+  familyPolicy?: ProtocolFamilyPolicy;
+  familyCatalog?: "native" | "vendor" | "none";
 }
+
+type ModelRouteSummary = Pick<
+  ModelRoute,
+  | "protocol"
+  | "bindingRevision"
+  | "protocolFamily"
+  | "familyBindingRevision"
+  | "familyCatalog"
+>;
 
 interface CreateConnectionRequest {
   operationId: string;
@@ -141,11 +166,22 @@ interface EditConnectionRequest {
 
 ## 2. 模型基础事实
 
-以下协议、来源目录、选择和有效参数类型均从 `contract/common` 导出，供 Core 及两产品前后端共同消费。产品可以附加字段来源、目录状态和本地设置修订，但不能把 Core capability、仓储行或 `PreparedProviderCall` 放进公开 DTO。能力筛选、facet、请求准备和 codec 的业务规则见[Core 协议与推理端口](../core/provider/protocol-design.md)。
+协议、来源目录、选择和有效参数的公共类型归 `contract/common`。当前实现按账号和协议族发现，使用明细路由验证实际调用。产品可以附加字段来源、目录状态和本地设置修订。Core capability、仓储行与执行句柄留在后端。[现行端点描述](../../../packages/contract/src/common/dto/model-endpoint.ts) · [Core 协议与推理端口](../core/provider/protocol-design.md)
 
-### 2.1 协议与路由标识
+### 2.1 协议族与明细协议枚举
+
+`protocolFamily`（类型 `ProtocolFamily`）标识原生 API 协议族，`protocol`（类型 `EndpointProtocol`）标识其中的明细端点协议，`ProviderOperation`（字段 `operation`）表达该调用完成的业务操作。例如 `openai-chat`、`openai-responses` 同属 `openai`，`anthropic-messages` 属于 `anthropic`，三者都可执行聊天。每个明细协议在注册表中显式归属一个协议族；同一协议族可由多家供应商接入。Suno Music（`suno-music`）与 Doubao Video（`doubao-video`）是扩展族示例，开放的版本、方法、路径和目录能力须由各自实现登记。
 
 ```ts
+type ProtocolFamily = "openai" | "anthropic" | "gemini" | "grok-video" | "cohere";
+
+interface ProtocolFamilyDescriptor {
+  family: ProtocolFamily;
+  nativeVersionPath: string; // 例如 "/v1"，属于本地原生入口路径。
+  catalogPath?: string; // 例如 "models"，相对于已绑定的 API 根。
+  defaultProtocol?: EndpointProtocol; // 仅限注册时校验通过的单端点专用族。
+}
+
 type ApiProtocol =
   | { kind: "openai-chat-completions"; version: "v1" }
   | { kind: "openai-responses"; version: "v1" }
@@ -160,18 +196,24 @@ type ProviderOperation =
   | "image-generation"
   | "video-generation"
   | "audio-speech"
-  | "audio-transcription";
+  | "audio-transcription"
+  | "music-generation"
+  | "decision";
 
 interface ProtocolRouteDescriptor {
-  id: ProtocolRouteId;
+  protocol: EndpointProtocol;
+  protocolFamily: ProtocolFamily;
   providerId: ProviderId;
-  protocol: ApiProtocol;
+  apiSpec: ApiProtocol;
   operations: readonly ProviderOperation[];
   streaming: boolean;
-  authBinding: "account" | "none";
   extensions?: PublicExtension[];
 }
 ```
+
+GraphAgent 原生代理以 `/api/v1/graph-agent/proxy/{protocolFamily}` 分派，再匹配登记的 HTTP 方法和原生路径。例如 `GET .../proxy/openai/v1/models` 与 `GET .../proxy/anthropic/v1/models` 读取两个不同的原生列表。代理各转发所请求的一页及其原生分页信息；内部目录刷新另行按族聚合候选模型。两种读法共用同一个已授权族绑定。offering 的目录能力分别声明可透传的族原生列表与管理发现方式；若上游只提供专用目录方言，管理端仍可发现模型，标准族列表则返回能力不可用。列表请求从当前账号与族绑定取得授权，允许在保存测试模型之前调用。[供应商族连接与存量升级](../core/provider/connections-and-models.md#协议族连接与存量升级)
+
+升级后的连接摘要以 `protocolFamily`、`familyBindingRevision` 和目录能力标识可访问的族，端点描述带所属 `protocolFamily`。目录 GET 的本地上下文含实例、后端、账号 ID 和期望族绑定修订；provider 与 offering 从账号所属记录取得。明细推理调用继续使用已保存选择的设置修订及期望明细绑定修订。认证方式和适用的公共参数由供应商的族配置统一解析，当前账号提供凭据，HTTP 认证头和秘密值均留在服务端。
 
 ### 2.2 来源目录与选择
 
@@ -180,10 +222,11 @@ interface ModelCatalogScope {
   providerId: ProviderId;
   offeringId: string;
   accountId: AccountId;
-  protocolRouteId: ProtocolRouteId;
+  protocolFamily: ProtocolFamily;
 }
 
 interface ModelRef extends ModelCatalogScope {
+  protocol: EndpointProtocol;
   modelId: ModelId;
 }
 
@@ -191,7 +234,7 @@ interface ModelDescriptor {
   providerId: ProviderId;
   id: ModelId;
   displayName: string;
-  protocolRouteIds: readonly ProtocolRouteId[];
+  protocols: readonly EndpointProtocol[];
   facts: Partial<ModelFacts>;
   prices?: readonly ModelPrice[];
   extensions?: PublicExtension[];
@@ -199,7 +242,7 @@ interface ModelDescriptor {
 
 interface ModelCatalogSnapshot {
   scope: ModelCatalogScope;
-  bindingRevision: BindingRevision;
+  familyBindingRevision: BindingRevision;
   revision: string;
   observedAt: string;
   source: "static" | "remote" | "merged";
@@ -210,13 +253,31 @@ interface ProviderRouteSelection {
   providerId: ProviderId;
   accountId: AccountId;
   modelId: ModelId;
-  protocolRouteId: ProtocolRouteId;
+  protocol: EndpointProtocol;
 }
+
+type ProviderRouteSelectionInput = Omit<ProviderRouteSelection, "protocol"> &
+  (
+    | { protocolFamily?: ProtocolFamily; protocol: EndpointProtocol }
+    | { protocolFamily: ProtocolFamily; protocol?: null }
+  );
 
 type ModelSelection = ProviderRouteSelection;
 ```
 
-`ModelDescriptor` 表达一个来源提供的候选事实，`ModelCatalogSnapshot` 携带该来源的目录、绑定和观察修订。`ModelSelection` 复用四元 `ProviderRouteSelection`，不另建选择体系。字段省略、合并与账号路由校验继续遵循 [Core 模型目录规则](../core/provider/protocol-design.md#2-模型目录)。
+`ModelCatalogSnapshot` 用族级 `familyBindingRevision` 锚定来源。目录中的型号是候选事实，`protocols` 只列出来源或配置已确认为兼容的明细协议。列表返回一个 ID 不会同时授予聊天、图片和音频能力。`ModelSelection` 保留原四元组。服务端从已登记的明细协议解析族，交叉核对 provider、offering、账号及端点可用性。执行时的 `bindingRevision` 涵盖族绑定和明细端点修订。旧选择继续按原协议定位，新客户端显式携带的族须与之匹配。[Core 模型目录规则](../core/provider/protocol-design.md#2-模型目录)
+
+#### 专用单端点族的默认选择
+
+新增或编辑模型绑定时，`ProviderRouteSelectionInput` 支持上面两种寻址方式。显式协议沿用既有四元组；省略明细协议时须提供 `protocolFamily`，契约解析将缺省字段规范为 `null`。空字符串和通配符作为无效值拒绝。注册表仅允许专用族声明 `defaultProtocol`，该值必须是族中唯一已登记的模型业务端点协议。模型列表和同一操作附带的任务状态查询不计入端点数；账号只启用部分路由、模型筛选和临时停用也不改变族的声明。
+
+收到 `null` 后，服务端按族取出登记的 `defaultProtocol`，核对该模型为专用操作，再校验 offering、账号、操作能力、启用状态与绑定修订。预览、报价、保存和执行都使用解析后的具体协议。正式读回已保存选择时返回此协议。通用 LLM 输出一律要求显式 `protocol`，供应商只开放一种聊天接口或没有模型列表时仍执行同一规则。
+
+| 条件 | 选择输入 | 预期结果 |
+| --- | --- | --- |
+| 虚构音乐族登记唯一生成路由并指定为默认，模型由用户手工登记 | `protocolFamily`，`protocol` 缺省或为 `null` | 两种写法与显式生成协议定位同一绑定，执行时仍使用该路由的原生方法与路径。 |
+| 通用 LLM 接入点只开放 Messages，且没有模型列表 | `protocolFamily`，`protocol` 缺省 | 提示选择明细协议；显式指定 `anthropic-messages` 后再核验资格。 |
+| 原专用族增加第二个模型业务端点 | `protocolFamily`，`protocol` 为 `null` | 注册表更新须同步撤去 `defaultProtocol`；新输入要求显式选择。已保存的绑定仍指向原具体协议。 |
 
 ### 2.3 有效模型参数与报价
 
@@ -251,6 +312,8 @@ interface ModelFacts {
   promptCacheRead: CapabilityState;
   promptCacheWrite: CapabilityState;
   reasoningMode: "none" | "effort" | "native-state" | "unknown";
+  // 按绑定与型号记录公开输出能力。
+  reasoningOutputMode: "full" | "summary" | "activity-only" | "none" | "unknown";
   effortLevels: string[] | null;
   defaultEffort: string | null;
   unsupportedParameters: string[] | null;
@@ -258,6 +321,8 @@ interface ModelFacts {
 ```
 
 模型限额、模态、可执行操作和不支持参数未知时保留 `null`，已知空数组才表示明确为空。能力使用显式三态，结构化输出另外区分 JSON 与 schema，工具调用与并行工具调用也分别表达。`reasoningMode`、可选强度 `effortLevels` 和 `defaultEffort` 是三个独立字段，各有来源和覆盖；缺少强度事实不能清空其他层明确给出的模式或默认值。合并后服务端检查默认强度是否属于有效枚举以及模式是否允许该强度，矛盾状态给字段诊断，不能默默扩充强度集合。
+
+模型配置另有 `thinkingEnabled`（默认 `true`）、`effort`（默认 `null`）与 `returnFullReasoning`（默认 `false`）。前置开关决定后两项是否生效。`reasoningOutputMode` 是有来源的能力事实，区分全文、摘要、阶段信号、无可见内容和未知。试聊固定本次配置与能力，按目标端点实际能公开的等级解释结果。[读取旧配置与请求行为](../core/provider/model-structure.md#思考参数与可见输出)
 
 用户覆盖是参数事实输入，不授予新的服务端能力或权限。即使覆盖后的模型声明支持某个操作，选择、预览与执行仍校验路由声明、对应 facet、账号授权和协议 codec；缺少实现时不能只凭用户字段启用调用。
 

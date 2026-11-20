@@ -52,6 +52,8 @@ GraphAgent 是以执行图为中心的智能体协作产品。用户提交目标
 
 跨设备的设备注册、权限、放置与产物传输见[跨设备任务派发设计](./cross-device-dispatch-design.md)；它细化第 3 层调度与第 6 层连接，不新增任务或员工种类。
 
+第 2 层的[单轮测试对话重构设计](./test-chat-streaming.md)以现有模型测试页为入口，说明流式回答、思考展示及其与正式会话的衔接。
+
 模型配置页面的产品边界见[前端服务契约](./frontend-contract.md)：定义 `IGraphAgentService`、模型页投影、命令和产品事件，公共管理与传输复用[契约专项](../../common/contract/design.md)。它对应供应商平台三阶段工作，完整消息聊天与任务工作台的 API 仍按第 2、3、6 层业务另行细化。
 
 各层拥有自己的业务事实，通过命令和已提交事件协作。Scheduler 不直接改记忆，做梦模型不直接改进行中的 Task，UI 不直接写运行存储，Interceptor 不直接替调度器创建 Assignment。

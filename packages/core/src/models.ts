@@ -100,7 +100,7 @@ export interface EncryptedCredential {
 /**
  * 供应商内部用量快照（持久化形态）。`plan` 是上游原始标识（数据层标识符）：
  * 档位匹配与展示标签解析在主进程构造公开快照时进行（`toPublicUsage`），
- * 结果（`planId` / `planLabel`）随公开 DTO 下发，不在存储层固化。
+ * 结果（`planKey` / `planLabel`）随公开 DTO 下发，不在存储层固化。
  */
 export interface UsageSnapshot {
   accountId: string;

@@ -1,13 +1,13 @@
 # 供应商平台与双产品 UI 三阶段实施方案
 
-阶段一、2A、2B 已交付；供应商自定义参数转换与模型别名属于阶段三，各阶段状态见下表与对应章节。本文件维护[模型配置改版的数据实施方案](#模型配置改版的数据实施方案)，界面修改单列在 [GraphAgent UI 实施方案](../../../graph-agent/ui/model-configuration/ui-implementation-plan.md)。[项目架构](../../../architecture.md) · [供应商平台设计](./design.md) · [阶段一交付](./stage-one-implementation.md) · [历史阶段记录](./migration-history.md)
+阶段一、2A、2B、原生试聊与阶段三请求映射均已交付。后续的供应商策略拆分与命名重构已作为独立专项完成，详见[2026-11 供应商请求策略拆分与命名重构](../2026-11-provider-policy-refactor.md)。本文件维护[模型配置改版的数据实施方案](#模型配置改版的数据实施方案)，界面修改单列在 [GraphAgent UI 实施方案](../../../graph-agent/ui/model-configuration/ui-implementation-plan.md)。[项目架构](../../../architecture.md) · [供应商平台设计](./design.md) · [阶段一交付](./stage-one-implementation.md) · [历史阶段记录](./migration-history.md)
 
 | 阶段 | 交给下一阶段的结果 | 退出条件 |
 | --- | --- | --- |
 | 一 · 项目结构调整 → UI 抽离（已交付） | 已迁移统一契约、产品目录和构建入口，抽出共用 Vue 壳与管理页，接通 GraphAgent Hono、业务仓储及 broker 后端，Electron 另接可写私有凭据存储 | 结构迁移后现有入口可运行。PolyQuota Electron 与 GraphAgent Electron 从空私有配置完成账号接入和重启恢复；GraphAgent Web 验证 broker 既有授权范围及受限状态；PolyQuota Web 通过开发联调 |
 | 2A · 连接、模型配置与单轮测试（已完成） | 普通 Key 和三种标准协议地址、账号目录、手工模型、参数及报价覆盖、保存选择、脱敏预览和单轮对话 | 离线样本覆盖目录及真实出站结构，实机成功与受限情况见[2A 实机记录](#本阶段实现与实机验证) |
 | 2B · 模型配置改版（已完成） | 模型数据包、OpenAI 多 offering、分组编辑器、按模型类型绑定的自定义端点、条件计费与公共表单 | 已验证业务库建库及重启、模型类型与端点绑定、条件计费、四条真实聊天路径及双产品打包。[2B 交付与实机记录](#2b-交付与实机记录) |
-| 三 · 规则编辑与双产品联调（待实施） | 在模型编辑器接入供应商自定义参数转换和模型别名 | 用同一绑定对照预览与实际出站，回归普通 Key 的账号管理、用量过滤及两端共享 |
+| 三 · 规则编辑与双产品联调 | 在自定义接入点配置请求参数和模型别名，在模型编辑器预览对应请求 | 用同一绑定对照预览与实际出站，回归普通 Key 的账号管理、用量过滤及两端共享 |
 
 凭据 SDK 合包已由凭据共享专项二期 B1 完成：原 `credential-host` 合入 `credentials/host/windows`，对应调用方和构建脚本已迁移。本方案后续结构调整直接复用 `@astra-conductor/credentials` 主入口与 `/host/windows` 子入口；Core 只依赖主入口，平台宿主按需装配 Windows 子入口。A6—A8 记录最初的单向闭环；当前双端导入导出与本端存储切换以凭据专项 B2/B3 的交付状态为准。[凭据共享实施方案](../credential-sharing/implementation-plan.md) · [B1 实施记录](../credential-sharing/b1-credentials-package-implementation.md) · [A6—A8 实施记录](../credential-sharing/a6-a8-sharing-implementation.md)
 
@@ -176,12 +176,41 @@ Electron 页面烟测覆盖供应商创建、绑定和按引用阻止删除，�
 
 全仓构建、类型与格式检查通过，543 项自动化测试全部通过。隔离 broker 的双向迁移及并发检查通过 20 项，模型连接专项通过 10 项，另验证按账号缓存的用量请求。两个 Windows NSIS 安装包均已生成。以发行包内的可执行文件启动，GraphAgent 在空 profile 加载离线预置、创建本地供应商，重启后回读同一记录；PolyQuota 通过 SQLite、现有密文和桌面回归。[共享联调](../../../../apps/polyquota/scripts/run-credential-sharing-loop.mjs) · [GraphAgent 发行包验证](../../../../apps/graph-agent/scripts/run-distribution-smoke.mjs) · [PolyQuota 发行包验证](../../../../apps/polyquota/scripts/run-distribution-smoke.mjs)
 
-**2B 代码审查记录（2026-11-15）。** 对本变更集（含暂存与未跟踪文件）做独立审查：类型检查与全仓 543 项自动化测试通过，本文所记各阶段状态与实现一致；凭据预览脱敏、业务库版本迁移、按引用阻止删除与迟到结果丢弃等边界均有对应测试。审查记录的实现偏差中两项已收敛：Grok 型号推理强度特判、DeepSeek 主机名的 `max_tokens` 参数名与 OpenRouter 回执查询已下沉到 `packages/core/src/providers/grok-build/model-profile.ts`、`model-destination.ts` 与 `model-chat-receipt.ts`；目录报价已改由服务端投影（`apps/graph-agent/src/server/model-quotes.ts`）随 DTO 下发，界面不再重复展开规则命中。阶段三开工前仍待收敛：`model-chat.ts` 仍以单模块 switch 承载三种协议方言与 codex/grok/目的地请求差异，编解码未按协议路由拆分为独立 codec，目标形态见[协议设计 · 编解码边界](./protocol-design.md#4-规范消息与协议编解码边界)，随推理专项重构收敛；`model-resolution.ts` 对同一计量输出 `million-tokens` 与 `1M tokens` 两种单位拼写；价卡解析暂不接受示例中的 `scope.serviceTier`，覆盖规则的 `applyTo` 仅在累进规则保留 `accountBillingCycle`；`ModelRequestPreview.consumedParameters` 恒为空数组。上述偏差不影响 2B 已验收行为，随阶段三收敛。
+**2B 代码审查记录（2026-11-15）。** 对本变更集（含暂存与未跟踪文件）做独立审查：类型检查与全仓 543 项自动化测试通过，本文所记各阶段状态与实现一致；凭据预览脱敏、业务库版本迁移、按引用阻止删除与迟到结果丢弃等边界均有对应测试。审查记录的实现偏差中两项已收敛：Grok 型号推理强度特判、DeepSeek 主机名的 `max_tokens` 参数名与 OpenRouter 回执查询已下沉到 `packages/core/src/providers/grok-build/model-profile.ts`、`model-destination.ts` 与 `model-chat-receipt.ts`；目录报价已改由服务端投影（`apps/graph-agent/src/server/model-quotes.ts`）随 DTO 下发，界面不再重复展开规则命中。阶段三开工前仍待收敛：`model-chat.ts` 仍以单模块 switch 承载三种协议方言与 codex/grok/目的地请求差异，当前试聊以[同协议代理](./protocol-design.md#41-单轮试聊使用同协议代理)拆开入口，未来推理层的编解码另行设计；`model-resolution.ts` 对同一计量输出 `million-tokens` 与 `1M tokens` 两种单位拼写；价卡解析暂不接受示例中的 `scope.serviceTier`，覆盖规则的 `applyTo` 仅在累进规则保留 `accountBillingCycle`；`ModelRequestPreview.consumedParameters` 恒为空数组。上述偏差不影响 2B 已验收行为，随阶段三收敛。
+
+## 测试对话与协议重构
+
+本阶段先将阶段 2B 的逐端点配置和逐端点目录升级为族配置与族目录，再交付两个族的原生目录 GET、三个聊天 POST 和单轮测试页。页面可并行使用原生样本接入 OmniChat，最后在两个宿主的产品入口联验。[协议设计](./protocol-design.md#41-单轮试聊使用同协议代理) · [架构决定](../../../architecture.md#21-产品-service-与共享传输) · [参考源码取舍](../../../graph-agent/reference-code-map.md#单轮试聊的原生代理与展示)
+
+### 步骤一 · 族绑定、目录与原生代理
+
+- [x] 公共契约注册 `protocolFamilyId` 与明细归属，服务端为同一供应商的族维护一份认证机制和公共附加参数。用同一账号的 OpenAI 列表、Chat、Responses 三次请求验证公共头和查询参数均来自同一配置；换账号须获取各自获准的凭据。保留声明的目录专用参数，GET 不带 Body。[族契约](../../contract/common-api.md#21-协议族与明细协议枚举)
+- [x] 在 OpenAI 与 Anthropic 的独立根下分别请求 `GET /models`。使用同一网关域名、不同目录 JSON 与分页样本，断言各自命中正确的上游、返回完整原生单页；Anthropic 的后续游标在本族继续请求。尚未保存测试模型时可用。对仅有私有目录方言的接入点，验收管理发现成功、标准列表返回能力不可用。未知族、跨族绑定、过期族修订均零出站。[原生目录入口](../../../graph-agent/design/test-chat-streaming.md#选择模型前读取族目录)
+- [x] 对同一账号并发打开 Chat 与 Responses 的管理目录，观察一次族刷新（每页一次上游请求）。修改族认证或公共参数会使该绑定下的旧目录与在途调用失效；只改明细端点特有设置则保留仍有效的族目录。迁移时保留已有模型、价卡、手工登记与选择。旧同族端点地址不同时保留两份原值，确认配置或拆分 offering 后启用，旧缓存按新键重新发现。[族连接与存量升级](./connections-and-models.md#协议族连接与存量升级)
+
+- [x] 在两个族命名空间的 Hono 子路由注册 Chat Completions、Responses、Anthropic Messages 各自的 POST。分别发送该协议的原生请求（含额外字段、嵌套块和原格式空白），断言受控上游收到同一份实体字节，只带绑定允许的地址和请求头。错协议、错模型或过期修订的请求零出站。旧单轮 JSON 和配置预览用例继续通过。[请求样例](../../../graph-agent/design/test-chat-streaming.md#原生请求与绑定)
+- [x] 比对三个聊天 POST 的原生 SSE 和整包 JSON 响应。正常样本保留事件名、顺序、字节、未知扩展、空 choices 用量帧及思考签名。覆盖拆开的 UTF-8、慢消费、认证拒绝、流中失败、撤权和取消。已知秘密跨网络块或原生文本片段回显时，在任何受影响字节发出前阻断。错误按所选协议返回，凭据和上游错误体不进入公开结果。[转发边界](../../../graph-agent/design/test-chat-streaming.md#转发与错误)
+
+- [x] 验证默认端点。专用非 LLM 单业务端点族显式登记默认后，省略和 `null` 解析为同一个稳定路由，保存后重启可回读原端点。为该族增加第二个业务端点时新输入须明确选择，旧记录仍指向原路由。通用 LLM 在供应商仅开一个端点、没有 `/models` 的情况下，省略路由仍返回校验错误。[输入规则](../../contract/common-api.md#专用单端点族的默认选择)
+- [x] 注册内置 DeepSeek，覆盖官方族根与显式自定义 endpoint，检查它们使用同一厂商字段处理且账号凭据各自隔离。同地址的旧通用供应商保留原身份与兼容参数。验证目录、原生请求、思考字段和输出上限字段，以及普通 Key 的用量资格。[DeepSeek 接入](./core-design.md#46-deepseek-内置-api-key-绑定)
+
+### 步骤二 · 原生响应与 OmniChat 示例
+
+- [x] 为三种原生客户端接入公开正文、思考和结束原因。在上游扣住终止帧时，已到达的 Markdown 和思考活动均可见；仅有计量或密文时无臆造的思考文字。终态全文与已收 delta 同时出现时回答只显示一次，JSON 响应一次显示。
+- [x] 将产品依赖更新到 AI 示例所用版本，使用发布包内置的 `stream` 渲染器，在外层 `OmniChat` 接 `#message-ai-activity`，沿用示例的 `ActivityPanel`、`appendDelta` 与 `finishContent`。跨帧的列表、强调与代码围栏正常显示，节点默认折叠且可独立展开。停止或断流保留本轮已显示文字，活动状态与实际结束原因一致。[页面接线与示例源码](../../../graph-agent/design/test-chat-streaming.md#从原生响应更新-omnichat)
+
+- [x] 模型配置先显示默认开启的「支持思考」。关闭后保存并预览，确认没有生效的 effort 或全文选项；开启后分别试验公开全文、仅摘要和只报告活动的型号。以 DeepSeek Chat 的 `reasoning_content`、DeepSeek Responses 的全文事件以及 Anthropic 的思考块做 JSON 与 SSE 夹具。关闭全文后即使上游送出全文，试聊也只显示可用摘要／阶段。[思考参数与可见输出](./model-structure.md#思考参数与可见输出)
+- [x] 对同一输入比对原生预览与实际出站。分别覆盖厂商硬性参数冲突、用户默认、别名模板消费 effort、族公共 header 生效于目录，以及原生代理 Body 保真。用户规则或供应商默认不能绕过已关闭的思考门控。[请求参数分层](./protocol-design.md#5-请求参数的转换映射与自定义调整)
+
+### 步骤三 · 双宿主联验
+
+- [x] 独立 Web 和 Electron 从同一测试页、同一已保存选择发起请求，在首段正文与末段之间停住上游，先确认前段已显示，再分别验证放行、停止和切换绑定。下一题只使用本次问题；旧请求不能更新新气泡。
+- [x] 服务端按本轮价卡、原生计量和实际回执更新费用，重复或延迟回执只关联原调用。计量读取失败时正文照常显示。关闭本轮后费用到期或主动释放，公共事件流中只出现视图失效通知。[费用生命周期](../../../graph-agent/design/test-chat-streaming.md#转发与错误)
 
 ## 阶段三 · 接入新 UI，完成双产品联调
 
-- [ ] 在 GraphAgent 自定义供应商表的相应 offering／端点下增加非秘密的自定义参数转换和模型别名，包括厂商前缀、成组别名、模型名模板、参数消费、自定义 Header 与嵌套 Body。凭据页按当前角色、后端和授权呈现导出、导入、交接、切回、重入与升级。共用页面通过统一契约和 fetch/SSE 调用所属产品的 Hono 应用。
-- [ ] GraphAgent 的模型配置页接入别名、转换规则编辑和映射后的请求预览，回归阶段二的目录刷新、手工模型、覆盖和测试聊天。PolyQuota 的通用管理按已识别的供应商展示普通 Key，遇到未知自定义供应商则忽略。正式用量快照、定时与手动刷新、评分、通知及托盘均按订阅资格筛选。
+- [x] 在 GraphAgent 自定义供应商表的相应 offering／端点下增加非秘密的自定义参数转换和模型别名，包括族级公共参数、别名、模型名模板、参数消费、自定义 Header 与嵌套 Body（校验收敛与跨供应商策略解耦已通过[2026-11 供应商请求策略拆分与命名重构](../2026-11-provider-policy-refactor.md)完成）。凭据页按当前角色、后端和授权呈现导出、导入、交接、切回、重入与升级。共用页面通过统一契约和 fetch/SSE 调用所属产品的 Hono 应用。
+- [x] GraphAgent 的自定义接入点支持别名及规则编辑，模型配置页展示同一修订的映射结果，回归阶段二的目录刷新、手工模型、覆盖和测试聊天。PolyQuota 的通用管理按已识别的供应商展示普通 Key，遇到未知自定义供应商则忽略。正式用量快照、定时与手动刷新、评分、通知及托盘均按订阅资格筛选。
 
 **阶段三验收**：覆盖 PolyQuota Electron、GraphAgent Web/Electron 和 PolyQuota Web 开发入口。GraphAgent Electron 验证私有与共享模式；Web 使用既有且具备对应权限的 broker 授权，验证账号新增、替换、删除及重启恢复。普通 Key 在 GraphAgent 可查看各协议目录、参数来源与出站预览，在 PolyQuota 可管理且用量请求数为零；GraphAgent Web 未接入或断连时不得发供应商请求，凭据页显示实际后端、可执行操作与恢复结果。双向共享与升级按[凭据共享实施方案 · 双端验收矩阵](../credential-sharing/implementation-plan.md#双端验收矩阵)执行。
 

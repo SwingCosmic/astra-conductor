@@ -19,6 +19,7 @@ export const unknownModelFacts: ModelFacts = {
   structuredOutput: "unknown",
   promptCacheRead: "unknown",
   promptCacheWrite: "unknown",
+  reasoningOutputMode: "unknown",
   reasoningMode: "unknown",
   effortLevels: null,
   defaultEffort: null,

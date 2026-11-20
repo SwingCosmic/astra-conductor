@@ -31,8 +31,8 @@ import {
 } from "@astra-conductor/contract/polyquota";
 
 const codexPlans: PublicOfferingDescriptor["plans"] = [
-  { id: "plus", displayName: "Plus" },
-  { id: "pro-100", displayName: "Pro 100" },
+  { key: "plus", displayName: "Plus" },
+  { key: "pro-100", displayName: "Pro 100" },
 ];
 
 const providerCatalogFixture: PublicProviderDescriptor[] = [
@@ -188,8 +188,8 @@ const providerCatalogFixture: PublicProviderDescriptor[] = [
         iconKey: "copilot",
         authMethods: [{ method: "device-code", interaction: "device-code" }],
         plans: [
-          { id: "copilot-pro", displayName: "Copilot Pro" },
-          { id: "copilot-pro-plus", displayName: "Copilot Pro+" },
+          { key: "copilot-pro", displayName: "Copilot Pro" },
+          { key: "copilot-pro-plus", displayName: "Copilot Pro+" },
         ],
       },
     ],
@@ -367,12 +367,12 @@ describe("desktop account UI", () => {
       "Codex CLI",
     ]);
     // 套餐标签直接消费主进程解析结果（planLabel），前端不做任何匹配；
-    // 未识别档位以 planId: null 显式暴露，展示回退原文并带可见提示。
-    const resolvedUsage = (plan: string, planId: string | null, planLabel: string | null) =>
+    // 未识别档位以 planKey: null 显式暴露，展示回退原文并带可见提示。
+    const resolvedUsage = (plan: string, planKey: string | null, planLabel: string | null) =>
       ({
         accountId: account.id,
         plan,
-        planId,
+        planKey,
         planLabel,
         overallRemainingPercentage: null,
         groups: [],
@@ -502,11 +502,11 @@ describe("desktop account UI", () => {
     expect(extraLabel({ key: "auto-top-up", value: "已停用" })).toBe("自动充值");
     expect(extraLabel({ key: "future-extra", value: "x" })).toBe("future extra");
     // 旧版套餐判定：消费 planLegacy，只对已识别档位生效。
-    const legacyUsage = (planId: string | null, planLegacy: boolean) =>
+    const legacyUsage = (planKey: string | null, planLegacy: boolean) =>
       ({
         accountId: "legacy-check",
         plan: "SuperGrok Pro",
-        planId,
+        planKey,
         planLabel: "SuperGrok Pro",
         planLegacy,
         overallRemainingPercentage: null,
@@ -642,7 +642,7 @@ describe("desktop account UI", () => {
         usage: {
           accountId: account.id,
           plan: "plus",
-          planId: "plus",
+          planKey: "plus",
           planLabel: "Plus",
           overallRemainingPercentage: 80,
           groups: [
@@ -709,7 +709,7 @@ describe("desktop account UI", () => {
           accountId: account.id,
           // 目录未命中：展示回退原文，且套餐标签旁有可见提示（不再无声落默认倍率）。
           plan: "ChatGPT Super Ultra",
-          planId: null,
+          planKey: null,
           planLabel: "ChatGPT Super Ultra",
           overallRemainingPercentage: 80,
           groups: [],
@@ -737,7 +737,7 @@ describe("desktop account UI", () => {
           accountId: account.id,
           // 目录命中 legacy 条目：planLegacy 随快照下发，标签右侧追加"旧版"。
           plan: "SuperGrok Pro",
-          planId: "supergrok-pro",
+          planKey: "supergrok-pro",
           planLabel: "SuperGrok Pro",
           planLegacy: true,
           overallRemainingPercentage: 45,
@@ -865,7 +865,7 @@ describe("desktop account UI", () => {
         usage: {
           accountId: glmAccount.id,
           plan: "Pro",
-          planId: "pro",
+          planKey: "pro",
           planLabel: "Pro",
           overallRemainingPercentage: 75,
           groups: [],
@@ -908,7 +908,7 @@ describe("desktop account UI", () => {
         usage: {
           accountId: codexAccount.id,
           plan: "plus",
-          planId: "plus",
+          planKey: "plus",
           planLabel: "Plus",
           overallRemainingPercentage: 80,
           groups: [],
@@ -947,7 +947,7 @@ describe("desktop account UI", () => {
     const usage: PublicUsage = {
       accountId: glmAccount.id,
       plan: "Pro",
-      planId: "pro",
+      planKey: "pro",
       planLabel: "Pro",
       overallRemainingPercentage: 75,
       groups: [],
@@ -997,7 +997,7 @@ describe("desktop account UI", () => {
         usage: {
           accountId: account.id,
           plan: "Starter",
-          planId: "starter",
+          planKey: "starter",
           planLabel: "Starter",
           overallRemainingPercentage: 75,
           groups: [
@@ -1185,7 +1185,7 @@ describe("desktop account UI", () => {
         snapshot: {
           accountId: account.id,
           plan: "plus",
-          planId: "plus",
+          planKey: "plus",
           planLabel: "Plus",
           overallRemainingPercentage: 100,
           groups: [],

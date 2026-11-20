@@ -4,6 +4,7 @@ import type { ServiceResolver } from "../../services/registry.js";
 import { codexDescriptor } from "./descriptor.js";
 import { CodexAccountProvisioner, CodexAdapter } from "./adapter.js";
 import { createCodexAuthFlow } from "./auth-flow.js";
+import { codexModelPolicy, openAiApiKeyModelPolicy } from "./model-policy.js";
 
 /** Codex 组合工厂：adapter、provisioner、auth-flow 的拼装属于本供应商的知识。 */
 export function createCodexProvider(services: ServiceResolver): ProviderContribution {
@@ -35,5 +36,6 @@ export function createCodexProvider(services: ServiceResolver): ProviderContribu
       redeemResetCard: (account, envelope, request) =>
         adapter.redeemResetCard(account, envelope, request),
     },
+    modelPolicies: [codexModelPolicy, openAiApiKeyModelPolicy],
   };
 }

@@ -4,6 +4,7 @@ import type { ServiceResolver } from "../../services/registry.js";
 import { grokBuildDescriptor } from "./descriptor.js";
 import { GrokBuildAccountProvisioner, GrokBuildAdapter } from "./adapter.js";
 import { createGrokBuildAuthFlow } from "./auth-flow.js";
+import { grokBuildModelPolicy } from "./model-policy.js";
 
 export function createGrokBuildProvider(services: ServiceResolver): ProviderContribution {
   const adapter = new GrokBuildAdapter(services);
@@ -32,5 +33,6 @@ export function createGrokBuildProvider(services: ServiceResolver): ProviderCont
       providerId: "grok-build",
       fetchUsage: (account, envelope) => adapter.fetchUsage(account, envelope),
     },
+    modelPolicies: [grokBuildModelPolicy],
   };
 }

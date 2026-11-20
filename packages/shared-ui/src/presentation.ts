@@ -7,6 +7,7 @@ import grokIcon from "./assets/icon/grok.svg";
 import opencodeIcon from "./assets/icon/opencode.png";
 import zaiIcon from "./assets/icon/zai.svg";
 import type {
+  OfferingRouteConfig,
   PublicAccount,
   PublicAuthInteraction,
   PublicOfferingDescriptor,
@@ -61,6 +62,7 @@ export interface AuthMethodPresentation {
 
 export interface ProviderPresentation {
   connectionKind?: PublicOfferingDescriptor["connectionKind"];
+  routeConfig?: OfferingRouteConfig;
   /** offering id：展示行与账号分组的稳定键。 */
   id: string;
   provider: string;
@@ -81,6 +83,7 @@ function toPresentation(
   const name = offering.displayName || providerName;
   return {
     connectionKind: offering.connectionKind,
+    ...(offering.routeConfig ? { routeConfig: offering.routeConfig } : {}),
     id: offering.id,
     provider: offering.provider,
     name,

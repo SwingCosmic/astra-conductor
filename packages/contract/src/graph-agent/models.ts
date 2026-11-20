@@ -1,4 +1,6 @@
 import type {
+  EndpointProtocol,
+  ProtocolFamily,
   ModelPresetOption,
   ModelType,
   RateCard,
@@ -18,6 +20,7 @@ import type {
   ModelFacts,
   ModelPriceKey,
   ModelSelection,
+  ProviderRouteSelectionInput,
   ProviderOperation,
   PublicError,
   ReadyEvent,
@@ -25,18 +28,38 @@ import type {
   ViewStamp,
 } from "../common/index.js";
 
+/** Wire inputs may select the single registered endpoint of a specialised family. */
+export type ModelCommandInput<T> = {
+  [K in keyof T]: K extends "selection"
+    ? ProviderRouteSelectionInput
+    : K extends "choice" | "draft"
+      ? ModelCommandInput<T[K]>
+      : T[K];
+};
 export interface IGraphAgentModelService {
   estimateModelCost(input: EstimateModelCostRequest): Promise<ServiceResult<BillingEstimate>>;
-  saveModelDraft(input: SaveModelDraftRequest): Promise<ServiceResult<GraphModelSnapshot>>;
+  saveModelDraft(
+    input: ModelCommandInput<SaveModelDraftRequest>,
+  ): Promise<ServiceResult<GraphModelSnapshot>>;
   changeModelPack(input: ChangeModelPackRequest): Promise<ServiceResult<GraphModelSnapshot>>;
   getSnapshot(): Promise<ServiceResult<GraphModelSnapshot>>;
   subscribe(listener: (event: GraphModelChangedEvent) => void): () => void;
   refreshCatalog(input: RefreshCatalogRequest): Promise<ServiceResult<GraphModelSnapshot>>;
-  editManualModel(input: EditManualModelRequest): Promise<ServiceResult<GraphModelSnapshot>>;
-  selectPreset(input: SelectPresetRequest): Promise<ServiceResult<GraphModelSnapshot>>;
-  editModelOverrides(input: EditModelOverrideRequest): Promise<ServiceResult<GraphModelSnapshot>>;
-  saveModelSelection(input: SaveModelSelectionRequest): Promise<ServiceResult<GraphModelSnapshot>>;
-  previewRequest(input: PreviewModelRequest): Promise<ServiceResult<ModelRequestPreview>>;
+  editManualModel(
+    input: ModelCommandInput<EditManualModelRequest>,
+  ): Promise<ServiceResult<GraphModelSnapshot>>;
+  selectPreset(
+    input: ModelCommandInput<SelectPresetRequest>,
+  ): Promise<ServiceResult<GraphModelSnapshot>>;
+  editModelOverrides(
+    input: ModelCommandInput<EditModelOverrideRequest>,
+  ): Promise<ServiceResult<GraphModelSnapshot>>;
+  saveModelSelection(
+    input: ModelCommandInput<SaveModelSelectionRequest>,
+  ): Promise<ServiceResult<GraphModelSnapshot>>;
+  previewRequest(
+    input: ModelCommandInput<PreviewModelRequest>,
+  ): Promise<ServiceResult<ModelRequestPreview>>;
 }
 
 export interface ModelOverrides {
@@ -50,20 +73,20 @@ export interface ModelOverrides {
 }
 
 export interface ModelParameterRule {
-  type: "string" | "number" | "integer";
+  type: "string" | "number" | "integer" | "boolean";
   minimum?: number;
   maximum?: number;
-  choices?: Array<string | number>;
+  choices?: Array<string | number | boolean>;
   unit?: string;
 }
 export interface ModelParameterTemplate {
   id: string;
-  operationId: ProviderOperation;
+  operation: ProviderOperation;
   fields: Partial<Record<keyof ModelParameters, ModelParameterRule>>;
 }
 
 export interface ModelIOProfile {
-  id: string;
+  kind: string;
   requiredInputs: string[];
   optionalInputs: string[];
   outputs: string[];
@@ -86,8 +109,8 @@ export interface CatalogQuote {
 export interface ModelEntryView {
   parameterTemplate: ModelParameterTemplate;
   modelType: ModelType;
-  operationId: ProviderOperation;
-  profileId: string;
+  operation: ProviderOperation;
+  ioProfile: string;
   ioProfiles: ModelIOProfile[];
   parameters: ModelParameters;
   accountOverrides: ModelOverrides;
@@ -124,11 +147,13 @@ export type CatalogState =
   | { state: "unavailable"; reason: string };
 
 export interface ModelCatalogView {
+  protocolFamily?: ProtocolFamily;
+  familyBindingRevision?: string;
   accountDisplayName: string;
   providerId: string;
   offeringId: string;
   accountId: string;
-  protocolRouteId: string;
+  protocol: EndpointProtocol;
   bindingRevision: string;
   catalog: CatalogState;
   refreshing: boolean;
@@ -163,11 +188,17 @@ export interface BoundModelCommand extends CommandContext {
   expectedBindingRevision: string;
 }
 
-export interface RefreshCatalogRequest extends CommandContext {
+export interface RouteBindingRequest extends CommandContext {
   accountId: string;
-  protocolRouteId: string;
+  protocol: EndpointProtocol;
   expectedBindingRevision: string;
 }
+export interface FamilyCatalogRequest extends CommandContext {
+  accountId: string;
+  protocolFamily: ProtocolFamily;
+  expectedFamilyBindingRevision: string;
+}
+export type RefreshCatalogRequest = FamilyCatalogRequest | RouteBindingRequest;
 
 export interface EditManualModelRequest extends BoundModelCommand {
   expectedSettingsRevision: string;
@@ -176,8 +207,8 @@ export interface EditManualModelRequest extends BoundModelCommand {
         operation: "upsert";
         displayName: string;
         modelType?: ModelType;
-        operationId?: ProviderOperation;
-        profileId?: string;
+        modelOperation?: ProviderOperation;
+        ioProfile?: string;
       }
     | { operation: "remove" };
 }
@@ -210,14 +241,14 @@ export interface EstimateModelCostRequest extends CommandContext {
 
 export type ModelParameterChange =
   | { field: keyof ModelParameters; operation: "clear" }
-  | { field: keyof ModelParameters; operation: "set"; value: string | number | null };
+  | { field: keyof ModelParameters; operation: "set"; value: string | number | boolean | null };
 
 export interface SaveModelDraftRequest extends EditModelOverrideRequest {
   scope: "account" | "offering";
   parameterChanges: ModelParameterChange[];
   presetKey?: string | null;
-  operationId?: ProviderOperation;
-  profileId?: string;
+  operation?: ProviderOperation;
+  ioProfile?: string;
   modelType?: ModelType;
   rateCard?: RateCard | null;
   ratePlanKey?: string;
@@ -288,6 +319,7 @@ export interface ModelRequestPreview {
   relativePath: string;
   upstreamModelId: string;
   consumedParameters: ("effort" | "window")[];
+  ruleSources?: string[];
   headers: Record<string, string>;
   body: Record<string, JsonValue>;
   warnings: { code: string; message: string }[];

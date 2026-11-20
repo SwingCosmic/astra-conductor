@@ -32,7 +32,7 @@ describe("PolyQuota frontend service", () => {
       (usage): usage is NonNullable<typeof usage> => usage !== null,
     );
     expect(usages.some((usage) => usage.planLegacy === true)).toBe(true);
-    expect(usages.some((usage) => usage.planId === null)).toBe(true);
+    expect(usages.some((usage) => usage.planKey === null)).toBe(true);
     expect(usages.some((usage) => usage.resetCredits !== null)).toBe(true);
     await expect(service.getSystemStatus()).resolves.toEqual({
       ok: true,

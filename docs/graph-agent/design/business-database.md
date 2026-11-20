@@ -17,7 +17,7 @@
 | --- | --- | --- |
 | 凭据后端（私有或 broker） | `accountId`、`providerId`、账号标识文本（如登录名或邮箱）、不透明凭据内容。加密、授权、记录修订等由后端自身管理。 | 只共享凭据。自定义 `providerId` 对接收端是不透明引用，名称、图标、offering、URL、传参规则及模型配置均由本地业务库持有。PolyQuota 自动忽略不认识的自定义供应商，保留共享记录，跳过供应商接入和订阅轮询。 |
 | `accounts` | `account_id` 主键与凭据的 `accountId` 对应，`provider_id, stable_identity, offering_id, auth_method, display_name, enabled, revision`，`provider_id, offering_id` 上有组合索引。`stable_identity` 用于核对来自不同凭据后端的账号。可用账号必须绑定该供应商的一个 offering。账号待绑定或用户显式解绑时，`offering_id` 可空，保留原账号 ID。 | 内置账号按注册表验证接入点，自定义账号按本地供应商记录验证。显示名、启用状态在此编辑。登录标识只用于识别或展示，不能用同名、同邮箱、同 URL 或相同 Key 推断两个账号为同一身份。 |
-| `custom_providers` | `provider_id` 主键，`name`、可空的 `icon`、`offerings_json, revision, operation_id, creation_hash`。一行保存一个自定义供应商，创建操作 ID 唯一，配合请求摘要校验重试。 | `offerings_json` 是有版本定义的 offering 列表。每项有稳定的 `offeringId`、名称，以及按协议种类登记的端点。端点保存 API 根地址、支持的协议选项和端点修订。后续非秘密自定义传参配置保存在对应 offering／端点下，规则编辑与执行属供应商阶段三。 |
+| `custom_providers` | `provider_id` 主键，`name`、可空的 `icon`、`offerings_json, revision, operation_id, creation_hash, template_kind`。一行保存一个自定义供应商，创建操作 ID 唯一，配合请求摘要校验重试。迁移 v3 将已有记录标为 `generic`。 | 每个 offering 包含稳定的 `offeringId`、名称和协议端点。`new-api` 模板的 offering 另存 `siteBaseUrl`。端点保存 API 根地址、支持的协议选项和端点修订。供应商保存族策略，offering 保存族根地址、绑定修订与各明细端点的请求规则。 |
 
 GraphAgent 新建的私有凭据文件只保存账号 ID、供应商 ID、账号标识、密文及其加密元数据。应用设置另存 `app-settings.json`。共享新写入的 Key 和订阅分别使用 `provider-key+json` v3 与 `subscription-credential+json` v3；原有 v1/v2 由对应解码器读取。独立 Web 使用已授权的 broker。[私有存储](../../../apps/graph-agent/src/platform/storage.ts) · [共享编解码](../../../packages/core/src/shared-credential-service.ts)
 
@@ -37,10 +37,10 @@ GraphAgent 新建的私有凭据文件只保存账号 ID、供应商 ID、账号
 
 | 表 | 主键和主要列 | 数据粒度与写入边界 |
 | --- | --- | --- |
-| `model_packs` | `revision` 主键，`schema_version, digest, content_json` | 一行是一份校验完整的预置包，含型号、精确 ID、操作、输入输出组合、模板、来源及随包报价。对活动版本在内存建立精确 ID 和系列索引，可从库重建。导入失败保留原包。 |
-| `model_catalogs` | `visibility_ref, account_id, offering_id, route_id, binding_revision` 联合主键，另存 `retrieved_at, catalog_revision, entries_json`。`account_id` 引用账号，级联删除。 | 一行是一条获准路由的一次成功目录快照。条目含原始模型 ID 和供应商实际返回的资料。完整成功后替换，`[]` 是合法空目录，失败保留原值。旧来源或旧绑定的记录不能证明当前可见。 |
+| `model_packs` | `revision` 主键，`schema_version, digest, content_json` | 仅保存用户手动导入或在线更新的预置包，含型号、精确 ID、操作、输入输出组合、模板、来源及随包报价；随应用打包的默认预置直接从资源文件 `resources/model-presets.json` 读取，不再复制写入数据库。导入失败保留原包。 |
+| `model_catalogs` | `visibility_ref, provider_id, offering_id, account_id, protocol_family_id, family_binding_revision` 联合主键，另存 `retrieved_at, catalog_revision, entries_json`。`account_id` 引用账号，级联删除。 | 一行是当前账号在一个获准协议族上的完整目录快照。条目含原始模型 ID 和供应商实际返回的资料。完整成功后替换，`[]` 是合法空目录，失败保留原值。旧来源或旧绑定的记录不能证明当前可见。 |
 | `model_configs` | `id` 主键，`provider_id, offering_id, route_id, upstream_model_id, account_id, account_identity, model_type, config_json`。非空 `account_id` 引用账号，`account_identity` 记录该账号覆盖所属的已核验身份。 | 账号行存该模型的手工登记／确认、预置关联和用户修改。公共行仅用于内置 offering 的模型默认值，`account_id IS NULL`。同一模型在生成和编辑端点各有一行。单纯浏览远端目录不写用户覆盖；选中或编辑时可创建只有身份的账号行。 |
-| `model_state` | 固定单行，`settings_revision, active_pack, previous_pack, selected_config_id, operation_id, profile_id, binding_revision`。前后包引用 `model_packs`，选择引用 `model_configs`。 | 空库未选模型。选择只指向具体账号、操作及其输入输出组合；不复制预算、价格或其他参数。启用及回滚包在事务内更新引用。目录刷新使用自己的修订，草稿保存与更改测试选择使用 `settings_revision` 做并发检查。 |
+| `model_state` | 固定单行，`settings_revision, active_pack, previous_pack, selected_config_id, operation_id, profile_id, binding_revision`。`active_pack`/`previous_pack` 使用 `$bundled` 指向随包资源或引用用户导入包修订，选择引用 `model_configs`。 | 空库默认指向 `$bundled`（直接读取打包资源）且未选模型。选择只指向具体账号、操作及其输入输出组合；不复制预算、价格或其他参数。启用及回滚包在事务内更新引用。目录刷新使用自己的修订，草稿保存与更改测试选择使用 `settings_revision` 做并发检查。 |
 
 除可空的 `account_id` 外，两个唯一索引的组成列均为 `NOT NULL`。公共默认和账号覆盖各有一个唯一索引。用部分索引处理 SQLite 唯一约束中 NULL 可重复的情况。内置公共范围的写入仍须有当前可取样的账号；自定义供应商只允许账号级模型配置。
 
@@ -59,7 +59,7 @@ CREATE UNIQUE INDEX model_configs_account ON model_configs
 erDiagram
     accounts ||--o{ account_sources : "按凭据来源保存观测投影"
     custom_providers |o..o{ accounts : "offering 绑定（经 offerings_json 校验）"
-    accounts ||--o{ model_catalogs : "路由目录快照（级联删除）"
+    accounts ||--o{ model_catalogs : "族目录快照（级联删除）"
     accounts |o..o{ model_configs : "账号级模型覆盖（可空，级联删除）"
     model_packs ||..o| model_state : "活动与上一预置"
     model_configs |o..o| model_state : "已保存选择（置空级联）"
@@ -87,6 +87,20 @@ erDiagram
 价卡保存在 `model_rate_cards`，主键为 `(rate_card_id, revision)`，一行保存一个不可变版本的 `card_json`。同一卡的币种、来源、适用区间、计量行、分母、阶梯、日历和权益同时校验、同时发布。型号配置按操作、输入输出组合和套餐引用价卡与修订，随包价卡随活动包解析。改变本地报价时，创建新修订并在同一事务内更新相应配置引用。两种来源都应能以引用重现当次计费。[价卡字段及试算样例](../../common/core/provider/model-pricing.md)
 
 前两步的基础价按种类、币种、单位和已有条件存入模型行。第三步将可确定分母的报价转成无条件或相应条件的收费行，保留零价、显式未知和来源，单位不明的原记录可回读。生成和编辑即使使用同一个模型名，亦可绑定不同价卡。单轮试聊只在本轮内按回执去重，用实际扣款替换估算，关闭或重启即释放。
+
+## 协议族绑定与目录迁移
+
+2B 的 `model_catalogs` 以明细路由 `route_id` 分区。改版后，供应商按 `protocolFamily` 声明认证机制、公共额外参数和模型列表能力，offering 绑定该族的根地址及启用的明细端点，账号提供经授权的凭据。自定义供应商的这些非秘密设置随本地供应商配置保存，内置注册表使用同一层次。编辑页在协议族处设置共同连接参数，展开后可看到哪些明细端点使用它们。模型登记、参数覆盖、价卡和测试选择均按解析后的具体路由定位；专用单端点族允许输入时采用已登记的默认路由。SQLite v5 迁移同步移除 `model_state` 对 `model_packs` 的外键依赖，将随包预置切为 `$bundled` 直读打包资源并清理冗余随包副本，同时自动归一化 `model_rate_cards`、`custom_providers` 与用户导入包中的旧枚举字段名。[默认路由选择](../../common/contract/common-api.md#专用单端点族的默认选择) · [现有模型仓储](../../../apps/graph-agent/src/server/model-repository.ts)
+
+| 数据 | 改版后的读写规则 |
+| --- | --- |
+| 族绑定与修订 | `familyBindingRevision` 标识当前供应商、offering、账号上实际采用的族连接配置与授权状态。修改族根地址、认证机制、凭据或公共参数时，重算受影响账号的族修订，旧目录与依赖它的明细绑定失效。只改明细端点属性时，更新该端点的有效 `bindingRevision`。 |
+| 目录快照 | 将 `model_catalogs` 唯一键迁到 `(visibility_ref, provider_id, offering_id, account_id, protocol_family_id, family_binding_revision)`。同一账号从 OpenAI Chat 或 Responses 发起刷新均访问同一 OpenAI 族目录，一次完整分页结果只写一行。Anthropic 同名模型进入独立的族目录。提交前重验族修订与当前授权；换账号、后端或授权范围后按新范围读取。族未声明列表能力时保留各端点的手工登记。 |
+| 明细配置与选择 | 保留 `model_configs.id`、现有路由唯一索引以及 `model_state.selected_config_id`。按注册声明从明细端点解析唯一协议族。同一模型在族列表中出现一次，可以有多条明细配置，各自校验操作、能力、启用状态和有效绑定。列表刷新失败或返回空列表不删除这些配置。 |
+
+**默认路由的持久化。** 写入前将专用族输入的缺省或 `null` 解析为注册表中的具体路由 ID。读写 `model_configs.route_id` 时沿用现有 `NOT NULL` 列和公共／账号两个部分唯一索引，因此显式及默认两种输入在同一作用域内更新同一行。`selected_config_id` 继续引用该行，既有显式 ID 原样保留。族默认声明的变化计入绑定修订；提交前复核原修订，过期的空选择需重读。族扩为多端点后仍按持久化的原 ID 读取部署；原端点禁用或已删除时显示失效，保留原配置供用户重新选择。
+
+业务库 v4 将旧目录保存在 `legacy_model_catalogs`，为 `custom_providers` 添加 `family_policies_json`，并按旧连接原有行为显式保存 OpenAI Chat 输出上限字段。宿主按注册声明映射旧路由，保留已发布迁移的校验和。仅当同组旧路由的根地址、版本、认证机制与公共额外参数等效时才生成一份有效的族配置。旧值冲突或路由归属未知时保留原值与引用，配置页列出差异，由有权用户明确族配置或拆为不同 offering。选择完成前，受影响的新族入口不取得可用绑定。旧端点快照可以重新发现，升级时使其失效，避免把部分端点的旧结果当作一次完整的族发现。模型覆盖、价卡、已选账号和端点仍可回读。测试选择及手工确认只有在同一账号、授权与实际目标核实后才可按新修订使用。配置及目录键升级与迁移版本登记在同一事务内完成。[业务库迁移入口](../../../apps/graph-agent/src/platform/business-database.ts)
 
 ## 业务库启动与验收
 

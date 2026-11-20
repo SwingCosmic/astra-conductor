@@ -4,6 +4,7 @@ import type { ServiceResolver } from "../../services/registry.js";
 import { opencodeGoDescriptor } from "./descriptor.js";
 import { OpencodeGoAccountProvisioner, OpencodeGoAdapter } from "./adapter.js";
 import { createOpencodeGoAuthFlow } from "./auth-flow.js";
+import { openCodeGoModelPolicy } from "./model-policy.js";
 
 export function createOpencodeGoProvider(services: ServiceResolver): ProviderContribution {
   const adapter = new OpencodeGoAdapter(services);
@@ -23,5 +24,6 @@ export function createOpencodeGoProvider(services: ServiceResolver): ProviderCon
       providerId: "opencode-go",
       fetchUsage: (account, envelope) => adapter.fetchUsage(account, envelope),
     },
+    modelPolicies: [openCodeGoModelPolicy],
   };
 }

@@ -15,8 +15,11 @@ import {
   discoverRouteModels,
   encodeSharedCredential,
   modelAuthorization,
+  previewModelChat,
   recordFormat,
   resolveModelRoutes,
+  sendModelChat,
+  sendModelChatDetailed,
   supportsSubscriptionUsage,
   upgradeCredentialMetadata,
   type Account,
@@ -26,10 +29,16 @@ import {
 import { providerServices } from "./service-helpers.js";
 
 const key = "fictional-catalog-key";
+function storedRoutes(connection: PublicConnection) {
+  return connection.routes.map(
+    ({ protocolFamily: _, familyBindingRevision: __, familyCatalog: ___, ...persisted }) =>
+      persisted,
+  );
+}
 const routeInputs = [
-  { protocolRouteId: "openai-chat", baseUrl: "https://relay.example/custom/v1/" },
+  { protocol: "openai-chat", baseUrl: "https://relay.example/custom/v1/" },
   {
-    protocolRouteId: "anthropic-messages",
+    protocol: "anthropic-messages",
     baseUrl: "https://relay.example/claude/v1",
     protocolVersion: "2023-06-01",
   },
@@ -93,6 +102,54 @@ function setup(connectionProviders?: ConnectionProviderSource) {
 }
 
 describe("managed API key offerings", () => {
+  it("keeps DeepSeek destinations local to the profile and uses its policy on custom roots", async () => {
+    const { service, vault, storage, registry } = setup();
+    for (const custom of [false, true]) {
+      const created = await service.createConnection({
+        providerId: "deepseek",
+        offeringId: "deepseek-api-key",
+        displayName: custom ? "DeepSeek relay" : "DeepSeek",
+        operationId: "ds-" + custom,
+        apiKey: key,
+        routes: custom ? [{ protocol: "openai-chat", baseUrl: "https://relay.example/ds" }] : [],
+      });
+      const account = storage.accounts.get(created.accountId)!;
+      const envelope = await vault.load(account.id);
+      expect(supportsSubscriptionUsage(account, registry)).toBe(false);
+      expect(envelope.modelRoutes).toBeUndefined();
+      const policy = registry.resolveModelPolicy({
+        providerId: "deepseek",
+        offeringId: "deepseek-api-key",
+      });
+      for (const route of resolveModelRoutes(account, envelope, service.routeSource, policy)) {
+        const preview = previewModelChat(
+          account,
+          route,
+          "deepseek-flash",
+          { maxOutputTokens: 512, contextWindow: null, effort: "high", thinkingEnabled: false },
+          service.routeSource,
+          { policy },
+        );
+        expect(preview.baseUrl).toBe(
+          custom
+            ? "https://relay.example/ds"
+            : route.protocol === "anthropic-messages"
+              ? "https://api.deepseek.com/anthropic/v1"
+              : "https://api.deepseek.com",
+        );
+        expect(preview.body).toMatchObject(
+          route.protocol === "openai-responses"
+            ? { reasoning: { effort: "none" } }
+            : { max_tokens: 512, thinking: { type: "disabled" } },
+        );
+        expect(preview.body.reasoning_effort).toBeUndefined();
+      }
+      expect(resolveModelRoutes(account, envelope, service.routeSource)).toHaveLength(
+        custom ? 1 : 3,
+      );
+      expect(resolveModelRoutes(account, envelope)).toHaveLength(custom ? 0 : 3);
+    }
+  });
   it("new subscription exports retain vendor identity claims and exclude local profile settings", () => {
     const a: Account = {
       id: "example-account",
@@ -171,7 +228,7 @@ describe("managed API key offerings", () => {
     expect((await service.getSnapshot()).connections[0].actions.refreshCredentials.state).toBe(
       "hidden",
     );
-    expect(first.routes.map((r) => r.protocolRouteId)).toEqual(["openai-chat", "openai-responses"]);
+    expect(first.routes.map((r) => r.protocol)).toEqual(["openai-chat", "openai-responses"]);
     expect(await service.refreshCredentials(account.id)).toMatchObject({ status: "failed" });
     const http = {
       fetch: vi
@@ -196,21 +253,36 @@ describe("managed API key offerings", () => {
           }),
         ),
     };
-    const [route, responses] = resolveModelRoutes(account, envelope);
-    expect(await discoverRouteModels(http, account, envelope, route)).toHaveLength(1);
-    expect(String(http.fetch.mock.calls[0][0])).toBe("https://api.openai.com/v1/models");
-    const result = await registry
-      .getInference("codex")!
-      .sendDetailed(
+    const openAiPolicy = registry.resolveModelPolicy({
+      providerId: "codex",
+      offeringId: "openai-api-key",
+    });
+    const [route, responses] = resolveModelRoutes(account, envelope, undefined, openAiPolicy);
+    expect(
+      await discoverRouteModels(
         http,
         account,
         envelope,
-        responses,
-        "test-model",
-        { effort: null, maxOutputTokens: 22, contextWindow: null },
-        "hello",
-        new AbortController().signal,
-      );
+        route,
+        undefined,
+        undefined,
+        "route",
+        openAiPolicy,
+      ),
+    ).toHaveLength(1);
+    expect(String(http.fetch.mock.calls[0][0])).toBe("https://api.openai.com/v1/models");
+    const result = await sendModelChatDetailed(
+      http,
+      account,
+      envelope,
+      responses,
+      "test-model",
+      { effort: null, maxOutputTokens: 22, contextWindow: null },
+      "hello",
+      new AbortController().signal,
+      undefined,
+      { policy: openAiPolicy },
+    );
     expect(result).toEqual({
       text: "reply",
       usage: { inputTokens: 14, cacheReadTokens: 3, outputTokens: 7, reasoningTokens: 2 },
@@ -240,13 +312,13 @@ describe("managed API key offerings", () => {
       p === provider && o === "cn"
         ? [
             {
-              protocolRouteId: "openai-images-generations",
+              protocol: "openai-images-generations",
               baseUrl: "https://cn.example/v1",
               bindingRevision: "generate-v1",
               protocolVersion: null,
             },
             {
-              protocolRouteId: "openai-images-edits",
+              protocol: "openai-images-edits",
               baseUrl: "https://edit.example/" + revision,
               bindingRevision: revision,
               protocolVersion: null,
@@ -315,19 +387,18 @@ describe("managed API key offerings", () => {
       discoverRouteModels({ fetch }, account, credential, current[0], undefined, source),
     ).rejects.toThrow();
     await expect(
-      registry
-        .getInference(provider)!
-        .send(
-          { fetch },
-          account,
-          credential,
-          current[1],
-          "test",
-          { maxOutputTokens: null, contextWindow: null, effort: null },
-          "hi",
-          new AbortController().signal,
-          source,
-        ),
+      sendModelChat(
+        { fetch },
+        account,
+        credential,
+        current[1],
+        "test",
+        { maxOutputTokens: null, contextWindow: null, effort: null },
+        "hi",
+        new AbortController().signal,
+        source,
+        { policy: registry.resolveModelPolicy({ providerId: provider, offeringId: "cn" }) },
+      ),
     ).rejects.toThrow();
     expect(fetch).not.toHaveBeenCalled();
   });
@@ -347,7 +418,7 @@ describe("ordinary API key connections", () => {
     const account = storage.accounts.get(first.accountId)!;
     expect(supportsSubscriptionUsage(account, registry)).toBe(false);
     expect(JSON.stringify(account)).not.toContain("relay.example");
-    expect((await vault.load(first.accountId)).modelRoutes).toEqual(first.routes);
+    expect((await vault.load(first.accountId)).modelRoutes).toEqual(storedRoutes(first));
     const path = `/api/v1/accounts/${account.id}/connection/edit`;
     const edit = {
       expectedRecordRevision: first.recordRevision,
@@ -388,7 +459,7 @@ describe("ordinary API key connections", () => {
       operationId: "unsafe",
       displayName: "Fixture",
       apiKey: key,
-      routes: [{ protocolRouteId: "openai-chat", baseUrl }],
+      routes: [{ protocol: "openai-chat", baseUrl }],
     });
     expect(result.status).toBe(400);
     expect(await result.text()).not.toContain(key);
@@ -572,7 +643,7 @@ describe("ordinary API key connections", () => {
       expect(next.description.metadata).toEqual({ ...original.description.metadata, ...expected });
       expect(upgradeCredentialMetadata(next, registry)).toEqual(next);
     }
-    expect(decodeSharedCredential(relay).credentials.modelRoutes).toEqual(connection.routes);
+    expect(decodeSharedCredential(relay).credentials.modelRoutes).toEqual(storedRoutes(connection));
     const broker = {
       listCredentials: vi.fn(async () => [relay.description]),
       getCredential: vi.fn(async () => relay),
@@ -581,7 +652,7 @@ describe("ordinary API key connections", () => {
     };
     const shared = new SharedCredentialService(broker, { providers: registry });
     expect((await shared.listAccounts()).map((a) => a.id)).toEqual([account.id]);
-    expect((await shared.loadCurrent(account.id)).modelRoutes).toEqual(connection.routes);
+    expect((await shared.loadCurrent(account.id)).modelRoutes).toEqual(storedRoutes(connection));
     const usage = new SharedCredentialService(broker, { providers: registry, usageOnly: true });
     expect(await usage.listAccounts()).toEqual([]);
   });

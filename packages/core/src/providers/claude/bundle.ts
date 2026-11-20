@@ -4,6 +4,7 @@ import type { ServiceResolver } from "../../services/registry.js";
 import { claudeDescriptor } from "./descriptor.js";
 import { ClaudeAccountProvisioner, ClaudeAdapter } from "./adapter.js";
 import { createClaudeAuthFlow } from "./auth-flow.js";
+import { claudeModelPolicy } from "./model-policy.js";
 
 export function createClaudeProvider(services: ServiceResolver): ProviderContribution {
   const adapter = new ClaudeAdapter(services);
@@ -31,5 +32,6 @@ export function createClaudeProvider(services: ServiceResolver): ProviderContrib
       providerId: "claude",
       fetchUsage: (account, envelope) => adapter.fetchUsage(account, envelope),
     },
+    modelPolicies: [claudeModelPolicy],
   };
 }

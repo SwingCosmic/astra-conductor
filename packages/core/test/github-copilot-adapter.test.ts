@@ -426,7 +426,7 @@ describe("github copilot usage", () => {
     expect(snapshot.plan).toBe("max");
     expect(snapshot.rawPlanLabel).toBe("Copilot Max");
     const resolved = toPublicUsage(snapshot, "github-copilot");
-    expect(resolved.planId).toBe("copilot-max");
+    expect(resolved.planKey).toBe("copilot-max");
     expect(resolved.planLabel).toBe("Copilot Max");
     expect(planMultiplier("github-copilot", snapshot.plan)).toBe(13.3);
   });

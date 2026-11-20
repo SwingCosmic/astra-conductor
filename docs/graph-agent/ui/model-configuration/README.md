@@ -21,7 +21,7 @@
 
 | 要查的问题 | 维护位置 |
 | --- | --- |
-| 用户从哪里进入、目录怎样筛选、各类字段如何编辑和保存 | [界面与交互验收](./interaction.md) · [公共组件、主题与键盘行为](../../../common/ui/design.md#模型配置所需的公共表单) |
+| 用户从哪里进入、目录怎样筛选、各类字段如何编辑和保存 | [界面与交互验收](./interaction.md) · [公共组件、主题与键盘行为](../../../common/ui/design.md#模型配置所需的公共表单) · [原型图册](./prototypes/README.md) |
 | 型号、系列、变种、操作和部署怎样关联，预置数据在哪里更新 | [模型结构、七家族来源、数据包与重置](../../../common/core/provider/model-structure.md) |
 | 决策能返回什么，GPT 如何调用图像模型或搜索服务 | [决策与工具绑定](./decision-and-tools.md) |
 | 条件费率、订阅、实际用量与估价怎样核对 | [报价、试算与回执](../../../common/core/provider/model-pricing.md) |

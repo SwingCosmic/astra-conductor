@@ -38,6 +38,29 @@ export class FetchServiceTransport implements IServiceTransport {
     this.baseUrl = options.baseUrl.replace(/\/$/, "").replace(/\/api$/, "");
   }
 
+  requestRaw<T>(
+    operation: Pick<ApiOperation<T, unknown>, "method" | "path" | "body"> & {
+      headers(input: T): Record<string, string>;
+    },
+    input: T,
+    signal?: AbortSignal,
+  ): Promise<Response> {
+    const path = operation.path(input);
+    if (!path.startsWith("/api/") || /[\\#]/.test(path)) throw new Error("无效的应用接口");
+    return this.fetchImpl(this.baseUrl + path, {
+      method: operation.method,
+      headers: operation.headers(input),
+      body: operation.body && JSON.stringify(operation.body(input)),
+      cache: "no-store",
+      redirect: "error",
+      signal: AbortSignal.any([
+        this.lifetime.signal,
+        AbortSignal.timeout(125_000),
+        ...(signal ? [signal] : []),
+      ]),
+    });
+  }
+
   async request<TInput, TOutput>(
     operation: ApiOperation<TInput, TOutput>,
     input: TInput,

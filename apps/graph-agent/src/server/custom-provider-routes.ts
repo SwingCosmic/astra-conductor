@@ -14,6 +14,16 @@ export function customProviderRoutes(services: GraphServices): Hono {
   const app = new Hono();
   const local = services.customProviders;
   const base = ops.list.path();
+  app.get(base + "/:providerId/offerings/:offeringId/catalog", async (c) => {
+    const providerId = providerSlug(c.req.param("providerId"));
+    const offeringId = providerSlug(c.req.param("offeringId"), "offeringId");
+    const revision = customRevision(Number(c.req.query("revision")));
+    const value = await services.track(() =>
+      services.listSiteModels(providerId, offeringId, revision, c.req.raw.signal),
+    );
+    c.header("Cache-Control", "no-store");
+    return c.json({ ok: true, value });
+  });
   app.get(base, (c) => c.json({ ok: true, value: local.list() }));
   app.get(base + "/:providerId/references", (c) =>
     c.json({ ok: true, value: local.references(providerSlug(c.req.param("providerId"))) }),

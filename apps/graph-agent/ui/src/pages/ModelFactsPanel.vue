@@ -125,11 +125,14 @@ const groups: { label: string; keys: (keyof ModelFacts)[] }[] = [
     label: "工具与输出",
     keys: ["vision", "toolCalling", "parallelToolCalling", "structuredOutput"],
   },
-  { label: "推理", keys: ["reasoningMode", "effortLevels", "defaultEffort"] },
+  {
+    label: "推理",
+    keys: ["reasoningMode", "reasoningOutputMode", "effortLevels", "defaultEffort"],
+  },
   { label: "缓存与约束", keys: ["promptCacheRead", "promptCacheWrite", "unsupportedParameters"] },
 ];
 const groupsShown = computed(() =>
-  props.entry.operationId === "chat"
+  props.entry.operation === "chat"
     ? groups
     : [
         {
@@ -154,11 +157,13 @@ function choices(k: keyof ModelFacts): string[] {
     case "operations":
       return Object.keys(operationLabels);
     case "effortLevels":
-      return ["none", "minimal", "low", "medium", "high", "xhigh"];
+      return ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
     case "unsupportedParameters":
-      return Object.keys(parameterLabels);
+      return [...Object.keys(parameterLabels), "stream", "stream_options"];
     case "structuredOutput":
       return ["unknown", "unsupported", "json", "schema"];
+    case "reasoningOutputMode":
+      return ["full", "summary", "activity-only", "none", "unknown"];
     case "reasoningMode":
       return ["unknown", "none", "effort", "native-state"];
     case "defaultEffort":
@@ -206,7 +211,9 @@ function listValues(k: keyof ModelFacts) {
   const a = fact(k);
   return [...new Set([...choices(k), ...(Array.isArray(a) ? a : [])])];
 }
-function parameter(k: keyof ModelParameters) {
+function parameter(k: keyof ModelParameters): ModelParameters[keyof ModelParameters] {
+  if ((k === "effort" || k === "returnFullReasoning") && parameter("thinkingEnabled") === false)
+    return k === "effort" ? null : false;
   const v = params.value[k];
   return v ? (v.operation === "set" ? v.value : null) : props.entry.parameters[k];
 }
@@ -220,11 +227,16 @@ const numericParams = [
   "dimensions",
   "topK",
 ];
-const parameterKeys = computed(() =>
-  props.entry.parameterTemplate
+const parameterKeys = computed(() => {
+  const keys = props.entry.parameterTemplate
     ? (Object.keys(props.entry.parameterTemplate.fields) as (keyof ModelParameters)[])
-    : (paramKeys[props.entry.operationId] ?? []),
-);
+    : (paramKeys[props.entry.operation] ?? []);
+  const reasoning = ["thinkingEnabled", "effort", "returnFullReasoning"] as const;
+  return [
+    ...reasoning.filter((k) => keys.includes(k)),
+    ...keys.filter((k) => !reasoning.some((r) => r === k)),
+  ];
+});
 const parameterSpec = (k: keyof ModelParameters) => props.entry.parameterTemplate?.fields[k];
 function numeric(k: keyof ModelParameters) {
   const spec = parameterSpec(k);
@@ -336,10 +348,10 @@ function boundRateCard() {
       ...edited.scope,
       providerId: props.catalog.providerId,
       offeringId: props.catalog.offeringId,
-      operationId: props.entry.operationId,
-      protocolRouteId: props.catalog.protocolRouteId,
+      operation: props.entry.operation,
+      protocol: props.catalog.protocol,
       upstreamModelId: props.entry.selection.modelId,
-      planId: planKey.value ?? props.entry.ratePlanKey,
+      planKey: planKey.value ?? props.entry.ratePlanKey,
     },
   };
 }
@@ -347,8 +359,8 @@ function draft(): SaveModelDraftRequest {
   return {
     ...command(),
     scope: props.scope,
-    operationId: props.entry.operationId,
-    profileId: props.entry.profileId,
+    operation: props.entry.operation,
+    ioProfile: props.entry.ioProfile,
     expectedPackRevision: packRevision.value,
     changes: Object.values(edits.value),
     parameterChanges: Object.values(params.value),
@@ -464,7 +476,7 @@ async function previewDraft() {
   try {
     const r = await service.previewRequest({
       ...command(),
-      operation: props.entry.operationId,
+      operation: props.entry.operation,
       parameters: p,
       draft: draft(),
     });
@@ -479,7 +491,7 @@ const isSelected = computed(() => {
   const v = props.snapshot.savedSelection?.selection;
   return (
     v?.accountId === props.catalog.accountId &&
-    v.protocolRouteId === props.catalog.protocolRouteId &&
+    v.protocol === props.catalog.protocol &&
     v.modelId === props.entry.selection.modelId
   );
 });
@@ -492,12 +504,12 @@ const isSelected = computed(() => {
         <small
           ><template v-if="entry.displayName !== entry.selection.modelId"
             >{{ entry.selection.modelId }} · </template
-          >{{ typeLabels[entry.modelType] }} · {{ entry.profileId }}</small
+          >{{ typeLabels[entry.modelType] }} · {{ entry.ioProfile }}</small
         >
       </div>
       <span v-if="isSelected" class="method-chip">当前测试模型</span>
     </header>
-    <div v-for="p in entry.ioProfiles" :key="p.id" class="io-profile">
+    <div v-for="p in entry.ioProfiles" :key="p.kind" class="io-profile">
       {{
         [
           ...p.requiredInputs.map((v) => modalityLabels[v] ?? v),
@@ -526,9 +538,7 @@ const isSelected = computed(() => {
           >
             <option value="">自动匹配</option>
             <option
-              v-for="item in snapshot.presets.filter((p) =>
-                p.operations.includes(entry.operationId),
-              )"
+              v-for="item in snapshot.presets.filter((p) => p.operations.includes(entry.operation))"
               :value="item.key"
             >
               {{ item.family }} / {{ item.series }} · {{ item.displayName }}
@@ -600,10 +610,29 @@ const isSelected = computed(() => {
             :source="parameterSource(k)"
             :resettable="Object.hasOwn(own.parameters, k) || !!params[k]"
             @reset="params[k] = { field: k, operation: 'clear' }"
-            ><select
-              v-if="parameterSpec(k)?.choices?.length"
+            ><input
+              v-if="k === 'thinkingEnabled' || k === 'returnFullReasoning'"
+              type="checkbox"
+              :checked="parameter(k) === true || (parameter(k) == null && k === 'thinkingEnabled')"
+              :disabled="
+                fact('reasoningMode') === 'none' ||
+                (k === 'returnFullReasoning' &&
+                  (parameter('thinkingEnabled') === false ||
+                    fact('reasoningOutputMode') !== 'full'))
+              "
+              @change="
+                params[k] = {
+                  field: k,
+                  operation: 'set',
+                  value: ($event.target as HTMLInputElement).checked,
+                }
+              " /><select
+              v-else-if="parameterSpec(k)?.choices?.length"
               :value="parameter(k) ?? ''"
-              :disabled="entry.fields.unsupportedParameters.value?.includes(k)"
+              :disabled="
+                entry.fields.unsupportedParameters.value?.includes(k) ||
+                (k === 'effort' && parameter('thinkingEnabled') === false)
+              "
               @change="setParam(k, val($event))"
             >
               <option value="">协议默认</option>
@@ -617,7 +646,10 @@ const isSelected = computed(() => {
               :min="parameterSpec(k)?.minimum"
               :max="parameterSpec(k)?.maximum"
               :value="parameter(k) ?? ''"
-              :disabled="entry.fields.unsupportedParameters.value?.includes(k)"
+              :disabled="
+                entry.fields.unsupportedParameters.value?.includes(k) ||
+                (k === 'effort' && parameter('thinkingEnabled') === false)
+              "
               placeholder="使用默认值"
               @input="setParam(k, val($event))"
           /></ConfigField></div
@@ -680,10 +712,10 @@ const isSelected = computed(() => {
       :scope="{
         providerId: catalog.providerId,
         offeringId: catalog.offeringId,
-        protocolRouteId: catalog.protocolRouteId,
-        operationId: entry.operationId,
+        protocol: catalog.protocol,
+        operation: entry.operation,
         upstreamModelId: entry.selection.modelId,
-        planId: planKey ?? entry.ratePlanKey,
+        planKey: planKey ?? entry.ratePlanKey,
       }"
       :readonly="locked || busy"
       :resettable="!!own.rateCard || card !== undefined"
@@ -711,7 +743,7 @@ const isSelected = computed(() => {
         保存配置</button
       ><button class="outline-action" :disabled="!dirty || busy" @click="discard">放弃草稿</button>
       <button
-        v-if="entry.operationId === 'chat'"
+        v-if="entry.operation === 'chat'"
         class="outline-action"
         :disabled="busy || stale || entry.actions.preview.state !== 'enabled'"
         @click="previewDraft"
@@ -719,7 +751,7 @@ const isSelected = computed(() => {
         预览请求
       </button>
       <button
-        v-if="entry.operationId === 'chat'"
+        v-if="entry.operation === 'chat'"
         class="outline-action"
         :disabled="busy || stale || dirty || entry.actions.select.state !== 'enabled'"
         @click="chooseTest"

@@ -100,6 +100,9 @@ export class MemoryStorage implements StoragePort {
     save: (key: string, value: SettingValue): void => {
       this.state.settings.set(key, clone(value));
     },
+    delete: (key: string): void => {
+      this.state.settings.delete(key);
+    },
   };
 
   transaction<T>(operation: () => T): T {

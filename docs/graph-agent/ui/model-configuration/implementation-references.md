@@ -13,6 +13,8 @@ OpenRouter 的公开接口用于核对模型目录。New API、Hermes Agent、Cl
 
 ## New API：从网关目录到一次实际扣款
 
+下表保留计价设计所用的固定版本。GraphAgent 中转站模板对应仓库子模块的 `669d774`，目录、Key 选择及用量字段的实际接入范围见 [New API 中转站模板](../../../common/core/provider/new-api-template.md)。
+
 | 源码中可以看到的行为 | GraphAgent 应记录或展示什么 |
 | --- | --- |
 | 价表按模型聚合已启用渠道支持的端点，还能补上自定义端点。请求用户模型列表时，可用分组、令牌模型白名单和计价配置会继续筛选。网关展示价表也能随用户分组而变。[端点聚合](https://github.com/QuantumNous/new-api/blob/b388140acfd80369ec6243b16869daff1b4051f4/model/pricing.go#L277-L310) · [令牌可见目录](https://github.com/QuantumNous/new-api/blob/b388140acfd80369ec6243b16869daff1b4051f4/controller/model.go#L230-L262) · [按用户返回价格](https://github.com/QuantumNous/new-api/blob/b388140acfd80369ec6243b16869daff1b4051f4/controller/pricing.go#L38-L75) | 用“网关挂牌”“当前账号发现”“该操作可执行”标出三种证据。当前账号看到的价格按账号和渠道保存。用户通过网关调用时保留网关接受的模型 ID；只有网关提供相应证据时才记录内部上游映射。 |

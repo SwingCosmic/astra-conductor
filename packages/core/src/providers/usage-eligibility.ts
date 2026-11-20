@@ -1,4 +1,4 @@
-import { isLocalKeyAccount } from "./compatible-api-key/descriptor.js";
+import { isLocalKeyAccount } from "./catalog.js";
 import type { Account } from "../models.js";
 import type { ProviderRegistry } from "./registry.js";
 
@@ -7,7 +7,7 @@ export function subscriptionUsageEligibility(
   account: Account,
   providers: ProviderRegistry,
 ): "eligible" | "ineligible" | "unknown" {
-  if (isLocalKeyAccount(account)) return "ineligible";
+  if (isLocalKeyAccount(account, (id) => providers.findOffering(id))) return "ineligible";
   const offering = providers.findOffering(account.offeringId);
   const eligibility = account.publicMetadata.supportsUsage;
   if (

@@ -2,6 +2,8 @@ import {
   graphModelOperations,
   graphModelEventChannel,
   testChatOperation,
+  nativeChatOperation,
+  nativeModelsOperation,
   getChatChargeOperation,
   closeChatResultOperation,
   type IGraphAgentService,
@@ -19,6 +21,8 @@ export const withGraphModels = defineServiceSlice(
     "saveModelSelection",
     "previewRequest",
     "testChat",
+    "nativeChat",
+    "nativeModels",
     "getChatCharge",
     "closeChatResult",
     "saveModelDraft",
@@ -54,5 +58,9 @@ export const withGraphModels = defineServiceSlice(
         this.transport.request(graphModelOperations.changeModelPack, i);
       testChat: IGraphAgentService["testChat"] = (input, signal) =>
         this.transport.request(testChatOperation, input, { signal });
+      nativeChat: IGraphAgentService["nativeChat"] = (input, signal) =>
+        this.transport.requestRaw(nativeChatOperation, input, signal);
+      nativeModels: IGraphAgentService["nativeModels"] = (input, signal) =>
+        this.transport.requestRaw(nativeModelsOperation, input, signal);
     },
 );

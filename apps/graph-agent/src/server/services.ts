@@ -5,6 +5,7 @@ import {
   AuthCoordinator,
   CommonProviderApplicationService,
   CredentialVault,
+  readNewApiCatalog,
   CredentialMutationGate,
   CredentialMigrationService,
   SelectedBusinessStorage,
@@ -26,6 +27,8 @@ import { GraphCredentialRuntime } from "./runtime.js";
 
 import { GraphModelService } from "./model-service.js";
 import { GraphChatService } from "./chat-service.js";
+import { NewApiService } from "./new-api-service.js";
+import { reserveNewApiCreation } from "./new-api-creations.js";
 export interface GraphServicesOptions {
   directory: string;
   nativeBinding?: string;
@@ -200,7 +203,7 @@ async function assembleGraphServices(
   models = new GraphModelService({
     repository: business.models,
     visibilityRef: () => storage.visibilityRef,
-    connectionProviders: customProviders,
+    connectionProviders: providers.routeSource,
     storage,
     credentials,
     refresh,
@@ -225,6 +228,35 @@ async function assembleGraphServices(
     },
   });
   const chat = new GraphChatService(models, refresh, options.http, mutations);
+  const newApi = new NewApiService({
+    providers,
+    sites: customProviders,
+    credentials,
+    mutations,
+    visible,
+    http: options.http,
+    account: (id) => storage.accounts.get(id),
+    reserveCreation: (input, site) =>
+      reserveNewApiCreation(business.db, input, storage.visibilityRef, site),
+    retireCatalogs: ({ accountId, offeringId, providerId }, routes) =>
+      business.models.removeCatalogs(
+        routes.flatMap((r) => {
+          return r.protocolFamily && r.familyBindingRevision
+            ? [
+                {
+                  accountId,
+                  offeringId,
+                  providerId,
+                  visibilityRef: storage.visibilityRef,
+                  protocolFamily: r.protocolFamily,
+                  familyBindingRevision: r.familyBindingRevision,
+                },
+              ]
+            : [];
+        }),
+      ),
+    watch: (check, onStale) => models.watchCall(check, onStale),
+  });
   let reconnecting: Promise<void> | undefined;
   const retryWeb = async () => {
     const binding = options.brokerBinding;
@@ -306,6 +338,29 @@ async function assembleGraphServices(
   return {
     providers,
     customProviders,
+    async listSiteModels(
+      providerId: string,
+      offeringId: string,
+      revision: number,
+      signal: AbortSignal,
+    ) {
+      const site = () => {
+        if (customProviders.revision(providerId) !== revision)
+          throw new AppError("conflict", "接入点配置已变化，请重新打开站点目录");
+        const url = customProviders.newApiSite(providerId, offeringId);
+        if (!url) throw new AppError("capability-unavailable", "此接入点没有 New API 站点目录");
+        return url;
+      };
+      const models = await readNewApiCatalog(options.http, site(), signal);
+      site();
+      return models.map(({ modelId, displayName, endpointTypes, prices, billing }) => ({
+        modelId,
+        displayName,
+        endpointTypes,
+        prices,
+        billing,
+      }));
+    },
     async verifyAccountCredential(
       accountId: string,
       expected: unknown,
@@ -334,6 +389,7 @@ async function assembleGraphServices(
     },
     models,
     chat,
+    newApi,
     credentials: credentialManagement,
     runtime,
     get stopped() {

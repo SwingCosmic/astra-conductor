@@ -183,7 +183,7 @@ export class PolyQuotaApplicationService {
       );
       if (revision !== this.revision) continue;
       // 套餐解析点上移：目录匹配只在这里经 core 的唯一实现完成，解析结果
-      // （planId / planLabel）随快照固化下发；match 键是 core 内部数据层
+      // （planKey / planLabel）随快照固化下发；match 键是 core 内部数据层
       // 标识，不再进公开目录。正确性由 TS 类型与契约测试保证，不做运行期自检。
       const snapshot: PolyQuotaSnapshot = {
         schemaVersion: POLYQUOTA_SCHEMA_VERSION,
@@ -207,7 +207,7 @@ export class PolyQuotaApplicationService {
               ...(method.sourcePathHint ? { sourcePathHint: method.sourcePathHint } : {}),
             })),
             plans: offering.plans.map((plan) => ({
-              id: plan.id,
+              key: plan.key,
               displayName: plan.displayName,
             })),
           })),

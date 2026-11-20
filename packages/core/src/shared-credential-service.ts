@@ -28,17 +28,17 @@ import type { CredentialRefreshResult, StoragePort } from "./ports.js";
 import { subscriptionUsageEligibility } from "./providers/usage-eligibility.js";
 import type { ProviderRegistry } from "./providers/registry.js";
 import { isOutsideRefreshWindow } from "./providers/credential-reuse-policy.js";
-import { protocolRouteIds } from "@astra-conductor/contract/common";
-import { findOffering } from "./providers/catalog.js";
+import { endpointProtocols, protocolFamilies } from "@astra-conductor/contract/common";
+import { findOffering, isLocalKeyAccount } from "./providers/catalog.js";
 import {
   compatibleKeyId,
   isCustomProviderId,
-  isLocalKeyAccount,
   officialOpenAiOffering,
 } from "./providers/compatible-api-key/descriptor.js";
 import {
   resolveModelRoutes,
   routeRevisionKey,
+  familyRevisionKey,
   validateEncryptedRoutes,
 } from "./providers/model-routes.js";
 
@@ -79,7 +79,8 @@ const publicFields = new Set([
   "credentialBindingRevision",
   "supportsUsage",
   "supportsInference",
-  ...protocolRouteIds.map(routeRevisionKey),
+  ...endpointProtocols.map(routeRevisionKey),
+  ...protocolFamilies.map(familyRevisionKey),
   "workspaceId",
   "userId",
   "planType",
@@ -170,7 +171,7 @@ export function decodeSharedCredential(record: {
         payload.version === 3 &&
           description.credentialId === accountId &&
           description.metadata.provider === provider &&
-          (provider === "codex" || isCustomProviderId(provider)),
+          (provider === "codex" || provider === "deepseek" || isCustomProviderId(provider)),
         "credential-ownership-mismatch",
       );
       const material = object(payload.credential, ["apiKey", "bindingRevision"]);
@@ -184,7 +185,12 @@ export function decodeSharedCredential(record: {
         credentialProjection: "minimal",
         id: accountId,
         provider,
-        offeringId: provider === "codex" ? officialOpenAiOffering : "",
+        offeringId:
+          provider === "deepseek"
+            ? "deepseek-api-key"
+            : provider === "codex"
+              ? officialOpenAiOffering
+              : "",
         authMethod: "api-key",
         stableIdentity: accountId,
         displayName: accountIdentifier,
@@ -505,9 +511,13 @@ export function credentialPurposeMetadata(
 ): Record<string, string> {
   const usage = subscriptionUsageEligibility(account, providers);
   if (usage === "unknown") return {};
+  const policy =
+    providers.getModelPolicy?.({ providerId: account.provider, offeringId: account.offeringId }) ??
+    undefined;
   return {
     supportsUsage: usage === "eligible" ? "true" : "false",
-    ...(providers.getInference(account.provider) && resolveModelRoutes(account).length
+    ...(providers.getDescriptor?.(account.provider)?.capabilities.includes("inference") &&
+    resolveModelRoutes(account, undefined, undefined, policy).length
       ? { supportsInference: "true" }
       : {}),
   };
@@ -695,6 +705,7 @@ export class SharedCredentialService implements CredentialService {
       return (
         !this.options.usageOnly &&
         (description.metadata.provider === "codex" ||
+          description.metadata.provider === "deepseek" ||
           (this.options.includeCustomProviders !== false &&
             isCustomProviderId(description.metadata.provider ?? "")))
       );

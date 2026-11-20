@@ -1,8 +1,3 @@
-import {
-  compatibleKeyId,
-  isCustomProviderId,
-  isLocalKeyAccount,
-} from "./compatible-api-key/descriptor.js";
 import { AppError } from "../errors.js";
 import type {
   Account,
@@ -16,17 +11,21 @@ import type { CredentialRefreshResult } from "../ports.js";
 import type { AuthFlowStart, AuthStartOptions } from "../auth/types.js";
 import type { ProviderDescriptor, ProviderOfferingDescriptor } from "./types.js";
 import { validateProviderCatalog } from "./catalog.js";
-import type { discoverRouteModels } from "./model-discovery.js";
-import type { previewModelChat, sendModelChat, sendModelChatDetailed } from "./model-chat.js";
+import {
+  PROVIDER_CONTRIBUTION_EXTRAS,
+  isCustomProviderId,
+  validateOfferingRouteConfig,
+  type ProviderContributionExtras,
+  type ProviderOfferingModelPolicy,
+} from "./model-policy.js";
 
 /**
- * 账号能力 facet：认证交互由 `startAuth` 开始，输入以 `offeringId` 为稳定
- * 入口（协调器已对目录交叉验证）；`refreshCredentials` 只由确实有主动刷新
- * 协议的账号实现提供，API Key 账号不提供无效果刷新方法。
+ * Account capability facet: auth starts via offeringId; refreshCredentials is provided only
+ * by implementations with an active refresh protocol.
  */
 export interface ProviderAccountCapability {
   readonly providerId: ProviderId;
-  /** 构造期与目录对账，不参与运行期分派。 */
+  /** Validated against the descriptor catalog at construction time. */
   readonly supportedMethods: readonly AuthMethod[];
   startAuth(
     offeringId: string,
@@ -43,8 +42,8 @@ export interface ProviderAccountCapability {
 }
 
 /**
- * 用量能力 facet：`resetCredits` 是 `fetchUsage` 的一等返回结构；`redeemResetCard`
- * 是用量侧用户动作，只由支持消耗协议的供应商提供。
+ * Usage capability facet: resetCredits is returned alongside fetchUsage; redeemResetCard is
+ * provided only by providers that support credit redemption.
  */
 export interface ProviderUsageCapability {
   readonly providerId: ProviderId;
@@ -56,38 +55,82 @@ export interface ProviderUsageCapability {
   ): Promise<void>;
 }
 
-/** 声明与全部能力实现以相同 providerId 成对注册；能力声明在 descriptor.capabilities。 */
+/** Descriptor, account/usage facets, and offering model policies registered together per provider. */
 export interface ProviderContribution {
   descriptor: ProviderDescriptor;
   account?: ProviderAccountCapability;
   usage?: ProviderUsageCapability;
-  models?: { providerId: ProviderId; discover: typeof discoverRouteModels };
-  inference?: {
-    providerId: ProviderId;
-    preview: typeof previewModelChat;
-    send: typeof sendModelChat;
-    sendDetailed: typeof sendModelChatDetailed;
-  };
+  modelPolicies?: readonly ProviderOfferingModelPolicy[];
   dispose?(): void;
 }
 
-const facetBackedCapabilities = ["account", "usage", "model-catalog", "inference"] as const;
+export interface ProviderRegistryOptions {
+  templatePolicies?: Readonly<Record<string, ProviderOfferingModelPolicy>>;
+  receiptPolicies?: readonly ProviderOfferingModelPolicy[];
+}
+
+export interface ModelPolicyBinding {
+  readonly providerId: string;
+  readonly offeringId: string;
+  readonly templateKind?: "generic" | "new-api";
+}
+
+const knownCapabilities = new Set([
+  "account",
+  "usage",
+  "model-catalog",
+  "inference",
+  "multiple-accounts",
+]);
 
 /**
- * 严格注册表：构造期完整校验所有权与能力声明，任一错误使整个构造失败。
- * 禁止后注册覆盖、跳过坏条目后继续启动，或把请求交给默认实现。
+ * Strict registry: validates ownership, capability declarations, offering uniqueness,
+ * routeConfig invariants, and model policies at construction time.
+ * Never falls back silently on unknown providers, offerings, or templates.
  */
 export class ProviderRegistry {
   readonly contributions: readonly ProviderContribution[];
   readonly descriptors: readonly ProviderDescriptor[];
+  private readonly modelPolicyIndex = new Map<string, ProviderOfferingModelPolicy>();
+  private readonly templatePolicyIndex = new Map<string, ProviderOfferingModelPolicy>();
+  private readonly receiptPolicies: readonly ProviderOfferingModelPolicy[];
 
-  constructor(contributions: readonly ProviderContribution[]) {
+  constructor(
+    contributions: readonly ProviderContribution[],
+    options: ProviderRegistryOptions = {},
+  ) {
     this.contributions = [...contributions];
     this.descriptors = this.contributions.map((contribution) => contribution.descriptor);
     validateProviderCatalog(this.descriptors);
+
+    const attachedExtras = (
+      contributions as readonly ProviderContribution[] & {
+        [PROVIDER_CONTRIBUTION_EXTRAS]?: ProviderContributionExtras;
+      }
+    )[PROVIDER_CONTRIBUTION_EXTRAS];
+
+    const rawTemplatePolicies = options.templatePolicies ?? attachedExtras?.templatePolicies ?? {};
+    for (const [kind, policy] of Object.entries(rawTemplatePolicies)) {
+      if (policy.routeConfig) validateOfferingRouteConfig(policy.offeringId, policy.routeConfig);
+      this.templatePolicyIndex.set(kind, policy);
+    }
+
+    const rawReceiptPolicies = options.receiptPolicies ?? attachedExtras?.receiptPolicies ?? [];
+    const seenReceiptIds = new Set<string>();
+    for (const policy of rawReceiptPolicies) {
+      if (seenReceiptIds.has(policy.offeringId)) {
+        throw new Error(
+          `Provider registry declares duplicate receipt policy: ${policy.offeringId}`,
+        );
+      }
+      seenReceiptIds.add(policy.offeringId);
+      if (policy.routeConfig) validateOfferingRouteConfig(policy.offeringId, policy.routeConfig);
+    }
+    this.receiptPolicies = [...rawReceiptPolicies];
+
     const byProvider = new Map<ProviderId, ProviderContribution>();
     for (const contribution of this.contributions) {
-      const { descriptor, account, usage } = contribution;
+      const { descriptor, account, usage, modelPolicies } = contribution;
       const provider = descriptor.provider;
       if (account && account.providerId !== provider) {
         throw new Error(
@@ -98,8 +141,7 @@ export class ProviderRegistry {
         throw new Error(`Usage facet of ${usage.providerId} is bound to contribution ${provider}`);
       }
       for (const capability of descriptor.capabilities) {
-        if ((facetBackedCapabilities as readonly string[]).includes(capability)) continue;
-        if (capability !== "multiple-accounts") {
+        if (!knownCapabilities.has(capability)) {
           throw new Error(`Contribution ${provider} declares unknown capability: ${capability}`);
         }
       }
@@ -118,16 +160,48 @@ export class ProviderRegistry {
             : `Contribution ${provider} provides a usage facet without declaring it`,
         );
       }
-      for (const capability of facetBackedCapabilities) {
-        if (capability === "model-catalog" || capability === "inference") {
-          const facet =
-            capability === "model-catalog" ? contribution.models : contribution.inference;
-          if (declared.has(capability) !== !!facet || (facet && facet.providerId !== provider))
+
+      const offeringById = new Map(
+        descriptor.offerings.map((offering) => [offering.id, offering] as const),
+      );
+      const seenPolicyOfferings = new Set<string>();
+      for (const policy of modelPolicies ?? []) {
+        const offering = offeringById.get(policy.offeringId);
+        if (!offering) {
+          throw new Error(
+            `Model policy ${policy.offeringId} does not match any offering of contribution ${provider}`,
+          );
+        }
+        if (seenPolicyOfferings.has(policy.offeringId)) {
+          throw new Error(
+            `Contribution ${provider} declares duplicate model policy for offering: ${policy.offeringId}`,
+          );
+        }
+        seenPolicyOfferings.add(policy.offeringId);
+        if (policy.routeConfig) {
+          validateOfferingRouteConfig(policy.offeringId, policy.routeConfig);
+          if (
+            offering.routeConfig &&
+            JSON.stringify(offering.routeConfig) !== JSON.stringify(policy.routeConfig)
+          ) {
             throw new Error(
-              `Contribution ${provider} requires matching ${capability} declaration and facet`,
+              `Model policy routeConfig conflicts with offering descriptor for ${provider}/${policy.offeringId}`,
             );
+          }
+        }
+        this.modelPolicyIndex.set(`${provider}\0${policy.offeringId}`, policy);
+      }
+
+      if (declared.has("model-catalog") || declared.has("inference")) {
+        for (const offering of descriptor.offerings) {
+          if (!seenPolicyOfferings.has(offering.id)) {
+            throw new Error(
+              `Contribution ${provider} declares model capability without a model policy for offering: ${offering.id}`,
+            );
+          }
         }
       }
+
       if (byProvider.has(provider)) {
         throw new Error(`Provider registry declares duplicate contribution: ${provider}`);
       }
@@ -137,18 +211,6 @@ export class ProviderRegistry {
 
   getDescriptor(providerId: ProviderId): ProviderDescriptor | null {
     return this.descriptors.find((descriptor) => descriptor.provider === providerId) ?? null;
-  }
-  getModels(providerId: ProviderId) {
-    if (isCustomProviderId(providerId)) providerId = compatibleKeyId;
-    return (
-      this.contributions.find((item) => item.descriptor.provider === providerId)?.models ?? null
-    );
-  }
-  getInference(providerId: ProviderId) {
-    if (isCustomProviderId(providerId)) providerId = compatibleKeyId;
-    return (
-      this.contributions.find((item) => item.descriptor.provider === providerId)?.inference ?? null
-    );
   }
 
   requireDescriptor(providerId: ProviderId): ProviderDescriptor {
@@ -167,6 +229,51 @@ export class ProviderRegistry {
     return null;
   }
 
+  resolveModelPolicy(binding: ModelPolicyBinding): ProviderOfferingModelPolicy {
+    if (isCustomProviderId(binding.providerId)) {
+      const kind = binding.templateKind ?? "generic";
+      const template = this.templatePolicyIndex.get(kind);
+      if (!template) {
+        throw new AppError(
+          "capability-unavailable",
+          `未注册的自定义供应商模板策略：${String(kind)}`,
+        );
+      }
+      return template;
+    }
+    const policy = this.modelPolicyIndex.get(`${binding.providerId}\0${binding.offeringId}`);
+    if (!policy) {
+      throw new AppError(
+        "capability-unavailable",
+        `未注册的模型策略：${binding.providerId}/${binding.offeringId}`,
+      );
+    }
+    return policy;
+  }
+
+  getModelPolicy(binding: ModelPolicyBinding): ProviderOfferingModelPolicy | null {
+    if (isCustomProviderId(binding.providerId)) {
+      return this.templatePolicyIndex.get(binding.templateKind ?? "generic") ?? null;
+    }
+    return this.modelPolicyIndex.get(`${binding.providerId}\0${binding.offeringId}`) ?? null;
+  }
+
+  listModelPolicies(): readonly ProviderOfferingModelPolicy[] {
+    return [...this.modelPolicyIndex.values(), ...this.templatePolicyIndex.values()];
+  }
+
+  listReceiptPolicies(): readonly ProviderOfferingModelPolicy[] {
+    return this.receiptPolicies;
+  }
+
+  resolveReceiptPolicy(offeringId: string): ProviderOfferingModelPolicy {
+    const policy = this.receiptPolicies.find((item) => item.offeringId === offeringId);
+    if (!policy) {
+      throw new AppError("capability-unavailable", `未注册的回执策略：${offeringId}`);
+    }
+    return policy;
+  }
+
   getAccount(providerId: ProviderId): ProviderAccountCapability | null {
     const contribution = this.contributions.find((item) => item.descriptor.provider === providerId);
     return contribution?.account ?? null;
@@ -175,13 +282,15 @@ export class ProviderRegistry {
   getRefreshAccount(
     account: Pick<Account, "provider" | "offeringId" | "authMethod">,
   ): ProviderAccountCapability | null {
-    if (isLocalKeyAccount(account)) return null;
+    if (isCustomProviderId(account.provider)) return null;
     const entry = this.findOffering(account.offeringId);
     if (
       entry?.provider !== account.provider ||
+      entry.offering.supportsSubscriptionUsage === false ||
       !entry.offering.authMethods.some((method) => method.method === account.authMethod)
-    )
+    ) {
       return null;
+    }
     return this.getAccount(account.provider);
   }
 

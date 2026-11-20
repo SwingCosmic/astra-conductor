@@ -22,7 +22,7 @@ export const githubCopilotDescriptor: ProviderDescriptor = {
       // business/enterprise 转 org 池化后无公开 per-seat 数值，维持旧口径待样本。
       plans: [
         {
-          id: "copilot-pro",
+          key: "copilot-pro",
           displayName: "Copilot Pro",
           match: ["copilot pro", "pro"],
           multiplier: 1,
@@ -32,7 +32,7 @@ export const githubCopilotDescriptor: ProviderDescriptor = {
           verifiedAt: "2026-10-14",
         },
         {
-          id: "copilot-pro-plus",
+          key: "copilot-pro-plus",
           displayName: "Copilot Pro+",
           match: [
             "copilot pro+",
@@ -49,7 +49,7 @@ export const githubCopilotDescriptor: ProviderDescriptor = {
           verifiedAt: "2026-10-14",
         },
         {
-          id: "copilot-max",
+          key: "copilot-max",
           displayName: "Copilot Max",
           match: ["copilot max", "max"],
           multiplier: 13.3,
@@ -59,7 +59,7 @@ export const githubCopilotDescriptor: ProviderDescriptor = {
           verifiedAt: "2026-10-14",
         },
         {
-          id: "copilot-student",
+          key: "copilot-student",
           displayName: "Copilot Student",
           match: ["copilot student", "student"],
           multiplier: 1,
@@ -70,21 +70,21 @@ export const githubCopilotDescriptor: ProviderDescriptor = {
           // （2026-10-15，chat 200 / completions 2000 月度计数、无 premium 额度表）
           // 上报 copilot_plan "individual"；AI Credits 时代付费档按观测报
           // pro / PRO_PLUS / max，旧"individual = 付费个人档"语义不再成立。
-          id: "copilot-free",
+          key: "copilot-free",
           displayName: "Copilot Free",
           match: ["copilot free", "free", "free limited", "individual"],
           multiplier: 0.1,
           source: "inferred",
         },
         {
-          id: "copilot-business",
+          key: "copilot-business",
           displayName: "Copilot Business",
           match: ["copilot business", "business", "copilot business seat"],
           multiplier: 1,
           source: "inferred",
         },
         {
-          id: "copilot-enterprise",
+          key: "copilot-enterprise",
           displayName: "Copilot Enterprise",
           match: ["copilot enterprise", "enterprise"],
           multiplier: 3.3,

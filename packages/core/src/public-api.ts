@@ -25,7 +25,7 @@ export function toPublicAccount(
 /**
  * 套餐解析点上移后的唯一投影：档位匹配只在这里发生（core 目录为唯一实现），
  * 解析结果固化进公开快照。回退顺序：目录 `displayName` → 上游原始展示名
- * （叶子附带时，随数据侧批次提供）→ 原始标识串；未识别档位 `planId: null`，
+ * （叶子附带时，随数据侧批次提供）→ 原始标识串；未识别档位 `planKey: null`，
  * 倍率仍走默认档（既有行为），由 UI 给出可见提示。
  */
 export function toPublicUsage(snapshot: UsageSnapshot, offeringId: string): PublicUsage {
@@ -103,7 +103,7 @@ export function toPublicUsage(snapshot: UsageSnapshot, offeringId: string): Publ
   return {
     accountId: value.accountId,
     plan,
-    planId: matched?.id ?? null,
+    planKey: matched?.key ?? null,
     planLabel: matched?.displayName ?? rawPlanLabel ?? (plan.trim() || null),
     planLegacy: matched?.legacy === true,
     overallRemainingPercentage: value.overallRemainingPercentage,

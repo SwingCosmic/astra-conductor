@@ -1,5 +1,6 @@
 import type { ProviderDescriptor } from "../types.js";
 import { GROK_CLI_IMPORT_PATH_HINT } from "./auth-flow.js";
+import { grokBuildRouteConfig } from "./model-policy.js";
 
 export const grokBuildDescriptor: ProviderDescriptor = {
   provider: "grok-build",
@@ -12,6 +13,7 @@ export const grokBuildDescriptor: ProviderDescriptor = {
       displayName: "Grok Build",
       description: "查看 Grok Build 订阅用量。",
       iconKey: "grok",
+      routeConfig: grokBuildRouteConfig,
       authMethods: [
         { method: "device-code", interaction: "device-code" },
         { method: "browser-oauth", interaction: "browser-callback" },
@@ -31,7 +33,7 @@ export const grokBuildDescriptor: ProviderDescriptor = {
       // 以兼容存量账号（xAI 未公布存量截止时间，legacyUntil 省略）。
       plans: [
         {
-          id: "plus",
+          key: "plus",
           displayName: "Plus",
           match: ["plus", /^grok\s*plus$/, /\bplus\b/],
           multiplier: 1,
@@ -40,7 +42,7 @@ export const grokBuildDescriptor: ProviderDescriptor = {
           verifiedAt: "2026-10-14",
         },
         {
-          id: "premium",
+          key: "premium",
           displayName: "Premium",
           match: ["premium", "grokpro", /^grok\s*premium$/, /\bpremium\b/],
           multiplier: 4,
@@ -49,7 +51,7 @@ export const grokBuildDescriptor: ProviderDescriptor = {
           verifiedAt: "2026-11-17",
         },
         {
-          id: "super",
+          key: "super",
           displayName: "Super",
           match: ["super", /^grok\s*super$/, /\bsuper\b/],
           multiplier: 15,
@@ -58,7 +60,7 @@ export const grokBuildDescriptor: ProviderDescriptor = {
           verifiedAt: "2026-10-14",
         },
         {
-          id: "ultra",
+          key: "ultra",
           displayName: "Ultra",
           match: ["ultra", /^grok\s*ultra$/, /\bultra\b/],
           multiplier: 50,
@@ -67,7 +69,7 @@ export const grokBuildDescriptor: ProviderDescriptor = {
           verifiedAt: "2026-10-14",
         },
         {
-          id: "supergrok-pro",
+          key: "supergrok-pro",
           displayName: "SuperGrok Pro",
           match: ["supergrokpro", "supergrok pro"],
           multiplier: 5,
@@ -75,7 +77,7 @@ export const grokBuildDescriptor: ProviderDescriptor = {
           legacy: true,
         },
         {
-          id: "supergrok-heavy",
+          key: "supergrok-heavy",
           displayName: "SuperGrok Heavy",
           match: ["supergrok heavy", "supergrokheavy"],
           multiplier: 20,
@@ -84,7 +86,7 @@ export const grokBuildDescriptor: ProviderDescriptor = {
         },
         {
           // tier 缺失时叶子的兜底合成标识，非订阅档，不标 legacy。
-          id: "grok-build",
+          key: "grok-build",
           displayName: "Grok Build",
           match: ["grok build"],
           multiplier: 5,

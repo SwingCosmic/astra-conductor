@@ -8,7 +8,6 @@
 - [ZCode 服务商架构探索报告](./exploration/zcode.md)
 - [DeepSeek Harness 服务商架构探索报告](./exploration/deepseek-harness.md)
 - [Hermes Agent 服务商架构探索报告](./exploration/hermes-agent.md)
-- [Token Monitor 用量聚合架构探索报告](./exploration/token-monitor.md)
 - [dots 设备连接实测报告](./exploration/dots.md)
 - [OmniRoute 用量页面参考图](./exploration/omniroute.png)
 
@@ -26,8 +25,11 @@
 
 - [主设计：供应商平台总体边界](./core/provider/design.md)
 - [供应商接入、模型目录与请求映射](./core/provider/connections-and-models.md)
+- [New API 中转站模板、站点目录与 Key 权限](./core/provider/new-api-template.md)
 - [Core 功能详细设计](./core/provider/core-design.md)
 - [协议、模型与推理端口详细设计](./core/provider/protocol-design.md)
+- [供应商模型与请求策略分派设计](./core/provider/request-dispatch.md)
+- [请求管道的扩展点取舍与出站契约](./core/provider/request-hooks.md)
 - [模型目录、预置数据与迁移](./core/provider/model-structure.md)
 - [模型报价、订阅权益与条件费率](./core/provider/model-pricing.md)
 - [三阶段实施方案](./core/provider/implementation-plan.md)
@@ -52,11 +54,12 @@
 - [Service mode 开发与分侧验证](./core/service-mode/development.md)
 - [Service mode 验收记录与用例矩阵](./core/service-mode/acceptance.md)
 
-## 供应商抽取与排查
+## 供应商抽取、排查与专项重构
 
 - [OmniRoute 手工抽取基线](./core/omniroute-manual-extraction-baseline.md)
 - [OmniRoute 同步工具形态设计](./core/omniroute-sync-tool-design.md)
 - [2026-10 供应商档位漂移与包结构排查](./core/2026-10-drift-review/README.md)
+- [2026-11 供应商请求策略拆分与命名重构](./core/2026-11-provider-policy-refactor.md)
 
 各实施记录中的包名对应当时的工作区，当前目录与迁移目标见[架构迁移对照](../architecture.md#5-从当前仓库迁移)。
 

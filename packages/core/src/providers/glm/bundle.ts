@@ -5,6 +5,7 @@ import type { ServiceResolver } from "../../services/registry.js";
 import { glmDescriptor } from "./descriptor.js";
 import { GlmAccountProvisioner, GlmAdapter } from "./adapter.js";
 import { createGlmAuthFlow } from "./auth-flow.js";
+import { bigmodelCodingPlanModelPolicy, zaiCodingPlanModelPolicy } from "./model-policy.js";
 
 /**
  * GLM 组合工厂：BigModel 与 Z.ai 共享同一实现，接入点差异（端点选择等）
@@ -45,5 +46,6 @@ export function createGlmProvider(services: ServiceResolver): ProviderContributi
       redeemResetCard: (account, envelope, request) =>
         adapter.redeemResetCard(account, envelope, request),
     },
+    modelPolicies: [bigmodelCodingPlanModelPolicy, zaiCodingPlanModelPolicy],
   };
 }

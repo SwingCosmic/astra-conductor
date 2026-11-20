@@ -10,6 +10,7 @@ import { authMethodLabel, type ProviderPresentation } from "../presentation";
 import type {
   ActionAvailability,
   CommandContext,
+  OfferingRouteConfig,
   ProviderManagementSnapshot,
   ServiceResult,
 } from "@astra-conductor/contract/common";
@@ -158,6 +159,7 @@ const connectionDialog = ref<{
   offeringId?: string;
   providerId?: string;
   offeringLabel?: string;
+  routeConfig?: OfferingRouteConfig;
 } | null>(null);
 const expanded = ref(new Set<string>(["codex"]));
 
@@ -175,6 +177,7 @@ function openConnection(provider: ProviderPresentation, accountId?: string) {
       offeringId: provider.id,
       providerId: provider.provider,
       offeringLabel: provider.name,
+      routeConfig: provider.routeConfig,
     };
 }
 function addAccount(provider: ProviderPresentation) {

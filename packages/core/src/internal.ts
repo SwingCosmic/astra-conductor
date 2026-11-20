@@ -20,7 +20,20 @@ export * from "./providers/opencode-go/adapter.js";
 export * from "./providers/opencode-go/auth-flow.js";
 export * from "./providers/index.js";
 export * from "./providers/model-routes.js";
+export {
+  applyUserAliasesAndTemplate,
+  applyUserExtensions,
+  applyUserRuleDefaults,
+  compileModelRequestPlan,
+  mergeModelExtensions,
+  mergeRuleBodies,
+  prepareModelRule,
+  resolveEffectiveModelRule,
+  type CompileModelRequestPlanInput,
+} from "./providers/model-request-rule.js";
 export * from "./providers/model-discovery.js";
+export * from "./providers/new-api/model-catalog.js";
+export { decimalAmount, readModelJson } from "./providers/model-response.js";
 export * from "./providers/usage-eligibility.js";
 export * from "./memory-storage.js";
 export * from "./selected-business-storage.js";
@@ -35,7 +48,11 @@ export * from "./credential-migration-service.js";
 export * from "./shared-credential-service.js";
 export * from "./provider-application-service.js";
 export * from "./providers/model-chat.js";
-export * from "./providers/model-chat-receipt.js";
+export {
+  isOpenRouterGenerationId,
+  isOpenRouterReceiptRoute,
+  openRouterReceiptPolicy,
+} from "./providers/openrouter-receipt.js";
 export { MigrationProfileUpgradeRequired } from "./credential-migration-profile.js";
 export * from "./model-catalog/facts.js";
 export * from "./model-catalog/pricing.js";

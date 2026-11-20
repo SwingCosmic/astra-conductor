@@ -18,6 +18,7 @@
 	path = references/openclaw
 	url = https://github.com/openclaw/openclaw.git
 	branch = main
-[submodule "references/token-monitor"]
-	path = references/token-monitor
-	url = https://github.com/Javis603/token-monitor.git
+[submodule "references/new-api"]
+	path = references/new-api
+	url = https://github.com/QuantumNous/new-api.git
+	branch = main

@@ -326,19 +326,19 @@ describe("PolyQuotaApplicationService", () => {
     expect(snapshot.providers.length).toBeGreaterThan(0);
     expect(snapshot.usageByAccountId[account.id]).toMatchObject({
       plan: "plus",
-      planId: "plus",
+      planKey: "plus",
       planLabel: "Plus",
     });
     for (const descriptor of snapshot.providers) {
       for (const offering of descriptor.offerings) {
         for (const plan of offering.plans) {
-          expect(Object.keys(plan).sort()).toEqual(["displayName", "id"]);
+          expect(Object.keys(plan).sort()).toEqual(["displayName", "key"]);
         }
       }
     }
   });
 
-  it("marks unrecognized plan strings with planId null and falls back to the raw label", async () => {
+  it("marks unrecognized plan strings with planKey null and falls back to the raw label", async () => {
     const { service, storage } = createService(account);
     storage.snapshots.save({
       ...refreshOutcome.snapshot,
@@ -347,7 +347,7 @@ describe("PolyQuotaApplicationService", () => {
     const snapshot = await service.getSnapshot();
     expect(snapshot.usageByAccountId[account.id]).toMatchObject({
       plan: "ChatGPT Super Ultra",
-      planId: null,
+      planKey: null,
       planLabel: "ChatGPT Super Ultra",
     });
   });

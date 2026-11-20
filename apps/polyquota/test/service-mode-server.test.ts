@@ -198,7 +198,10 @@ describe("service mode backend", () => {
     const initial = await fetch(`${instance.url}/v1/polyquota/snapshot`).then(
       (response) => response.json() as Promise<{ ok: true; value: PolyQuotaSnapshot }>,
     );
-    expect(initial.value.providers).toHaveLength(8);
+    expect(initial.value.providers).toHaveLength(9);
+    expect(initial.value.providers).toContainEqual(
+      expect.objectContaining({ provider: "deepseek" }),
+    );
     expect(initial.value.instanceId).toBe(instance.runtime.application.instanceId);
     expect(
       (

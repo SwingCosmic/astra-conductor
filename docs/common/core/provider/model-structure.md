@@ -1,6 +1,6 @@
 # 模型目录、预置数据与迁移
 
-**2026-11-15。** 目录中的最小可选项是「某个账号的某条路由上，某个模型可执行的某项操作」。同一型号可以有多个操作，同一操作也可以由专用模型、供应商服务或一个封装后的 LLM 实现。模型配置页据此生成筛选项、参数表单和报价视图。
+目录中的最小可选项是「某个账号绑定的模型在已解析端点上可执行的操作」。同一型号可以有多个操作，同一操作也可以由专用模型、供应商服务或一个封装后的 LLM 实现。模型配置页据此生成筛选项、参数表单和报价视图。
 
 当前 `ProviderOperation` 已含聊天、图像、视频、音乐、向量、重排、语音合成、转写和决策九项。`ModelFacts` 按型号保存一组字段，`ModelParameters` 随测试聊天选择保存。本文以已交付的数据包结构为准；工具绑定与决策输出契约仍属后续设计。[现有 DTO](../../../../packages/contract/src/common/dto/model.ts) · [阶段二范围](./implementation-plan.md)
 
@@ -8,13 +8,17 @@
 
 | 对象 | 标识与主要字段 | 归属和用途 |
 | --- | --- | --- |
-| 型号预置 `ModelPreset` | 稳定的 `key`（如 `openai/gpt-4.1-mini`），原厂 `vendorId`，`family / series / modelId`，`displayName`、`checkedAt`、`referenceUrl`、`sourceRef`，可选 `inherit`（`presetKey + fields + referenceUrl`）与 `prices` | 可更新的数据文件。保存原厂身份和有证据的能力；部署照用原始上游 ID。`inherit.fields` 是同系列允许继承的字段白名单 |
-| 能力条目 `capabilities[]` | 预置内按 `operationId` 一条，含 `ioProfiles[]`（`id / requiredInputs / optionalInputs / outputs`）、`facts`、`parameters`（建议默认值）、`parameterTemplateRef`、`rateCardRefs[]`（`rateCardId + revision + planKey`） | 一个操作拥有自己的输入输出组合、限额、可调整参数及价卡引用。目录行可以折叠成一个型号，筛选与调用会定位到具体操作 |
-| 路由部署 | 供应商、接入点、账号、协议路由、`upstreamModelId` 与 `bindingRevision` 四元选择；按 `operationId` 记录实际开放的 profile 与报价 | 账号发现提供观测值，宿主核对执行能力及授权。手工部署即使没有精确预置也能管理。绑定保留原始 ID；匹配预置不会改写请求目标 |
+| 型号预置 `ModelPreset` | 稳定的 `key`（如 `openai/gpt-4.1-mini`），原厂 `vendor`，`family / series / modelId`，`displayName`、`checkedAt`、`referenceUrl`、`sourceRef`，可选 `inherit`（`presetKey + fields + referenceUrl`）与 `prices` | 随应用打包的可更新数据文件。保存原厂身份和有证据的能力；部署照用原始上游 ID。`inherit.fields` 是同系列允许继承的字段白名单 |
+| 能力条目 `capabilities[]` | 预置内按 `operation` 一条，含 `ioProfiles[]`（`kind / requiredInputs / optionalInputs / outputs`）、`facts`、`parameters`（建议默认值）、`parameterTemplateRef`、`rateCardRefs[]`（`rateCardId + revision + planKey`） | 一个操作拥有自己的输入输出组合、限额、可调整参数及价卡引用。目录行可以折叠成一个型号，筛选与调用会定位到具体操作 |
+| 路由部署 | 供应商、接入点、账号、明细协议（`protocol`）、`upstreamModelId` 与 `bindingRevision` 选择；按 `operation` 记录实际开放的 `ioProfile` 与报价 | 账号发现提供观测值，宿主核对执行能力及授权。手工部署即使没有精确预置也能管理。绑定保留原始 ID；匹配预置不会改写请求目标 |
 | 工具绑定（后续设计） | 有方向的「主调能力 → 工具 → 模型能力或服务能力」、执行位置与已批准的绑定 | 支持供应商托管工具或 GraphAgent 代调。直接可用、能发起工具调用、能作为工具调用都可以独立筛选。[Decision 与工具](../../../graph-agent/ui/model-configuration/decision-and-tools.md) |
 | 价目表 `RateCard` | `rateCardId`、版本、接入产品、套餐、区域、币种、生效期、计费行及条件规则 | 同一型号在官方 API、中转和订阅下可有不同报价。用「部署 × 操作 × 接入产品/套餐」选定适用的卡与版本；单价、阶梯、峰谷及订阅权益保存在价目表。[报价结构与计算](./model-pricing.md) |
 
 网关聚合目录、当前令牌的可见目录、GraphAgent 的可执行绑定分别保留证据。对网关内部的渠道可见性按实际回执记录；公开挂牌价与当前账号价格分开。无型号的网页搜索服务可作为工具目标进入会话费用明细，无需增加一个虚构模型预置。[New API 与 Hermes 源码对照](../../../graph-agent/ui/model-configuration/implementation-references.md)
+
+**协议族目录。** 数据包里的 `family` 描述原厂型号家族（如 GPT）；连接的 `protocolFamily` 描述原生 API 协议族（如 `openai`），由明细端点注册声明确定。模型配置页按账号与协议族刷新目录，再按已启用的 `protocol` 展示可选部署。例如，Chat Completions 和 Responses 可以引用同一 OpenAI 族目录中的模型 ID，两个端点分别核验可执行性、参数和报价。同一供应商同时开放 Anthropic 族时，列表及其字段按 Anthropic 的族绑定独立读取。媒体族可按其原生能力提供发现或手工登记。[族绑定与目录迁移](../../../graph-agent/design/business-database.md#协议族绑定与目录迁移)
+
+通用 LLM 的模型选择始终携带具体 `protocol`，包括当前供应商只开放一个端点或没有列表接口的情形。注册为单一业务端点的专用族允许用 `protocolFamily` 选择默认端点，输入省略 `protocol` 与显式 `null` 归一为同一选择。服务端解析注册的唯一稳定协议，绑定、价卡和能力校验都使用解析后的端点；目录有无列表单独判断。
 
 若同一部署可选择多个服务层或套餐，为每种获准的接入方案分别保留对应的 `rateCardId`。执行时固定所选方案和报价修订；UI 只在已选定的方案内展示金额。
 
@@ -41,6 +45,27 @@
 **组合以一次调用为准。** 每个 `ioProfile` 有稳定的 `id`、`requiredInputs`、`optionalInputs` 和 `outputs`。必需输入同时满足，可选输入可随同提交；若文生图和以图生图是二选一，则分别建 profile。输出列表表示同一结果可交付的模态；可选输出、互斥结果或独立端点用不同 profile。细化约束放在对应 profile 下，如文件类型、候选数量、输入长度或结果编码。一个型号的多个 profile 的输入并集和输出并集只用于展示概览。搜索「音频 → 图像」时，两端必须命中同一可用 profile。[筛选语义](../../../graph-agent/ui/model-configuration/interaction.md#查询语义)
 
 **事实、可调项和本地默认值。** `facts` 存已知规格或硬上限。`parameterTemplateRef` 指向数据包内按操作登记的参数模板，声明值类型、单位、范围和枚举；`parameters` 保存该操作的建议默认值，用户可逐项覆盖。例如「最长可生成 30 秒」是视频能力事实，「本次生成 8 秒」是请求参数，「每生成 1 秒」是计费单位。三项各有来源，变更一项不会自动改写另外两项。对不适用的字段隐藏控件；适用但资料缺失的字段显示「未知」。
+
+### 思考参数与可见输出
+
+模型的 `reasoningMode`、`effortLevels` 与 `defaultEffort` 是能力事实。`reasoningOutputMode` 标明该型号在此绑定上公开内容的最高等级，取 `full`、`summary`、`activity-only`、`none` 或 `unknown`。有全文的绑定若也报告摘要，按原生字段分别识别。`ModelParameters` 在现有 `effort` 旁增加两个布尔配置，按同一部署与操作保存，账号覆盖继续优先于继承值。[当前模型 DTO](../../../../packages/contract/src/common/dto/model.ts)
+
+| 模型参数 | 默认值 | 生效规则 |
+| --- | --- | --- |
+| `thinkingEnabled`（支持思考） | `true` | 控制本模型配置是否启用思考相关参数。开启后按已核实的能力提供子项。模型明确不支持时有效值为关闭；能力未知时允许沿用协议默认，保留「待核实」标记。 |
+| `effort`（思考强度） | `null`，协议默认 | 仅在前置开关开启、绑定允许该强度时生效。关闭前置开关后有效值为 `null`，包括供应商的强度默认注入及映射规则均须跳过。 |
+| `returnFullReasoning`（返回完整思考内容） | `false` | 仅在前置开关开启且绑定声明公开全文时可开启。按顺序返回接口公开的全部思考文本。只能提供摘要的绑定显示其可用的摘要能力，预览和保存须明确指出不支持全文。 |
+
+旧记录缺少两个新字段时，先按原作用域解析本层及继承配置，再使用上述默认值，保留已保存的合法强度。关闭前置开关时，保存结果归一为 `effort: null`、`returnFullReasoning: false`；只修改本作用域，保留上层模型默认。预览与执行共用该归一规则。对于提供原生禁用设置的型号，适配器按该型号约定发出禁用值；强制推理或无法控制内部推理的型号只关闭本地参数与思考展示，预览说明其上游行为。
+
+| 实际绑定 | 请求与可见结果 |
+| --- | --- |
+| DeepSeek 等支持全文的 OpenAI 兼容 Chat 端点 | 适配器按型号组装原生思考模式及强度。DeepSeek 的 `reasoning_content` 是响应字段；全文开启时，JSON 取 `choices[0].message.reasoning_content`，流式按到达顺序拼接 `choices[0].delta.reasoning_content`。[DeepSeek 思考模式](https://api-docs.deepseek.com/guides/thinking_mode/) |
+| DeepSeek 的 Responses 端点 | 此供应商的 Responses 方言以 `response.reasoning_text.delta` 和 `response.reasoning_text.done` 公开思考文本。开启全文时按原生输出项累积增量，done 携带的全文只补齐尚未展示的后缀。其 `reasoning.summary` 参数虽能被接收，当前接口不会为此生成摘要。[DeepSeek Responses 兼容说明](https://api-docs.deepseek.com/guides/responses_api/) |
+| Anthropic Messages | JSON 取公开的 `thinking` 块，流式按 block index 收集 `thinking_delta.thinking`。返回内容的语义取决于供应商与型号。明确公开全文的兼容绑定可启用全文；官方仅提供摘要的型号按相应模式请求 `thinking.display: "summarized"`，在界面标为摘要。`signature` 与 `redacted_thinking` 留作原生续写状态。[Claude 思考输出](https://platform.claude.com/docs/en/build-with-claude/thinking) |
+| OpenAI 官方 Responses | 支持摘要的型号通过 `reasoning.summary` 请求公开摘要。绑定标记为仅摘要时，全文选项不可用；`reasoning.encrypted_content` 和推理 token 计数不进入可见文本。[OpenAI Reasoning summaries](https://developers.openai.com/api/docs/guides/reasoning#reasoning-summaries) |
+
+`returnFullReasoning` 是本地模型参数。供应商提供原生输出模式选择时，准备请求按已登记的字段选取全文、公开摘要或省略文本；具体取值以该型号支持的模式为准。DeepSeek Chat 在思考模式下直接返回 `reasoning_content`，无需把 `reasoning_content` 作为请求开关发送。全文关闭且思考开启时，页面仍可显示原生阶段与明确标识的公开摘要。上游会自行返回全文的接口，试聊读取器跳过全文字段。模型代理照原协议透传响应，UI 根据该次调用固定的配置选择展示内容。
 
 ## 一个预置的完整路径
 
@@ -96,7 +121,7 @@
 }
 ```
 
-部署四元选择（`providerId / accountId / protocolRouteId / upstreamModelId`）解析到该预置后，模型页按所选操作开放 `compose` profile、生成参数表单并挂接价卡。账号覆盖与测试选择保存在 profile 业务库的模型配置表中，请求始终携带部署的原始 `upstreamModelId`（如 `music-prod`）。
+此例若绑定到已登记单一音乐生成端点的专用族，选择可携带供应商、账号、`protocolFamilyId` 和上游 ID `music-prod`；`protocolRouteId` 可省略或填写已登记端点。宿主解析出唯一端点后，模型页按所选操作开放 `compose` profile、生成参数表单并挂接价卡。账号覆盖与测试选择保存在 profile 业务库的模型配置表中，请求始终携带部署的原始上游 ID。
 
 这个部署引用的示例价卡如下。每生成 1 秒收取 0.06 USD，按本路由默认值提交 5 秒，预估为 0.30 USD。结算采用回执中的实际生成秒数。
 
@@ -149,12 +174,12 @@
 
 ## 数据文件与更新
 
-GraphAgent 的随包资源为 `apps/graph-agent/resources/model-presets.json`，本地导入和在线更新使用相同的 UTF-8 JSON 包。根对象的 `schemaVersion` 为 2，`revision` 标识内容版本，`manifest` 列出每个分片的相对路径和 SHA-256。`files` 内嵌分片，按顺序取 `{presets, templates?, sources?, rateCards?}`，对其紧凑 `JSON.stringify` 的 UTF-8 字节计算摘要；清单与实际分片一一对应。每个操作用 `parameterTemplateRef` 引用包内模板，型号用 `sourceRef` 引用资料。限于具体渠道的价卡用 ID、修订和套餐键绑定，保存与试算时校验供应商及 offering。宿主从 `GRAPH_AGENT_MODEL_PACK_URL` 读取管理员指定的更新地址，完整校验后在 SQLite 中切换活动版本。[随包模型与模板](../../../../apps/graph-agent/resources/model-presets.json) · [模型配置表](../../../graph-agent/design/business-database.md#模型配置表)
+GraphAgent 的随包资源为 `apps/graph-agent/resources/model-presets.json`，默认经 `model_state.active_pack = "$bundled"` 直接从打包资源读取并做进程内缓存，不再复制写入 SQLite `model_packs`；本地导入和在线更新使用相同的 UTF-8 JSON 包并存入 `model_packs`（支持回滚至 `$bundled`）。根对象的 `schemaVersion` 为 2，`revision` 标识内容版本，`manifest` 列出每个分片的相对路径和 SHA-256。`files` 内嵌分片，按顺序取 `{presets, templates?, sources?, rateCards?}`，对其紧凑 `JSON.stringify` 的 UTF-8 字节计算摘要；清单与实际分片一一对应。每个操作用 `parameterTemplateRef` 引用包内模板，型号用 `sourceRef` 引用资料。限于具体渠道的价卡用 ID、修订和套餐键绑定，保存与试算时校验供应商及 offering。宿主从 `GRAPH_AGENT_MODEL_PACK_URL` 读取管理员指定的更新地址，完整校验后在 SQLite 中切换活动版本。[随包模型与模板](../../../../apps/graph-agent/resources/model-presets.json) · [模型配置表](../../../graph-agent/design/business-database.md#模型配置表)
 
-已交付的数据包结构以上文为准：型号标识使用 `key / vendorId / family / series / modelId`，能力内联 `facts`、`parameters`、`parameterTemplateRef` 与 `rateCardRefs`（`rateCardId + revision + planKey`），系列继承用预置上的 `inherit`（`presetKey + fields + referenceUrl`）表达。变体细分（`variantId / exactIds`）、按 profile 的参数 schema 引用（`parameterSchemaRef`）与决策输出契约（`decisionContractRef`）仍属后续设计，随后续数据包批次落地。
+已交付的数据包结构以上文为准：型号标识使用 `key / vendor / family / series / modelId`，能力内联 `operation`、`ioProfiles`（`kind / requiredInputs / optionalInputs / outputs`）、`facts`、`parameters`、`parameterTemplateRef` 与 `rateCardRefs`（`rateCardId + revision + planKey`），系列继承用预置上的 `inherit`（`presetKey + fields + referenceUrl`）表达。变体细分（`variantId / exactIds`）、按 profile 的参数 schema 引用（`parameterSchemaRef`）与决策输出契约（`decisionContractRef`）仍属后续设计，随后续数据包批次落地。
 
 - **清单**登记 `schemaVersion`、发布修订、发布时间、各数据文件相对路径与摘要。独立更新整套数据时共用一个发布修订。同一型号各项证据保留各自的核查日期。发布时检查型号、操作、参数模板、决策契约和价目表引用能否在同一修订内解析；本地账号绑定保存在数据包之外。
-- **分类**显式记录 `vendorId / family / series / modelId`。精确项另存上游可识别 ID、快照、模态与生命周期。模型原厂、接入服务商、账号和协议路由各自有独立标识，例如可在百炼访问第三方模型。分类字段使用稳定键，名称支持本地化。
+- **分类**显式记录 `vendor / family / series / modelId`。精确项另存上游可识别 ID、快照、模态与生命周期。模型原厂、接入服务商、账号和协议路由各自有独立标识，例如可在百炼访问第三方模型。分类字段使用稳定键，名称支持本地化。
 - **字段**分开表示「值」「计量维度」「适用范围」与「依据」。每个字段或同源字段组引用 `sourceId`，来源包括官方文档或型号 API、检查日期与证据范围。一个型号可以有多项能力，各自保存输入输出组合、硬上限和可调项。报价按适用渠道和操作建卡，支持多收费行、用量单位、时间及用量条件。用户设置的本地估价保留用户来源。
 - **更新入口**在模型配置页显示数据版本，提供「更新预置清单」及导入本地目录文件。请求发给宿主，按管理员配置的数据源拉取版本索引，以发布修订及内容摘要判断更新。手动导入与在线更新共用校验。校验路径边界、版本兼容性、字段类型、引用、匹配歧义及各文件摘要，完整通过后原子切换生效版本并通知视图刷新。保留上一个版本用于回滚，离线、部分下载或格式错误时继续使用最后可用版本。
 - **可用的种子数据。** Cline 将 models.dev 的大部分内置目录生成 SDK 快照，并在导入边界处理协议及方向性模态；Zoo 的内置型号表也可核对缓存读写费、分档与模型上限。GraphAgent 可从此类目录引入候选，同时保存来源修订、转换单位、渠道与核查日期。模型作者的规格和具体渠道的现行价格分别核实；生成物或客户端静态常量只作对应版本的证据。[客户端实现对照](../../../graph-agent/ui/model-configuration/implementation-references.md)
@@ -173,15 +198,15 @@ GraphAgent 的随包资源为 `apps/graph-agent/resources/model-presets.json`，
       "presets": [
         {
           "key": "openai/gpt-4.1-mini",
-          "vendorId": "openai",
+          "vendor": "openai",
           "family": "GPT",
           "series": "gpt-4.1",
           "modelId": "gpt-4.1-mini",
           "referenceUrl": "https://developers.openai.com/api/docs/models/gpt-4.1-mini",
           "checkedAt": "2026-11-15",
           "capabilities": [{
-            "operationId": "chat",
-            "ioProfiles": [{"id": "message", "requiredInputs": ["text"], "optionalInputs": ["image"], "outputs": ["text"]}],
+            "operation": "chat",
+            "ioProfiles": [{"kind": "text", "requiredInputs": ["text"], "optionalInputs": ["image"], "outputs": ["text"]}],
             "facts": {"reasoningMode": "none", "contextWindow": 1047576, "maxOutputTokens": 32768},
             "parameters": {},
             "parameterTemplateRef": "chat"
@@ -189,7 +214,7 @@ GraphAgent 的随包资源为 `apps/graph-agent/resources/model-presets.json`，
         },
         {
           "key": "openai/gpt-4.1",
-          "vendorId": "openai",
+          "vendor": "openai",
           "family": "GPT",
           "series": "gpt-4.1",
           "modelId": "gpt-4.1",
@@ -201,7 +226,7 @@ GraphAgent 的随包资源为 `apps/graph-agent/resources/model-presets.json`，
             "referenceUrl": "https://developers.openai.com/api/docs/models/gpt-4.1-mini"
           },
           "capabilities": [{
-            "operationId": "chat",
+            "operation": "chat",
             "ioProfiles": [{"id": "message", "requiredInputs": ["text"], "optionalInputs": ["image"], "outputs": ["text"]}],
             "facts": {"contextWindow": 1047576, "maxOutputTokens": 32768},
             "parameters": {},

@@ -75,7 +75,7 @@
 }
 ```
 
-若一次生成两张尺寸各为 1,000 × 1,000 的图片，按普通质量计算为 **0.10 USD**（0.02 + 2 × 0.04），高清为 **0.14 USD**。每个收费行都提供原始用量、归一数量、命中规则、采用的费率及金额，便于核对估价。示例里的 `scope.serviceTier` 与 `applyTo: "request"` 暂为设计稿字段：当前 `parseRateCard` 的作用域只接受 `access`、`planId`、`region`、`protocolRouteId`、`upstreamModelId`，`applyTo` 仅在累进规则保留 `accountBillingCycle`，其余键导入时静默丢弃，支持随阶段三补齐。
+若一次生成两张尺寸各为 1,000 × 1,000 的图片，按普通质量计算为 **0.10 USD**（0.02 + 2 × 0.04），高清为 **0.14 USD**。每个收费行都提供原始用量、归一数量、命中规则、采用的费率及金额，便于核对估价。示例里的 `scope.serviceTier` 与 `applyTo: "request"` 暂为扩展字段：当前 `parseRateCard` 的作用域接受 `access`、`planKey`、`region`、`protocol`、`upstreamModelId`，`applyTo` 在累进规则保留 `accountBillingCycle`，其余键导入时忽略。
 
 ## 阶梯、日历与权益的解析
 

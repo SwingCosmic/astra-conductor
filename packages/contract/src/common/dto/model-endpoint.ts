@@ -1,4 +1,5 @@
 import type { ProviderOperation } from "./model.js";
+import { fail } from "../validation/request.js";
 
 export type ModelType =
   | "text-llm"
@@ -10,7 +11,7 @@ export type ModelType =
   | "rerank"
   | "music"
   | "decision";
-export const protocolRouteIds = [
+export const endpointProtocols = [
   "openai-chat",
   "openai-responses",
   "anthropic-messages",
@@ -24,13 +25,67 @@ export const protocolRouteIds = [
   "openai-embeddings",
   "cohere-rerank",
 ] as const;
-export type ProtocolRouteId = (typeof protocolRouteIds)[number];
+export type EndpointProtocol = (typeof endpointProtocols)[number];
+export const protocolFamilies = ["openai", "anthropic", "gemini", "grok-video", "cohere"] as const;
+export type ProtocolFamily = (typeof protocolFamilies)[number];
+const routeFamilies: Record<EndpointProtocol, ProtocolFamily> = {
+  "openai-chat": "openai",
+  "openai-responses": "openai",
+  "anthropic-messages": "anthropic",
+  "openai-images-generations": "openai",
+  "openai-images-edits": "openai",
+  "gemini-tts": "gemini",
+  "gemini-interactions-tts": "gemini",
+  "grok-video-generations": "grok-video",
+  "openai-audio-speech": "openai",
+  "openai-audio-transcriptions": "openai",
+  "openai-embeddings": "openai",
+  "cohere-rerank": "cohere",
+};
+export interface ProtocolFamilyDescriptor {
+  family: ProtocolFamily;
+  nativeVersionPath: string;
+  catalogPath?: string;
+  defaultProtocol?: EndpointProtocol;
+}
+export const protocolFamilyDescriptors: Record<ProtocolFamily, ProtocolFamilyDescriptor> = {
+  openai: { family: "openai", nativeVersionPath: "/v1", catalogPath: "models" },
+  anthropic: { family: "anthropic", nativeVersionPath: "/v1", catalogPath: "models" },
+  gemini: { family: "gemini", nativeVersionPath: "/v1beta" },
+  "grok-video": {
+    family: "grok-video",
+    nativeVersionPath: "/v1",
+    defaultProtocol: "grok-video-generations",
+  },
+  cohere: { family: "cohere", nativeVersionPath: "/v2" },
+};
+export function resolveEndpointProtocol(protocol: unknown, family?: unknown): EndpointProtocol {
+  if (family !== undefined && !protocolFamilies.includes(family as ProtocolFamily))
+    return fail("protocolFamily");
+  if (protocol == null && family) {
+    const fallback = protocolFamilyDescriptors[family as ProtocolFamily].defaultProtocol;
+    if (
+      fallback &&
+      endpointProtocols.filter((id) => routeFamilies[id] === family).length === 1 &&
+      !modelEndpointDescriptor(fallback).chatExecutable
+    )
+      return fallback;
+  }
+  const value = protocol as EndpointProtocol;
+  if (
+    !endpointProtocols.includes(value) ||
+    (family !== undefined && routeFamilies[value] !== family)
+  )
+    return fail("protocol");
+  return value;
+}
 export interface ModelEndpointDescriptor {
-  id: ProtocolRouteId;
+  protocol: EndpointProtocol;
+  protocolFamily: ProtocolFamily;
   label: string;
   modelType: ModelType;
-  operationId: ProviderOperation;
-  profileId: string;
+  operation: ProviderOperation;
+  ioProfile: string;
   requiredInputs: readonly string[];
   optionalInputs: readonly string[];
   outputs: readonly string[];
@@ -46,11 +101,11 @@ export interface ModelEndpointDescriptor {
   chatExecutable: boolean;
 }
 function endpoint(
-  id: ProtocolRouteId,
+  protocol: EndpointProtocol,
   label: string,
   modelType: ModelType,
-  operationId: ProviderOperation,
-  profileId: string,
+  operation: ProviderOperation,
+  ioProfile: string,
   relativePath: string,
   requiredInputs: string[],
   optionalInputs: string[],
@@ -59,29 +114,30 @@ function endpoint(
   authentication: ModelEndpointDescriptor["authentication"] = "bearer",
 ): ModelEndpointDescriptor {
   return {
-    id,
+    protocol,
+    protocolFamily: routeFamilies[protocol],
     label,
     modelType,
-    operationId,
-    profileId,
+    operation,
+    ioProfile,
     requiredInputs,
     optionalInputs,
     outputs,
     relativePath,
     method: "POST",
-    modelIdLocation: id === "gemini-tts" ? "path" : "body",
+    modelIdLocation: protocol === "gemini-tts" ? "path" : "body",
     bodyEncodings:
-      id === "openai-images-edits"
+      protocol === "openai-images-edits"
         ? ["multipart", "json"]
-        : id === "openai-audio-transcriptions"
+        : protocol === "openai-audio-transcriptions"
           ? ["multipart"]
           : ["json"],
-    ...(id === "openai-images-edits" && { optionalMask: true }),
-    ...(id === "grok-video-generations" && { statusPath: "videos/{request_id}" }),
+    ...(protocol === "openai-images-edits" && { optionalMask: true }),
+    ...(protocol === "grok-video-generations" && { statusPath: "videos/{request_id}" }),
     authentication,
     result,
-    canDiscover: operationId === "chat",
-    chatExecutable: operationId === "chat",
+    canDiscover: operation === "chat",
+    chatExecutable: operation === "chat",
   };
 }
 // Each path is relative to an API root including its version prefix.
@@ -234,8 +290,8 @@ export const modelEndpointDescriptors: readonly ModelEndpointDescriptor[] = [
     "scores",
   ),
 ];
-export function modelEndpointDescriptor(id: ProtocolRouteId): ModelEndpointDescriptor {
-  const descriptor = modelEndpointDescriptors.find((x) => x.id === id);
+export function modelEndpointDescriptor(protocol: EndpointProtocol): ModelEndpointDescriptor {
+  const descriptor = modelEndpointDescriptors.find((x) => x.protocol === protocol);
   if (!descriptor) throw Error("Unknown model endpoint type");
   return descriptor;
 }

@@ -301,13 +301,13 @@ export function parseRateCard(value: unknown): RateCard {
     out.scope = {
       providerId: word(scope.providerId, "scope.providerId"),
       offeringId: word(scope.offeringId, "scope.offeringId"),
-      operationId: word(scope.operationId, "scope.operationId"),
+      operation: word(scope.operation, "scope.operation"),
     };
     if (scope.access !== undefined) {
       if (scope.access !== "api" && scope.access !== "subscription") return invalid("scope.access");
       out.scope.access = scope.access;
     }
-    for (const key of ["planId", "region", "protocolRouteId", "upstreamModelId"] as const)
+    for (const key of ["planKey", "region", "protocol", "upstreamModelId"] as const)
       if (scope[key] !== undefined) out.scope[key] = word(scope[key], "scope." + key);
   }
   if (r.subscriptionFee !== undefined) {

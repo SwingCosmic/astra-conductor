@@ -1,5 +1,7 @@
 import {
   customProviderOperations as customOps,
+  newApiOperations,
+  type INewApiService,
   type ICustomProviderService,
   type CommandContext,
   type ServiceResult,
@@ -24,6 +26,18 @@ const GraphAgentServiceBase = mixin(
   withGraphModels,
 );
 export class HttpGraphAgentService extends GraphAgentServiceBase implements IGraphAgentService {
+  readonly newApi: INewApiService = {
+    listOfferingKeys: (input, signal) =>
+      this.transport.request(newApiOperations.listOfferingKeys, input, { signal }),
+    createAccountWithKey: (input, signal) =>
+      this.transport.request(newApiOperations.createAccountWithKey, input, { signal }),
+    getUsage: (input, signal) =>
+      this.transport.request(newApiOperations.getUsage, input, { signal }),
+    listKeys: (input, signal) =>
+      this.transport.request(newApiOperations.listKeys, input, { signal }),
+    selectKey: (input, signal) =>
+      this.transport.request(newApiOperations.selectKey, input, { signal }),
+  };
   private customContext: CommandContext | null = null;
   private async customWrite<T>(
     run: (ctx: CommandContext) => Promise<ServiceResult<T>>,
@@ -50,6 +64,8 @@ export class HttpGraphAgentService extends GraphAgentServiceBase implements IGra
         this.transport.request(customOps.configureForAccount, { ...input, ...ctx }),
       ),
     references: (providerId) => this.transport.request(customOps.references, { providerId }),
+    listSiteModels: (input, signal) =>
+      this.transport.request(customOps.listSiteModels, input, { signal }),
     create: (draft) =>
       this.customWrite((ctx) => this.transport.request(customOps.create, { ...draft, ...ctx })),
     edit: (providerId, draft) =>

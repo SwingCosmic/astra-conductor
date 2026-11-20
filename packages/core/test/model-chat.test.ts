@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ModelParameters, ProtocolRouteId } from "@astra-conductor/contract/common";
+import type { EndpointProtocol, ModelParameters } from "@astra-conductor/contract/common";
 import type { Account, CredentialEnvelope } from "../src/models.js";
-import { lookupModelChatCharge } from "../src/providers/model-chat-receipt.js";
+import { openRouterReceiptPolicy } from "../src/providers/openrouter-receipt.js";
 import {
   previewModelChat,
   sendModelChat,
@@ -9,6 +9,7 @@ import {
 } from "../src/providers/model-chat.js";
 import {
   bindModelRoutes,
+  modelAuthorization,
   resolveModelRoutes,
   routeRevisionKey,
 } from "../src/providers/model-routes.js";
@@ -37,22 +38,74 @@ const envelope: CredentialEnvelope = {
   secrets: { apiKey: "fictional-test-key" },
 };
 
-function relay(protocolRouteId: ProtocolRouteId) {
+function relay(protocol: EndpointProtocol) {
   const [route] = bindModelRoutes(
-    [{ protocolRouteId, baseUrl: "https://relay.example/prefix/v1" }],
+    [{ protocol, baseUrl: "https://relay.example/prefix/v1" }],
     envelope.secrets.apiKey!,
   );
   const boundAccount = {
     ...account,
-    publicMetadata: { [routeRevisionKey(protocolRouteId)]: route.bindingRevision },
+    publicMetadata: { [routeRevisionKey(protocol)]: route.bindingRevision },
   };
   return { boundAccount, route, credential: { ...envelope, modelRoutes: [route] } };
 }
 
 describe("single-turn model calls", () => {
+  it("uses one native preparation for alias templates, extension defaults and both reasoning switches", async () => {
+    const { boundAccount, route, credential } = relay("openai-chat");
+    route.familyPolicy = { body: { vendor_options: { cache: false, source: "test-chat" } } };
+    route.requestRule = {
+      operation: "chat",
+      models: ["work"],
+      aliases: { work: "atlas" },
+      modelTemplate: "vendor/{model}-{effort}-{windowLabel}",
+      targets: ["vendor/atlas-high-128k"],
+      windowLabels: { "131072": "128k" },
+      consume: ["effort", "window"],
+      headers: { "x-relay-mode": "interactive" },
+      body: { vendor_options: { cache: true } },
+      defaults: { topP: 0.5 },
+      byModel: { work: { defaults: { topP: 0 } } },
+    };
+    const params = { ...parameters, contextWindow: 131072 };
+    const preview = previewModelChat(boundAccount, route, "work", params);
+    expect(preview.upstreamModelId).toBe("vendor/atlas-high-128k");
+    expect(preview.body).toMatchObject({
+      model: preview.upstreamModelId,
+      top_p: 0,
+      vendor_options: { cache: true, source: "test-chat" },
+    });
+    expect(preview.body).not.toHaveProperty("reasoning_effort");
+    expect(preview.consumedParameters).toEqual(["effort", "window"]);
+    expect(() =>
+      previewModelChat(boundAccount, route, "work", { ...params, thinkingEnabled: false }),
+    ).toThrow();
+    const http = {
+      fetch: vi.fn<typeof fetch>(async (_url, init) => {
+        expect(JSON.parse(String(init?.body))).toEqual({
+          ...preview.body,
+          messages: [{ role: "user", content: "prompt" }],
+        });
+        expect(new Headers(init?.headers).get("x-relay-mode")).toBe("interactive");
+        return Response.json({ choices: [{ message: { content: "ok" } }] });
+      }),
+    };
+    await expect(
+      sendModelChat(
+        http,
+        boundAccount,
+        credential,
+        route,
+        "work",
+        params,
+        "prompt",
+        new AbortController().signal,
+      ),
+    ).resolves.toBe("ok");
+  });
   it("looks up a late OpenRouter receipt only for the original generation and route", async () => {
     const [route] = bindModelRoutes(
-      [{ protocolRouteId: "openai-chat", baseUrl: "https://openrouter.ai/api/v1" }],
+      [{ protocol: "openai-chat", baseUrl: "https://openrouter.ai/api/v1" }],
       envelope.secrets.apiKey!,
     );
     const bound = {
@@ -89,11 +142,20 @@ describe("single-turn model calls", () => {
       signal,
     );
     expect(result).toMatchObject({
-      receiptLookup: { generationId: "gen-verified-1" },
+      responseId: "gen-verified-1",
       usage: { inputTokens: 1000, cacheReadTokens: 300, outputTokens: 10 },
     });
     const receipt = (r = route, id = "gen-verified-1") =>
-      lookupModelChatCharge({ fetch }, bound, credentials, r, "model", id, signal);
+      openRouterReceiptPolicy.transformReceipt!(null, {
+        http: { fetch },
+        account: bound,
+        envelope: credentials,
+        route: r,
+        modelId: "model",
+        generationId: id,
+        signal,
+        headers: modelAuthorization(bound, credentials, route, "model", "chat"),
+      });
     expect(await receipt({ ...route, baseUrl: "https://relay.example/api/v1" })).toBeNull();
     expect(await receipt(route, "../gen-other")).toBeNull();
     expect(await receipt()).toBeNull();

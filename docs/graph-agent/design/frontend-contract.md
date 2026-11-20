@@ -10,6 +10,8 @@
 
 ### 1.1 IGraphAgentService 产品门面
 
+New API 模板的公开目录由 `service.customProviders.listSiteModels` 读取，输入为供应商 ID、接入点 ID 和供应商修订。首次用站点 Key 创建账号走 `service.newApi.listOfferingKeys` 和 `createAccountWithKey`。已有账号的 `getUsage`、`listKeys` 和 `selectKey` 还校验当前后端上下文与账号凭据修订。站点地址从已保存的接入点解析，响应只回传公开目录、额度、账号或 Key 元数据。[接口与部署权限](../../common/core/provider/new-api-template.md)
+
 `IGraphAgentService` 组合公共管理分组和顶层模型方法：`service.getSnapshot()` 读取模型快照，`service.providers.getSnapshot()` 读取公共管理快照。
 
 ```ts
@@ -77,8 +79,8 @@ interface CatalogQuote {
 
 interface ModelEntryView {
   modelType: ModelType;
-  operationId: ProviderOperation;
-  profileId: string;
+  operation: ProviderOperation;
+  ioProfile: string;
   ioProfiles: ModelIOProfile[];
   parameterTemplate: ModelParameterTemplate;
   parameters: ModelParameters;
@@ -116,11 +118,13 @@ type CatalogState =
   | { state: "unavailable"; reason: string };
 
 interface ModelCatalogView {
+  protocolFamily?: ProtocolFamily;
+  familyBindingRevision?: string;
   accountDisplayName: string;
   providerId: string;
   offeringId: string;
   accountId: string;
-  protocolRouteId: string;
+  protocol: EndpointProtocol;
   bindingRevision: string;
   catalog: CatalogState;
   refreshing: boolean;
@@ -152,7 +156,7 @@ interface GraphModelSnapshot {
 
 interface ModelPresetOption {
   key: string;
-  vendorId: string;
+  vendor: string;
   modelId: string;
   displayName: string;
   revision: string;
@@ -176,6 +180,8 @@ interface ModelParameters {
   maxOutputTokens: number | null;
 }
 ```
+
+**思考配置。** 在 2B `ModelParameters` 中增加 `thinkingEnabled: boolean` 和 `returnFullReasoning: boolean`。新快照回传确定值；读取旧配置或接收缺少新字段的旧命令时保留已有配置，尚无值时分别取 `true`、`false`。旧客户端修改其他字段不得清空这两个设置。前置开关关闭时，服务端把有效 `effort` 归一为 `null`，全文归一为 `false`。前置开启时再按实际部署校验强度和公开全文能力。保存、预览和试聊使用同一解析规则，预览使用草稿，执行使用已保存的修订。输出能力事实 `reasoningOutputMode` 随绑定投影给 UI，且保留来源。[思考参数与可见输出](../../common/core/provider/model-structure.md#思考参数与可见输出)
 
 目录读取状态与模型能力三态分别表达。`ready` 且远端条目为空是一次成功的空列表；`not-loaded` 表示没有成功目录；`unavailable` 表示当前不能发现。刷新失败但有同绑定的成功缓存时保持 `ready`，并设置 `stale` 和 `lastRefreshError`。未完成的分页不发布为新目录。没有列表接口时仍可展示手工条目；手工登记和预置关联都不能把授权失败或缺少推理实现变成可调用证明。
 
@@ -206,7 +212,7 @@ interface BoundModelCommand extends CommandContext {
 
 interface RefreshCatalogRequest extends CommandContext {
   accountId: string;
-  protocolRouteId: string;
+  protocol: EndpointProtocol;
   expectedBindingRevision: string;
 }
 
@@ -217,8 +223,8 @@ interface EditManualModelRequest extends BoundModelCommand {
         operation: "upsert";
         displayName: string;
         modelType?: ModelType;
-        operationId?: ProviderOperation;
-        profileId?: string;
+        modelOperation?: ProviderOperation;
+        ioProfile?: string;
       }
     | { operation: "remove" };
 }
@@ -272,11 +278,14 @@ interface ModelRequestPreview {
   relativePath: string;
   upstreamModelId: string;
   consumedParameters: ("effort" | "window")[];
+  ruleSources?: string[];
   headers: Record<string, string>;
   body: Record<string, JsonValue>;
   warnings: { code: string; message: string }[];
 }
 ```
+
+**协议族目录。** 管理刷新支持按明细协议（`RefreshCatalogRequest`）或按协议族（`{ instanceId, contextId, accountId, protocolFamily, expectedFamilyBindingRevision }`）触发，账号决定 provider 与 offering。快照在族目录上提供 `familyBindingRevision` 和目录修订，明细执行投影单独提供 `protocol` 和有效 `bindingRevision`。模型参数、价卡、手工登记和试聊选择定位明细端点。[目录与存量升级](../../common/core/provider/connections-and-models.md#协议族连接与存量升级)
 
 刷新命令等待一次完整发现，`refreshing` 经失效事件可见。取消只释放本请求的等待者，不终止其他页面共用的发现；失败保留旧目录与错误，改绑丢弃旧结果。任务合并与缓存规则见 [Core 目录服务](../../common/core/provider/core-design.md#7-模型发现缓存和参数)。
 
@@ -284,11 +293,13 @@ interface ModelRequestPreview {
 
 `savedSelection` 只保存配置页选择与参数，不授权 Agent 执行或改写进行中的任务；模板和任务的模型策略由 01/03 另行校验、绑定，前端不创建 `ModelLease` 或执行句柄。
 
-预览以已登记的选择、操作和参数运行 Core 编译器，使用固定虚构消息与受限样本工具，返回允许展示的结构和 `<redacted>` 秘密占位。页面不能提交任意 URL、消息、Header 或待代发 Body；预览零供应商请求，不返回真实提示词或秘密。规则经公共连接 API 编辑，实际执行仅由受信任运行时调用。当前实现尚未记录被消费的参数，`consumedParameters` 恒为空数组；参数消费的展示随阶段三的参数转换交付。[请求编译与安全规则](../../common/core/provider/core-design.md#8-从模型选择到协议请求)
+预览以已登记的选择、操作和参数运行 Core 固定 4 步管道的 Step 1–3，使用固定虚构消息返回允许展示的结构和 `<redacted>` 秘密占位。页面不能提交任意 URL、消息、Header 或待代发 Body；预览零供应商请求，本地自定义供应商与内置路由免读凭据，严格输出 `ModelRequestPreview` 声明字段。规则经自定义供应商配置维护，实际执行仅由受信任运行时调用。预览展示实际上游模型 ID、`consumedParameters` 与 `ruleSources`。[请求策略与 4 步管道](../../common/core/provider/request-dispatch.md#3-固定-4-步请求准备与执行管道)
 
 ### 单轮测试聊天
 
 `POST /api/v1/graph-agent/chat` 接收当前上下文、绑定和配置修订及一个 `prompt`。服务端从 profile 业务库读取所选账号、协议、上游 ID 和最新已保存的参数，为当次请求固定参数和价卡。响应含 `callId`、`text`、上游实际提供的 `usage` 与本轮 `charge`。同一笔实扣按回执标识替换估算；当前页面经 SSE 收到通知后，通过 `POST /api/v1/graph-agent/chat/charge` 回读。关闭本轮时释放费用投影。问题和回答均不写入业务库。[单轮接口与费用 DTO](../../../packages/contract/src/graph-agent/chat.ts)
+
+试聊按 `protocolFamily` 设置代理根。`/api/v1/graph-agent/proxy/openai/v1` 提供 `GET /models`、`POST /chat/completions` 和 `POST /responses`；`/api/v1/graph-agent/proxy/anthropic/v1` 提供 `GET /models` 和 `POST /messages`。模型页快照向获准账号投影可见族、`familyBindingRevision` 及明细端点归属。目录 GET 带账号与族修订，原生返回一页；聊天 POST 带测试选择修订和明细有效绑定修订，原生返回 JSON 或 SSE。服务端显式区分这两个同名目录，账号尚未选择测试模型时也可列出可用模型。[请求样例](./test-chat-streaming.md#原生请求与绑定) · [目录绑定与本地头](./test-chat-streaming.md#选择模型前读取族目录)
 
 ## 5. 校验、错误与并发写入
 

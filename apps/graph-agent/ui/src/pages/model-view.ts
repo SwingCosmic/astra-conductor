@@ -13,13 +13,10 @@ const protocolLabels: Record<string, string> = {
   "anthropic-messages": "Anthropic Messages",
 };
 export function routeLabel(catalog: ModelCatalogView) {
-  return `${catalog.accountDisplayName || catalog.accountId} · ${protocolLabels[catalog.protocolRouteId] ?? catalog.protocolRouteId}`;
+  return `${catalog.accountDisplayName || catalog.accountId} · ${protocolLabels[catalog.protocol] ?? catalog.protocol}`;
 }
 export function sameRoute(catalog: ModelCatalogView, selection?: ModelSelection | null) {
-  return (
-    catalog.accountId === selection?.accountId &&
-    catalog.protocolRouteId === selection.protocolRouteId
-  );
+  return catalog.accountId === selection?.accountId && catalog.protocol === selection.protocol;
 }
 export function disabledReason(action?: ActionAvailability) {
   return action?.state === "disabled" ? action.reason : undefined;

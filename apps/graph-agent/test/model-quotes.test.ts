@@ -26,9 +26,9 @@ const prepaid: RateCard = {
   scope: {
     providerId: "relay",
     offeringId: "CN",
-    operationId: "video-generation",
+    operation: "video-generation",
     access: "subscription",
-    planId: "prepaid",
+    planKey: "prepaid",
   },
   entitlements: [
     { meter: "videoSeconds", included: { quantity: 5, unit: "s" }, overagePolicy: "charge" },

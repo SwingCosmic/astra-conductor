@@ -37,7 +37,7 @@ export function planTagLabel(usage: PublicUsage | null): string | null {
  * 开发者能立刻看到，而不是无声错权重。
  */
 export function isUnrecognizedPlan(usage: PublicUsage | null): boolean {
-  return Boolean(usage && usage.planId === null && usage.plan.trim());
+  return Boolean(usage && usage.planKey === null && usage.plan.trim());
 }
 
 /**
@@ -46,7 +46,7 @@ export function isUnrecognizedPlan(usage: PublicUsage | null): boolean {
  * 无从判断新旧，不展示旧版标记。
  */
 export function isLegacyPlan(usage: PublicUsage | null): boolean {
-  return usage?.planLegacy === true && usage.planId !== null;
+  return usage?.planLegacy === true && usage.planKey !== null;
 }
 
 function windowLabel(seconds: number | null): string | null {

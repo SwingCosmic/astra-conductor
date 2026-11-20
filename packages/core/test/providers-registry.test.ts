@@ -106,7 +106,7 @@ describe("provider registry", () => {
     ).toThrow(/provides a usage facet without declaring it/);
   });
 
-  it("rejects a declared inference capability without its provider facet", () => {
+  it("rejects a declared inference capability without model policies", () => {
     expect(
       () =>
         new ProviderRegistry([
@@ -115,7 +115,7 @@ describe("provider registry", () => {
             ...codexFacets,
           },
         ]),
-    ).toThrow(/requires matching inference declaration and facet/);
+    ).toThrow(/without a model policy for offering/);
   });
 
   it("rejects unknown capability names", () => {

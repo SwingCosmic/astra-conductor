@@ -18,7 +18,7 @@ export const antigravityDescriptor: ProviderDescriptor = {
       // （`Antigravity Starter Quota` 形态）由子串正则接住。
       plans: [
         {
-          id: "pro",
+          key: "pro",
           displayName: "Pro",
           match: ["pro"],
           multiplier: 1,
@@ -27,7 +27,7 @@ export const antigravityDescriptor: ProviderDescriptor = {
           verifiedAt: "2026-10-14",
         },
         {
-          id: "ultra-5x",
+          key: "ultra-5x",
           displayName: "Ultra 5x",
           match: ["ultra 5x", "ultra5x", /ultra\s*5x/],
           multiplier: 5,
@@ -36,7 +36,7 @@ export const antigravityDescriptor: ProviderDescriptor = {
           verifiedAt: "2026-10-14",
         },
         {
-          id: "ultra",
+          key: "ultra",
           displayName: "Ultra 20x",
           match: ["ultra", "ultra 20x", "ultra20x", /ultra\s*20x/, /\bultra\b/],
           multiplier: 20,
@@ -45,42 +45,42 @@ export const antigravityDescriptor: ProviderDescriptor = {
           verifiedAt: "2026-10-14",
         },
         {
-          id: "starter",
+          key: "starter",
           displayName: "Starter",
           match: ["starter", /starter/],
           multiplier: 0.1,
           source: "inferred",
         },
         {
-          id: "free",
+          key: "free",
           displayName: "Free",
           match: ["free"],
           multiplier: 0.1,
           source: "inferred",
         },
         {
-          id: "lite",
+          key: "lite",
           displayName: "Lite",
           match: ["lite"],
           multiplier: 0.1,
           source: "inferred",
         },
         {
-          id: "plus",
+          key: "plus",
           displayName: "Plus",
           match: ["plus"],
           multiplier: 1,
           source: "inferred",
         },
         {
-          id: "business",
+          key: "business",
           displayName: "Business",
           match: ["business"],
           multiplier: 5,
           source: "inferred",
         },
         {
-          id: "enterprise",
+          key: "enterprise",
           displayName: "Enterprise",
           match: ["enterprise"],
           multiplier: 5,

@@ -1,5 +1,7 @@
 import {
   apiOperation,
+  resolveEndpointProtocol,
+  protocolFamilies,
   parseAccountId,
   parseCommandContext,
   type CommandContext,
@@ -16,6 +18,7 @@ import {
 import { exact, fail, object } from "../common/validation/request.js";
 import type {
   BoundModelCommand,
+  ModelCommandInput,
   ChangeModelPackRequest,
   ModelPack,
   SaveModelDraftRequest,
@@ -67,7 +70,19 @@ const operations = [
 ] as const;
 export function parseModelParameters(input: unknown): ModelParameters {
   const row = object(input, "parameters");
-  exact(row, ["effort", "contextWindow", "maxOutputTokens", "temperature", "topP"], "parameters");
+  exact(
+    row,
+    [
+      "thinkingEnabled",
+      "returnFullReasoning",
+      "effort",
+      "contextWindow",
+      "maxOutputTokens",
+      "temperature",
+      "topP",
+    ],
+    "parameters",
+  );
   for (const [key, max] of [
     ["temperature", 2],
     ["topP", 1],
@@ -79,7 +94,14 @@ export function parseModelParameters(input: unknown): ModelParameters {
     )
       fail(key);
   }
+  for (const key of ["thinkingEnabled", "returnFullReasoning"]) {
+    if (row[key] !== undefined && typeof row[key] !== "boolean") fail(key);
+  }
   return {
+    ...(typeof row.thinkingEnabled === "boolean" && { thinkingEnabled: row.thinkingEnabled }),
+    ...(typeof row.returnFullReasoning === "boolean" && {
+      returnFullReasoning: row.returnFullReasoning,
+    }),
     effort: row.effort === null ? null : label(row.effort, "effort", 64),
     contextWindow: count(row.contextWindow, "contextWindow"),
     maxOutputTokens: count(row.maxOutputTokens, "maxOutputTokens"),
@@ -89,11 +111,11 @@ export function parseModelParameters(input: unknown): ModelParameters {
 }
 function selection(input: unknown): ModelSelection {
   const row = object(input, "selection");
-  exact(row, ["accountId", "providerId", "protocolRouteId", "modelId"], "selection");
+  exact(row, ["accountId", "providerId", "protocol", "protocolFamily", "modelId"], "selection");
   return {
     accountId: parseAccountId(row.accountId),
     providerId: label(row.providerId, "providerId"),
-    protocolRouteId: label(row.protocolRouteId, "protocolRouteId"),
+    protocol: resolveEndpointProtocol(row.protocol, row.protocolFamily),
     modelId: label(row.modelId, "modelId", 512),
   };
 }
@@ -137,6 +159,8 @@ export function modelFactValue(
       return value === null ? null : label(value, field, 64);
     case "structuredOutput":
       return enumValue(value, ["unsupported", "json", "schema", "unknown"], field);
+    case "reasoningOutputMode":
+      return enumValue(value, ["full", "summary", "activity-only", "none", "unknown"], field);
     case "reasoningMode":
       return enumValue(value, ["none", "effort", "native-state", "unknown"], field);
     case "vision":
@@ -165,6 +189,7 @@ const modelFactFields = {
   structuredOutput: 1,
   promptCacheRead: 1,
   promptCacheWrite: 1,
+  reasoningOutputMode: 1,
   reasoningMode: 1,
   effortLevels: 1,
   defaultEffort: 1,
@@ -210,12 +235,23 @@ function price(input: unknown): ModelPriceChange {
   return { operation, key, amount };
 }
 
-function optionalBindingFields(row: Record<string, unknown>) {
+function optionalDraftBindingFields(row: Record<string, unknown>) {
   return {
-    ...(row.operationId !== undefined && {
-      operationId: enumValue(row.operationId, operations, "operationId"),
+    ...(row.operation !== undefined && {
+      operation: enumValue(row.operation, operations, "operation"),
     }),
-    ...(row.profileId !== undefined && { profileId: label(row.profileId, "profileId") }),
+    ...(row.ioProfile !== undefined && { ioProfile: label(row.ioProfile, "ioProfile") }),
+    ...(row.modelType !== undefined && {
+      modelType: label(row.modelType, "modelType", 64) as ModelType,
+    }),
+  };
+}
+function optionalManualBindingFields(row: Record<string, unknown>) {
+  return {
+    ...(row.modelOperation !== undefined && {
+      modelOperation: enumValue(row.modelOperation, operations, "modelOperation"),
+    }),
+    ...(row.ioProfile !== undefined && { ioProfile: label(row.ioProfile, "ioProfile") }),
     ...(row.modelType !== undefined && {
       modelType: label(row.modelType, "modelType", 64) as ModelType,
     }),
@@ -228,6 +264,8 @@ function parameterChange(input: unknown): ModelParameterChange {
     [
       "contextWindow",
       "maxOutputTokens",
+      "thinkingEnabled",
+      "returnFullReasoning",
       "effort",
       "temperature",
       "topP",
@@ -249,6 +287,10 @@ function parameterChange(input: unknown): ModelParameterChange {
     "parameterChanges",
   );
   if (operation === "clear") return { field, operation };
+  if (field === "thinkingEnabled" || field === "returnFullReasoning") {
+    if (typeof row.value !== "boolean") return fail(field);
+    return { field, operation, value: row.value };
+  }
   if (row.value === null) return { field, operation, value: null };
   if (field === "size" || field === "quality" || field === "voice" || field === "format")
     return { field, operation, value: label(row.value, field, 128) };
@@ -285,7 +327,7 @@ function command<I extends CommandContext, O>(
   parse: (row: Record<string, unknown>) => I,
 ) {
   return {
-    ...apiOperation<I, O>("POST", root + path, { body: (input) => input }),
+    ...apiOperation<ModelCommandInput<I>, O>("POST", root + path, { body: (input) => input }),
     routePath: root + path,
     parseInput(input: unknown) {
       const row = object(input, "modelCommand");
@@ -302,9 +344,9 @@ const draftOperation = command<SaveModelDraftRequest, GraphModelSnapshot>(
     "changes",
     "priceChanges",
     "parameterChanges",
-    "operationId",
+    "operation",
     "modelType",
-    "profileId",
+    "ioProfile",
     "presetKey",
     "rateCard",
     "ratePlanKey",
@@ -314,7 +356,7 @@ const draftOperation = command<SaveModelDraftRequest, GraphModelSnapshot>(
     ...bound(row),
     expectedSettingsRevision: baseline(row),
     scope: enumValue(row.scope, ["offering", "account"] as const, "scope"),
-    ...optionalBindingFields(row),
+    ...optionalDraftBindingFields(row),
     changes: boundedArray(row.changes, change, (c) => c.field, "changes"),
     priceChanges: boundedArray(
       row.priceChanges,
@@ -371,13 +413,34 @@ export const graphModelOperations = {
   ),
   refreshCatalog: command<RefreshCatalogRequest, GraphModelSnapshot>(
     "catalogs/refresh",
-    [...contextKeys, "accountId", "protocolRouteId", "expectedBindingRevision"],
-    (row) => ({
-      ...parseCommandContext(row),
-      accountId: parseAccountId(row.accountId),
-      protocolRouteId: label(row.protocolRouteId, "protocolRouteId"),
-      expectedBindingRevision: label(row.expectedBindingRevision, "expectedBindingRevision"),
-    }),
+    [
+      ...contextKeys,
+      "accountId",
+      "protocol",
+      "protocolFamily",
+      "expectedBindingRevision",
+      "expectedFamilyBindingRevision",
+    ],
+    (row) => {
+      const scope = { ...parseCommandContext(row), accountId: parseAccountId(row.accountId) };
+      if (row.expectedFamilyBindingRevision !== undefined) {
+        if (row.protocol !== undefined || row.expectedBindingRevision !== undefined)
+          return fail("expectedFamilyBindingRevision");
+        return {
+          ...scope,
+          protocolFamily: enumValue(row.protocolFamily, protocolFamilies, "protocolFamily"),
+          expectedFamilyBindingRevision: label(
+            row.expectedFamilyBindingRevision,
+            "expectedFamilyBindingRevision",
+          ),
+        };
+      }
+      return {
+        ...scope,
+        protocol: resolveEndpointProtocol(row.protocol, row.protocolFamily),
+        expectedBindingRevision: label(row.expectedBindingRevision, "expectedBindingRevision"),
+      };
+    },
   ),
   editManualModel: command<EditManualModelRequest, GraphModelSnapshot>(
     "entries/edit",
@@ -388,7 +451,7 @@ export const graphModelOperations = {
       exact(
         item,
         operation === "upsert"
-          ? ["displayName", "operation", "modelType", "operationId", "profileId"]
+          ? ["displayName", "operation", "modelType", "modelOperation", "ioProfile"]
           : ["operation"],
         "change",
       );
@@ -400,7 +463,7 @@ export const graphModelOperations = {
             ? {
                 operation,
                 displayName: label(item.displayName, "displayName"),
-                ...optionalBindingFields(item),
+                ...optionalManualBindingFields(item),
               }
             : { operation },
       };
