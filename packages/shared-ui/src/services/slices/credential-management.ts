@@ -47,6 +47,14 @@ export const withCredentialManagement = defineServiceSlice(
             credentialOperations.selectDirectory,
             this.credentialContext ?? { instanceId: "", contextId: "" },
           ),
+        adoptVault: (vaultDirectory, clientId) =>
+          this.credentialContext
+            ? this.transport.request(credentialOperations.adoptVault, {
+                vaultDirectory,
+                ...(clientId ? { clientId } : {}),
+                ...this.credentialContext,
+              })
+            : Promise.resolve(missingContext()),
         install: () =>
           this.transport.request(
             credentialOperations.install,

@@ -380,7 +380,7 @@ describe("GraphAgent common provider host", () => {
         })
       ).status,
     ).toBe(403);
-    expect(() => claimGraphProfile(directory)).toThrow("already in use");
+    expect(() => claimGraphProfile(directory)).toThrow("GraphAgent 数据目录正在使用");
     await server.stop();
     const release = claimGraphProfile(directory);
     release();

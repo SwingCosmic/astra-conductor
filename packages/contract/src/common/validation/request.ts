@@ -122,6 +122,23 @@ export function parseResetCreditRedemption(value: unknown): ResetCreditRedemptio
   return fail("redemption.kind");
 }
 
+const credentialClientId = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/;
+
+export function parseAdoptVaultRequest(value: unknown): {
+  vaultDirectory: string;
+  clientId?: string;
+} {
+  const record = object(value, "adoptVault");
+  exact(record, ["vaultDirectory", "clientId"], "adoptVault");
+  const { vaultDirectory } = parseCredentialExportRequest({
+    vaultDirectory: record.vaultDirectory,
+  });
+  if (record.clientId === undefined) return { vaultDirectory };
+  const clientId = string(record.clientId, "adoptVault.clientId");
+  if (!credentialClientId.test(clientId)) return fail("adoptVault.clientId");
+  return { vaultDirectory, clientId };
+}
+
 export function parseCredentialExportRequest(value: unknown): { vaultDirectory: string } {
   const record = object(value, "credentialExport");
   exact(record, ["vaultDirectory"], "credentialExport");

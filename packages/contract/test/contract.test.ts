@@ -5,6 +5,7 @@ import {
   parseRedeemResetCreditRequest,
   parseResetCreditRedemption,
   parseSettings,
+  parseAdoptVaultRequest,
   parseCredentialExportRequest,
   parseStartAuthRequest,
   parseCommandContext,
@@ -59,6 +60,22 @@ describe("PolyQuota contract request validation", () => {
       { vaultDirectory: "" },
     ])
       expect(() => parseCredentialExportRequest(request)).toThrow(ContractValidationError);
+  });
+
+  it("accepts an optional client id when adopting an existing shared directory", () => {
+    expect(parseAdoptVaultRequest({ vaultDirectory: "C:/test/shared" })).toEqual({
+      vaultDirectory: "C:/test/shared",
+    });
+    expect(
+      parseAdoptVaultRequest({ vaultDirectory: "C:/test/shared", clientId: "graph-agent-demo" }),
+    ).toEqual({ vaultDirectory: "C:/test/shared", clientId: "graph-agent-demo" });
+    for (const request of [
+      { vaultDirectory: "C:/test/shared", clientId: "../other" },
+      { vaultDirectory: "C:/test/shared", clientId: "" },
+      { vaultDirectory: "C:/test/shared", extra: true },
+      { vaultDirectory: "../relative", clientId: "graph-agent-demo" },
+    ])
+      expect(() => parseAdoptVaultRequest(request)).toThrow(ContractValidationError);
   });
 
   it("accepts shape-valid auth requests keyed by offering id", () => {

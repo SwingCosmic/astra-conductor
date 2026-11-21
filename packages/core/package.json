@@ -12,13 +12,17 @@
       "types": "./dist/internal.d.ts",
       "import": "./dist/internal.js"
     },
+    "./host/node-directory-picker": {
+      "types": "./dist/host/node-directory-picker.d.ts",
+      "import": "./dist/host/node-directory-picker.js"
+    },
     "./http": {
       "types": "./dist/http/index.d.ts",
       "import": "./dist/http/index.js"
     }
   },
   "scripts": {
-    "build": "node ./scripts/build.mjs && tsc -p tsconfig.build.json",
+    "build": "node ../../native/directory-picker/build.mjs && node ./scripts/build.mjs && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },

@@ -18,6 +18,8 @@ GraphAgent 是以执行图为中心的智能体协作产品。产品级入口与
 
 GraphAgent Web 与 Electron 共用 Vue/Hono 入口和产品业务存储接口。Web 使用服务端已有的 broker 授权，Electron 也可使用自己的加密私有库。两款桌面产品已支持双向导入导出、接入共享和显式切回。单向闭环的历史记录与当前双向管理分别见 [A6—A8](../common/core/credential-sharing/a6-a8-sharing-implementation.md#graphagent-最小宿主) 和[凭据共享 B2/B3](../common/core/credential-sharing/implementation-plan.md#双向导出与存储切换)。[启动说明](../../apps/graph-agent/README.md)
 
+Web 在未设置成对 broker 环境变量时，使用 profile 中已记住的共享目录和客户端身份。成对的环境变量只覆盖本次进程。凭据页可以接入本 profile 已有的客户端授权。方案见[Web 共享目录记忆](./design/web-shared-vault.md)。
+
 ## 共用能力与研究资料
 
 - [供应商平台](../common/core/provider/design.md)：共用的供应商、账号、协议、模型目录与推理能力。

@@ -2,10 +2,15 @@ import { app, BrowserWindow, dialog, net, protocol, safeStorage, shell } from "e
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { AppError, MigrationProfileUpgradeRequired } from "@astra-conductor/core/internal";
+import {
+  AppError,
+  MigrationProfileUpgradeRequired,
+  createElectronDirectoryPicker,
+} from "@astra-conductor/core/internal";
 import { createGraphServices, type GraphServices } from "../../server/services.js";
 import { createGraphHonoApp } from "../../server/create-hono-app.js";
-import { claimGraphProfile } from "../storage.js";
+import { claimGraphProfile, GraphProfileInUse } from "../storage.js";
+import { graphProfileDirectory } from "../profile-directory.js";
 import { createGraphBrokerHost } from "../broker-host.js";
 import { startOAuthCallbackServer } from "../callback-server.js";
 import { graphUiResource } from "../resources.js";
@@ -25,8 +30,7 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 app.setName("GraphAgent");
-if (process.env.GRAPH_AGENT_USER_DATA)
-  app.setPath("userData", path.resolve(process.env.GRAPH_AGENT_USER_DATA));
+app.setPath("userData", graphProfileDirectory(process.env.GRAPH_AGENT_USER_DATA));
 if (process.platform === "win32") app.setAppUserModelId("com.astraconductor.graphagent");
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
@@ -84,13 +88,7 @@ else {
             return "opened";
           },
         },
-        selectDirectory: async () => {
-          const selected = await dialog.showOpenDialog({
-            title: "选择共享凭据目录",
-            properties: ["openDirectory"],
-          });
-          return selected.canceled ? null : (selected.filePaths[0] ?? null);
-        },
+        directoryPicker: createElectronDirectoryPicker(dialog, BrowserWindow),
       });
       const hono = createGraphHonoApp(services);
       const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -135,7 +133,7 @@ else {
       release = undefined;
       dialog.showErrorBox(
         "GraphAgent",
-        error instanceof MigrationProfileUpgradeRequired
+        error instanceof MigrationProfileUpgradeRequired || error instanceof GraphProfileInUse
           ? error.message
           : "应用启动失败，请检查本机组件、数据目录与安全存储后重试。",
       );

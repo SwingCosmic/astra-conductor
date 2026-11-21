@@ -1,12 +1,14 @@
 import { serve } from "@hono/node-server";
 import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createGraphServices } from "../../server/services.js";
 import { createGraphHonoApp } from "../../server/create-hono-app.js";
 import { claimGraphProfile } from "../storage.js";
+import { graphProfileDirectory } from "../profile-directory.js";
+import { resolveWebBrokerBinding } from "../broker-binding.js";
 import { createGraphBrokerHost } from "../broker-host.js";
+import { createNodeDirectoryPicker } from "@astra-conductor/core/host/node-directory-picker";
 import { startOAuthCallbackServer } from "../callback-server.js";
 import { graphUiResource } from "../resources.js";
 
@@ -22,26 +24,15 @@ export async function startGraphServer(options: GraphServerOptions = {}) {
   const port = options.port ?? Number(env.GRAPH_AGENT_PORT ?? 4878);
   if (!Number.isInteger(port) || port < 0 || port > 65535)
     throw new Error("Invalid GraphAgent port");
-  const directory = path.resolve(
-    options.directory ??
-      env.GRAPH_AGENT_DATA_DIR ??
-      path.join(homedir(), ".astra-conductor", "graph-agent-web"),
-  );
+  const directory = graphProfileDirectory(options.directory ?? env.GRAPH_AGENT_DATA_DIR, env);
   const release = claimGraphProfile(directory);
   const controller = new AbortController();
   let services: Awaited<ReturnType<typeof createGraphServices>>;
   try {
-    if (!!env.GRAPH_AGENT_BROKER_VAULT !== !!env.GRAPH_AGENT_BROKER_CLIENT_ID)
-      throw new Error("GraphAgent broker vault and client id must be configured together");
-    const brokerBinding =
-      env.GRAPH_AGENT_BROKER_VAULT && env.GRAPH_AGENT_BROKER_CLIENT_ID
-        ? {
-            vaultDirectory: path.resolve(env.GRAPH_AGENT_BROKER_VAULT),
-            clientId: env.GRAPH_AGENT_BROKER_CLIENT_ID,
-          }
-        : undefined;
+    const resolved = resolveWebBrokerBinding(directory, env);
     services = await createGraphServices({
       directory,
+      directoryPicker: createNodeDirectoryPicker(),
       host: createGraphBrokerHost(directory, true),
       http: {
         fetch: (input, init) => {
@@ -61,7 +52,8 @@ export async function startGraphServer(options: GraphServerOptions = {}) {
       files: { readText: (filename) => readFile(filename, "utf8") },
       callbackServer: { start: startOAuthCallbackServer },
       authorization: { present: async () => "awaiting-user" },
-      brokerBinding,
+      brokerBinding: resolved.binding,
+      rememberedBindingError: resolved.rememberedError ?? null,
     });
   } catch (error) {
     release();

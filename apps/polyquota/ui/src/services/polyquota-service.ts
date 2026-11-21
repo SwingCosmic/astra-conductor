@@ -95,6 +95,7 @@ export class EmptyPolyQuotaService implements IPolyQuotaService {
   readonly credentials: ICredentialManagementService = {
     getStatus: unavailable,
     selectDirectory: unavailable,
+    adoptVault: unavailable,
     install: unavailable,
     uninstall: unavailable,
     exportCredentials: unavailable,

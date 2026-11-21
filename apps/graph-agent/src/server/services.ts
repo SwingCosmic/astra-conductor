@@ -11,8 +11,11 @@ import {
   SelectedBusinessStorage,
   RefreshCoordinator,
   SwitchingCredentialService,
+  credentialDirectoryRequest,
+  unavailableDirectoryPicker,
   type AuthorizationInteractionService,
   type CredentialCipherPort,
+  type DirectoryPicker,
   type FileService,
   type HttpPort,
   type StartOAuthCallbackServer,
@@ -24,6 +27,11 @@ import { CustomProviders } from "./custom-providers.js";
 import { GraphBusinessDatabase } from "../platform/business-database.js";
 import { GraphStorage } from "../platform/storage.js";
 import { GraphCredentialRuntime } from "./runtime.js";
+import {
+  resolveAdoptedBinding,
+  writeBrokerBinding,
+  type BrokerBinding,
+} from "../platform/broker-binding.js";
 
 import { GraphModelService } from "./model-service.js";
 import { GraphChatService } from "./chat-service.js";
@@ -38,8 +46,9 @@ export interface GraphServicesOptions {
   files: FileService;
   callbackServer: { start: StartOAuthCallbackServer };
   authorization: AuthorizationInteractionService;
-  selectDirectory?(): Promise<string | null>;
-  brokerBinding?: { vaultDirectory: string; clientId: string };
+  directoryPicker?: DirectoryPicker;
+  brokerBinding?: BrokerBinding;
+  rememberedBindingError?: string | null;
 }
 
 export async function createGraphServices(options: GraphServicesOptions) {
@@ -57,6 +66,7 @@ async function assembleGraphServices(
   business: GraphBusinessDatabase,
 ) {
   const privateReady = options.cipher ? await options.cipher.isAvailable() : false;
+  const directoryPicker = options.directoryPicker ?? unavailableDirectoryPicker;
   const appSettings = new GraphStorage(
     path.join(options.directory, "app-settings.json"),
     "settings",
@@ -159,7 +169,7 @@ async function assembleGraphServices(
           host: options.host,
           switcher: credentials,
           hasActiveAuth: () => auth.hasActiveSessions(),
-          selectDirectory: options.selectDirectory,
+          directoryPicker,
           changed: () => providers?.changed(),
         })
       : undefined;
@@ -257,34 +267,58 @@ async function assembleGraphServices(
       ),
     watch: (check, onStale) => models.watchCall(check, onStale),
   });
-  let reconnecting: Promise<void> | undefined;
-  const retryWeb = async () => {
-    const binding = options.brokerBinding;
-    if (!binding)
-      throw new AppError("capability-unavailable", "请在服务端配置共享目录和客户端身份");
-    if (reconnecting) return reconnecting;
-    if (auth.hasActiveSessions()) throw new AppError("conflict", "请先完成或取消当前账号授权");
-    reconnecting = (async () => {
+  let binding = options.brokerBinding;
+  let rememberedError = options.rememberedBindingError ?? null;
+  let gate = Promise.resolve();
+  const exclusive = <T>(action: () => Promise<T>): Promise<T> => {
+    const run = gate.then(action, action);
+    gate = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  };
+  const retryWeb = () =>
+    exclusive(async () => {
+      const current = binding;
+      if (!current) throw new AppError("capability-unavailable", "请先接入已授权的共享目录");
+      if (auth.hasActiveSessions()) throw new AppError("conflict", "请先完成或取消当前账号授权");
       await mutations.freeze();
       try {
-        await runtime.activate(binding, () => providers.changed());
+        await runtime.activate(current, () => providers.changed());
       } finally {
         mutations.resume();
         providers.changed();
       }
-    })().finally(() => {
-      reconnecting = undefined;
     });
-    return reconnecting;
-  };
+  const adoptVault = (vaultDirectory: string, clientId?: string) =>
+    exclusive(async () => {
+      if (auth.hasActiveSessions()) throw new AppError("conflict", "请先完成或取消当前账号授权");
+      const next = await resolveAdoptedBinding(
+        options.directory,
+        vaultDirectory,
+        clientId,
+        binding,
+      );
+      writeBrokerBinding(options.directory, next);
+      binding = next;
+      rememberedError = null;
+      await mutations.freeze();
+      try {
+        await runtime.activate(next, () => providers.changed());
+      } finally {
+        mutations.resume();
+        providers.changed();
+      }
+    });
   const webCredentials = {
     async getStatus(): Promise<CredentialManagementStatus> {
       const host = options.host;
       const installation = await host.inspect();
-      const binding = options.brokerBinding;
+      const current = binding;
       const service =
-        binding && installation.installState === "installed"
-          ? await host.status?.(binding.vaultDirectory)
+        current && installation.installState === "installed"
+          ? await host.status?.(current.vaultDirectory)
           : undefined;
       const accounts = runtime.isConnected ? await runtime.accounts() : [];
       return {
@@ -293,11 +327,11 @@ async function assembleGraphServices(
         localPackageState: (await host.inspectPackage?.()) ?? "unknown",
         requiredApiLevel: BROKER_COMPATIBILITY.requiredApiLevel,
         downloadState: "not-configured",
-        directorySelectionAvailable: false,
+        directorySelectionAvailable: true,
         migrationState: null,
         available: runtime.isConnected,
         serviceState: service?.serviceState ?? "NOT_CHECKED",
-        vaultDirectory: binding?.vaultDirectory ?? null,
+        vaultDirectory: current?.vaultDirectory ?? null,
         storageVersion: null,
         recordCount: accounts.length,
         frozen: mutations.isFrozen,
@@ -309,7 +343,7 @@ async function assembleGraphServices(
         keyCleanupPending: false,
         sessionCleanupPending: false,
         brokerOwnership: service?.brokerOwnership ?? "NOT_CHECKED",
-        lastError: null,
+        lastError: current ? null : rememberedError,
         role: "receiver",
         privateAvailable: false,
         connected: runtime.isConnected,
@@ -317,9 +351,10 @@ async function assembleGraphServices(
         instanceId,
         contextId: webContextId,
         capabilities: {
-          retry: binding
+          adoptVault: { state: "enabled" },
+          retry: current
             ? { state: "enabled" }
-            : { state: "disabled", reason: "请在服务端配置共享目录和客户端身份" },
+            : { state: "disabled", reason: "请先接入已授权的共享目录" },
           verifyImport: { state: "hidden" },
           confirmImport: { state: "hidden" },
           exportCredentials: { state: "hidden" },
@@ -327,13 +362,15 @@ async function assembleGraphServices(
         },
       };
     },
+    selectDirectory: () => directoryPicker.selectDirectory(credentialDirectoryRequest),
+    adoptVault,
     retry: retryWeb,
   };
   const credentialManagement = migration
     ? migrationHttpService(migration, providers)
     : webCredentials;
   if (migration) await migration.start();
-  else if (options.brokerBinding) await retryWeb().catch(() => undefined);
+  else if (binding) await retryWeb().catch(() => undefined);
 
   return {
     providers,

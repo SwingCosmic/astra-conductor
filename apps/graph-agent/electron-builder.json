@@ -6,6 +6,7 @@
   },
   "files": [
     "dist/**",
+    "!node_modules/@astra-conductor/core/bin/**",
     "resources/**",
     "ui/dist/**",
     "assets/icons/**",

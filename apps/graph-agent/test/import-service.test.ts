@@ -7,6 +7,7 @@ import { BrokerError, type TransferSnapshot } from "@astra-conductor/credentials
 import {
   CredentialMigrationService,
   CredentialVault,
+  unavailableDirectoryPicker,
   CredentialMutationGate,
   MemoryStorage,
   SwitchingCredentialService,
@@ -164,6 +165,7 @@ async function fixture() {
     } as unknown as ProviderRegistry,
     host,
     hasActiveAuth: () => false,
+    directoryPicker: unavailableDirectoryPicker,
   };
   const make = () => {
     const service = new CredentialMigrationService(options);

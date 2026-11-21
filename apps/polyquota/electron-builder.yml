@@ -10,6 +10,7 @@ files:
   - "!dist/protocol-*"
   - renderer/**
   - "!node_modules/better-sqlite3/build/**"
+  - "!node_modules/@astra-conductor/core/bin/**"
 extraResources:
   - from: lib/better-sqlite3
     to: lib/better-sqlite3

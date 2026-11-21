@@ -77,6 +77,7 @@ pnpm data:reset:polyquota
 - `pnpm dev:polyquota` 打开 PolyQuota 桌面窗口，按各服务商声明的方式接入：可只读导入 Codex CLI、Grok CLI、Claude Code 或 ZCode v2 凭据，可发起浏览器 OAuth（Codex、Grok Build、Antigravity）或设备码授权（Codex、Grok Build），也可填写 GLM 或 OpenCode Go 的 API Key。Electron 使用的 better-sqlite3 原生二进制在启动前自动准备：`pnpm build` 经 Desktop `prebuild` 钩子、`pnpm dev:polyquota` 在 Electron 启动前校验 manifest（Electron 与 better-sqlite3 版本、平台、架构、哈希），一致时跳过，变化时在隔离临时目录重新编译。
 - `pnpm dev:server:polyquota` 独立启动真实 Node 后端；`pnpm dev:web:polyquota` 连接该后端；`pnpm dev:ui:polyquota` 显式启用无后端的演示预览。分侧检查使用 `pnpm test:server:polyquota`、`pnpm test:ui:polyquota`；真实 Electron 协议检查、正式桌面闭环与打包后分发包检查为低频重型验证，经 `pnpm build` 或 `pnpm package:polyquota` 后用 `pnpm --filter @astra-conductor/polyquota test:protocol`、`test:desktop`、`test:distribution` 执行，详见 [Service mode 开发与分侧验证](./docs/common/core/service-mode/development.md)。
 - `pnpm build` 按依赖顺序构建凭据 SDK、统一契约、Core、共用 UI 与两个产品；PolyQuota Desktop 会把 UI 构建结果复制到 `apps/polyquota/renderer`。
+- `pnpm build:directory-picker` 单独构建 Windows Node 目录选择器。Core 构建会自动执行同一步骤。两款产品共用 `packages/core/bin/win32-<arch>/directory-picker.exe`，构建输入未更新时直接复用已有产物。
 - `pnpm package:polyquota` 在 Windows x64 使用工作区已安装的同版本 Electron dist，生成 Windows NSIS 安装包，产物位于 `apps/polyquota/release/`。
 - `pnpm --filter @astra-conductor/polyquota test:codex-cli` 使用本机 Codex CLI 凭据执行隔离的真实用量闭环，不改写 CLI 凭据，临时应用数据会在测试后删除；需先完成 `pnpm build`。
 - `pnpm data:reset:polyquota` 删除 PolyQuota `userData` 中的 `polyquota.db`、WAL 和共享内存文件，因此也会删除全部已保存凭据、账号、用量与设置；执行前必须退出应用。

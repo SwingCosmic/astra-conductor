@@ -5,6 +5,7 @@ export type AppErrorCode =
   | "stale-binding"
   | "capability-unavailable"
   | "desktop-unavailable"
+  | "access-denied"
   | "service-unavailable"
   | "authentication"
   | "permission"

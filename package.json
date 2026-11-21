@@ -23,6 +23,7 @@
     "dev:graph-agent": "pnpm --filter @astra-conductor/credentials build && pnpm --filter @astra-conductor/contract build && pnpm --filter @astra-conductor/core build && pnpm --filter @astra-conductor/graph-agent dev",
     "package:graph-agent": "pnpm build && pnpm --filter @astra-conductor/graph-agent package",
     "start:graph-agent:web": "pnpm --filter @astra-conductor/graph-agent start:web",
+    "build:directory-picker": "node native/directory-picker/build.mjs",
     "build:core": "pnpm --filter @astra-conductor/credentials build && pnpm --filter @astra-conductor/contract build && pnpm --filter @astra-conductor/core build && pnpm --filter @astra-conductor/shared-ui build",
     "test:core": "pnpm --filter @astra-conductor/credentials test && pnpm --filter @astra-conductor/contract test && pnpm --filter @astra-conductor/core test && pnpm --filter @astra-conductor/shared-ui test"
   },

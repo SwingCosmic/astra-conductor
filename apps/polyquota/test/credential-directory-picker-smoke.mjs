@@ -1,3 +1,4 @@
+import { credentialDirectoryRequest } from "@astra-conductor/core/internal";
 import { app, BrowserWindow, session } from "electron";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -44,7 +45,9 @@ app
         ),
     );
     const timer = setTimeout(() => app.exit(2), 120_000);
-    const selected = await values.get(Services.sharingPaths).selectDirectory();
+    const selected = await values
+      .get(Services.sharingPaths)
+      .directoryPicker.selectDirectory(credentialDirectoryRequest);
     clearTimeout(timer);
     const passed = selected === null || (typeof selected === "string" && path.isAbsolute(selected));
     const result = {

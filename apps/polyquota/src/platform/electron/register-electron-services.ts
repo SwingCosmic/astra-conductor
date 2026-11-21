@@ -5,6 +5,7 @@ import { BrowserWindow, dialog, type Session } from "electron";
 import {
   CoreServices,
   SelectedBusinessStorage,
+  createElectronDirectoryPicker,
   serviceId,
   type LoggerPort,
   type ServiceRegistry,
@@ -76,22 +77,7 @@ export function registerElectronServices(
     })
     .value(Services.sharingPaths, {
       dataDirectory: options.dataDirectory,
-      selectDirectory: async () => {
-        const parent = BrowserWindow.getFocusedWindow();
-        const config = {
-          title: "选择共享凭据目录",
-          buttonLabel: "选择此文件夹",
-          properties: ["openDirectory", "createDirectory", "dontAddToRecent"] as (
-            | "openDirectory"
-            | "createDirectory"
-            | "dontAddToRecent"
-          )[],
-        };
-        const result = parent
-          ? await dialog.showOpenDialog(parent, config)
-          : await dialog.showOpenDialog(config);
-        return result.canceled ? null : (result.filePaths[0] ?? null);
-      },
+      directoryPicker: createElectronDirectoryPicker(dialog, BrowserWindow),
     })
     .value(Services.cipher, new ElectronSafeStorageCipher())
     .value(Services.host, {

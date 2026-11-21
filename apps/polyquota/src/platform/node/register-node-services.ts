@@ -1,3 +1,4 @@
+import { createNodeDirectoryPicker } from "@astra-conductor/core/host/node-directory-picker";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -70,7 +71,10 @@ export function registerNodeServices(
     .value(CoreServices.logger, silentLogger)
     .value(CoreServices.callbackServer, { start: startOAuthCallbackServer })
     .value(CoreServices.authorization, { present: async () => "awaiting-user" as const })
-    .value(Services.sharingPaths, { dataDirectory: options.dataDirectory })
+    .value(Services.sharingPaths, {
+      dataDirectory: options.dataDirectory,
+      directoryPicker: createNodeDirectoryPicker(),
+    })
     .value(Services.cipher, options.cipher ?? unavailableCipher)
     .value(Services.host, {
       capabilities: {

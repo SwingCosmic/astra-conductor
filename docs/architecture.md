@@ -58,11 +58,13 @@ flowchart LR
   SDK -->|本机 RPC| Broker["独立凭据 broker"]
 ```
 
-图中的私有加密存储适用于 PolyQuota 及 GraphAgent Electron。GraphAgent 独立 Web 没有 Electron 的 `safeStorage`，凭据只经已启用的 broker 访问，不另设 Node 私有凭据库；阶段 2B 起，模型配置由 GraphAgent 自己的 SQLite 业务库保存，应用偏好由设置服务管理。
+图中的私有加密存储适用于 PolyQuota 及 GraphAgent Electron。GraphAgent 独立 Web 没有 Electron 的 `safeStorage`，凭据只经已启用的 broker 访问，不另设 Node 私有凭据库。未设置成对 broker 环境变量时，使用 profile 中已记住的共享目录和客户端身份；成对的环境变量只覆盖本次进程。[Web 共享目录记忆](./graph-agent/design/web-shared-vault.md)。阶段 2B 起，模型配置由 GraphAgent 自己的 SQLite 业务库保存，应用偏好由设置服务管理。
 
 每个产品有自己的 Hono 应用工厂。Node 和 Electron 宿主装配同一组路由、应用服务和错误/事件投影。浏览器通过 HTTP 进入 Hono；Electron 可用受限内部协议把标准 `Request` 转交给同一 Hono 应用，无须额外监听 TCP 端口。前端入口为本产品 Service 创建一个共享传输实例，宿主差异收在请求基址和底层 fetch 适配。业务组件只调用 Service，服务客户端使用同一契约的方法、路径、DTO 和 SSE，凭据、模型和用量操作都经 Hono。
 
 例如，目标中的 `GET /api/v1/providers` 在两产品、两种宿主中均由 `contract/common` 定义含义，并绑定同一组 Core 目录与权限判断。GraphAgent 的模型配置、PolyQuota 的用量快照分别通过产品契约注册自己的路由。Hono 做入站校验、应用服务分派和公开投影。账号用途、租约、模型解析等业务规则只维护在所属服务。Electron 的窗口、托盘、系统密钥库或目录选择器由平台适配器实现；Web 入口使用适合 Node 的实现，并向前端公开实际可用的宿主能力。
+
+GraphAgent 和 PolyQuota 的 Node 宿主都从 Core 的 `/host/node-directory-picker` 子入口取得 `DirectoryPicker`。Windows 工具的源码在仓库级 `native/directory-picker/`，按 Node 架构构建一次，两个产品和其他 Node 命令共用 Core 的 `bin/win32-<arch>/directory-picker.exe`。两个 Electron 宿主注入各自的窗口和对话框对象，由公共适配器决定父窗口、构造选项并返回结果。[目录选择器设计](./graph-agent/design/web-shared-vault.md#73-目录选择器)
 
 ### 2.1 产品 Service 与共享传输
 
@@ -93,7 +95,7 @@ Core 提供无框架的公共应用服务；可选子入口 `@astra-conductor/co
 | GraphAgent · 独立 Web | 正式交付 | 无 Electron 的机器上可单独启动 Node 宿主，提供构建后的前端静态资源、Hono API 和 SSE。账号凭据只使用已启用的 broker；未接入或断连时显示原因并禁用依赖凭据的操作 |
 | GraphAgent · Electron | 正式桌面交付 | 桌面宿主加载同一 GraphAgent 前端、装配同一 Hono 应用，可使用 `safeStorage` 保存私有凭据，也可接入 broker。管理账号、配置模型和凭据共享遵守与 Web 相同的业务契约，操作能力反映实际后端和授权 |
 
-GraphAgent 独立 Web 的基础交付是可单独运行的本地服务。宿主差异可以影响系统交互的呈现，例如桌面选择目录、Web 选择服务端可用位置；同一业务操作的权限、输入约束、状态变化和错误语义由应用服务统一。两个宿主并行测试时使用独立 profile，或接入已有数据所有者，避免两个进程各自打开同一份活动业务库。
+GraphAgent 独立 Web 的基础交付是可单独运行的本地服务。宿主差异可以影响系统交互的呈现，例如桌面选择目录、Web 选择服务端可用位置；同一业务操作的权限、输入约束、状态变化和错误语义由应用服务统一。两个宿主默认使用同一个 GraphAgent profile，Windows 路径为 `%APPDATA%\GraphAgent`。切换入口前先退出当前进程；并行启动时显式指定不同 profile。Web 优先使用本端的绑定覆盖，首次可从桌面已提交的共享迁移状态取得目录和客户端身份，通过已有授权连接 broker。
 
 ## 4. 新功能落点与变更规则
 

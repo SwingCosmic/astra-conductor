@@ -101,6 +101,7 @@ function credentials(): ICredentialManagementService {
     getStatus: async () => ({ ok: true, value: status }),
     subscribe: () => () => {},
     selectDirectory: unavailable,
+    adoptVault: unavailable,
     install: unavailable,
     uninstall: unavailable,
     exportCredentials: unavailable,
@@ -269,6 +270,72 @@ describe("shared management pages", () => {
     expect(button("准备返回内置存储")).toBeUndefined();
     confirm.mockRestore();
     wrapper.unmount();
+  });
+
+  it("lets a web receiver pick and adopt a directory, and keeps that form off the desktop page", async () => {
+    const service = credentials();
+    let current: CredentialManagementStatus = {
+      ...status,
+      migrationState: null,
+      role: "receiver",
+      privateAvailable: false,
+      selectedBackend: "shared",
+      activeBackend: "unavailable",
+      vaultDirectory: null,
+      directorySelectionAvailable: true,
+      capabilities: { adoptVault: { state: "enabled" } },
+    };
+    service.getStatus = async () => ({ ok: true, value: current });
+    service.selectDirectory = async () => ({
+      ok: false,
+      error: {
+        code: "desktop-unavailable",
+        message: "当前宿主不能打开目录选择器",
+        retryable: false,
+      },
+    });
+    const adopt = vi.spyOn(service, "adoptVault").mockImplementation(async () => {
+      current = { ...current, vaultDirectory: "D:/shared/acme-vault" };
+      return { ok: true, value: undefined };
+    });
+    const wrapper = page(service);
+    const button = (label: string) =>
+      wrapper.findAll("button").find((item) => item.text() === label)!;
+    await flushPromises();
+    expect(wrapper.text()).toContain("选择已授权的共享目录，或填写绝对路径。");
+    expect(button("接入此共享库")).toBeDefined();
+    expect(button("导出凭据")).toBeUndefined();
+    expect(button("导入凭据")).toBeUndefined();
+    await button("选择目录").trigger("click");
+    await flushPromises();
+    expect(wrapper.text()).toContain("当前宿主不能打开目录选择器");
+    service.selectDirectory = async () => ({ ok: true, value: "D:/shared/acme-vault" });
+    await button("选择目录").trigger("click");
+    await flushPromises();
+    const directory = wrapper.get('[aria-label="共享目录"]').element as HTMLInputElement;
+    expect(directory.value).toBe("D:/shared/acme-vault");
+    await wrapper.get('[aria-label="客户端身份"]').setValue("   ");
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    expect(adopt).toHaveBeenLastCalledWith("D:/shared/acme-vault", undefined);
+    await wrapper.get('[aria-label="客户端身份"]').setValue("  graph-agent-demo  ");
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    expect(adopt).toHaveBeenLastCalledWith("D:/shared/acme-vault", "graph-agent-demo");
+    expect((wrapper.get('[aria-label="客户端身份"]').element as HTMLInputElement).value).toBe("");
+    expect(button("更换共享目录")).toBeTruthy();
+    wrapper.unmount();
+
+    const desktop = credentials();
+    const desktopPage = page(desktop);
+    await flushPromises();
+    const desktopButton = (label: string) =>
+      desktopPage.findAll("button").find((item) => item.text() === label);
+    expect(desktopButton("导出凭据")).toBeDefined();
+    expect(desktopButton("导入凭据")).toBeDefined();
+    expect(desktopPage.text()).not.toContain("接入共享目录");
+    expect(desktopButton("接入此共享库")).toBeUndefined();
+    desktopPage.unmount();
   });
   it("renders product-injected navigation and the purple theme", async () => {
     const wrapper = mount(AppShell, {

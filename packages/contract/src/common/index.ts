@@ -18,6 +18,7 @@ export {
   parseSetAccountEnabledRequest,
   parseResetCreditRedemption,
   parseCredentialExportRequest,
+  parseAdoptVaultRequest,
 } from "./validation/request.js";
 export * from "./dto/model.js";
 export * from "./dto/rate-card.js";

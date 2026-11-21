@@ -134,7 +134,26 @@ export function readMigrationProfile(
       binding: null,
     };
   }
-  const record = object(parseJson(readFileSync(file)));
+  return parseMigrationProfile(directory, product, readFileSync(file));
+}
+
+/** Project only the committed desktop selection for hosts using an existing broker grant. */
+export function readSelectedSharedBinding(directory: string, product: Product) {
+  const file = path.join(directory, "migration-state.json");
+  if (!existsSync(file)) return undefined;
+  const profile = parseMigrationProfile(directory, product, readFileSync(file));
+  if (profile.selectedBackend !== "shared" || !profile.binding || profile.operation)
+    return undefined;
+  const { vaultDirectory, clientId } = profile.binding;
+  return { vaultDirectory, clientId };
+}
+
+function parseMigrationProfile(
+  directory: string,
+  product: Product,
+  bytes: Buffer,
+): MigrationProfile {
+  const record = object(parseJson(bytes));
   requireValue(
     record.product === product && record.formatVersion === 1,
     "invalid-migration-profile",

@@ -99,6 +99,7 @@ export interface ICredentialManagementService extends ICredentialSharingService 
   confirmImport(previewId: string): Promise<ServiceResult<void>>;
   cancelPreview(): Promise<ServiceResult<void>>;
   retry(): Promise<ServiceResult<void>>;
+  adoptVault(vaultDirectory: string, clientId?: string): Promise<ServiceResult<void>>;
 }
 
 export type AccountPreview = CredentialAccountPreview;

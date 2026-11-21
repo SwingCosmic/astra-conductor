@@ -14,6 +14,12 @@ import { ElectronProtocolAdapter } from "../src/platform/electron/protocol-adapt
 import { ElectronDynamicResourceService } from "../src/platform/electron/dynamic-resources.js";
 import { errorStatus, publicError } from "../src/server/http/public-error.js";
 
+// This suite exercises the HTTP contract on a headless host.
+vi.mock("@astra-conductor/core/host/node-directory-picker", async () => {
+  const { unavailableDirectoryPicker } = await import("@astra-conductor/core/internal");
+  return { createNodeDirectoryPicker: () => unavailableDirectoryPicker };
+});
+
 const stops: (() => Promise<void>)[] = [];
 const directories: string[] = [];
 afterEach(async () => {
@@ -63,6 +69,7 @@ describe("service mode backend", () => {
         "GET /api/v1/credential-sharing/status",
         "POST /api/v1/credential-sharing/export",
         "POST /api/v1/credential-sharing/select-directory",
+        "POST /api/v1/credential-sharing/adopt",
         "POST /api/v1/credential-sharing/install",
         "POST /api/v1/credential-sharing/uninstall",
         "POST /api/v1/credential-sharing/acknowledge-delivery",
@@ -92,6 +99,20 @@ describe("service mode backend", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ ok: true, value: { status: "failed" } });
     expect(refresh).toHaveBeenCalledWith("account-1");
+    const status = await instance.runtime.providers.getSnapshot();
+    const picker = await fetch(`${instance.url}/v1/credential-sharing/select-directory`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        instanceId: status.instanceId,
+        contextId: status.backend.contextId,
+      }),
+    });
+    expect(picker.status).toBe(501);
+    expect(await picker.json()).toMatchObject({
+      ok: false,
+      error: { code: "desktop-unavailable", message: "当前宿主不能打开目录选择器" },
+    });
     const redeem = vi.spyOn(instance.runtime.application, "redeemResetCredit").mockResolvedValue({
       status: "redeemed",
       accountId: "account-1",

@@ -1,6 +1,10 @@
 import { rm } from "node:fs/promises";
 // Remove obsolete compiled business preload and flat entries from earlier builds.
 for (const filename of [
+  "platform/node/shell-directory-picker.js",
+  "platform/node/directory-picker.exe",
+  "platform/node/directory-picker.ilk",
+  "platform/node/directory-picker.pdb",
   "main.js",
   "main.js.map",
   "preload.js",

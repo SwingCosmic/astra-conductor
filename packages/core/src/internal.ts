@@ -40,6 +40,7 @@ export * from "./selected-business-storage.js";
 export * from "./refresh-coordinator.js";
 export * from "./models.js";
 export * from "./ports.js";
+export * from "./directory-picker.js";
 export * from "./public-api.js";
 export * from "./composite-remaining.js";
 export * from "./credential-service.js";
@@ -53,6 +54,9 @@ export {
   isOpenRouterReceiptRoute,
   openRouterReceiptPolicy,
 } from "./providers/openrouter-receipt.js";
-export { MigrationProfileUpgradeRequired } from "./credential-migration-profile.js";
+export {
+  MigrationProfileUpgradeRequired,
+  readSelectedSharedBinding,
+} from "./credential-migration-profile.js";
 export * from "./model-catalog/facts.js";
 export * from "./model-catalog/pricing.js";

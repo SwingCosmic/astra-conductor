@@ -13,6 +13,7 @@ const emit = defineEmits<{ close: [] }>();
 const status = ref<CredentialManagementStatus | null>(null);
 const form = ref<"export" | "import" | null>(null);
 const directory = ref("");
+const clientId = ref("");
 const inputKey = ref("");
 const delivery = ref("");
 const preview = ref<CredentialImportPreview | null>(null);
@@ -84,6 +85,7 @@ function clearDraft() {
   preview.value = null;
   inputKey.value = "";
   directory.value = "";
+  clientId.value = "";
   message.value = "";
   failed.value = false;
 }
@@ -150,6 +152,15 @@ function start(kind: "export" | "import") {
   clearDraft();
   form.value = kind;
   directory.value = status.value?.operation?.vaultDirectory ?? "";
+}
+function adopt() {
+  const target = directory.value;
+  const identity = clientId.value.trim();
+  const current = generation;
+  void run(async () => {
+    value(await service.adoptVault(target, identity || undefined));
+    if (!disposed && current === generation) clientId.value = "";
+  });
 }
 function selectDirectory() {
   const current = generation;
@@ -303,9 +314,34 @@ onUnmounted(() => {
           <strong>已验证快照</strong><span>{{ status.snapshotAt }}</span>
         </div>
         <p v-if="status.sessionCleanupPending">旧会话待清理</p>
-        <p v-if="!desktop && status.activeBackend !== 'shared'">
-          请在服务端配置共享目录与已授权的客户端身份，然后重试连接。
-        </p>
+        <form
+          v-if="status.migrationState === null && status.role === 'receiver'"
+          class="key-delivery"
+          @submit.prevent="adopt"
+        >
+          <h3>{{ status.vaultDirectory ? "更换共享目录" : "接入共享目录" }}</h3>
+          <p class="setting-hint">选择已授权的共享目录，或填写绝对路径。</p>
+          <label
+            >共享目录<input v-model.trim="directory" aria-label="共享目录" :disabled="busy"
+          /></label>
+          <button
+            v-if="status.directorySelectionAvailable"
+            type="button"
+            class="outline-action"
+            :disabled="busy"
+            @click="selectDirectory"
+          >
+            选择目录
+          </button>
+          <label
+            >客户端身份<input v-model="clientId" aria-label="客户端身份" :disabled="busy"
+          /></label>
+          <div class="sharing-actions">
+            <button class="primary-action" :disabled="busy || !directory">
+              {{ status.vaultDirectory ? "更换共享目录" : "接入此共享库" }}
+            </button>
+          </div>
+        </form>
         <p v-if="status.operation?.step" role="status">{{ status.operation.step }}</p>
         <div v-if="desktop && state === 'private' && !form" class="sharing-actions">
           <button

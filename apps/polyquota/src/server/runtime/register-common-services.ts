@@ -15,6 +15,7 @@ import {
   createProviderContributions,
   serviceId,
   type CredentialCipherPort,
+  type DirectoryPicker,
 } from "@astra-conductor/core/internal";
 import type { HostCapabilities, PublicSystemStatus } from "@astra-conductor/contract/polyquota";
 import { PollingService, type SystemNotificationPort } from "../polling-service.js";
@@ -31,7 +32,7 @@ export interface HostService {
 export const Services = {
   sharingPaths: serviceId<{
     dataDirectory: string;
-    selectDirectory?(): Promise<string | null>;
+    directoryPicker: DirectoryPicker;
   }>("polyquota.sharing-paths"),
   mutations: serviceId<CredentialMutationGate>("polyquota.credential-mutations"),
   sharing: serviceId<CredentialMigrationService>("polyquota.sharing"),
@@ -183,7 +184,7 @@ export function registerCommonServices(registry: ServiceRegistry): void {
           host: new WindowsBrokerHost(home, localPackageDirectory, cacheDirectory),
           cacheDirectory,
           privateDataDirectory: services.get(Services.sharingPaths).dataDirectory,
-          selectDirectory: services.get(Services.sharingPaths).selectDirectory,
+          directoryPicker: services.get(Services.sharingPaths).directoryPicker,
           hasActiveAuth: () => auth.hasActiveSessions(),
         });
       },

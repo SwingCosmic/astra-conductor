@@ -16,9 +16,13 @@ pnpm --filter @astra-conductor/graph-agent test:desktop
 pnpm --filter @astra-conductor/graph-agent package
 ```
 
-打包产物位于 `release/`，Electron 默认使用独立的 `GraphAgent` userData，可用 `GRAPH_AGENT_USER_DATA` 指定隔离 profile。正式 Web 默认监听 `http://127.0.0.1:4878`，直接提供构建后的页面、业务 API 和单条 SSE。`GRAPH_AGENT_PORT` 可更换端口，`GRAPH_AGENT_DATA_DIR` 可更换业务目录，默认目录为用户主目录下的 `.astra-conductor/graph-agent-web`。Web 与 Electron 不得同时占用同一 profile。
+Windows 目录选择器由两款产品的 Node 宿主共用。可在仓库根目录执行 `pnpm build:directory-picker` 单独构建，`pnpm build` 也会在构建 Core 时准备它。首次编译需要 Visual Studio C++ Build Tools 和 Windows SDK。部署独立 Web 时，随 `@astra-conductor/core` 一起保留 `bin/win32-<arch>/directory-picker.exe`。
 
-Web 不创建或打开私有凭据库。没有 broker 配置时，页面与业务仓储仍可启动，凭据新增、删除、发现和执行按实际能力禁用。设置 `GRAPH_AGENT_BROKER_VAULT` 与 `GRAPH_AGENT_BROKER_CLIENT_ID` 后，可复用本产品 `credential-sharing/` 下已有的对应 DPAPI 客户端授权。Web 不自动授予新的全记录权限，也不保存迁移主密钥；应先由支持安全存储的桌面宿主完成授权与共享接管。broker 断连、尚未接管或记录许可不足时，供应商操作保持不可用。共享新增、替换、删除与刷新按当前客户端的记录权限执行。
+打包产物位于 `release/`。GraphAgent 桌面版和独立 Web 默认共用同一个 profile，Windows 上为 `%APPDATA%\GraphAgent`。退出正在运行的入口后即可换另一种方式启动，继续使用该目录中的业务数据库、配置及客户端授权。正式 Web 默认监听 `http://127.0.0.1:4878`，可通过 `GRAPH_AGENT_PORT` 更换端口。并行运行需要为其中一个入口指定独立 profile：Web 使用 `GRAPH_AGENT_DATA_DIR`，Electron 使用 `GRAPH_AGENT_USER_DATA`。
+
+旧版 Web 的数据保留在 `~/.astra-conductor/graph-agent-web`。需要继续使用旧数据库时，将 `GRAPH_AGENT_DATA_DIR` 指向该目录。切换默认目录不会合并两份数据库。
+
+Web 不创建或打开私有凭据库。没有 broker 配置时，页面与业务仓储仍可启动，凭据新增、删除、发现和执行按实际能力禁用。凭据页可以选择已授权的共享目录并记住目录和客户端身份；下次启动未再设置成对环境变量时使用该记录。首次切换到 Web 时，若没有 Web 记录且桌面端已完成共享迁移，Web 会使用桌面当前的共享库和客户端身份，无需再次选择。设置 `GRAPH_AGENT_BROKER_VAULT` 与 `GRAPH_AGENT_BROKER_CLIENT_ID` 后，本次进程使用这对值，不改已记住的记录，并复用本产品 `credential-sharing/` 下已有的对应 DPAPI 客户端授权。Web 不自动授予新的全记录权限，也不保存迁移主密钥；应先由支持安全存储的桌面宿主完成授权与共享接管。broker 断连、尚未接管或记录许可不足时，供应商操作保持不可用。共享新增、替换、删除与刷新按当前客户端的记录权限执行。[Web 共享目录记忆](../../docs/graph-agent/design/web-shared-vault.md)。
 
 本端迁移、快照和钥槽清理的提交条件见[凭据状态机](../../docs/common/core/credential-sharing/state-machine.md)。
 

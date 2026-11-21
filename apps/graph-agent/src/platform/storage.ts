@@ -200,6 +200,14 @@ export class GraphStorage implements StoragePort {
   }
 }
 
+export class GraphProfileInUse extends Error {
+  constructor(directory: string) {
+    super(
+      `GraphAgent 数据目录正在使用，请先退出使用该目录的桌面版或 Web 服务再切换。目录：${directory}`,
+    );
+  }
+}
+
 /** Both launch modes claim the same profile before opening its business repositories. */
 export function claimGraphProfile(directory: string): () => void {
   mkdirSync(directory, { recursive: true });
@@ -209,7 +217,7 @@ export function claimGraphProfile(directory: string): () => void {
     if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error("Invalid GraphAgent profile lock");
     try {
       process.kill(pid, 0);
-      throw new Error("GraphAgent profile is already in use");
+      throw new GraphProfileInUse(directory);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
     }

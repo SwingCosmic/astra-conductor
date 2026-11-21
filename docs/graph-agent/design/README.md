@@ -111,7 +111,7 @@ flowchart TD
 
 GraphAgent 的 Hono 应用将产品业务路由接到本产品服务，模型选择策略、ModelLease、预算、回退、亲和与工具循环均在该侧执行。服务商认证、模型目录、协议编码、推理执行与用量基础事实由共享 Core 提供。[项目架构](../../architecture.md) · [共享 Provider Platform](../../common/core/provider/design.md)
 
-凭据遵循[共享与迁移设计](../../common/core/credential-sharing/design.md)。独立 Web 通过 broker 使用获准凭据，未接入时禁用依赖凭据的操作；Electron 可使用私有加密后端或 broker。两种入口的目标是每个 profile 一座 SQLite 业务库，本轮保存账号、自定义供应商和模型配置，应用设置单独管理。后续工作区业务数据按 Workspace 隔离。[2B 业务表结构](./business-database.md)已实现能力与后续验证范围见[凭据共享实施方案](../../common/core/credential-sharing/implementation-plan.md)。
+凭据遵循[共享与迁移设计](../../common/core/credential-sharing/design.md)。独立 Web 通过 broker 使用获准凭据，未接入时禁用依赖凭据的操作；Electron 可使用私有加密后端或 broker。Web 凭据页可以接入本 profile 已有的客户端授权，并把共享目录和客户端身份记入 profile；成对的 broker 环境变量只覆盖本次进程。见[Web 共享目录记忆](./web-shared-vault.md)。两种入口的目标是每个 profile 一座 SQLite 业务库，本轮保存账号、自定义供应商和模型配置，应用设置单独管理。后续工作区业务数据按 Workspace 隔离。[2B 业务表结构](./business-database.md)已实现能力与后续验证范围见[凭据共享实施方案](../../common/core/credential-sharing/implementation-plan.md)。
 
 ## 7. 技术决策边界
 

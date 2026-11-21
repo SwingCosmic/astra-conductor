@@ -6,6 +6,7 @@ import { createCipheriv, createHash, hkdfSync } from "node:crypto";
 import {
   CredentialMigrationService,
   CredentialVault,
+  unavailableDirectoryPicker,
   CredentialMutationGate,
   MemoryStorage,
   MigrationProfileUpgradeRequired,
@@ -296,6 +297,7 @@ async function setup() {
     host,
     cacheDirectory,
     hasActiveAuth: () => activeAuth,
+    directoryPicker: unavailableDirectoryPicker,
   };
   const service = new CredentialMigrationService(options);
   services.push(service);

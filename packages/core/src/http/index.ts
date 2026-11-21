@@ -6,6 +6,7 @@ import {
   ContractValidationError,
   parseAccountId,
   parseCommandContext,
+  parseAdoptVaultRequest,
   parseCredentialExportRequest,
   parseSessionId,
   parseStartAuthRequest,
@@ -36,6 +37,7 @@ export interface CredentialHttpService {
   currentOperationId?(): string | null;
   getStatus(): Awaitable<unknown>;
   selectDirectory?(): Awaitable<unknown>;
+  adoptVault?(vaultDirectory: string, clientId?: string): Awaitable<unknown>;
   install?(): Awaitable<unknown>;
   uninstall?(): Awaitable<unknown>;
   exportCredentials?(vaultDirectory: string): Awaitable<unknown>;
@@ -234,6 +236,14 @@ export function createCredentialRoutes(
         method === "cancelExport" ? (service.cancelExport ?? service.cancel) : service[method];
       return action ? action.call(service) : unavailable();
     });
+  route("POST", "/api/v1/credential-sharing/adopt", async (c) => {
+    const request = parseAdoptVaultRequest(
+      await credentialCommand(c, ["vaultDirectory", "clientId"]),
+    );
+    return service.adoptVault
+      ? service.adoptVault(request.vaultDirectory, request.clientId)
+      : unavailable();
+  });
   route("POST", "/api/v1/credential-sharing/enable-shared", async (c) => {
     const request = await credentialCommand(c, ["confirmationId"]);
     const confirmation = request.confirmationId;
@@ -310,6 +320,12 @@ const brokerErrors: Record<string, readonly [HttpErrorStatus, string, boolean]> 
   "invalid-migration-key": [400, "迁移密钥无效，请重新输入", false],
   "invalid-master-key": [400, "迁移密钥校验失败，请重新输入", false],
   "invalid-vault-directory": [400, "请选择有效的共享目录", false],
+  "vault-directory-missing": [400, "所选目录没有共享库清单", false],
+  "overlapping-product-and-vault-paths": [
+    400,
+    "共享目录不能位于本产品数据目录之内，也不能包含本产品数据目录",
+    false,
+  ],
   "version-mismatch": [409, "共享版本已变更，请重新验证导入", false],
   "vault-identity-mismatch": [409, "所选目录与当前共享身份不一致", false],
   "operation-in-progress": [409, "凭据操作正在进行，请稍后重试", true],

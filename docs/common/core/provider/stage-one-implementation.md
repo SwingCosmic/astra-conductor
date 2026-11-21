@@ -20,7 +20,7 @@
 | GraphAgent Electron | 本产品持久 JSON 业务仓储、safeStorage 私有密文；共享投影按绑定隔离 | 私有账号接入、启停、删除和重启恢复；共享验证、预览、确认导入与恢复 |
 | GraphAgent 正式 Node/Web | 本产品持久业务仓储；凭据通过已有授权的 broker | 同源 UI、API 与 SSE；共享读取与租约刷新；未接入、未接管、断连或权限不足时禁用相关操作 |
 
-GraphAgent Electron 的待接管导入继续使用私有存储；已经选择共享后端的绑定断连后保持共享选择，不回退到私有存储。正式 Web 配置 `GRAPH_AGENT_BROKER_VAULT` 与 `GRAPH_AGENT_BROKER_CLIENT_ID`，复用当前 profile 的既有 DPAPI 授权，不创建 Node 私有凭据库或自动扩权。两产品不读取彼此的业务数据库。
+GraphAgent Electron 的待接管导入继续使用私有存储；已经选择共享后端的绑定断连后保持共享选择，不回退到私有存储。正式 Web 可成对设置 `GRAPH_AGENT_BROKER_VAULT` 与 `GRAPH_AGENT_BROKER_CLIENT_ID`，该设置只覆盖本次进程。未设置时使用 profile 中已记住的共享目录和客户端身份。授权必须事先存在于该 profile，Web 不创建 Node 私有凭据库或自动扩权。[Web 共享目录记忆](../../../graph-agent/design/web-shared-vault.md)。两产品不读取彼此的业务数据库。
 
 PolyQuota 支持恢复已取消的导出，来源凭据变化后可重新导出到新的空目录；GraphAgent 支持在接管前确认替换待导入目录。导入必须完成验证和确认两步，再由来源应用启用共享。恢复规则见[凭据共享恢复说明](../credential-sharing/cancelled-export-recovery.md)。
 

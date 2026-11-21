@@ -129,6 +129,10 @@ export const credentialOperations = {
     `${credentialPath}/select-directory`,
     { body, timeoutMs: 300_000 },
   ),
+  adoptVault: apiOperation<
+    CredentialCommandContext & { vaultDirectory: string; clientId?: string },
+    void
+  >("POST", `${credentialPath}/adopt`, { body, voidResult: true }),
   install: credentialVoid("install"),
   uninstall: credentialVoid("uninstall"),
   exportCredentials: apiOperation<

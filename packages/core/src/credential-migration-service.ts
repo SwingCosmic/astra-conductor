@@ -26,6 +26,7 @@ import type {
   CredentialImportPreview,
   CredentialManagementStatus,
 } from "@astra-conductor/contract/common";
+import { credentialDirectoryRequest, type DirectoryPicker } from "./directory-picker.js";
 import { AppError } from "./errors.js";
 import type { CredentialMutationGate } from "./credential-mutation-gate.js";
 import type { SwitchingCredentialService } from "./credential-service.js";
@@ -82,7 +83,7 @@ export interface CredentialMigrationOptions {
     selection: "private" | "shared",
     binding: MigrationBinding | null,
   ): StoragePort | void;
-  selectDirectory?(): Promise<string | null>;
+  directoryPicker: DirectoryPicker;
   changed?(): void;
 }
 const messages: Record<string, string> = {
@@ -1161,7 +1162,7 @@ export class CredentialMigrationService {
     });
   }
   selectDirectory() {
-    return this.options.selectDirectory?.() ?? Promise.resolve(null);
+    return this.options.directoryPicker.selectDirectory(credentialDirectoryRequest);
   }
   setChangedHandler(handler: () => void) {
     this.options.changed = handler;
@@ -1261,7 +1262,7 @@ export class CredentialMigrationService {
       localPackageDirectory: host.localPackageDirectory,
       localPackageState: (await host.inspectPackage?.()) ?? "unknown",
       downloadState: "not-configured",
-      directorySelectionAvailable: !!this.options.selectDirectory,
+      directorySelectionAvailable: true,
       serviceState: runtime?.serviceState ?? "NOT_CHECKED",
       brokerOwnership: runtime?.brokerOwnership ?? "NOT_CHECKED",
       migrationState,

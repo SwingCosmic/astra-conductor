@@ -182,7 +182,7 @@ async function start() {
       directory,
       nativeBinding,
       cipher,
-      selectDirectory: async () => chosen,
+      directoryPicker: { selectDirectory: async () => chosen },
     });
     hono = createGraphHonoApp(runtime);
   } else {
@@ -200,7 +200,7 @@ async function start() {
       registry.override(CoreServices.http, [], () => http);
       registry.override(Services.sharingPaths, [], () => ({
         dataDirectory: directory,
-        selectDirectory: async () => chosen,
+        directoryPicker: { selectDirectory: async () => chosen },
       }));
     });
     hono = createHonoApp(runtime);
