@@ -1,0 +1,16 @@
+diff --git a/dist/crypto.js b/dist/crypto.js
+index 8d8110ee4234766dc639b4c01b3cc6d6ba980d40..aa4a622882105039ed25be9394242e16e9319bc7 100644
+--- a/dist/crypto.js
++++ b/dist/crypto.js
+@@ -51,6 +51,11 @@ function verify(data, key, signature, algorithm) {
+     // The try/catch is to work around an issue in Node 14.x where verify throws
+     // an error in some scenarios if the signature is invalid.
+     try {
++        if (algorithm == null && key.asymmetricKeyType === 'ec' &&
++            key.asymmetricKeyDetails?.namedCurve === 'prime256v1') {
++            // Electron/BoringSSL has no implicit digest for Sigstore's ECDSA P-256 signatures.
++            algorithm = 'sha256';
++        }
+         return crypto_1.default.verify(algorithm, data, key, signature);
+     }
+     catch (e) {

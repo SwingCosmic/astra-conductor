@@ -87,12 +87,25 @@ export interface CredentialMigrationOptions {
   changed?(): void;
 }
 const messages: Record<string, string> = {
+  "release-rate-limited": "GitHub 的发行查询已达到频率限制，请稍后重试或使用已缓存的发行包",
+  "release-no-compatible-version": "没有适用于当前客户端的 Windows x64 发行版",
+  "release-cache-missing": "请先在线下载已验证的发行包",
+  "release-older-than-installed": "已安装的组件版本更高",
+  "release-download-failed": "无法从 GitHub 下载凭据组件，请检查网络后重试",
+  "release-integrity-failed": "发行签名或文件摘要校验失败，请重新下载",
+  "unsafe-component-path": "发行包包含不安全的文件路径",
   "migration-review-required":
     "私有副本或共享记录发生变化，请核对受影响的账号后选择是否使用共享当前值",
   "component-incompatible": `凭据共享组件需要升级到 API level ${BROKER_COMPATIBILITY.requiredApiLevel}`,
   "component-not-installed": "请先安装兼容的凭据共享组件",
   "authorization-in-progress": "请先完成或取消当前账号授权",
-  "vault-directory-not-empty": "首次导出请选择新的空目录",
+  "vault-directory-not-empty": "目标目录含有共享库以外的文件，请选择空目录或完整的共享库目录",
+  "vault-in-use": "共享库还有客户端或凭据更新正在使用，请关闭后重试导出",
+  "export-component-upgrade-required":
+    "此导出需要支持安全重建的凭据共享组件，请升级到 API level 3.1",
+  "export-no-longer-conflicts": "导出目标或操作已改变，请重新检查",
+  "overlapping-vault-paths": "导出目录不能与其他共享库目录相互包含",
+  "service-exit-unconfirmed": "尚未确认共享库进程已退出，请稍后重试",
   "invalid-migration-key": "迁移密钥无效，请在当前目录重新验证",
   "import-preview-expired": "导入验证已过期，请重新输入密钥",
   "private-snapshot-stale": "共享数据已更新，请重新准备内置快照",
@@ -385,30 +398,109 @@ export class CredentialMigrationService {
       conn.close();
     }
   }
+  private publishRequest(
+    operationId: string,
+    snapshot: Awaited<ReturnType<typeof exportSnapshot>>,
+  ) {
+    const request = { operationId, sourceWatermark: snapshot.watermark, records: snapshot.records };
+    requireValue(
+      Buffer.byteLength(
+        canonical({ protocolVersion: 1, id: randomUUID(), method: "publish", params: request }),
+      ) <=
+        2 * 1024 * 1024,
+      "message-too-large",
+    );
+    return request;
+  }
   exportCredentials(directory: string) {
     return this.exclusive(() => this.performExport(directory));
   }
   private async performExport(raw: string): Promise<CredentialExportDelivery> {
-    if (this.profile.binding) {
-      requireValue(samePath(raw, this.profile.binding.vaultDirectory), "export-location-fixed");
-      return this.delivery(this.profile.binding);
-    }
+    const priorBinding = this.profile.binding;
+    if (priorBinding)
+      requireValue(samePath(raw, priorBinding.vaultDirectory), "export-location-fixed");
     await this.compatible();
     let op = this.profile.operation;
     requireValue(
       !op || (op.kind === "export" && samePath(raw, op.vaultDirectory)),
       "operation-in-progress",
     );
-    const directory = await this.directory(raw, !op);
+    const host = this.options.host;
+    const directory = await this.directory(raw, !host.prepareExport && !op && !priorBinding);
+    const entries = existsSync(directory) ? await readdir(directory) : [];
+    const empty = !entries.length;
+    if (
+      priorBinding &&
+      !(empty && this.profile.migrationState === "export-ready" && host.prepareExport)
+    )
+      return this.delivery(priorBinding);
+    let observedVaultId: string | null = null;
+    if (!empty && host.prepareExport) {
+      requireValue(entries.includes("manifest.json"), "vault-directory-not-empty");
+      try {
+        observedVaultId = id(
+          object(parseJson(await readFile(path.join(directory, "manifest.json")))).vaultId,
+        );
+      } catch {
+        throw new BrokerError("vault-directory-not-empty");
+      }
+      if (op?.grantVaultId)
+        requireValue(op.grantVaultId === observedVaultId, "vault-identity-mismatch");
+    }
+    requireValue(!this.options.hasActiveAuth(), "authorization-in-progress");
+    // A cleared destination invalidates even a previously published receipt.
+    if (empty && host.prepareExport && (priorBinding || op?.grantVaultId)) {
+      const old = priorBinding ?? op!;
+      const vaultId = priorBinding?.version.vaultId ?? op?.grantVaultId;
+      op = this.allocate("export", directory);
+      this.save({
+        binding: null,
+        migrationState: "private",
+        operation: op,
+        cleanup:
+          vaultId && old.keyRef
+            ? [
+                ...(this.profile.cleanup ?? []),
+                {
+                  clientId: old.clientId,
+                  keyRef: old.keyRef,
+                  vaultDirectory: directory,
+                  vaultId,
+                  keyCleanupPending: true,
+                  sessionCleanupPending: false,
+                },
+              ]
+            : this.profile.cleanup,
+      });
+      await this.cleanup();
+    }
     if (!op) {
-      requireValue(!this.options.hasActiveAuth(), "authorization-in-progress");
       op = this.allocate("export", directory);
       this.save({ operation: op });
+    }
+    let preparedId: string | undefined;
+    try {
+      preparedId = await host.prepareExport?.(directory, op.clientId, op.id, observedVaultId);
+    } catch (error) {
+      if (
+        observedVaultId &&
+        error instanceof BrokerError &&
+        error.code === "export-target-conflict"
+      ) {
+        const source = await this.barrier(() =>
+          exportSnapshot(this.options.storage, this.options.cipher, this.options.providers),
+        );
+        this.publishRequest(op.id, source);
+        this.save({ operation: { ...op, failedVaultId: observedVaultId } });
+        throw new AppError("export-target-conflict", "已有共享库无法继续本次导出");
+      }
+      throw error;
     }
     if (op.grantVaultId) await this.verifyVaultIdentity(directory, op.grantVaultId);
     const conn = await this.options.host.connect(directory, op.clientId, this.instanceId);
     try {
       const status = object(await conn.call("status"));
+      if (preparedId) requireValue(status.vaultId === preparedId, "vault-identity-mismatch");
       if (!op.grantVaultId) {
         op = { ...op, grantVaultId: id(status.vaultId), keyRef: op.id + ".key" };
         this.save({ operation: op });
@@ -431,18 +523,7 @@ export class CredentialMigrationService {
           keyRef: op.id + ".key",
         };
         this.save({ operation: op });
-        const request = {
-          operationId: op.id,
-          sourceWatermark: snapshot.watermark,
-          records: snapshot.records,
-        };
-        requireValue(
-          Buffer.byteLength(
-            canonical({ protocolVersion: 1, id: randomUUID(), method: "publish", params: request }),
-          ) <=
-            2 * 1024 * 1024,
-          "message-too-large",
-        );
+        const request = this.publishRequest(op.id, snapshot);
         receipt = object(await conn.call("publish", request));
       }
       requireValue(
@@ -508,6 +589,29 @@ export class CredentialMigrationService {
         return null;
       }
       return this.delivery(binding);
+    });
+  }
+  clearExportTarget(operationId: string, vaultId: string) {
+    return this.exclusive(async () => {
+      const op = this.requireOperation("export");
+      requireValue(
+        this.profile.migrationState === "private" &&
+          op.id === operationId &&
+          op.failedVaultId === vaultId,
+        "export-no-longer-conflicts",
+      );
+      const host = this.options.host;
+      requireValue(host.clearExportTarget, "export-component-upgrade-required");
+      await host.clearExportTarget(op.vaultDirectory, op.clientId, op.id, vaultId);
+      if (op.keyRef) await rm(keyFile(this.options.cacheDirectory, op.keyRef), { force: true });
+      this.save({
+        operation: {
+          kind: "export",
+          id: op.id,
+          clientId: op.clientId,
+          vaultDirectory: op.vaultDirectory,
+        },
+      });
     });
   }
   restartExport(directory: string) {
@@ -1167,6 +1271,20 @@ export class CredentialMigrationService {
   setChangedHandler(handler: () => void) {
     this.options.changed = handler;
   }
+  checkRelease() {
+    return this.exclusive(async () => {
+      if (!this.options.host.checkRelease)
+        throw new AppError("capability-unavailable", "当前宿主不支持检查更新");
+      await this.options.host.checkRelease();
+    });
+  }
+  installRelease(cachedOnly = false) {
+    return this.exclusive(async () => {
+      if (!this.options.host.installRelease)
+        throw new AppError("capability-unavailable", "当前宿主不支持下载组件");
+      await this.options.host.installRelease(cachedOnly);
+    });
+  }
   install() {
     return this.exclusive(() => this.options.host.install());
   }
@@ -1261,7 +1379,7 @@ export class CredentialMigrationService {
       privateAvailable: available,
       localPackageDirectory: host.localPackageDirectory,
       localPackageState: (await host.inspectPackage?.()) ?? "unknown",
-      downloadState: "not-configured",
+      ...((await host.releaseStatus?.()) ?? { downloadState: "not-configured" as const }),
       directorySelectionAvailable: true,
       serviceState: runtime?.serviceState ?? "NOT_CHECKED",
       brokerOwnership: runtime?.brokerOwnership ?? "NOT_CHECKED",
@@ -1299,6 +1417,7 @@ export class CredentialMigrationService {
             kind: operation.kind,
             vaultDirectory: operation.vaultDirectory,
             step: this.operationStep(operation),
+            ...(operation.failedVaultId ? { failedVaultId: operation.failedVaultId } : {}),
           }
         : null,
       migrationReview: this.review,

@@ -538,6 +538,29 @@ describe("profile-local credential migration", () => {
     expect(f.initialize).not.toHaveBeenCalled();
     expect(f.mutations.isFrozen).toBe(false);
   });
+  it("binds confirmed clearing to the failed export and never publishes from the clear command", async () => {
+    const f = await setup();
+    await mkdir(f.vaultDirectory);
+    await writeFile(
+      path.join(f.vaultDirectory, "manifest.json"),
+      JSON.stringify({ vaultId: "old-vault" }),
+    );
+    f.options.host.prepareExport = vi
+      .fn()
+      .mockRejectedValue(new BrokerError("export-target-conflict"));
+    const clear = vi.fn().mockResolvedValue(undefined);
+    f.options.host.clearExportTarget = clear;
+    await expect(f.service.exportCredentials(f.vaultDirectory)).rejects.toThrow("已有共享库");
+    expect(clear).not.toHaveBeenCalled();
+    const op = (await f.service.getStatus()).operation!;
+    await expect(f.service.clearExportTarget("stale-operation", "old-vault")).rejects.toThrow();
+    await expect(f.service.clearExportTarget(op.id, "wrong-vault")).rejects.toThrow();
+    expect(clear).not.toHaveBeenCalled();
+    await f.service.clearExportTarget(op.id, "old-vault");
+    expect(clear).toHaveBeenCalledOnce();
+    expect(f.initialize).not.toHaveBeenCalled();
+    await expect(f.service.clearExportTarget(op.id, "old-vault")).rejects.toThrow();
+  });
   it("keeps the original export recoverable after a system key protection failure", async () => {
     const f = await setup();
     const encrypt = f.cipher.encrypt;

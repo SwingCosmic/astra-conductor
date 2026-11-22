@@ -1,6 +1,7 @@
 export type AppErrorCode =
   | "not-found"
   | "conflict"
+  | "export-target-conflict"
   | "stale-context"
   | "stale-binding"
   | "capability-unavailable"

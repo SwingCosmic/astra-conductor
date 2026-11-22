@@ -55,6 +55,11 @@ catalogs:
       specifier: 2.1.10
       version: 2.1.10
 
+patchedDependencies:
+  '@sigstore/core@3.2.1':
+    hash: ba04275867252d2950d4de39a8b9b4c73313004c2f284836041175d9e5aa45b1
+    path: patches/@sigstore__core@3.2.1.patch
+
 importers:
 
   .:
@@ -244,6 +249,19 @@ importers:
         version: 2.1.8(@types/node@22.20.4)(happy-dom@15.11.7)
 
   packages/credentials:
+    dependencies:
+      '@sigstore/bundle':
+        specifier: ^4.0.0
+        version: 4.0.0
+      '@sigstore/protobuf-specs':
+        specifier: ~0.5.2
+        version: 0.5.2
+      '@sigstore/verify':
+        specifier: 3.1.1
+        version: 3.1.1
+      fflate:
+        specifier: 0.8.2
+        version: 0.8.2
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
@@ -692,6 +710,22 @@ packages:
     resolution: {integrity: sha512-Erx822VRBwLa124shbj+wNXe//BOgMEctDV0m1aqTQdNO1S69DgNUCFKC1RCeZfixs1J31l6igk1ziyXErbigQ==}
     cpu: [x64]
     os: [win32]
+
+  '@sigstore/bundle@4.0.0':
+    resolution: {integrity: sha512-NwCl5Y0V6Di0NexvkTqdoVfmjTaQwoLM236r89KEojGmq/jMls8S+zb7yOwAPdXvbwfKDlP+lmXgAL4vKSQT+A==}
+    engines: {node: ^20.17.0 || >=22.9.0}
+
+  '@sigstore/core@3.2.1':
+    resolution: {integrity: sha512-qRsxPnCrbC/puegGxKuynfnxgLiHqWStrSjxkoB4YKqq3Z3s4cyZyj42ZdWFAEblNP65C+rBH8EuREHIXoi83g==}
+    engines: {node: ^20.17.0 || >=22.9.0}
+
+  '@sigstore/protobuf-specs@0.5.2':
+    resolution: {integrity: sha512-SQqvFMt4V78fdjcDdYX6HbiVSOR4QK3ZgwCa2KOsopAgPIHy1rU5UDUmzLl02r5oyyaYcYHR1hpwDRk/yUe+Mw==}
+    engines: {node: ^18.17.0 || >=20.5.0}
+
+  '@sigstore/verify@3.1.1':
+    resolution: {integrity: sha512-qv7+G3J2cc6wwFj3yKvXOamzqhMwSk1ogPGmhpS8iXllcPrJaIIBA+4HbttlHVu1pqWTdmaCH/WE7UOC51kdoA==}
+    engines: {node: ^20.17.0 || >=22.9.0}
 
   '@sindresorhus/is@4.6.0':
     resolution: {integrity: sha512-t09vSN3MdfsyCHoFcTRCH/iUtG7OJ0CsjzB8cjAmKc/va/kIgeDI/TxsigdncE/4be734m0cvIYwNaV4i2XqAw==}
@@ -1272,6 +1306,9 @@ packages:
     peerDependenciesMeta:
       picomatch:
         optional: true
+
+  fflate@0.8.2:
+    resolution: {integrity: sha512-cPJU47OaAoCbg0pBvzsgpTPhmhqI5eJjh/JIu8tPj5q+T7iLvW/JAYUqmE7KOB4R1ZyEhzBaIQpQpardBF5z8A==}
 
   file-uri-to-path@1.0.0:
     resolution: {integrity: sha512-0Zt+s3L7Vf1biwWZ29aARiVYLx7iMGnEUl9x33fbB/j3jR81u/O2LbqK+Bm1CDSNDKVtJ/YjwY7TUd5SkeLQLw==}
@@ -2574,6 +2611,20 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.63.4':
     optional: true
 
+  '@sigstore/bundle@4.0.0':
+    dependencies:
+      '@sigstore/protobuf-specs': 0.5.2
+
+  '@sigstore/core@3.2.1(patch_hash=ba04275867252d2950d4de39a8b9b4c73313004c2f284836041175d9e5aa45b1)': {}
+
+  '@sigstore/protobuf-specs@0.5.2': {}
+
+  '@sigstore/verify@3.1.1':
+    dependencies:
+      '@sigstore/bundle': 4.0.0
+      '@sigstore/core': 3.2.1(patch_hash=ba04275867252d2950d4de39a8b9b4c73313004c2f284836041175d9e5aa45b1)
+      '@sigstore/protobuf-specs': 0.5.2
+
   '@sindresorhus/is@4.6.0': {}
 
   '@szmarczak/http-timer@4.0.6':
@@ -3277,6 +3328,8 @@ snapshots:
   fdir@6.5.0(picomatch@4.0.7):
     optionalDependencies:
       picomatch: 4.0.7
+
+  fflate@0.8.2: {}
 
   file-uri-to-path@1.0.0: {}
 

@@ -21,9 +21,14 @@ export function migrationHttpService(
       }
     },
     selectDirectory: () => migration.selectDirectory(),
+    checkRelease: () => migration.checkRelease(),
+    installCachedRelease: () => migration.installRelease(true),
+    installRelease: () => migration.installRelease(),
     install: () => migration.install(),
     uninstall: () => migration.uninstall(),
     exportCredentials: (directory: string) => migration.exportCredentials(directory),
+    clearExportTarget: (operationId: string, vaultId: string) =>
+      migration.clearExportTarget(operationId, vaultId),
     cancelExport: () => migration.cancel(),
     resumeExport: () => migration.resumeExport(),
     restartExport: (directory: string) => migration.restartExport(directory),

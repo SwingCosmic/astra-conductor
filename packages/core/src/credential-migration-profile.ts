@@ -64,6 +64,7 @@ export interface MigrationOperation {
   snapshotAt?: string;
   keyRef?: string;
   grantVaultId?: string;
+  failedVaultId?: string;
   confirmationId?: string;
   version?: ExportVersion;
 }
@@ -223,6 +224,7 @@ function parseMigrationProfile(
       ),
     );
     if (op.keyRef) keyFile(directory, text(op.keyRef));
+    if (op.failedVaultId !== undefined) id(op.failedVaultId);
   }
   if (record.cleanup) {
     requireValue(Array.isArray(record.cleanup));

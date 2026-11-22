@@ -52,6 +52,8 @@ else {
         if (!safeStorage.isEncryptionAvailable())
           throw new AppError("secure-storage", "系统安全存储不可用");
       };
+      const httpFetch: typeof fetch = (input, init) =>
+        net.fetch(input instanceof Request ? input : String(input), init);
       services = await createGraphServices({
         nativeBinding: path.join(
           app.isPackaged ? process.resourcesPath : app.getAppPath(),
@@ -60,10 +62,8 @@ else {
           "better_sqlite3.node",
         ),
         directory,
-        host: createGraphBrokerHost(directory),
-        http: {
-          fetch: (input, init) => net.fetch(input instanceof Request ? input : String(input), init),
-        },
+        host: createGraphBrokerHost(directory, false, httpFetch),
+        http: { fetch: httpFetch },
         cipher: {
           isAvailable: async () => safeStorage.isEncryptionAvailable(),
           encrypt: async (plaintext) => {

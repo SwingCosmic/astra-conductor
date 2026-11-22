@@ -9,12 +9,11 @@ import {
   CredentialVault,
   SharedCredentialService,
 } from "@astra-conductor/core/internal";
+import { BrokerClient, SharedBrokerClient } from "@astra-conductor/credentials";
 import {
-  BrokerClient,
-  SharedBrokerClient,
-  BROKER_DISTRIBUTION,
-} from "@astra-conductor/credentials";
-import { WindowsBrokerHost } from "@astra-conductor/credentials/host/windows";
+  localBrokerPackageDirectory,
+  WindowsBrokerHost,
+} from "@astra-conductor/credentials/host/windows";
 import { SqliteStorage } from "../dist/platform/common/sqlite-storage.js";
 import { ElectronSafeStorageCipher } from "../dist/platform/electron/safe-storage-cipher.js";
 import { registerElectronServices } from "../dist/platform/electron/register-electron-services.js";
@@ -36,8 +35,10 @@ const sharing = path.join(directory, "credential-sharing");
 const home = path.join(process.env.LOCALAPPDATA, "AstraCredentialBroker");
 const host = new WindowsBrokerHost(
   path.join(home, "v1"),
-  path.join(home, "downloads", "win-x64", BROKER_DISTRIBUTION.version),
+  localBrokerPackageDirectory(home),
   sharing,
+  false,
+  (input, init) => session.defaultSession.fetch(input, init),
 );
 const profile = async () =>
   JSON.parse(await readFile(path.join(sharing, "migration-state.json"), "utf8"));
@@ -200,6 +201,7 @@ async function start() {
       registry.override(CoreServices.http, [], () => http);
       registry.override(Services.sharingPaths, [], () => ({
         dataDirectory: directory,
+        releaseFetch: (input, init) => session.defaultSession.fetch(input, init),
         directoryPicker: { selectDirectory: async () => chosen },
       }));
     });
@@ -413,6 +415,40 @@ async function start() {
   }
   async function handle({ op, arg }) {
     switch (op) {
+      case "install-release": {
+        const initial = await api(credentials);
+        assert.equal(initial.downloadState, arg);
+        assert.equal(initial.localPackageState, "missing");
+        if (arg === "available") {
+          assert.equal(initial.installState, "not-installed");
+          await click("检查最新版本");
+          await wait("latest compatible release", () =>
+            evaluate(() => document.body.textContent.includes("最新兼容版 v")),
+          );
+          const checked = await api(credentials);
+          assert.ok(checked.downloadVersion);
+          assert.equal(checked.installState, "not-installed");
+        }
+        await click(arg === "available" ? "下载并安装发行包" : "安装已缓存的发行包");
+        await wait("release install", () =>
+          evaluate(() => {
+            const error = document.querySelector(".credential-storage-manager [role=alert]");
+            if (error) throw Error(error.textContent);
+            return (
+              document.body.textContent.includes("凭据服务组件已安装") &&
+              [...document.querySelectorAll("button")].some(
+                (b) => !b.disabled && b.textContent.trim() === "安装已缓存的发行包",
+              )
+            );
+          }),
+        );
+        const result = await api(credentials);
+        assert.ok(result.installedVersion);
+        assert.equal(result.installedVersion, result.cachedVersion);
+        assert.equal(result.installState, "installed");
+        assert.notEqual(result.installationDirectory, initial.installationDirectory);
+        return true;
+      }
       case "state":
         return state(arg);
       case "offline": {

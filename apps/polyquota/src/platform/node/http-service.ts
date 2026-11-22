@@ -22,13 +22,19 @@ export class NodeHttpService implements HttpPort {
     });
   }
 
-  readonly fetch: typeof fetch = async (input, init) => {
+  readonly fetch: typeof fetch = (input, init) => this.fetchWithTimeout(input, init, 30_000);
+
+  async fetchWithTimeout(
+    input: Parameters<typeof fetch>[0],
+    init: RequestInit | undefined,
+    timeoutMs: number,
+  ): Promise<Response> {
     // Node's built-in Request and the separately installed Undici Request have
     // different brands. Convert through the standard fields, preserving streams.
     const request = new Request(input, init);
     const signal = AbortSignal.any([
       this.controller.signal,
-      AbortSignal.timeout(30_000),
+      AbortSignal.timeout(timeoutMs),
       request.signal,
     ]);
     return (await nodeFetch(request.url, {
@@ -47,7 +53,7 @@ export class NodeHttpService implements HttpPort {
       signal,
       dispatcher: this.dispatcher,
     })) as unknown as Response;
-  };
+  }
 
   abort(): void {
     this.controller.abort();

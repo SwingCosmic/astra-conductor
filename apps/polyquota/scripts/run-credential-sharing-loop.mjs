@@ -6,13 +6,14 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
-import { BROKER_DISTRIBUTION } from "@astra-conductor/credentials";
+import { localBrokerPackageDirectory } from "@astra-conductor/credentials/host/windows";
 import { startGraphServer } from "../../graph-agent/dist/platform/node/start-server.js";
 
 const index = process.argv.indexOf("--publish");
-if (index < 0 || !process.argv[index + 1])
+const liveRelease = process.argv.includes("--release");
+if (!liveRelease && (index < 0 || !process.argv[index + 1]))
   throw Error("Expected --publish <complete broker directory>");
-const publish = path.resolve(process.argv[index + 1]);
+const publish = liveRelease ? null : path.resolve(process.argv[index + 1]);
 const work = await mkdtemp(path.join(os.tmpdir(), "astra-sharing-loop-"));
 const worker = fileURLToPath(
   new URL("../test/credential-sharing-loop-electron.mjs", import.meta.url),
@@ -119,7 +120,7 @@ async function scenario(source, mode) {
   const root = path.join(work, mode ?? source + "-export");
   const local = path.join(root, "local");
   const home = path.join(local, "AstraCredentialBroker");
-  const staged = path.join(home, "downloads", "win-x64", BROKER_DISTRIBUTION.version);
+  const staged = localBrokerPackageDirectory(home);
   const ctl = (command, ...args) =>
     execute(
       path.join(staged, "brokerctl.exe"),
@@ -217,9 +218,24 @@ async function scenario(source, mode) {
       fileURLToPath(new URL("../lib/better-sqlite3/better_sqlite3.node", import.meta.url)),
       path.join(root, "better_sqlite3.node"),
     );
-    await cp(publish, staged, { recursive: true });
-    await ctl("install-local", "--source", staged);
+    if (publish) {
+      await cp(publish, staged, { recursive: true });
+      await ctl("install-local", "--source", staged);
+    }
     let a = await launch(source, performanceCheck ? "performance" : "source");
+    if (liveRelease) {
+      await a("install-release", "available");
+      pass("从公开 Release 下载、验证并安装 Windows x64 组件");
+      await a("install-release", "cached");
+      pass("从已校验缓存重装");
+      const key = await a("export");
+      const b = await launch(other, "receiver");
+      await b("import", key);
+      await a("shared");
+      await b("shared");
+      pass("两个产品接入同一共享库");
+      return;
+    }
     if (performanceCheck) {
       await checkUsagePerformance(a, root);
       pass("用量请求按账号懒读并缓存，收到其他会话的变更后按修订失效");
@@ -446,14 +462,20 @@ async function scenario(source, mode) {
     throw error;
   } finally {
     await Promise.allSettled([...running.keys()].map(stop));
-    await ctl("uninstall");
+    if (liveRelease) {
+      const { WindowsBrokerHost } = await import("@astra-conductor/credentials/host/windows");
+      const host = new WindowsBrokerHost(path.join(home, "v1"), staged, path.join(root, "client"));
+      if ((await host.inspect()).installState === "installed") await host.uninstall();
+    } else await ctl("uninstall");
   }
 }
 console.log("Isolated sharing loop: " + work);
 const direction = process.argv.indexOf("--source");
 const directions = direction < 0 ? ["polyquota", "graph-agent"] : [process.argv[direction + 1]];
 assert(directions.every((x) => ["polyquota", "graph-agent"].includes(x)));
-if (process.argv.includes("--model-connection")) {
+if (liveRelease) {
+  for (const source of directions) await scenario(source, "release-" + source);
+} else if (process.argv.includes("--model-connection")) {
   for (const source of directions) await scenario(source, "model-connection-" + source);
 } else if (process.argv.includes("--usage-performance")) {
   await scenario("polyquota", "usage-performance");

@@ -182,10 +182,29 @@ function cancel() {
 function publish(recover = false) {
   const current = generation;
   const target = directory.value;
+  const instanceId = status.value?.instanceId;
+  const contextId = status.value?.contextId;
   void run(async () => {
-    const result = recover
-      ? value(await service.resumeExport())
-      : value(await service.exportCredentials(target));
+    let response = recover ? await service.resumeExport() : await service.exportCredentials(target);
+    if (!recover && !response.ok && response.error.code === "export-target-conflict") {
+      await load();
+      const op = status.value?.operation;
+      if (
+        !disposed &&
+        status.value?.instanceId === instanceId &&
+        status.value?.contextId === contextId &&
+        op?.kind === "export" &&
+        op.vaultDirectory &&
+        op.failedVaultId &&
+        window.confirm(
+          `已有共享库无法继续导出。清空 ${op.vaultDirectory} 将删除库内的凭据和旧授权。是否清空并重新导出？`,
+        )
+      ) {
+        value(await service.clearExportTarget(op.id, op.failedVaultId));
+        response = await service.exportCredentials(op.vaultDirectory);
+      }
+    }
+    const result = value(response);
     await load();
     if (
       !disposed &&
@@ -254,6 +273,36 @@ function relocate() {
 function install() {
   action(() => service.install());
 }
+const releaseLabels = {
+  available: "可下载",
+  cached: "已缓存",
+  downloading: "正在下载",
+  verifying: "正在校验发行包",
+  installing: "正在安装组件",
+  "not-configured": "当前宿主不可下载",
+};
+function installRelease(cachedOnly = false) {
+  void run(async () => {
+    let polling = false;
+    const timer = setInterval(async () => {
+      if (disposed || polling) return;
+      polling = true;
+      try {
+        await load();
+      } catch {
+        /* The install request reports the final result. */
+      } finally {
+        polling = false;
+      }
+    }, 1500);
+    try {
+      value(await service.installRelease(cachedOnly));
+      message.value = "凭据服务组件已安装";
+    } finally {
+      clearInterval(timer);
+    }
+  });
+}
 function uninstall() {
   if (window.confirm("卸载会暂停本机使用该组件的客户端。确认卸载？"))
     action(() => service.uninstall());
@@ -265,7 +314,7 @@ function close() {
 }
 onMounted(() => {
   unsubscribe = service.subscribe(() => {
-    void load().catch(() => undefined);
+    if (!busy.value) void load().catch(() => undefined);
   });
   void run();
 });
@@ -582,9 +631,19 @@ onUnmounted(() => {
         </p>
         <div class="setting-row">
           <span
-            ><strong>下载状态</strong
-            ><small>自动下载尚未接入，当前使用手动放置的本地包</small></span
-          ><span>未启用自动下载</span>
+            ><strong>官方发行包</strong>
+            <small v-if="desktop"
+              >GitHub · Windows x64<span v-if="status.downloadVersion">
+                · 最新兼容版 v{{ status.downloadVersion }}</span
+              ><span v-if="status.cachedVersion"> · 已缓存 v{{ status.cachedVersion }}</span></small
+            ></span
+          >
+          <span role="status"
+            >{{ releaseLabels[status.downloadState]
+            }}<template v-if="status.downloadPercent !== undefined">
+              {{ status.downloadPercent }}%</template
+            ></span
+          >
         </div>
         <div class="setting-row">
           <span><strong>本地安装包</strong><small>完整自包含包，包含 component.json</small></span
@@ -608,6 +667,26 @@ onUnmounted(() => {
           <span>所需 API {{ status.requiredApiLevel }}</span>
         </div>
         <div class="sharing-actions">
+          <template v-if="desktop && status.downloadState !== 'not-configured'">
+            <button
+              class="outline-action"
+              :disabled="busy"
+              @click="action(() => service.checkRelease())"
+            >
+              检查最新版本
+            </button>
+            <button class="outline-action" :disabled="busy" @click="installRelease()">
+              下载并安装发行包
+            </button>
+            <button
+              v-if="status.cachedVersion"
+              class="outline-action"
+              :disabled="busy"
+              @click="installRelease(true)"
+            >
+              安装已缓存的发行包
+            </button>
+          </template>
           <button
             class="outline-action"
             :disabled="busy || !desktop || status.localPackageState !== 'ready'"
@@ -624,7 +703,7 @@ onUnmounted(() => {
           <button
             v-if="status.installState === 'installed' && desktop"
             class="outline-action"
-            :disabled="busy || !desktop || status.localPackageState !== 'ready'"
+            :disabled="busy"
             @click="uninstall"
           >
             卸载组件

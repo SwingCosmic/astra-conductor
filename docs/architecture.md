@@ -34,7 +34,11 @@ packages/
 
 每个产品的 `ui/` 依赖 `shared-ui`、通用契约和自己的产品契约，组合并注入本产品 Service。`src/server/` 使用对应契约、Core 和本产品服务，将公共 Hono 子应用与产品专属子应用统一挂载。`src/platform/` 负责具体宿主的组合，可以按需使用凭据 SDK 的平台入口。Core 业务保持框架无关，HTTP 适配经独立子入口按需加载。两个应用独立构建、独立交付、独占各自的业务数据目录，彼此没有源码依赖。GraphAgent 模型页和 PolyQuota 用量页分别由各自的 Web/Electron 前端共用。共用页面的布局与交互维护一份，主题图标和配色由产品提供。
 
+凭据组件由独立仓库发行。两款桌面产品通过公共凭据 Service 的 `installRelease` 请求进入 Core，Windows 宿主通过产品网络适配器下载，验证签名、平台、协议及文件完整性后调用独立控制器安装。当前用户的已验 ZIP 缓存供两款产品复用。GraphAgent 独立 Web 入口继续使用已安装组件与已有授权。[发行版本与验收](./common/core/credential-sharing/implementation-plan.md#b4-独立发布与生产下载)
+
 两款 Electron 产品共用 Core 的 `CredentialMigrationService`，按产品 profile 持久化迁移状态。私有账号数据和各共享绑定的凭据投影分别保存，供应商通过同一服务引用切换后端。这样在任一端导入、准备回退或清理旧授权时，另一端可继续使用原后端。迁移入口与状态见[凭据共享实施方案](./common/core/credential-sharing/implementation-plan.md#双向导出与存储切换)。
+
+PolyQuota 和 GraphAgent 桌面端共用导出流程。已有共享库无法继续导出时，共用页面显示目标路径并询问是否清空。确认后后端核对失败操作和库身份，由 broker 检查会话与更新租约并清空目录。页面收到清空成功的响应后才重新提交一次导出。空目录的旧登记由 broker 在新建库前清理。普通非空目录及混有其他文件的库拒绝清空。
 
 独立 .NET Credential Broker 是通过本机 RPC 访问的进程，有自己的仓库、安装和升级周期。两端通过它共享获准的凭据，各自的用量、模型缓存和业务数据库留在产品内。`references/` 只提供研究和受控提取的输入。[凭据共享设计](./common/core/credential-sharing/design.md)
 

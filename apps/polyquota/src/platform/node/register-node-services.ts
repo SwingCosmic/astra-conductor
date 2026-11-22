@@ -73,6 +73,7 @@ export function registerNodeServices(
     .value(CoreServices.authorization, { present: async () => "awaiting-user" as const })
     .value(Services.sharingPaths, {
       dataDirectory: options.dataDirectory,
+      releaseFetch: (input, init) => options.http.fetchWithTimeout(input, init, 240_000),
       directoryPicker: createNodeDirectoryPicker(),
     })
     .value(Services.cipher, options.cipher ?? unavailableCipher)

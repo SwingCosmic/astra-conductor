@@ -1,6 +1,6 @@
 # A6—A8 GraphAgent 导入、统一共享与返回内置
 
-更新日期：2026-11-06。A6—A8 已实现并通过共享闭环；各轮检查与验收记录见本文末尾。范围为 Windows x64 本地组件接入、GraphAgent 最小宿主与导入、两侧统一共享及 PolyQuota 返回内置/重入。独立 Release、生产下载与发行签名校验现列为二期 B4，仍待实施。
+更新日期：2026-11-06。A6—A8 已实现并通过共享闭环；各轮检查与验收记录见本文末尾。范围为 Windows x64 本地组件接入、GraphAgent 最小宿主与导入、两侧统一共享及 PolyQuota 返回内置/重入。独立 Release、生产下载与发行签名校验的当前交付见 [B4](./implementation-plan.md#b4-独立发布与生产下载)。
 
 设计依据为[凭据共享设计](./design.md)与[实施方案](./implementation-plan.md)。A3—A5 的本地包约定、首次导出和历史验证保留在[原阶段说明](./a3-a5-export-implementation.md)，不以新增阶段结果改写历史验收。
 

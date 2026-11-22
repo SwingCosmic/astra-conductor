@@ -1,12 +1,18 @@
+import { BrokerRelease, type ReleaseDownloadStatus } from "./release.js";
+import { existsSync, readdirSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { readFile, lstat, readdir, realpath, rm } from "node:fs/promises";
+import { cp, mkdtemp, readFile, lstat, readdir, realpath, rm } from "node:fs/promises";
 import path from "node:path";
+import { tmpdir } from "node:os";
 import {
+  ApiDecimal,
   BrokerClient,
   BrokerError,
   assertComponentCompatibility,
   apiLevelText,
+  isComponentVersion,
+  compareComponentVersions,
   id,
   object,
   parseJson,
@@ -16,6 +22,27 @@ import {
   unb64,
 } from "../../index.js";
 export { BROKER_COMPATIBILITY, BROKER_DISTRIBUTION } from "../../index.js";
+
+/** Preserve an existing manually staged package from older clients. New installs use a stable path. */
+export function localBrokerPackageDirectory(brokerRoot: string): string {
+  const parent = path.join(brokerRoot, "downloads", "win-x64");
+  const manual = path.join(parent, "manual");
+  if (existsSync(manual) || !existsSync(parent)) return manual;
+  try {
+    const previous = readdirSync(parent, { withFileTypes: true })
+      .filter(
+        (entry) =>
+          entry.isDirectory() &&
+          isComponentVersion(entry.name) &&
+          existsSync(path.join(parent, entry.name, "component.json")),
+      )
+      .sort((a, b) => compareComponentVersions(b.name, a.name))[0];
+    return previous ? path.join(parent, previous.name) : manual;
+  } catch {
+    // The downloads directory may be offline while an installed broker is in use.
+    return manual;
+  }
+}
 
 export interface ComponentInstallation {
   installState: "not-installed" | "installed" | "damaged" | "incompatible" | "unknown";
@@ -32,7 +59,22 @@ export interface BrokerConnection {
 export interface BrokerHost {
   localPackageDirectory: string;
   inspect(): Promise<ComponentInstallation>;
+  clearExportTarget?(
+    vault: string,
+    clientId: string,
+    operationId: string,
+    vaultId: string,
+  ): Promise<void>;
+  prepareExport?(
+    vault: string,
+    clientId: string,
+    operationId: string,
+    observedVaultId: string | null,
+  ): Promise<string>;
   status?(vault: string): Promise<{ serviceState: string; brokerOwnership: string }>;
+  releaseStatus?(): Promise<ReleaseDownloadStatus>;
+  checkRelease?(): Promise<void>;
+  installRelease?(cachedOnly?: boolean): Promise<void>;
   inspectPackage?(): Promise<LocalPackageState>;
   install(): Promise<void>;
   uninstall(): Promise<void>;
@@ -65,6 +107,11 @@ const controllerErrors = new Set([
   "vault-already-running",
   "access-denied",
   "io-failure",
+  "vault-in-use",
+  "export-target-conflict",
+  "export-no-longer-conflicts",
+  "overlapping-vault-paths",
+  "service-exit-unconfirmed",
   "control-database-missing",
   "component-incompatible",
   "protocol-incompatible",
@@ -294,12 +341,23 @@ export class WindowsBrokerHost implements BrokerHost {
   private readonly live = new Map<string, LiveGrant>();
   private readonly authorizationGenerations = new Map<string, number>();
   private authorizationSequence = 0;
+  private readonly release: BrokerRelease;
   constructor(
     readonly home: string,
     readonly localPackageDirectory: string,
     private readonly clientDirectory: string,
     private readonly existingAuthorizationOnly = false,
-  ) {}
+    releaseFetch: typeof fetch = fetch,
+  ) {
+    this.release = new BrokerRelease(
+      localPackageDirectory,
+      releaseFetch,
+      !existingAuthorizationOnly && process.platform === "win32" && process.arch === "x64",
+    );
+  }
+  releaseStatus() {
+    return this.release.status();
+  }
   async inspectPackage(): Promise<LocalPackageState> {
     if (!(await exists(this.localPackageDirectory))) return "missing";
     try {
@@ -366,9 +424,10 @@ export class WindowsBrokerHost implements BrokerHost {
     command: string,
     args: string[] = [],
     input?: unknown,
-    external = false,
+    external?: string,
+    manifestHash?: string,
   ): Promise<unknown> {
-    let directory = this.localPackageDirectory;
+    let directory = external ?? this.localPackageDirectory;
     if (!external) {
       const installed = await this.inspect();
       requireValue(installed.installState !== "incompatible", "component-incompatible");
@@ -377,7 +436,7 @@ export class WindowsBrokerHost implements BrokerHost {
         "component-not-installed",
       );
       directory = installed.installationDirectory;
-    } else await verifyComponent(directory);
+    } else await verifyComponent(directory, manifestHash);
     const output = await runPrivate(
       path.join(directory, "brokerctl.exe"),
       [command, "--home", this.home, ...args],
@@ -429,16 +488,134 @@ export class WindowsBrokerHost implements BrokerHost {
       return { serviceState: "UNAVAILABLE", brokerOwnership: "NOT_CHECKED" };
     }
   }
+  async prepareExport(
+    vault: string,
+    clientId: string,
+    operationId: string,
+    observedVaultId: string | null,
+  ): Promise<string> {
+    requireValue(!this.existingAuthorizationOnly, "access-denied");
+    const installation = await this.inspect();
+    if (
+      !installation.installedApiLevel ||
+      ApiDecimal.parse(installation.installedApiLevel).compare(ApiDecimal.parse("3.1")) < 0
+    ) {
+      // Older controllers can still create unused paths or resume this client's own grant.
+      if (observedVaultId) {
+        requireValue(
+          await exists(this.clientFile(observedVaultId, clientId)),
+          "export-component-upgrade-required",
+        );
+        return observedVaultId;
+      }
+      requireValue(
+        (await this.status(vault)).serviceState === "NOT_REGISTERED",
+        "export-component-upgrade-required",
+      );
+      const registered = object(
+        await this.controller("register-vault", ["--vault", vault, "--no-relocate"]),
+      );
+      return id(registered.vaultId);
+    }
+    const result = object(
+      await this.controller("prepare-export", [
+        "--vault",
+        vault,
+        "--client-id",
+        id(clientId),
+        "--operation",
+        id(operationId),
+        ...(observedVaultId ? ["--observed-id", id(observedVaultId)] : []),
+      ]),
+    );
+    const current = id(result.vaultId);
+    if (result.retiredVaultId) {
+      const old = id(result.retiredVaultId);
+      requireValue(old !== current && /^[0-9a-f]{32}$/.test(old), "vault-identity-mismatch");
+      await this.forgetVaultGrants(old);
+    }
+    return current;
+  }
+  private async forgetVaultGrants(old: string) {
+    if (await exists(this.clientDirectory))
+      for (const file of await readdir(this.clientDirectory)) {
+        if (file.startsWith(old + ".") && file.endsWith(".dpapi"))
+          await this.forgetGrant(old, file.slice(old.length + 1, -6));
+      }
+  }
+  async clearExportTarget(vault: string, clientId: string, operationId: string, vaultId: string) {
+    requireValue(
+      !this.existingAuthorizationOnly && /^[0-9a-f]{32}$/.test(vaultId),
+      "access-denied",
+    );
+    const reply = object(
+      await this.controller("clear-export", [
+        "--vault",
+        vault,
+        "--client-id",
+        id(clientId),
+        "--operation",
+        id(operationId),
+        "--observed-id",
+        vaultId,
+      ]),
+    );
+    requireValue(reply.cleared === true, "controller-command-failed");
+    await this.forgetVaultGrants(vaultId);
+  }
   async install(): Promise<void> {
     await this.controller(
       "install-local",
       ["--source", this.localPackageDirectory],
       undefined,
-      true,
+      this.localPackageDirectory,
+    );
+  }
+  async checkRelease(): Promise<void> {
+    await this.release.check();
+  }
+  async installRelease(cachedOnly = false): Promise<void> {
+    const installed = await this.inspect();
+    return this.release.withPackage(
+      async (directory, hash) => {
+        await this.controller("install-local", ["--source", directory], undefined, directory, hash);
+      },
+      !cachedOnly,
+      installed.installState === "installed" ? installed.installedVersion : null,
     );
   }
   async uninstall(): Promise<void> {
-    await this.controller("uninstall", [], undefined, true);
+    if ((await this.releaseStatus()).cachedVersion) {
+      await this.release.withPackage(async (directory, hash) => {
+        await this.controller("uninstall", [], undefined, directory, hash);
+      }, false);
+      return;
+    }
+    if ((await this.inspectPackage()) === "ready") {
+      await this.controller("uninstall", [], undefined, this.localPackageDirectory);
+      return;
+    }
+    // Older clients cached only the ZIP. Use an external copy of the registered
+    // installation for offline removal when a signed cache is not available.
+    const installed = await this.inspect();
+    requireValue(
+      installed.installState === "installed" && installed.installationDirectory,
+      "component-not-installed",
+    );
+    const registration = object(
+      parseJson(await readFile(path.join(this.home, "installation.json"))),
+    );
+    requireValue(
+      registration.directory === installed.installationDirectory,
+      "installation-changed",
+    );
+    const stage = await mkdtemp(path.join(tmpdir(), "astra-broker-uninstall-"));
+    try {
+      await cp(installed.installationDirectory, stage, { recursive: true });
+      await this.controller("uninstall", [], undefined, stage, text(registration.manifestHash));
+    } finally {
+      await rm(stage, { recursive: true, force: true, maxRetries: 3 });
+    }
   }
   async relocateVault(
     previous: string,

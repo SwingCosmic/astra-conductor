@@ -117,8 +117,9 @@ export const providerOperations = {
 
 export type CredentialCommandContext = CommandContext & { operationId?: string | null };
 const credentialPath = "/api/v1/credential-sharing";
-const credentialVoid = (path: string) =>
+const credentialVoid = (path: string, timeoutMs?: number) =>
   apiOperation<CredentialCommandContext, void>("POST", `${credentialPath}/${path}`, {
+    ...(timeoutMs ? { timeoutMs } : {}),
     body,
     voidResult: true,
   });
@@ -133,6 +134,13 @@ export const credentialOperations = {
     CredentialCommandContext & { vaultDirectory: string; clientId?: string },
     void
   >("POST", `${credentialPath}/adopt`, { body, voidResult: true }),
+  checkRelease: credentialVoid("check-release", 130_000),
+  installCachedRelease: credentialVoid("install-cached-release", 180_000),
+  installRelease: apiOperation<CredentialCommandContext, void>(
+    "POST",
+    `${credentialPath}/install-release`,
+    { body, voidResult: true, timeoutMs: 420_000 },
+  ),
   install: credentialVoid("install"),
   uninstall: credentialVoid("uninstall"),
   exportCredentials: apiOperation<
@@ -140,6 +148,10 @@ export const credentialOperations = {
     CredentialExportDelivery
   >("POST", `${credentialPath}/export`, { body }),
   acknowledgeDelivery: credentialVoid("acknowledge-delivery"),
+  clearExportTarget: apiOperation<
+    CredentialCommandContext & { operationId: string; vaultId: string },
+    void
+  >("POST", `${credentialPath}/export/clear-target`, { body, voidResult: true }),
   cancelExport: credentialVoid("export/cancel"),
   resumeExport: apiOperation<CredentialCommandContext, CredentialExportDelivery | null>(
     "POST",

@@ -33,6 +33,6 @@ Web 不创建或打开私有凭据库。没有 broker 配置时，页面与业�
 `pnpm --filter @astra-conductor/graph-agent icons:generate` 更新这些资产。
 Windows 打包必须保留 electron-builder 的默认 EXE 资源编辑功能，才能把图标写入应用可执行文件。
 
-broker/runtime 独立安装，不打入产品安装包。安装与卸载见[组件管理](../../docs/common/core/credential-sharing/design.md#74-独立发布按需安装与设置管理)，版本规则见[兼容性前置校验](../../docs/common/core/credential-sharing/design.md#75-组件与-api-兼容性前置校验)，SDK 与 Windows 子入口见 [B1 实施记录](../../docs/common/core/credential-sharing/b1-credentials-package-implementation.md)。
+Windows x64 桌面安装程序为 `GraphAgent Setup 0.2.1.exe`。需要共享凭据时，在侧栏打开「凭据管理 → 凭据服务组件」。若已显示「已安装」且组件兼容，可直接使用。点击「检查最新版本」可查看最新兼容版本。「下载并安装发行包」会重新查询可用发行版，离线重装点击「安装已缓存的发行包」。组件版本、共享安装范围与 PolyQuota 的操作入口见[Windows 桌面安装](../../README.md#windows-x64-桌面安装)。
 
 后续业务按[启动验收计划](../../docs/graph-agent/plan.md)推进，设计入口见[功能模块总览](../../docs/graph-agent/design/README.md)。

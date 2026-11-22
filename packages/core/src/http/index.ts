@@ -38,12 +38,16 @@ export interface CredentialHttpService {
   getStatus(): Awaitable<unknown>;
   selectDirectory?(): Awaitable<unknown>;
   adoptVault?(vaultDirectory: string, clientId?: string): Awaitable<unknown>;
+  checkRelease?(): Awaitable<unknown>;
+  installCachedRelease?(): Awaitable<unknown>;
+  installRelease?(): Awaitable<unknown>;
   install?(): Awaitable<unknown>;
   uninstall?(): Awaitable<unknown>;
   exportCredentials?(vaultDirectory: string): Awaitable<unknown>;
   resumeExport?(): Awaitable<unknown>;
   restartExport?(vaultDirectory: string): Awaitable<unknown>;
   acknowledgeDelivery?(): Awaitable<unknown>;
+  clearExportTarget?(operationId: string, vaultId: string): Awaitable<unknown>;
   cancelExport?(): Awaitable<unknown>;
   cancel?(): Awaitable<unknown>;
   switchToPrivate?(): Awaitable<unknown>;
@@ -220,6 +224,9 @@ export function createCredentialRoutes(
   route("GET", "/api/v1/credential-sharing/status", () => service.getStatus());
   const actions = {
     "select-directory": "selectDirectory",
+    "check-release": "checkRelease",
+    "install-cached-release": "installCachedRelease",
+    "install-release": "installRelease",
     install: "install",
     uninstall: "uninstall",
     "acknowledge-delivery": "acknowledgeDelivery",
@@ -262,6 +269,12 @@ export function createCredentialRoutes(
     const request = parseCredentialExportRequest(await credentialCommand(c, ["vaultDirectory"]));
     return service.exportCredentials
       ? service.exportCredentials(request.vaultDirectory)
+      : unavailable();
+  });
+  route("POST", "/api/v1/credential-sharing/export/clear-target", async (c) => {
+    const input = await command(c, options, ["operationId", "vaultId"]);
+    return service.clearExportTarget
+      ? service.clearExportTarget(parseSessionId(input.operationId), parseSessionId(input.vaultId))
       : unavailable();
   });
   route("POST", "/api/v1/credential-sharing/export/restart", async (c) => {
@@ -372,6 +385,7 @@ export function errorStatus(error: PublicError): HttpErrorStatus {
     forbidden: 403,
     "not-found": 404,
     conflict: 409,
+    "export-target-conflict": 409,
     "stale-context": 409,
     "stale-binding": 409,
     "capability-unavailable": 409,

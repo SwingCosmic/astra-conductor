@@ -8,6 +8,23 @@ AstraConductor 承载 PolyQuota、GraphAgent，以及两者共用的供应商、
 
 PolyQuota 当前已接入七家服务商：Codex、GLM Coding Plan、Grok Build、Antigravity、Claude Code、OpenCode Go 与 GitHub Copilot，且均已通过真实账号测试确认可用。其中 Codex（CLI 凭据导入、浏览器 OAuth PKCE、设备码）、GLM（国内与国际 API Key、只读导入 ZCode v2 凭据）、Grok Build 与 Antigravity 完成真实账号用量闭环，Claude Code（CLI 凭据只读导入）、OpenCode Go（API Key）与 GitHub Copilot（GitHub 设备码授权）随后接入并通过真实账号验证。
 
+## Windows x64 桌面安装
+
+运行所需产品的安装程序，按向导完成安装。下表列出从本仓库构建对应版本时的命令和产物。
+
+| 产品             | 打包命令                   | 安装程序                                              |
+| ---------------- | -------------------------- | ----------------------------------------------------- |
+| PolyQuota 0.6.1  | `pnpm package:polyquota`   | `apps/polyquota/release/PolyQuota-0.6.1-setup.exe`    |
+| GraphAgent 0.2.1 | `pnpm package:graph-agent` | `apps/graph-agent/release/GraphAgent Setup 0.2.1.exe` |
+
+**需要共享凭据时**，在任一桌面客户端安装 Astra Credential Broker 即可。
+
+1. 在 PolyQuota 打开「设置 → 管理凭据存储」，或在 GraphAgent 侧栏打开「凭据管理」。
+2. 在「凭据服务组件」点击「下载并安装发行包」。客户端查询官方仓库的公开发行版（含预发布版），按 SemVer 选择最新的兼容 Windows x64 版本，验证签名及文件摘要后安装。只想查看可用版本时，点击「检查最新版本」。[broker 发行页](https://github.com/SwingCosmic/astra-credential-broker/releases)
+3. 「组件安装」显示「已安装」后，可以导出或导入共享库。同一 Windows 用户的另一款客户端会复用该安装。需要离线重装时，点击「安装已缓存的发行包」。下载或校验失败时可重试，原安装和凭据会保留。
+
+使用 GraphAgent 独立 Web 入口时，先在 GraphAgent 桌面版为该 profile 完成共享接入，再退出桌面版并启动 Web。[GraphAgent 运行说明](./apps/graph-agent/README.md)
+
 ## 文档
 
 - [文档总览](./docs/README.md)
@@ -88,6 +105,6 @@ pnpm data:reset:polyquota
 
 PolyQuota 和 GraphAgent Electron 均可导出私有库或验证导入。任一端可独立迁移到共享库。返回内置需先写入并验证快照，再明确切换；只有成功切回的 profile 才清理自身钥槽。GraphAgent Web 通过服务端已有的 broker 授权访问凭据。[本端状态机](./docs/common/core/credential-sharing/state-machine.md)
 
-本地闭环使用 `pnpm --filter @astra-conductor/polyquota test:credential-sharing-loop --publish <完整自包含 publish 目录>`（先 `pnpm build`），要求 broker API 3。独立组件及后续生产下载排期见[凭据共享实施方案](./docs/common/core/credential-sharing/implementation-plan.md)。
+两端共享接入要求 broker API 3 及以上。发行包选择、校验和缓存规则见[凭据共享实施方案](./docs/common/core/credential-sharing/implementation-plan.md#b4-独立发布与生产下载)。
 
 包与通信边界的变更规则见[项目架构](./docs/architecture.md#4-新功能落点与变更规则)。当前 PolyQuota 的内部协议、动态资源与原生模块装配见[服务模式开发说明](./docs/common/core/service-mode/development.md)。凭据共享导出侧的本地包目录与历史验收见 [A3—A5 实施说明](./docs/common/core/credential-sharing/a3-a5-export-implementation.md)。

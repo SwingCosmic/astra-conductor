@@ -77,6 +77,11 @@ export function registerElectronServices(
     })
     .value(Services.sharingPaths, {
       dataDirectory: options.dataDirectory,
+      releaseFetch: (input, init) =>
+        options.session.fetch(input instanceof URL ? input.toString() : input, {
+          ...init,
+          signal: AbortSignal.any([options.signal, ...(init?.signal ? [init.signal] : [])]),
+        }),
       directoryPicker: createElectronDirectoryPicker(dialog, BrowserWindow),
     })
     .value(Services.cipher, new ElectronSafeStorageCipher())

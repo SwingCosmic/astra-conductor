@@ -102,10 +102,13 @@ function credentials(): ICredentialManagementService {
     subscribe: () => () => {},
     selectDirectory: unavailable,
     adoptVault: unavailable,
+    checkRelease: unavailable,
+    installRelease: unavailable,
     install: unavailable,
     uninstall: unavailable,
     exportCredentials: unavailable,
     resumeExport: unavailable,
+    clearExportTarget: unavailable,
     restartExport: unavailable,
     acknowledgeDelivery: unavailable,
     cancel: unavailable,
@@ -127,6 +130,52 @@ describe("shared management pages", () => {
     mount(CredentialsPage, {
       global: { provide: { [credentialServiceKey as symbol]: service } },
     });
+  it.each([
+    { confirm: false, busy: false, calls: ["export", "confirm"] },
+    { confirm: true, busy: true, calls: ["export", "confirm", "clear"] },
+    { confirm: true, busy: false, calls: ["export", "confirm", "clear", "export"] },
+  ])("separates confirmation, clearing and one retry ($confirm, $busy)", async (scenario) => {
+    const service = credentials();
+    const calls: string[] = [];
+    const target = "C:/chosen";
+    const operation = {
+      id: "export-op",
+      kind: "export",
+      vaultDirectory: target,
+      failedVaultId: "old-vault",
+    };
+    service.getStatus = async () => ({ ok: true, value: { ...status, operation } });
+    service.exportCredentials = async () => {
+      calls.push("export");
+      return {
+        ok: false,
+        error: { code: "export-target-conflict", message: "不可导出", retryable: false },
+      };
+    };
+    service.clearExportTarget = async (op, id) => {
+      calls.push("clear");
+      expect([op, id]).toEqual([operation.id, operation.failedVaultId]);
+      return scenario.busy
+        ? { ok: false, error: { code: "vault-in-use", message: "共享库正在使用", retryable: true } }
+        : { ok: true, value: undefined };
+    };
+    const confirm = vi.spyOn(window, "confirm").mockImplementation((prompt) => {
+      expect(prompt).toContain(target);
+      calls.push("confirm");
+      return scenario.confirm;
+    });
+    const wrapper = page(service);
+    try {
+      await flushPromises();
+      await wrapper.get("form").trigger("submit");
+      await flushPromises();
+      expect(calls).toEqual(scenario.calls);
+    } finally {
+      wrapper.unmount();
+      confirm.mockRestore();
+    }
+  });
+
   it("keeps the verified import and private backend across status refresh and a retryable failure", async () => {
     const service = credentials();
     const wrapper = page(service);

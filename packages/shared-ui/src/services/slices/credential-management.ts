@@ -55,6 +55,18 @@ export const withCredentialManagement = defineServiceSlice(
                 ...this.credentialContext,
               })
             : Promise.resolve(missingContext()),
+        checkRelease: () =>
+          this.transport.request(
+            credentialOperations.checkRelease,
+            this.credentialContext ?? { instanceId: "", contextId: "" },
+          ),
+        installRelease: (cachedOnly = false) =>
+          this.transport.request(
+            cachedOnly
+              ? credentialOperations.installCachedRelease
+              : credentialOperations.installRelease,
+            this.credentialContext ?? { instanceId: "", contextId: "" },
+          ),
         install: () =>
           this.transport.request(
             credentialOperations.install,
@@ -80,6 +92,14 @@ export const withCredentialManagement = defineServiceSlice(
               )
             : Promise.resolve(missingContext()),
         cancel: () => this.credentials.cancelExport(),
+        clearExportTarget: (operationId, vaultId) =>
+          this.credentialContext?.operationId === operationId
+            ? this.transport.request(credentialOperations.clearExportTarget, {
+                ...this.credentialContext,
+                operationId,
+                vaultId,
+              })
+            : Promise.resolve(missingContext()),
         cancelExport: () =>
           this.credentialContext
             ? this.transport.request(credentialOperations.cancelExport, this.credentialContext)

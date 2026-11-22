@@ -7,7 +7,13 @@ export type CredentialMigrationState =
 
 export interface CredentialSharingStatus {
   migrationState: CredentialMigrationState | null;
-  operation?: { id: string; kind: string; vaultDirectory?: string; step?: string } | null;
+  operation?: {
+    id: string;
+    kind: string;
+    vaultDirectory?: string;
+    step?: string;
+    failedVaultId?: string;
+  } | null;
   importPreview?: CredentialImportPreview | null;
   migrationReview?: { id: string; accounts: CredentialAccountPreview[] } | null;
   available: boolean;
@@ -17,7 +23,16 @@ export interface CredentialSharingStatus {
   requiredApiLevel: string;
   installationDirectory: string | null;
   localPackageDirectory: string;
-  downloadState: "not-configured";
+  downloadState:
+    | "not-configured"
+    | "available"
+    | "cached"
+    | "downloading"
+    | "verifying"
+    | "installing";
+  downloadPercent?: number;
+  downloadVersion?: string;
+  cachedVersion?: string;
   localPackageState: "missing" | "ready" | "invalid" | "unknown";
   directorySelectionAvailable: boolean;
   serviceState: string;
@@ -87,8 +102,11 @@ export interface ICredentialSharingService {
 }
 
 export interface ICredentialManagementService extends ICredentialSharingService {
+  checkRelease(): Promise<ServiceResult<void>>;
+  installRelease(cachedOnly?: boolean): Promise<ServiceResult<void>>;
   getStatus(): Promise<ServiceResult<CredentialManagementStatus>>;
   subscribe(listener: (event: import("../service.js").ProviderChangedEvent) => void): () => void;
+  clearExportTarget(operationId: string, vaultId: string): Promise<ServiceResult<void>>;
   cancelExport(): Promise<ServiceResult<void>>;
   resumeExport(): Promise<ServiceResult<CredentialExportDelivery | null>>;
   restartExport(vaultDirectory: string): Promise<ServiceResult<CredentialExportDelivery>>;

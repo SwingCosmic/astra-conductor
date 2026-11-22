@@ -1,6 +1,8 @@
 import path from "node:path";
-import { BROKER_DISTRIBUTION } from "@astra-conductor/credentials";
-import { WindowsBrokerHost } from "../../platform/common/credential-broker-host.js";
+import {
+  localBrokerPackageDirectory,
+  WindowsBrokerHost,
+} from "../../platform/common/credential-broker-host.js";
 import {
   AuthCoordinator,
   CoreServices,
@@ -33,6 +35,7 @@ export const Services = {
   sharingPaths: serviceId<{
     dataDirectory: string;
     directoryPicker: DirectoryPicker;
+    releaseFetch?: typeof fetch;
   }>("polyquota.sharing-paths"),
   mutations: serviceId<CredentialMutationGate>("polyquota.credential-mutations"),
   sharing: serviceId<CredentialMigrationService>("polyquota.sharing"),
@@ -162,12 +165,8 @@ export function registerCommonServices(registry: ServiceRegistry): void {
           "credential-sharing",
         );
         const home = path.join(local, "AstraCredentialBroker", "v1");
-        const localPackageDirectory = path.join(
-          local,
-          "AstraCredentialBroker",
-          "downloads",
-          "win-x64",
-          BROKER_DISTRIBUTION.version,
+        const localPackageDirectory = localBrokerPackageDirectory(
+          path.join(local, "AstraCredentialBroker"),
         );
         const storage = services.get(Services.businessStorage);
         return new CredentialMigrationService({
@@ -181,7 +180,13 @@ export function registerCommonServices(registry: ServiceRegistry): void {
           cipher: services.get(Services.cipher),
           mutations: services.get(Services.mutations),
           providers: services.get(Services.providers),
-          host: new WindowsBrokerHost(home, localPackageDirectory, cacheDirectory),
+          host: new WindowsBrokerHost(
+            home,
+            localPackageDirectory,
+            cacheDirectory,
+            false,
+            services.get(Services.sharingPaths).releaseFetch,
+          ),
           cacheDirectory,
           privateDataDirectory: services.get(Services.sharingPaths).dataDirectory,
           directoryPicker: services.get(Services.sharingPaths).directoryPicker,

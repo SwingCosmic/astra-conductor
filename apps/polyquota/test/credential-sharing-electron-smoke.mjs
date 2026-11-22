@@ -1,5 +1,5 @@
 import { app } from "electron";
-import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
@@ -112,6 +112,19 @@ async function run() {
       assert.equal(returned.migrationState, "private");
       assert.equal(returned.activeBackend, "private");
       assert.equal(returned.rememberedKey, false);
+      await assert.rejects(service.exportCredentials(vaultDirectory), {
+        code: "export-target-conflict",
+      });
+      const failed = (await service.getStatus()).operation;
+      const manifest = JSON.parse(
+        await readFile(path.join(vaultDirectory, "manifest.json"), "utf8"),
+      );
+      assert.equal(failed.failedVaultId, manifest.vaultId);
+      await service.clearExportTarget(failed.id, manifest.vaultId);
+      assert.deepEqual(await readdir(vaultDirectory), []);
+      const next = await service.exportCredentials(vaultDirectory);
+      assert.notEqual(next.storageVersion, delivery.storageVersion);
+      assert.equal((await service.getStatus()).recordCount, 2);
       await service.uninstall();
       await service.install();
       assert.equal((await service.getStatus()).installState, "installed");
