@@ -24,7 +24,7 @@
 
 ## 3. 页面和组件
 
-沿用 PolyQuota 当前“左侧导航 + 单列内容区”的交互。页标识由各产品在自己的入口注册和校验，当前默认页分别为 PolyQuota 用量和 GraphAgent 单轮测试对话。第一阶段保留从设置进入凭据管理的路径，两端均提供“服务商”入口。产品设置菜单可挂载同一个凭据管理页。用量页保留宽布局，使用共用内容区的显式宽度选项。
+沿用 PolyQuota 当前“左侧导航 + 单列内容区”的交互。页标识由各产品在自己的入口注册和校验，当前默认页分别为 PolyQuota 用量和 GraphAgent 单轮测试对话。两产品统一将「服务商 / 供应商」与「凭据管理」作为一级导航，共用同一份 `ProvidersPage` 与 `CredentialsPage`（含独占向导与侧栏待续办角标）；PolyQuota 服务商页由服务端按订阅用量查询能力过滤可用 offering。用量页保留宽布局，使用共用内容区的显式宽度选项。
 
 ```text
 AppShell(brand, navigation, activeId)
@@ -132,3 +132,4 @@ GraphAgent Web 页面呈现 broker 未接入、连接中、可用、断连和权
 
 - 使用方向键、Enter、Esc 完成选择。窄窗和 200% 缩放时仍可操作，错误摘要能聚焦字段，读屏能区分同名账号的认证类型。浮层随两端主题取色。[WAI-ARIA Combobox](https://www.w3.org/WAI/ARIA/apg/patterns/combobox/) · [Reka Select](https://www.reka-ui.com/docs/components/select)
 - 先在模型页使用共用字段，再逐个迁移连接编辑和认证弹窗。回归原生弹窗与原有焦点循环的行为，特别核对取消授权、关闭后清空 Key、重复提交保护及焦点归位。[认证弹窗](../../../packages/shared-ui/src/providers/AuthDialog.vue) · [连接弹窗](../../../packages/shared-ui/src/providers/ConnectionDialog.vue)
+- 共用控件的紧凑桌面 Token、统一 `CollapsiblePanel` 折叠过渡、细粒度 Loading 模型、服务商账号行对齐以及凭据迁移独占向导设计，见 [UI 交互优化与数据结构调整设计](../../graph-agent/ui/interaction-refinement/design.md)。

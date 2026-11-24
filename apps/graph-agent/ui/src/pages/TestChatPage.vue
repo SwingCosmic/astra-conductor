@@ -13,7 +13,9 @@ import {
   type MessageSegment,
 } from "@lovekicher/omnichat";
 import "@lovekicher/omnichat/dist/omnichat.css";
+import { AppIcon } from "@astra-conductor/shared-ui";
 import { disabledReason, routeLabel, sameRoute, useModelView } from "./model-view";
+import { chargeStatusLabels } from "./catalog-labels";
 import ActivityPanel from "./ActivityPanel.vue";
 import { appendDelta, finishContent, type ActivityState } from "./chat-content";
 import { readNativeReply } from "../services/native-chat-reply";
@@ -37,14 +39,7 @@ const state = ref("");
 const charge = shallowRef<ChatCharge | null>(null),
   usage = shallowRef<TestChatUsage | null>(null),
   currentCall = shallowRef<ChatResultRequest | null>(null);
-const chargeLabels = {
-  estimated: "估算",
-  actual: "实际扣款",
-  partial: "部分估算",
-  unknown: "费用未知",
-  included: "套餐内",
-  blocked: "额度不足",
-};
+const chargeLabels = chargeStatusLabels;
 let receiptGeneration = 0;
 let keepAlive: ReturnType<typeof setInterval> | undefined;
 function releaseResult() {
@@ -300,7 +295,7 @@ onBeforeUnmount(() => {
         </div>
         <span v-if="state" class="setting-hint" role="status">{{ state }}</span>
       </header>
-      <p v-if="charge" class="setting-hint" role="status">
+      <p v-if="charge" class="chat-charge-bar setting-hint" role="status">
         <strong>本轮费用 · {{ chargeLabels[charge.status] }}</strong> {{ charge.amount ?? "" }}
         {{ charge.currency ?? "" }}
         <span v-if="usage">
@@ -359,7 +354,7 @@ onBeforeUnmount(() => {
                   title="停止回复"
                   @click="stop"
                 >
-                  ■
+                  <AppIcon name="stop" :size="15" />
                 </button>
                 <button
                   v-else
@@ -368,7 +363,7 @@ onBeforeUnmount(() => {
                   aria-label="发送消息"
                   title="发送消息"
                 >
-                  ↑
+                  <AppIcon name="arrow-up" :size="18" :stroke-width="2.1" />
                 </button>
               </div>
             </div>
@@ -384,18 +379,27 @@ onBeforeUnmount(() => {
 }
 .graph-chat-panel {
   border: 1px solid var(--border);
-  border-radius: 12px;
-  background: white;
+  border-radius: var(--radius-lg, 10px);
+  background: var(--surface, white);
+  box-shadow: var(--shadow-card);
   overflow: hidden;
   display: flex;
   flex-direction: column;
   min-height: 450px;
-  height: calc(100dvh - 160px);
+  height: calc(100dvh - 150px);
 }
 .graph-chat-panel > header {
-  padding: 14px 20px;
+  padding: 12px 18px;
   margin: 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-subtle);
+}
+.chat-charge-bar {
+  margin: 0;
+  padding: 7px 18px;
+  background: var(--surface-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  font-variant-numeric: tabular-nums;
 }
 .graph-chat-panel > .form-message {
   margin: 12px 20px 0;
@@ -443,8 +447,8 @@ onBeforeUnmount(() => {
 .ai-composer {
   padding: 10px 12px;
   border: 1px solid var(--border);
-  border-radius: 16px;
-  box-shadow: 0 3px 16px #242b4010;
+  border-radius: var(--radius-lg, 10px);
+  box-shadow: var(--shadow-card);
 }
 .ai-composer:focus-within {
   border-color: var(--brand-accent);
@@ -468,14 +472,15 @@ onBeforeUnmount(() => {
   color: var(--text-muted);
 }
 .ai-send-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 0;
   width: 34px;
   height: 34px;
   border-radius: 50%;
   background: var(--brand-accent);
   color: white;
-  font-weight: 600;
-  font-size: 20px;
   cursor: pointer;
 }
 .ai-send-button:disabled {

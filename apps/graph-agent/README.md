@@ -6,7 +6,7 @@ Electron 支持在本端私有模式下接入七家既有供应商、账号启�
 
 在「供应商」选择 OpenAI 的官方 API 接入点或 Codex 订阅。接入 DeepSeek 或中转站时，点「创建自定义供应商」，填写名称、接入点及各协议的 API 根地址，再在相应接入点添加账号。账号行的「模型配置」可直达其目录，按能力、参数、价格分别编辑后一次保存。单独选择「用于测试对话」后，测试页以最新保存的参数发送当前问题并显示本轮费用。图片生成、图片编辑等端点支持配置、模型绑定及试算。[2B 实施及验证](../../docs/common/core/provider/implementation-plan.md#模型配置改版的数据实施方案)
 
-模型页可导入版本化 JSON 预置包并回滚到上一版本。管理员可通过 `GRAPH_AGENT_MODEL_PACK_URL` 配置更新地址。空库从[随包预置](./resources/model-presets.json)初始化，重开时沿用活动版本。
+模型页可导入版本化 JSON 预置包并回滚到上一版本。管理员可通过 `GRAPH_AGENT_MODEL_PACK_URL` 配置更新地址。空库从[随包预置目录](./resources/model-presets/manifest.json)初始化（`manifest.json` 承载修订号与逐片哈希，`parameters/` 按模型类型与厂商家族分放参数模板，`families/` 按家族陈列模型数据），重开时沿用活动版本。
 
 ```powershell
 pnpm build

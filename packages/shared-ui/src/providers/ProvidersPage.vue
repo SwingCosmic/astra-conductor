@@ -4,6 +4,8 @@ import AuthDialog from "./AuthDialog.vue";
 import ConnectionDialog from "./ConnectionDialog.vue";
 import ProviderMark from "../components/ProviderMark.vue";
 import ChevronIcon from "../components/ChevronIcon.vue";
+import AppIcon from "../components/AppIcon.vue";
+import CollapsiblePanel from "../components/CollapsiblePanel.vue";
 import type { PublicAccount } from "@astra-conductor/contract/common";
 import { authMethodLabel, type ProviderPresentation } from "../presentation";
 
@@ -254,117 +256,131 @@ const connectedCount = computed(
     <slot name="custom-providers" :snapshot="snapshot" :reload="reload" />
     <div class="provider-list">
       <article v-for="provider in presentations" :key="provider.id" class="provider-row">
-        <div class="provider-summary">
-          <ProviderMark :name="provider.name" :icon="provider.icon" />
-          <div class="provider-heading">
-            <div class="provider-name-row">
-              <h2>{{ provider.name }}</h2>
-              <p class="provider-status">
-                <span
-                  class="status-dot"
-                  :class="{ connected: providerAccounts(provider).length }"
-                />{{
-                  providerAccounts(provider).length
-                    ? `已接入 · ${providerAccounts(provider).length} 个账号`
-                    : "尚未接入"
-                }}
-              </p>
-            </div>
-            <p class="provider-description">{{ provider.description }}</p>
-          </div>
-          <div class="method-chips">
-            <span v-for="method in provider.authMethods" :key="method.id">{{ method.label }}</span>
-          </div>
-          <button
-            v-if="action(addAction(provider)).state !== 'hidden'"
-            class="primary-action"
-            :disabled="busy || action(addAction(provider)).state !== 'enabled'"
-            :title="actionReason(addAction(provider))"
-            @click="addAccount(provider)"
-          >
-            添加账号
-          </button>
-          <button
-            class="icon-button"
-            :disabled="!providerAccounts(provider).length"
-            :aria-label="expanded.has(provider.id) ? '收起账号' : '展开账号'"
-            :aria-expanded="expanded.has(provider.id)"
-            @click="toggleExpanded(provider)"
-          >
-            <ChevronIcon :collapsed="!expanded.has(provider.id)" />
-          </button>
-        </div>
-        <div
-          v-if="expanded.has(provider.id) && providerAccounts(provider).length"
-          class="provider-accounts"
+        <CollapsiblePanel
+          variant="plain"
+          :open="expanded.has(provider.id) && providerAccounts(provider).length > 0"
         >
-          <div
-            v-for="account in providerAccounts(provider)"
-            :key="account.id"
-            class="provider-account-row"
-          >
-            <span class="account-avatar">♙</span>
-            <div class="account-identity">
-              <strong>{{
-                provider.id === "compatible-api-key"
-                  ? account.displayName
-                  : account.maskedIdentifier
-              }}</strong>
-              <span
-                v-if="account.tokenExpiresAt"
-                class="token-expiry"
-                :class="{ expired: isTokenExpired(account.tokenExpiresAt) }"
+          <template #header="{ panelId }">
+            <div class="provider-summary">
+              <ProviderMark :name="provider.name" :icon="provider.icon" />
+              <div class="provider-heading">
+                <div class="provider-name-row">
+                  <h2>{{ provider.name }}</h2>
+                  <p class="provider-status">
+                    <span
+                      class="status-dot"
+                      :class="{ connected: providerAccounts(provider).length }"
+                    />{{
+                      providerAccounts(provider).length
+                        ? `已接入 · ${providerAccounts(provider).length} 个账号`
+                        : "尚未接入"
+                    }}
+                  </p>
+                </div>
+                <p class="provider-description">{{ provider.description }}</p>
+              </div>
+              <div class="method-chips">
+                <span v-for="method in provider.authMethods" :key="method.id">{{
+                  method.label
+                }}</span>
+              </div>
+              <button
+                v-if="action(addAction(provider)).state !== 'hidden'"
+                class="accent-action"
+                :disabled="busy || action(addAction(provider)).state !== 'enabled'"
+                :title="actionReason(addAction(provider))"
+                @click="addAccount(provider)"
               >
-                令牌到期：{{ tokenExpiryLabel(account.tokenExpiresAt)
-                }}{{ isTokenExpired(account.tokenExpiresAt) ? "（已过期）" : "" }}
-              </span>
+                <AppIcon name="plus" :size="14" /> 添加账号
+              </button>
+              <button
+                class="icon-button"
+                :disabled="!providerAccounts(provider).length"
+                :aria-label="expanded.has(provider.id) ? '收起账号' : '展开账号'"
+                :aria-expanded="expanded.has(provider.id)"
+                :aria-controls="panelId"
+                @click="toggleExpanded(provider)"
+              >
+                <ChevronIcon :collapsed="!expanded.has(provider.id)" />
+              </button>
             </div>
-            <span class="method-chip">{{ accountMethodLabel(provider, account) }}</span
-            ><span class="account-state"
-              ><i :class="{ off: !account.enabled }" />{{
-                account.enabled ? "已启用" : "已停用"
-              }}</span
-            ><button
-              v-if="
-                (provider.connectionKind || provider.id === 'compatible-api-key') &&
-                action('editConnection', account).state !== 'hidden'
-              "
-              :disabled="busy || action('editConnection', account).state !== 'enabled'"
-              :title="actionReason('editConnection', account)"
-              @click="openConnection(provider, account.id)"
+          </template>
+          <div v-if="providerAccounts(provider).length" class="provider-accounts">
+            <div
+              v-for="account in providerAccounts(provider)"
+              :key="account.id"
+              class="provider-account-row"
             >
-              编辑连接</button
-            ><button
-              v-if="hasRefreshableToken(account)"
-              :disabled="busy || action('refreshCredentials', account).state !== 'enabled'"
-              :title="actionReason('refreshCredentials', account)"
-              @click="refreshCredentials(account)"
-            >
-              刷新令牌</button
-            ><button
-              v-if="action('setAccountEnabled', account).state !== 'hidden'"
-              :disabled="busy || action('setAccountEnabled', account).state !== 'enabled'"
-              :title="actionReason('setAccountEnabled', account)"
-              @click="toggle(account)"
-            >
-              {{ account.enabled ? "停用" : "启用" }}</button
-            ><button
-              v-if="action('deleteAccount', account).state !== 'hidden'"
-              class="danger-text"
-              :disabled="busy || action('deleteAccount', account).state !== 'enabled'"
-              :title="actionReason('deleteAccount', account)"
-              @click="remove(account)"
-            >
-              删除
-            </button>
-            <slot
-              name="account-actions"
-              :account="account"
-              :provider="provider"
-              :connection="snapshot?.connections.find((row) => row.accountId === account.id)"
-            />
+              <span class="account-avatar" aria-hidden="true">
+                <AppIcon name="user" :size="15" />
+              </span>
+              <div class="account-identity">
+                <strong>{{
+                  provider.id === "compatible-api-key"
+                    ? account.displayName
+                    : account.maskedIdentifier
+                }}</strong>
+                <span
+                  v-if="account.tokenExpiresAt"
+                  class="token-expiry"
+                  :class="{ expired: isTokenExpired(account.tokenExpiresAt) }"
+                >
+                  令牌到期：{{ tokenExpiryLabel(account.tokenExpiresAt)
+                  }}{{ isTokenExpired(account.tokenExpiresAt) ? "（已过期）" : "" }}
+                </span>
+              </div>
+              <span class="method-chip">{{ accountMethodLabel(provider, account) }}</span
+              ><span class="account-state"
+                ><i :class="{ off: !account.enabled }" />{{
+                  account.enabled ? "已启用" : "已停用"
+                }}</span
+              ><button
+                v-if="
+                  (provider.connectionKind || provider.id === 'compatible-api-key') &&
+                  action('editConnection', account).state !== 'hidden'
+                "
+                class="icon-action-btn"
+                aria-label="编辑连接"
+                :disabled="busy || action('editConnection', account).state !== 'enabled'"
+                :title="actionReason('editConnection', account) ?? '编辑连接'"
+                @click="openConnection(provider, account.id)"
+              >
+                <AppIcon name="edit" :size="14" /></button
+              ><button
+                v-if="hasRefreshableToken(account)"
+                class="icon-action-btn"
+                aria-label="刷新令牌"
+                :disabled="busy || action('refreshCredentials', account).state !== 'enabled'"
+                :title="actionReason('refreshCredentials', account) ?? '刷新令牌'"
+                @click="refreshCredentials(account)"
+              >
+                <AppIcon name="refresh" :size="14" /></button
+              ><button
+                v-if="action('setAccountEnabled', account).state !== 'hidden'"
+                :disabled="busy || action('setAccountEnabled', account).state !== 'enabled'"
+                :title="actionReason('setAccountEnabled', account)"
+                @click="toggle(account)"
+              >
+                {{ account.enabled ? "停用" : "启用" }}</button
+              ><button
+                v-if="action('deleteAccount', account).state !== 'hidden'"
+                class="icon-action-btn danger-text"
+                aria-label="删除"
+                :disabled="busy || action('deleteAccount', account).state !== 'enabled'"
+                :title="actionReason('deleteAccount', account) ?? '删除'"
+                @click="remove(account)"
+              >
+                <AppIcon name="trash" :size="14" />
+              </button>
+              <slot
+                name="account-actions"
+                :account="account"
+                :provider="provider"
+                :connection="snapshot?.connections.find((row) => row.accountId === account.id)"
+              />
+            </div>
           </div>
-        </div>
+        </CollapsiblePanel>
       </article>
     </div>
     <AuthDialog

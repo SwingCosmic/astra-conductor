@@ -1,0 +1,268 @@
+@use "./mixins" as *;
+
+/* ── 页面与通用布局 ──────────────────────────────────────────────────────── */
+.model-page {
+  max-width: 1360px;
+  width: 100%;
+
+  h4 {
+    margin: 0;
+    font-size: 13.5px;
+    font-weight: 650;
+    color: var(--text-primary);
+  }
+}
+
+.model-page h2,
+.custom-providers h2 {
+  font-size: 14.5px;
+  font-weight: 650;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.model-page h3,
+.custom-offering h3 {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+.header-actions,
+.inline-actions {
+  @include flex-row(8px);
+}
+
+.plain-fields {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.compact-btn {
+  height: var(--control-h-sm, 28px);
+  padding: 0 9px;
+  font-size: 12px;
+}
+
+.inline-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.link-action {
+  border: 0;
+  padding: 2px 4px;
+  background: transparent;
+  color: var(--brand-accent);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    color: var(--brand-hover);
+    text-decoration: underline;
+  }
+
+  &.danger-text {
+    color: $danger;
+  }
+}
+
+@keyframes icon-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.is-spinning {
+  animation: icon-spin 0.9s linear infinite;
+}
+
+.model-entry-action {
+  border-color: color-mix(in srgb, var(--brand-accent) 34%, transparent) !important;
+  color: var(--brand-hover) !important;
+  background: var(--brand-soft, #f5f2ff) !important;
+  font-weight: 550;
+
+  &:hover:not(:disabled) {
+    background: var(--brand-selected) !important;
+    border-color: color-mix(in srgb, var(--brand-accent) 56%, transparent) !important;
+  }
+}
+
+/* ── 卡片与通用表单控件 ──────────────────────────────────────────────────── */
+.graph-card {
+  padding: 16px 18px;
+  margin: 12px 0;
+  border: 1px solid $border;
+  border-radius: var(--radius-md, 8px);
+  background: $surface;
+  box-shadow: var(--shadow-card);
+
+  .setting-hint {
+    margin: 4px 0;
+  }
+}
+
+.graph-card-header {
+  @include flex-row(10px, space-between);
+  margin-bottom: 10px;
+
+  h2 {
+    margin: 0;
+    font-size: 14.5px;
+    overflow-wrap: anywhere;
+  }
+}
+
+.graph-grid {
+  @include auto-grid(170px, 12px);
+}
+
+.graph-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+
+  input,
+  select {
+    width: 100%;
+    min-width: 0;
+    height: var(--control-h-md, 32px);
+    padding: 0 10px;
+    border: 1px solid $border-input;
+    border-radius: var(--radius-sm, 6px);
+    color: var(--text-primary);
+    background: $surface;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 400;
+
+    &:focus {
+      @include focus-ring;
+    }
+  }
+
+  textarea {
+    width: 100%;
+    min-width: 0;
+    padding: 6px 10px;
+    border: 1px solid $border-input;
+    border-radius: var(--radius-sm, 6px);
+    color: var(--text-primary);
+    background: $surface;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 1.5;
+
+    &:focus {
+      @include focus-ring;
+    }
+  }
+}
+
+.graph-actions,
+.graph-row {
+  @include flex-row(8px);
+  margin-top: 12px;
+}
+
+.file-picker {
+  display: none;
+}
+
+/* ── 状态标签与徽章 ──────────────────────────────────────────────────────── */
+.status-pill {
+  @include pill(2px 8px, var(--radius-xs, 4px), 11.5px, 600);
+
+  &.is-enabled {
+    color: #15803d;
+    background: #dcfce7;
+  }
+
+  &.is-disabled {
+    color: $text-subtle;
+    background: $surface-soft;
+  }
+
+  &.is-brand {
+    color: var(--brand-hover);
+    background: var(--brand-selected);
+  }
+}
+
+.count-pill {
+  @include pill(0 6px, 99px, 11.5px, 600);
+  justify-content: center;
+  min-width: 22px;
+  height: 20px;
+  background: $surface-soft;
+  color: $text-secondary;
+  font-variant-numeric: tabular-nums;
+
+  &.is-brand {
+    background: var(--brand-selected);
+    color: var(--brand-hover);
+  }
+}
+
+.subtle-tag {
+  @include pill(2px 7px, var(--radius-xs, 4px), 11.5px, 400);
+  background: var(--surface-subtle);
+  color: $text-secondary;
+}
+
+.mini-badge {
+  @include pill(1px 6px, var(--radius-xs, 4px), 10.5px, 600);
+
+  &.is-brand {
+    color: var(--brand-hover);
+    background: var(--brand-selected);
+  }
+}
+
+.source-pill {
+  @include pill(1px 6px, var(--radius-xs, 4px), 11px, 500);
+  line-height: 1.5;
+
+  &.is-neutral {
+    color: $text-subtle;
+    background: $surface-soft;
+  }
+
+  &.is-override,
+  &.is-dirty {
+    color: var(--brand-hover);
+    background: var(--brand-selected);
+  }
+
+  &.is-offering {
+    color: #1d4ed8;
+    background: #eff6ff;
+  }
+}
+
+@media (max-width: 540px) {
+  .app-shell.theme-purple {
+    .brand strong,
+    .sidebar nav button .nav-icon {
+      display: none;
+    }
+
+    .sidebar nav {
+      flex-wrap: wrap;
+    }
+  }
+}

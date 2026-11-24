@@ -1,0 +1,182 @@
+@use "./mixins" as *;
+
+/* ── 价格与条件价卡 ──────────────────────────────────────────────────────── */
+.price-meta-grid {
+  padding-bottom: 12px;
+  border-bottom: 1px solid $border-faint;
+}
+
+.mini-price-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  background: $surface;
+
+  th,
+  td {
+    padding: 7px 12px;
+    text-align: left;
+    border-top: 1px solid var(--border-subtle, #e8edf4);
+  }
+
+  th {
+    color: var(--text-muted);
+    font-weight: 600;
+    background: $surface-subtle;
+  }
+}
+
+.rate-card-editor {
+  margin-top: 12px;
+}
+
+.rate-card-body {
+  display: grid;
+  gap: 12px;
+  padding: 12px 14px 14px;
+  border-top: 1px solid $border-subtle;
+  background: $surface;
+}
+
+.rate-card-empty {
+  @include flex-row(12px, space-between);
+}
+
+.rate-card-top {
+  @include flex-row(12px, space-between, flex-start);
+}
+
+.rate-card-basics {
+  flex: 1 1 360px;
+}
+
+.rate-subsection {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.rate-line-card,
+.rate-rule {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid $border;
+  border-radius: var(--radius-md, 8px);
+  background: $surface-muted;
+}
+
+.rate-row {
+  @include auto-grid(135px, 10px);
+  align-items: end;
+}
+
+.nested-advanced-box {
+  margin-top: 6px;
+}
+
+.nested-advanced-body {
+  display: grid;
+  gap: 10px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--border-subtle, #e8edf4);
+}
+
+.time-windows-block {
+  @include flex-row(8px);
+}
+
+.window-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 9px;
+  border: 1px solid $border;
+  border-radius: var(--radius-sm, 6px);
+  background: $surface;
+  font-size: 12.5px;
+
+  input[type="time"] {
+    height: var(--control-h-sm, 28px);
+    padding: 0 6px;
+    border: 1px solid $border-input;
+    border-radius: var(--radius-xs, 4px);
+  }
+}
+
+.tag-field {
+  border: 0;
+  margin: 0;
+  padding: 4px 0 0;
+
+  legend {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+  }
+
+  label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin: 4px 10px 2px 0;
+    font-size: 12.5px;
+  }
+}
+
+/* ── 费用试算卡片 ────────────────────────────────────────────────────────── */
+.trial-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid $border;
+  border-radius: var(--radius-md, 8px);
+  background: $surface-subtle;
+}
+
+.trial-extra-conditions {
+  grid-column: 1 / -1;
+
+  .trial-extra-body {
+    padding: 10px 12px 12px;
+    border-top: 1px solid $border-subtle;
+  }
+}
+
+.trial-result {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md, 8px);
+  background: $surface;
+  border: 1px solid color-mix(in srgb, var(--brand-accent) 25%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+
+.trial-result-badge {
+  @include pill(4px 10px, var(--radius-sm, 6px), 13.5px, 600);
+  justify-self: start;
+  background: var(--brand-selected);
+  color: var(--brand-hover);
+}
+
+.trial-result-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 12.5px;
+
+  li {
+    @include flex-row(8px);
+    color: $text-secondary;
+  }
+
+  small {
+    color: var(--text-muted);
+  }
+}

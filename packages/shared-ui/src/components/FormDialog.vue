@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, useId } from "vue";
+import AppIcon from "./AppIcon.vue";
 defineProps<{ title: string }>();
 const emit = defineEmits<{ close: [] }>();
 const dialog = ref<HTMLDialogElement>();
@@ -23,7 +24,9 @@ onBeforeUnmount(() => {
   >
     <header>
       <h2 :id="heading">{{ title }}</h2>
-      <button class="icon-button" type="button" aria-label="关闭" @click="emit('close')">×</button>
+      <button class="icon-button" type="button" aria-label="关闭" @click="emit('close')">
+        <AppIcon name="close" :size="16" />
+      </button>
     </header>
     <slot />
   </dialog>

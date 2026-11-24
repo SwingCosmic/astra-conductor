@@ -350,7 +350,10 @@ onUnmounted(() => {
           ><span>{{ status.selectedBackend === "shared" ? "共享存储" : "内置存储" }}</span>
         </div>
         <div v-if="status.vaultDirectory" class="setting-row">
-          <strong>共享目录</strong><code class="path-value">{{ status.vaultDirectory }}</code>
+          <strong>共享目录</strong
+          ><code class="path-field" :title="status.vaultDirectory">{{
+            status.vaultDirectory
+          }}</code>
         </div>
         <div v-if="status.storageVersion" class="setting-row">
           <strong>共享版本</strong
@@ -370,18 +373,26 @@ onUnmounted(() => {
         >
           <h3>{{ status.vaultDirectory ? "更换共享目录" : "接入共享目录" }}</h3>
           <p class="setting-hint">选择已授权的共享目录，或填写绝对路径。</p>
-          <label
-            >共享目录<input v-model.trim="directory" aria-label="共享目录" :disabled="busy"
-          /></label>
-          <button
-            v-if="status.directorySelectionAvailable"
-            type="button"
-            class="outline-action"
-            :disabled="busy"
-            @click="selectDirectory"
-          >
-            选择目录
-          </button>
+          <div class="field-group">
+            <label for="cred-web-directory">共享目录</label>
+            <div class="input-with-action">
+              <input
+                id="cred-web-directory"
+                v-model.trim="directory"
+                aria-label="共享目录"
+                :disabled="busy"
+              />
+              <button
+                v-if="status.directorySelectionAvailable"
+                type="button"
+                class="outline-action"
+                :disabled="busy"
+                @click="selectDirectory"
+              >
+                选择目录
+              </button>
+            </div>
+          </div>
           <label
             >客户端身份<input v-model="clientId" aria-label="客户端身份" :disabled="busy"
           /></label>
@@ -414,22 +425,27 @@ onUnmounted(() => {
           @submit.prevent="form === 'export' ? publish() : verify()"
         >
           <h3>{{ form === "export" ? "导出凭据" : "导入凭据" }}</h3>
-          <label
-            >共享目录<input
-              v-model.trim="directory"
-              :aria-label="form === 'export' ? '导出目录' : '导入目录'"
-              :disabled="busy || !!status.operation?.vaultDirectory"
-              @input="preview = null"
-          /></label>
-          <button
-            v-if="status.directorySelectionAvailable"
-            type="button"
-            class="outline-action"
-            :disabled="busy || !!status.operation?.vaultDirectory"
-            @click="selectDirectory"
-          >
-            选择目录
-          </button>
+          <div class="field-group">
+            <label for="cred-desktop-directory">共享目录</label>
+            <div class="input-with-action">
+              <input
+                id="cred-desktop-directory"
+                v-model.trim="directory"
+                :aria-label="form === 'export' ? '导出目录' : '导入目录'"
+                :disabled="busy || !!status.operation?.vaultDirectory"
+                @input="preview = null"
+              />
+              <button
+                v-if="status.directorySelectionAvailable"
+                type="button"
+                class="outline-action"
+                :disabled="busy || !!status.operation?.vaultDirectory"
+                @click="selectDirectory"
+              >
+                选择目录
+              </button>
+            </div>
+          </div>
           <p v-if="form === 'export'" class="setting-hint">
             导出的凭据与内置副本分别更新。两边刷新同一轮换令牌可能需要重新授权。
           </p>
@@ -649,14 +665,20 @@ onUnmounted(() => {
           <span><strong>本地安装包</strong><small>完整自包含包，包含 component.json</small></span
           ><span>{{ packageLabels[status.localPackageState] }}</span>
         </div>
-        <code class="path-value">{{ status.localPackageDirectory }}</code>
+        <code class="path-field" :title="status.localPackageDirectory">{{
+          status.localPackageDirectory
+        }}</code>
         <div class="setting-row">
           <span
             ><strong>组件安装</strong
             ><small v-if="status.installedVersion">版本 {{ status.installedVersion }}</small></span
           ><span>{{ installedLabels[status.installState] }}</span>
         </div>
-        <p v-if="status.installationDirectory" class="path-value">
+        <p
+          v-if="status.installationDirectory"
+          class="path-field"
+          :title="status.installationDirectory"
+        >
           {{ status.installationDirectory }}
         </p>
         <div class="setting-row">
@@ -717,81 +739,102 @@ onUnmounted(() => {
 </template>
 <style scoped>
 .setting-hint {
-  color: #718096;
-  font-size: 13px;
-  line-height: 1.7;
-}
-.path-value {
-  color: #52627b;
-  font-size: 12px;
+  color: var(--text-muted);
+  font-size: 12.5px;
   line-height: 1.6;
 }
-code.path-value {
-  padding: 10px 12px;
-  background: #f4f7fb;
-  border-radius: 7px;
+.path-field {
+  margin: 8px 0;
+  max-width: 100%;
+}
+.setting-row > .path-field {
+  margin: 0;
+  max-width: 65%;
+}
+.field-group {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+.field-group > label,
+.key-delivery > label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 .sharing-directory {
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
 }
 .sharing-directory input,
-.key-delivery input,
-.key-delivery textarea {
-  padding: 10px 12px;
+.key-delivery input {
+  height: var(--control-h-md, 32px);
+  padding: 0 10px;
   border: 1px solid #cbd5e1;
-  border-radius: 7px;
-  background: white;
-  color: #182b49;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--surface, white);
+  color: var(--text-primary);
   font: inherit;
+  font-size: 13px;
   font-weight: 400;
 }
-.sharing-directory input:disabled {
-  background: #f8fafc;
+.key-delivery textarea {
+  padding: 6px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--surface, white);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+.sharing-directory input:disabled,
+.key-delivery input:disabled {
+  background: var(--surface-subtle, #f7f9fc);
   color: #64748b;
 }
 .key-delivery {
-  padding: 14px;
-  background: #f4f7fb;
-  border-radius: 8px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: var(--surface-subtle, #f7f9fc);
+  border: 1px solid var(--border-subtle, #e8edf4);
+  border-radius: var(--radius-md, 8px);
+  display: grid;
+  gap: 8px;
 }
-
-.path-value {
-  display: block;
-  overflow-wrap: anywhere;
-  margin: 10px 0;
+.key-delivery h3 {
+  margin: 0;
+  font-size: 13.5px;
 }
 .sharing-actions {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
-  margin: 14px 0;
+  margin: 12px 0 4px;
 }
 .sharing-directory {
   display: grid;
-  gap: 8px;
-  margin: 14px 0;
+  gap: 6px;
+  margin: 12px 0;
 }
 .sharing-directory input {
   width: 100%;
   box-sizing: border-box;
 }
-.key-delivery {
-  margin-top: 18px;
-}
 .key-delivery label {
   display: grid;
-  gap: 8px;
+  gap: 5px;
 }
 .key-delivery input,
 .key-delivery textarea {
   width: 100%;
   box-sizing: border-box;
-  font-family: monospace;
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
   resize: none;
 }
 h3 {
-  font-size: 15px;
-  margin-top: 24px;
+  font-size: 13.5px;
+  margin-top: 18px;
 }
 </style>

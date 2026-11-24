@@ -1,0 +1,49 @@
+$border: var(--border, #dde3ec);
+$border-subtle: var(--border-subtle, #e8edf4);
+$border-faint: #edf1f7;
+$border-input: #cbd5e1;
+
+$surface: var(--surface, #ffffff);
+$surface-muted: var(--surface-subtle, #f7f9fc);
+$surface-subtle: var(--surface-subtle, #f7f9fc);
+$surface-soft: #f1f5f9;
+
+$text-secondary: var(--text-secondary, #475569);
+$text-subtle: #64748b;
+$danger: #dc2626;
+$danger-bg: #fef2f2;
+$danger-border: #fecaca;
+
+@mixin flex-row($gap: 8px, $justify: null, $align: center, $wrap: wrap) {
+  display: flex;
+  @if $wrap != null {
+    flex-wrap: $wrap;
+  }
+  align-items: $align;
+  @if $justify != null {
+    justify-content: $justify;
+  }
+  gap: $gap;
+}
+
+@mixin focus-ring {
+  border-color: var(--brand-accent);
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-accent) 12%, transparent);
+}
+
+@mixin pill($padding: 2px 7px, $radius: var(--radius-xs, 4px), $size: 11.5px, $weight: 600) {
+  display: inline-flex;
+  align-items: center;
+  padding: $padding;
+  border-radius: $radius;
+  font-size: $size;
+  font-weight: $weight;
+  white-space: nowrap;
+}
+
+@mixin auto-grid($min: 240px, $gap: 12px) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, $min), 1fr));
+  gap: $gap;
+}

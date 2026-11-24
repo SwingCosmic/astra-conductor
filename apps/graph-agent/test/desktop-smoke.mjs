@@ -245,7 +245,7 @@ app.whenReady().then(async () => {
       button(dialog,'保存供应商').click();
       await wait(()=>!document.querySelector('dialog')&&document.querySelector('.custom-providers .provider-row'));
       const provider=document.querySelector('.custom-providers .provider-row');
-      button(provider,'查看接入点').click();
+      provider.querySelector('[aria-label="展开接入点"]').click();
       await wait(()=>button(provider,'添加账号')&&!button(provider,'添加账号').disabled);
       button(provider,'添加账号').click();
       await wait(()=>document.querySelector('#connection-key'));
@@ -253,15 +253,15 @@ app.whenReady().then(async () => {
       fill('#connection-key',${JSON.stringify(modelSecret)});
       await wait(()=>!button(document.querySelector('dialog'),'保存连接').disabled);
       button(document.querySelector('dialog'),'保存连接').click();
-      await wait(()=>!document.querySelector('dialog')&&button(provider,'编辑账号'));
-      button(provider,'编辑账号').click();
+      await wait(()=>!document.querySelector('dialog')&&provider.querySelector('[aria-label="编辑账号"]'));
+      provider.querySelector('[aria-label="编辑账号"]').click();
       await wait(()=>document.querySelector('#connection-name')?.value==='Smoke 模型连接');
       if(document.querySelector('#connection-key').value)throw Error('edit-returned-key');
       fill('#connection-name','Smoke 模型连接（编辑）');
       await wait(()=>!button(document.querySelector('dialog'),'保存连接').disabled);
       button(document.querySelector('dialog'),'保存连接').click();
       await wait(()=>!document.querySelector('dialog')&&provider.textContent.includes('Smoke 模型连接（编辑）'));
-      button(provider,'删除供应商').click();await wait(()=>document.querySelector('dialog')?.textContent.includes('Smoke 模型连接（编辑）'));
+      provider.querySelector('[aria-label="删除供应商"]').click();await wait(()=>document.querySelector('dialog')?.textContent.includes('Smoke 模型连接（编辑）'));
       if(!button(document.querySelector('dialog'),'删除供应商').disabled)throw Error('provider-delete-enabled-with-reference');
       button(document.querySelector('dialog'),'取消').click();
       button(provider,'模型配置').click();
@@ -269,9 +269,10 @@ app.whenReady().then(async () => {
       for(const route of ['openai-images-generations','openai-images-edits']){
         set(field(document,'协议端点'),route);
         const title=route==='openai-images-edits'?'OpenAI 图片编辑':'OpenAI 图片生成';
-        await wait(()=>document.querySelector('.catalog-browser .setting-hint')?.textContent.includes(title)&&document.querySelector('.catalog-browser details form'));
-        const form=document.querySelector('.catalog-browser form');
-        form.closest('details').open=true;
+        await wait(()=>document.querySelector('.catalog-browser .setting-hint')?.textContent.includes(title)&&document.querySelector('.catalog-browser .manual-register form'));
+        const form=document.querySelector('.catalog-browser .manual-register form');
+        const manualPanel=form.closest('[data-collapsible]');
+        if(manualPanel?.dataset.open==='false') manualPanel.querySelector('.collapsible-trigger')?.click();
         set(field(form,'上游模型 ID'),'fixture-image');
         await wait(()=>!button(form,'登记模型').disabled);
         button(form,'登记模型').click();
@@ -280,7 +281,8 @@ app.whenReady().then(async () => {
         if(route==='openai-images-generations'){
           const editor=document.querySelector('.graph-editor');button(editor,'价格').click();await wait(()=>field(editor,'接入方案 / 套餐'));
           set(field(editor,'接入方案 / 套餐'),'relay-api');
-          const pricing=editor.querySelector('.rate-card-editor');pricing.open=true;
+          const pricing=editor.querySelector('.rate-card-editor');
+          if(pricing?.dataset.open==='false') pricing.querySelector('.collapsible-trigger')?.click();
           button(pricing,'新建条件价卡').click();await wait(()=>field(pricing,'计量项'));
           set(field(pricing,'接入与计费方式'),'api');set(field(pricing,'计量项'),'images');set(field(pricing,'单位'),'image');set(field(pricing,'金额'),'0.06');
           button(pricing,'添加条件覆盖').click();await wait(()=>pricing.querySelector('.rate-rule'));
@@ -302,18 +304,25 @@ app.whenReady().then(async () => {
       document.querySelector('.catalog-list button').click();
       await wait(()=>document.querySelector('.graph-editor'));
       const editor=document.querySelector('.graph-editor');
+      if(editor.querySelector('[data-field="inputModalities"] button[aria-pressed="true"]')?.textContent.trim()!=='文本')throw Error('text-llm-default-input-modality-missing');
+      if(editor.querySelector('[data-field="outputModalities"] button[aria-pressed="true"]')?.textContent.trim()!=='文本')throw Error('text-llm-default-output-modality-missing');
+      if(editor.querySelector('[data-field="toolCalling"] [role="radio"][aria-checked="true"]')?.textContent.trim()!=='支持')throw Error('text-llm-default-tool-calling-missing');
+      if(!editor.querySelector('[data-field="promptCacheRead"]')||!editor.querySelector('[data-field="promptCacheWrite"]'))throw Error('cache-controls-missing');
       set(field(editor,'上下文窗口'),'2048');
       button(editor,'调用参数').click();await wait(()=>field(editor,'温度（temperature）'));
       set(field(editor,'请求输出预算（tokens）'),'128');set(field(editor,'温度（temperature）'),'0.25');
       button(editor,'价格').click();await wait(()=>field(editor,'输入单价 / 每 1,000,000 tokens'));
+      if(!field(editor,'缓存读取单价 / 每 1,000,000 tokens')||!field(editor,'缓存写入单价 / 每 1,000,000 tokens'))throw Error('cache-price-fields-missing');
       set(field(editor,'输入单价 / 每 1,000,000 tokens'),'0');set(field(editor,'输出单价 / 每 1,000,000 tokens'),'2.50');
       await wait(()=>!button(editor,'预览请求').disabled);
       button(editor,'预览请求').click();await wait(()=>editor.querySelector('[aria-label="请求预览"]')?.textContent.includes('max_completion_tokens'));
       button(editor,'保存配置').click();await wait(()=>!button(editor,'用于测试对话').disabled);
-      const priceCard=editor.querySelector('.rate-card-editor'); priceCard.open=true;
+      const priceCard=editor.querySelector('.rate-card-editor');
+      if(priceCard?.dataset.open==='false') priceCard.querySelector('.collapsible-trigger')?.click();
       await wait(()=>field(priceCard,'普通输入 tokens')&&field(priceCard,'输出 tokens'));
       set(field(priceCard,'普通输入 tokens'),'100');set(field(priceCard,'输出 tokens'),'1000000');button(priceCard,'试算费用').click();
-      await wait(()=>priceCard.querySelector('[role=status]')?.textContent.includes('2.5 USD'));priceCard.open=false;
+      await wait(()=>priceCard.querySelector('[role=status]')?.textContent.includes('2.5 USD'));
+      if(priceCard?.dataset.open==='true') priceCard.querySelector('.collapsible-trigger')?.click();
       button(editor,'用于测试对话').click();await wait(()=>button(editor,'前往测试对话'));
     `);
     const captureAfterPaint = async (name) => {
@@ -341,7 +350,7 @@ app.whenReady().then(async () => {
           const toggle=document.querySelector('.ai-activity__summary');
           if(toggle?.getAttribute('aria-expanded')!=='false') throw Error('思考节点未折叠');
           toggle.click();
-          await wait(()=>!!document.querySelector('.ai-activity__thought'));
+          await wait(()=>toggle.getAttribute('aria-expanded')==='true'&&!!document.querySelector('.ai-activity__thought'));
           if(!document.querySelector('[aria-label="停止回复"]'))throw Error('上游结束前未显示正文');
         `);
         await captureAfterPaint("graph-test-chat-streaming.png");
@@ -382,14 +391,14 @@ app.whenReady().then(async () => {
       button(document.querySelector('nav'),'供应商').click();
       await wait(()=>document.querySelector('.custom-providers .provider-row'));
       let provider=document.querySelector('.custom-providers .provider-row');
-      button(provider,'删除供应商').click();await wait(()=>document.querySelector('dialog')?.textContent.includes('已停用'));
+      provider.querySelector('[aria-label="删除供应商"]').click();await wait(()=>document.querySelector('dialog')?.textContent.includes('已停用'));
       button(document.querySelector('dialog'),'变更绑定').click();
       await wait(()=>field(document.querySelector('dialog'),'接入点'));
       set(field(document.querySelector('dialog'),'接入点'),'');
       await wait(()=>!button(document.querySelector('dialog'),'保存绑定').disabled);
       button(document.querySelector('dialog'),'保存绑定').click();
       await wait(()=>!document.querySelector('dialog')&&document.querySelector('.custom-providers').textContent.includes('待绑定账号'));
-      button(provider,'删除供应商').click();await wait(()=>document.querySelector('dialog')?.textContent.includes('确认删除'));
+      provider.querySelector('[aria-label="删除供应商"]').click();await wait(()=>document.querySelector('dialog')?.textContent.includes('确认删除'));
       button(document.querySelector('dialog'),'删除供应商').click();
       await wait(()=>!document.querySelector('dialog')&&!document.querySelector('.custom-providers .provider-row'));
       button(document.querySelector('.custom-providers'),'配置此账号的供应商').click();
@@ -435,7 +444,7 @@ app.whenReady().then(async () => {
     );
     await press("Escape");
     await evaluate(`await wait(()=>!document.querySelector('dialog')&&document.activeElement===button(document.querySelector('.custom-providers'),'创建自定义供应商'));
-      const p=document.querySelector('.custom-providers .provider-row');if(!button(p,'模型配置'))button(p,'查看接入点').click();
+      const p=document.querySelector('.custom-providers .provider-row');if(!button(p,'模型配置'))p.querySelector('[aria-label="展开接入点"]').click();
       await wait(()=>button(p,'模型配置'));button(p,'模型配置').focus();`);
     await press("Enter");
     await evaluate(

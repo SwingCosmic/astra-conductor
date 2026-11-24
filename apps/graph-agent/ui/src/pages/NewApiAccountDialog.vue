@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, ref } from "vue";
-import { FormDialog } from "@astra-conductor/shared-ui";
+import { AppIcon, FormDialog } from "@astra-conductor/shared-ui";
 import type {
   NewApiAccountRequest,
   NewApiOfferingRequest,
@@ -189,6 +189,7 @@ onBeforeUnmount(() => {
               "
               @click="selectKey(key.id)"
             >
+              <AppIcon v-if="!account" name="plus" :size="14" />
               {{ account ? "使用此 Key" : "用此 Key 添加账号" }}
             </button>
           </li>

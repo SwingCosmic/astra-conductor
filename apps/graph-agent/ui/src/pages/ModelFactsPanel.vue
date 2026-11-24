@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from "vue";
-import { ConfigField, FormDialog } from "@astra-conductor/shared-ui";
+import {
+  AppIcon,
+  CollapsiblePanel,
+  ConfigField,
+  FormDialog,
+  SegmentedControl,
+  TagToggleGroup,
+} from "@astra-conductor/shared-ui";
 import type {
   GraphModelSnapshot,
   ModelCatalogView,
@@ -19,29 +26,40 @@ import type {
 import { graphServiceKey } from "../services/graph-agent-service";
 import {
   factLabels,
+  factSourceLabels,
+  formatEffortLabel,
   parameterLabels,
+  parameterSourceLabels,
   paramKeys,
+  priceKindLabels,
+  priceSourceLabels,
   valueLabels,
   modalityLabels,
   operationLabels,
   typeLabels,
 } from "./catalog-labels";
 import RateCardEditor from "./RateCardEditor.vue";
+
 const props = defineProps<{
   snapshot: GraphModelSnapshot;
   entry: ModelEntryView;
   catalog: ModelCatalogView;
   scope: "account" | "offering";
+  breadcrumb?: string;
   readonly: boolean;
+  removable?: boolean;
+  removeBusy?: boolean;
 }>();
-const emit = defineEmits<{ reload: []; chat: []; pickAccount: [] }>();
+const emit = defineEmits<{ reload: []; chat: []; pickAccount: []; removeManual: [] }>();
 const service = inject(graphServiceKey)!;
+
 const tab = ref<"facts" | "parameters" | "prices">("facts");
 const tabs = [
   { id: "facts", label: "能力与限制" },
   { id: "parameters", label: "调用参数" },
   { id: "prices", label: "价格" },
 ] as const;
+
 const edits = ref<Partial<Record<keyof ModelFacts, ModelFieldChange>>>({}),
   params = ref<Partial<Record<keyof ModelParameters, ModelParameterChange>>>({}),
   prices = ref<Record<string, ModelPriceChange>>({});
@@ -60,15 +78,28 @@ const form = ref<HTMLElement>(),
   publicTest = ref(false);
 let decide: ((ok: boolean) => void) | undefined;
 let alive = true;
-const dirty = computed(
-  () =>
-    Object.keys(edits.value).length > 0 ||
-    Object.keys(params.value).length > 0 ||
-    Object.keys(prices.value).length > 0 ||
-    card.value !== undefined ||
-    preset.value !== undefined ||
-    planKey.value !== undefined,
+
+const factsDirtyCount = computed(
+  () => Object.keys(edits.value).length + (preset.value !== undefined ? 1 : 0),
 );
+const paramsDirtyCount = computed(() => Object.keys(params.value).length);
+const pricesDirtyCount = computed(
+  () =>
+    Object.keys(prices.value).length +
+    (card.value !== undefined ? 1 : 0) +
+    (planKey.value !== undefined ? 1 : 0),
+);
+const dirtyCount = computed(
+  () => factsDirtyCount.value + paramsDirtyCount.value + pricesDirtyCount.value,
+);
+const dirty = computed(() => dirtyCount.value > 0);
+
+function tabDirtyCount(id: "facts" | "parameters" | "prices") {
+  if (id === "facts") return factsDirtyCount.value;
+  if (id === "parameters") return paramsDirtyCount.value;
+  return pricesDirtyCount.value;
+}
+
 const stale = computed(
   () =>
     baseline.value !== props.snapshot.settingsRevision ||
@@ -95,6 +126,7 @@ const currentCard = computed(() =>
       ? (props.entry.rateCards[planKey.value] ?? null)
       : props.entry.rateCard,
 );
+
 async function switchPlan(event: Event) {
   const el = event.target as HTMLInputElement;
   const value = el.value.trim();
@@ -103,52 +135,20 @@ async function switchPlan(event: Event) {
   planKey.value = value;
   card.value = undefined;
 }
+
 function parameterSource(k: keyof ModelParameters) {
   const source = props.entry.parameterSources[k];
-  return source
-    ? { account: "当前账号覆盖", offering: "供应商默认", preset: "型号建议" }[source]
-    : "协议默认";
+  return source ? (parameterSourceLabels[source] ?? source) : parameterSourceLabels.default;
 }
-const groups: { label: string; keys: (keyof ModelFacts)[] }[] = [
-  {
-    label: "容量与模态",
-    keys: [
-      "contextWindow",
-      "maxInputTokens",
-      "maxOutputTokens",
-      "operations",
-      "inputModalities",
-      "outputModalities",
-    ],
-  },
-  {
-    label: "工具与输出",
-    keys: ["vision", "toolCalling", "parallelToolCalling", "structuredOutput"],
-  },
-  {
-    label: "推理",
-    keys: ["reasoningMode", "reasoningOutputMode", "effortLevels", "defaultEffort"],
-  },
-  { label: "缓存与约束", keys: ["promptCacheRead", "promptCacheWrite", "unsupportedParameters"] },
-];
-const groupsShown = computed(() =>
-  props.entry.operation === "chat"
-    ? groups
-    : [
-        {
-          label: "操作与模态",
-          keys: ["operations", "inputModalities", "outputModalities"] as (keyof ModelFacts)[],
-        },
-      ],
-);
-const tokenFields = ["contextWindow", "maxInputTokens", "maxOutputTokens"];
-const lists = [
-  "operations",
-  "inputModalities",
-  "outputModalities",
-  "effortLevels",
-  "unsupportedParameters",
-];
+
+const triStateOptions = [
+  { value: "supported", label: "支持" },
+  { value: "unsupported", label: "不支持" },
+  { value: "unknown", label: "未知" },
+] as const;
+
+const defaultEffortFallback = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+
 function choices(k: keyof ModelFacts): string[] {
   switch (k) {
     case "inputModalities":
@@ -156,8 +156,10 @@ function choices(k: keyof ModelFacts): string[] {
       return Object.keys(modalityLabels);
     case "operations":
       return Object.keys(operationLabels);
-    case "effortLevels":
-      return ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+    case "effortLevels": {
+      const fromTemplate = parameterSpec("effort")?.choices?.map(String) ?? [];
+      return [...new Set([...(fromTemplate.length ? fromTemplate : defaultEffortFallback)])];
+    }
     case "unsupportedParameters":
       return [...Object.keys(parameterLabels), "stream", "stream_options"];
     case "structuredOutput":
@@ -179,44 +181,82 @@ function choices(k: keyof ModelFacts): string[] {
       return ["unknown", "supported", "unsupported"];
   }
 }
+
 function fact(k: keyof ModelFacts) {
   const v = edits.value[k];
   return v ? (v.operation === "set" ? v.value : null) : props.entry.fields[k].value;
 }
+
 function fieldSource(k: keyof ModelFacts) {
   const src = props.entry.fields[k].source;
   if (src?.scope === "series" && !Object.hasOwn(own.value.facts, k) && !edits.value[k])
-    return "系列参考";
-  if (edits.value[k]?.operation === "clear") return "恢复继承";
+    return factSourceLabels.series;
+  if (edits.value[k]?.operation === "clear") return factSourceLabels.clear;
   if (Object.hasOwn(own.value.facts, k))
-    return props.scope === "account" ? "当前账号覆盖" : "供应商默认";
-  if (Object.hasOwn(props.entry.offeringOverrides.facts, k)) return "供应商默认";
-  return src
-    ? ({ remote: "远端目录", preset: "型号预置", user: "用户覆盖" }[src.kind] ?? src.kind)
-    : "未知";
+    return props.scope === "account" ? factSourceLabels.account : factSourceLabels.offering;
+  if (Object.hasOwn(props.entry.offeringOverrides.facts, k)) return factSourceLabels.offering;
+  if (src?.revision === "text-llm-default") return factSourceLabels.default;
+  return src ? (factSourceLabels[src.kind] ?? src.kind) : factSourceLabels.unknown;
 }
+
+function sourceBadgeClass(label: string, isDirty = false) {
+  if (isDirty) return "is-dirty";
+  if (label.includes("覆盖")) return "is-override";
+  if (label.includes("供应商默认")) return "is-offering";
+  return "is-neutral";
+}
+
 function factDetails(k: keyof ModelFacts) {
   const s = props.entry.fields[k].source;
   return s ? [s.revision, s.checkedAt, s.referenceUrl].filter(Boolean).join(" · ") : undefined;
 }
+
 function setFact(k: keyof ModelFacts, value: ModelFacts[keyof ModelFacts]) {
   edits.value[k] = { field: k, operation: "set", value } as ModelFieldChange;
 }
+
 function pickList(k: keyof ModelFacts, v: string) {
   const a = fact(k);
   const xs = Array.isArray(a) ? (a as string[]) : [];
   setFact(k, xs.includes(v) ? xs.filter((i) => i !== v) : [...xs, v]);
 }
-function listValues(k: keyof ModelFacts) {
+
+function listOptions(k: keyof ModelFacts) {
   const a = fact(k);
-  return [...new Set([...choices(k), ...(Array.isArray(a) ? a : [])])];
+  const all = [...new Set([...choices(k), ...(Array.isArray(a) ? (a as string[]) : [])])];
+  return all.map((v) => ({
+    value: v,
+    label:
+      k === "effortLevels"
+        ? formatEffortLabel(v)
+        : (valueLabels[v] ?? parameterLabels[v as keyof ModelParameters] ?? v),
+  }));
 }
+
+function listValue(k: keyof ModelFacts): string[] | null {
+  const v = fact(k);
+  return Array.isArray(v) ? (v as string[]) : null;
+}
+
+const reasoningSummary = computed(() => {
+  const mode = String(fact("reasoningMode") ?? "unknown");
+  const out = String(fact("reasoningOutputMode") ?? "unknown");
+  return `${valueLabels[mode] ?? mode} · 思考输出：${valueLabels[out] ?? out}`;
+});
+
+const advancedFactsSummary = computed(() => {
+  const parallel = String(fact("parallelToolCalling") ?? "unknown");
+  const unsupported = listValue("unsupportedParameters")?.length ?? 0;
+  return `并行工具：${valueLabels[parallel] ?? parallel}${unsupported ? ` · ${unsupported} 项受限参数` : ""}`;
+});
+
 function parameter(k: keyof ModelParameters): ModelParameters[keyof ModelParameters] {
   if ((k === "effort" || k === "returnFullReasoning") && parameter("thinkingEnabled") === false)
     return k === "effort" ? null : false;
   const v = params.value[k];
   return v ? (v.operation === "set" ? v.value : null) : props.entry.parameters[k];
 }
+
 const numericParams = [
   "maxOutputTokens",
   "contextWindow",
@@ -227,21 +267,69 @@ const numericParams = [
   "dimensions",
   "topK",
 ];
+
 const parameterKeys = computed(() => {
   const keys = props.entry.parameterTemplate
     ? (Object.keys(props.entry.parameterTemplate.fields) as (keyof ModelParameters)[])
     : (paramKeys[props.entry.operation] ?? []);
-  const reasoning = ["thinkingEnabled", "effort", "returnFullReasoning"] as const;
-  return [
-    ...reasoning.filter((k) => keys.includes(k)),
-    ...keys.filter((k) => !reasoning.some((r) => r === k)),
-  ];
+  return keys;
 });
+
 const parameterSpec = (k: keyof ModelParameters) => props.entry.parameterTemplate?.fields[k];
+
 function numeric(k: keyof ModelParameters) {
   const spec = parameterSpec(k);
   return spec ? spec.type !== "string" : numericParams.includes(k);
 }
+
+const effortChoices = computed<string[]>(() => {
+  const fromFact = fact("effortLevels");
+  if (Array.isArray(fromFact) && fromFact.length) return fromFact.map(String);
+  const fromSpec = parameterSpec("effort")?.choices;
+  if (fromSpec?.length) return fromSpec.map(String);
+  return [];
+});
+
+function paramChoices(k: keyof ModelParameters): string[] {
+  if (k === "effort") return effortChoices.value;
+  return (parameterSpec(k)?.choices ?? []).map(String);
+}
+
+const chatReasoningKeys = computed(() =>
+  (["thinkingEnabled", "effort", "returnFullReasoning"] as const).filter((k) =>
+    parameterKeys.value.includes(k),
+  ),
+);
+
+const chatPrimaryKeys = computed(() =>
+  (["maxOutputTokens", "temperature"] as const).filter((k) => parameterKeys.value.includes(k)),
+);
+
+const chatAdvancedKeys = computed(() => {
+  const core = new Set<string>([...chatReasoningKeys.value, ...chatPrimaryKeys.value]);
+  return parameterKeys.value.filter((k) => !core.has(k));
+});
+
+const hasAdvancedParamOverrides = computed(() =>
+  chatAdvancedKeys.value.some((k) => parameter(k) != null || !!params.value[k]),
+);
+
+const thinkingChecked = computed(() => {
+  const v = parameter("thinkingEnabled");
+  return v === true || v == null;
+});
+
+const fullReasoningDisabledReason = computed(() => {
+  if (fact("reasoningMode") === "none") return "当前模型不支持思考推理";
+  if (!thinkingChecked.value) return "请先开启「支持思考」";
+  const mode = fact("reasoningOutputMode");
+  if (mode === "summary") return "当前绑定仅公开思考摘要，无法请求完整思考内容";
+  if (mode === "activity-only") return "当前绑定仅报告思考阶段";
+  if (mode === "none") return "当前绑定不公开思考内容";
+  if (mode !== "full") return "公开思考能力尚待核实，暂不可开启全文";
+  return "";
+});
+
 function setParam(k: keyof ModelParameters, s: string) {
   params.value[k] = {
     field: k,
@@ -249,8 +337,40 @@ function setParam(k: keyof ModelParameters, s: string) {
     value: s === "" ? null : numeric(k) ? Number(s) : s,
   };
 }
-const priceKinds = ["input", "output"] as const;
-function priceKey(kind: "input" | "output"): ModelPriceKey {
+
+function paramPlaceholder(k: keyof ModelParameters) {
+  if (k === "maxOutputTokens") {
+    const cap = fact("maxOutputTokens");
+    return cap ? `协议默认（模型上限 ${Number(cap).toLocaleString()}）` : "协议默认";
+  }
+  if (k === "contextWindow") {
+    const cap = fact("contextWindow");
+    return cap ? `协议默认（窗口 ${Number(cap).toLocaleString()}）` : "协议默认";
+  }
+  if (k === "temperature") return "协议默认（通常 1.0）";
+  if (k === "topP") return "协议默认（通常 1.0）";
+  return "协议默认";
+}
+
+function paramHint(k: keyof ModelParameters) {
+  if (entryUnsupported(k)) return "当前模型或协议标记不支持此参数";
+  if (k === "contextWindow") return "仅作为本地上下文预算约束，不会向接口虚构出站字段";
+  return undefined;
+}
+
+function entryUnsupported(k: keyof ModelParameters) {
+  return !!props.entry.fields.unsupportedParameters.value?.includes(k);
+}
+
+const priceKinds = ["input", "output", "cache-read", "cache-write"] as const;
+type BasicPriceKind = (typeof priceKinds)[number];
+const priceFieldLabels: Record<BasicPriceKind, string> = {
+  input: "输入单价 / 每 1,000,000 tokens",
+  output: "输出单价 / 每 1,000,000 tokens",
+  "cache-read": "缓存读取单价 / 每 1,000,000 tokens",
+  "cache-write": "缓存写入单价 / 每 1,000,000 tokens",
+};
+function priceKey(kind: BasicPriceKind): ModelPriceKey {
   return (
     props.entry.prices.find(
       (x) =>
@@ -271,7 +391,7 @@ function priceKey(kind: "input" | "output"): ModelPriceKey {
 function priceId(key: ModelPriceKey) {
   return JSON.stringify([key.kind, key.currency, key.unit, key.tier, key.durationSeconds]);
 }
-function priceRow(kind: "input" | "output") {
+function priceRow(kind: BasicPriceKind) {
   const key = priceKey(kind),
     id = priceId(key),
     change = prices.value[id],
@@ -284,23 +404,23 @@ function priceRow(kind: "input" | "output") {
     value: change ? (change.operation === "set" ? change.amount : null) : row?.amount.value,
     source: resettable
       ? props.scope === "account"
-        ? "当前账号覆盖"
-        : "供应商默认"
+        ? priceSourceLabels.account
+        : priceSourceLabels.offering
       : props.entry.offeringOverrides.prices.some((p) => priceId(p) === id)
-        ? "供应商默认"
+        ? priceSourceLabels.offering
         : row?.amount.source?.kind === "preset"
-          ? "预置报价"
+          ? priceSourceLabels.preset
           : row?.amount.source?.kind === "remote"
-            ? "远端报价"
-            : "未知",
+            ? priceSourceLabels.remote
+            : priceSourceLabels.unknown,
     resettable,
   };
 }
-function setPrice(kind: "input" | "output", s: string) {
+function setPrice(kind: BasicPriceKind, s: string) {
   const r = priceRow(kind);
   prices.value[r.id] = { operation: "set", key: r.key, amount: s.trim() || null };
 }
-function resetPrice(kind: "input" | "output") {
+function resetPrice(kind: BasicPriceKind) {
   const r = priceRow(kind);
   prices.value[r.id] = { operation: "clear", key: r.key };
 }
@@ -309,6 +429,7 @@ const remainingPrices = computed(() =>
     (p) => !priceKinds.some((k) => priceId(priceKey(k)) === priceId(p.key)),
   ),
 );
+
 const val = (e: Event) => (e.target as HTMLInputElement).value;
 function discard() {
   edits.value = {};
@@ -339,6 +460,7 @@ watch(
   },
   { deep: true },
 );
+
 function boundRateCard() {
   const edited = card.value;
   if (!edited) return edited;
@@ -355,6 +477,7 @@ function boundRateCard() {
     },
   };
 }
+
 function draft(): SaveModelDraftRequest {
   return {
     ...command(),
@@ -370,6 +493,7 @@ function draft(): SaveModelDraftRequest {
     ...(preset.value !== undefined ? { presetKey: preset.value } : {}),
   };
 }
+
 function report(e: PublicError) {
   error.value = e;
   const path = e.fields?.[0]?.path ?? "";
@@ -389,12 +513,22 @@ function report(e: PublicError) {
         )
       : undefined;
     if (target) {
-      const section = target.closest("details");
-      if (section) section.open = true;
+      let ancestor = target.parentElement?.closest<HTMLElement>("[data-collapsible]");
+      while (ancestor) {
+        if (ancestor.dataset.open === "false") {
+          ancestor
+            .querySelector<HTMLButtonElement>(
+              ":scope > .collapsible-header-row > .collapsible-trigger",
+            )
+            ?.click();
+        }
+        ancestor = ancestor.parentElement?.closest<HTMLElement>("[data-collapsible]");
+      }
       target.querySelector<HTMLElement>("input,select,button")?.focus();
     } else form.value?.querySelector<HTMLElement>("[role=alert]")?.focus();
   });
 }
+
 async function save() {
   if (busy.value || stale.value || locked.value) return false;
   busy.value = true;
@@ -424,6 +558,7 @@ async function save() {
     busy.value = false;
   }
 }
+
 function closeDecision(ok: boolean) {
   leaveOpen.value = false;
   decide?.(ok);
@@ -440,6 +575,7 @@ onBeforeUnmount(() => {
   alive = false;
   closeDecision(false);
 });
+
 async function chooseTest() {
   if (props.scope === "offering") {
     publicTest.value = true;
@@ -466,6 +602,7 @@ async function chooseTest() {
     busy.value = false;
   }
 }
+
 async function previewDraft() {
   if (busy.value) return;
   busy.value = true;
@@ -487,6 +624,7 @@ async function previewDraft() {
     busy.value = false;
   }
 }
+
 const isSelected = computed(() => {
   const v = props.snapshot.savedSelection?.selection;
   return (
@@ -496,28 +634,44 @@ const isSelected = computed(() => {
   );
 });
 </script>
+
 <template>
   <section ref="form" class="graph-card graph-editor">
-    <header class="graph-card-header">
-      <div>
-        <h2>{{ entry.displayName }}</h2>
-        <small
-          ><template v-if="entry.displayName !== entry.selection.modelId"
-            >{{ entry.selection.modelId }} · </template
-          >{{ typeLabels[entry.modelType] }} · {{ entry.ioProfile }}</small
-        >
+    <header class="editor-header">
+      <div class="editor-header-copy">
+        <p v-if="breadcrumb" class="editor-breadcrumb">{{ breadcrumb }}</p>
+        <div class="editor-title-row">
+          <h2>{{ entry.displayName }}</h2>
+          <span v-if="isSelected" class="status-pill is-brand">当前测试模型</span>
+        </div>
+        <div class="editor-subtitle-row">
+          <code v-if="entry.displayName !== entry.selection.modelId" class="model-id-code">{{
+            entry.selection.modelId
+          }}</code>
+          <span class="subtle-tag">{{ typeLabels[entry.modelType] ?? entry.modelType }}</span>
+          <span v-for="p in entry.ioProfiles" :key="p.kind" class="subtle-tag">
+            {{
+              [
+                ...p.requiredInputs.map((v) => modalityLabels[v] ?? v),
+                ...p.optionalInputs.map((v) => (modalityLabels[v] ?? v) + "（可选）"),
+              ].join(" + ")
+            }}
+            → {{ p.outputs.map((v) => modalityLabels[v] ?? v).join(" + ") }}
+          </span>
+        </div>
       </div>
-      <span v-if="isSelected" class="method-chip">当前测试模型</span>
+      <div v-if="removable" class="editor-header-actions">
+        <button
+          type="button"
+          class="outline-action danger-text compact-btn"
+          :disabled="removeBusy || busy"
+          @click="emit('removeManual')"
+        >
+          <AppIcon name="trash" :size="14" /> 移除当前手工登记
+        </button>
+      </div>
     </header>
-    <div v-for="p in entry.ioProfiles" :key="p.kind" class="io-profile">
-      {{
-        [
-          ...p.requiredInputs.map((v) => modalityLabels[v] ?? v),
-          ...p.optionalInputs.map((v) => (modalityLabels[v] ?? v) + "（可选）"),
-        ].join(" + ")
-      }}
-      → {{ p.outputs.map((v) => modalityLabels[v] ?? v).join(" + ") }}
-    </div>
+
     <nav class="editor-tabs" aria-label="模型配置页签">
       <button
         v-for="t in tabs"
@@ -526,184 +680,916 @@ const isSelected = computed(() => {
         :aria-pressed="tab === t.id"
         @click="tab = t.id"
       >
-        {{ t.label }}
+        <span>{{ t.label }}</span>
+        <span
+          v-if="tabDirtyCount(t.id)"
+          class="tab-dirty-dot"
+          :title="`已改 ${tabDirtyCount(t.id)} 项`"
+        />
       </button>
     </nav>
-    <fieldset class="plain-fields" :disabled="locked || busy">
+
+    <fieldset class="plain-fields editor-body" :disabled="locked || busy">
+      <!-- ── 页签 1：能力与限制 ──────────────────────────────────────────── -->
       <template v-if="tab === 'facts'">
-        <ConfigField label="参考型号" :dirty="preset !== undefined"
-          ><select
-            :value="preset === undefined ? (entry.presetKey ?? '') : (preset ?? '')"
-            @change="preset = val($event) || null"
+        <section class="editor-section preset-bar">
+          <ConfigField
+            label="参考型号"
+            :dirty="preset !== undefined"
+            hint="未手工覆盖的字段将继承所选参考型号的预置能力。"
           >
-            <option value="">自动匹配</option>
-            <option
-              v-for="item in snapshot.presets.filter((p) => p.operations.includes(entry.operation))"
-              :value="item.key"
+            <select
+              :value="preset === undefined ? (entry.presetKey ?? '') : (preset ?? '')"
+              @change="preset = val($event) || null"
             >
-              {{ item.family }} / {{ item.series }} · {{ item.displayName }}
-            </option>
-          </select></ConfigField
-        >
-        <details v-for="(g, gi) in groupsShown" :key="g.label" :open="gi === 0">
-          <summary>{{ g.label }}</summary>
-          <div class="graph-grid editor-fields">
-            <div v-for="k in g.keys" :key="k" :data-field="k">
-              <template v-if="lists.includes(k)"
-                ><fieldset class="tag-field">
-                  <legend>{{ factLabels[k] }}</legend>
-                  <label v-for="v in listValues(k)" :key="v"
-                    ><input
-                      type="checkbox"
-                      :checked="Array.isArray(fact(k)) && (fact(k) as string[]).includes(v)"
-                      @change="pickList(k, v)"
-                    />{{ valueLabels[v] ?? v }}</label
+              <option value="">自动匹配</option>
+              <option
+                v-for="item in snapshot.presets.filter((p) =>
+                  p.operations.includes(entry.operation),
+                )"
+                :key="item.key"
+                :value="item.key"
+              >
+                {{ item.family }} / {{ item.series }} · {{ item.displayName }}
+              </option>
+            </select>
+          </ConfigField>
+        </section>
+
+        <section v-if="entry.operation === 'chat'" class="editor-section">
+          <h3>容量限制</h3>
+          <div class="editor-two-col">
+            <div data-field="contextWindow">
+              <ConfigField
+                :label="factLabels.contextWindow"
+                unit="tokens"
+                :dirty="!!edits.contextWindow"
+                :source="fieldSource('contextWindow')"
+                :details="factDetails('contextWindow')"
+                :resettable="Object.hasOwn(own.facts, 'contextWindow') || !!edits.contextWindow"
+                @reset="edits.contextWindow = { field: 'contextWindow', operation: 'clear' }"
+              >
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  :value="fact('contextWindow') ?? ''"
+                  placeholder="未知"
+                  @input="setFact('contextWindow', val($event) === '' ? null : Number(val($event)))"
+                />
+              </ConfigField>
+            </div>
+            <div data-field="maxOutputTokens">
+              <ConfigField
+                :label="factLabels.maxOutputTokens"
+                unit="tokens"
+                :dirty="!!edits.maxOutputTokens"
+                :source="fieldSource('maxOutputTokens')"
+                :details="factDetails('maxOutputTokens')"
+                :resettable="Object.hasOwn(own.facts, 'maxOutputTokens') || !!edits.maxOutputTokens"
+                @reset="edits.maxOutputTokens = { field: 'maxOutputTokens', operation: 'clear' }"
+              >
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  :value="fact('maxOutputTokens') ?? ''"
+                  placeholder="未知"
+                  @input="
+                    setFact('maxOutputTokens', val($event) === '' ? null : Number(val($event)))
+                  "
+                />
+              </ConfigField>
+            </div>
+          </div>
+        </section>
+
+        <section class="editor-section">
+          <h3>模态与核心能力</h3>
+          <div class="editor-stack">
+            <div
+              v-for="k in ['inputModalities', 'outputModalities'] as const"
+              :key="k"
+              :data-field="k"
+              class="tag-editor-row"
+            >
+              <div class="tag-editor-head">
+                <span class="field-heading">{{ factLabels[k] }}</span>
+                <span
+                  class="source-pill"
+                  :class="sourceBadgeClass(fieldSource(k), !!edits[k])"
+                  :title="factDetails(k)"
+                >
+                  {{ edits[k] ? "未保存" : fieldSource(k) }}
+                </span>
+                <div class="tag-editor-actions">
+                  <button
+                    v-if="fact(k) !== null"
+                    type="button"
+                    class="link-action"
+                    @click="setFact(k, null)"
                   >
-                </fieldset>
-                <div class="config-meta">
-                  <small :title="factDetails(k)">{{ edits[k] ? "未保存" : fieldSource(k) }}</small
-                  ><button type="button" @click="setFact(k, null)">未知</button
-                  ><button
+                    设为未知
+                  </button>
+                  <button
                     v-if="Object.hasOwn(own.facts, k) || edits[k]"
                     type="button"
+                    class="link-action"
                     @click="edits[k] = { field: k, operation: 'clear' }"
                   >
                     恢复继承
                   </button>
-                </div></template
-              >
-              <ConfigField
-                v-else
-                :label="factLabels[k]"
-                :dirty="!!edits[k]"
-                :source="fieldSource(k)"
-                :details="factDetails(k)"
-                :resettable="Object.hasOwn(own.facts, k) || !!edits[k]"
-                @reset="edits[k] = { field: k, operation: 'clear' }"
-              >
-                <input
-                  v-if="tokenFields.includes(k)"
-                  type="number"
-                  min="1"
-                  step="1"
-                  :value="fact(k) ?? ''"
-                  placeholder="未知"
-                  @input="setFact(k, val($event) === '' ? null : Number(val($event)))"
+                </div>
+              </div>
+              <TagToggleGroup
+                :values="listValue(k)"
+                :options="listOptions(k)"
+                :disabled="locked || busy"
+                @toggle="pickList(k, $event)"
+              />
+            </div>
+
+            <div v-if="entry.operation === 'chat'" class="editor-two-col">
+              <div data-field="toolCalling" class="segmented-field">
+                <div class="tag-editor-head">
+                  <span class="field-heading">{{ factLabels.toolCalling }}</span>
+                  <span
+                    class="source-pill"
+                    :class="sourceBadgeClass(fieldSource('toolCalling'), !!edits.toolCalling)"
+                    :title="factDetails('toolCalling')"
+                  >
+                    {{ edits.toolCalling ? "未保存" : fieldSource("toolCalling") }}
+                  </span>
+                  <button
+                    v-if="Object.hasOwn(own.facts, 'toolCalling') || edits.toolCalling"
+                    type="button"
+                    class="link-action tag-editor-actions"
+                    @click="edits.toolCalling = { field: 'toolCalling', operation: 'clear' }"
+                  >
+                    恢复继承
+                  </button>
+                </div>
+                <SegmentedControl
+                  :model-value="String(fact('toolCalling') ?? 'unknown')"
+                  :options="triStateOptions"
+                  :aria-label="factLabels.toolCalling"
+                  :disabled="locked || busy"
+                  @update:model-value="setFact('toolCalling', $event as ModelFacts['toolCalling'])"
                 />
-                <select v-else :value="fact(k) ?? ''" @change="setFact(k, val($event) || null)">
-                  <option v-if="k === 'defaultEffort'" value="">未知</option>
-                  <option v-for="v in choices(k)" :value="v">{{ valueLabels[v] ?? v }}</option>
-                </select></ConfigField
+              </div>
+
+              <div data-field="structuredOutput">
+                <ConfigField
+                  :label="factLabels.structuredOutput"
+                  :dirty="!!edits.structuredOutput"
+                  :source="fieldSource('structuredOutput')"
+                  :details="factDetails('structuredOutput')"
+                  :resettable="
+                    Object.hasOwn(own.facts, 'structuredOutput') || !!edits.structuredOutput
+                  "
+                  @reset="
+                    edits.structuredOutput = { field: 'structuredOutput', operation: 'clear' }
+                  "
+                >
+                  <select
+                    :value="fact('structuredOutput') ?? 'unknown'"
+                    @change="
+                      setFact(
+                        'structuredOutput',
+                        (val($event) || 'unknown') as ModelFacts['structuredOutput'],
+                      )
+                    "
+                  >
+                    <option v-for="v in choices('structuredOutput')" :key="v" :value="v">
+                      {{ valueLabels[v] ?? v }}
+                    </option>
+                  </select>
+                </ConfigField>
+              </div>
+
+              <div
+                v-for="k in ['vision', 'promptCacheRead', 'promptCacheWrite'] as const"
+                :key="k"
+                :data-field="k"
+                class="segmented-field"
               >
+                <div class="tag-editor-head">
+                  <span class="field-heading">{{ factLabels[k] }}</span>
+                  <span
+                    class="source-pill"
+                    :class="sourceBadgeClass(fieldSource(k), !!edits[k])"
+                    :title="factDetails(k)"
+                  >
+                    {{ edits[k] ? "未保存" : fieldSource(k) }}
+                  </span>
+                  <button
+                    v-if="Object.hasOwn(own.facts, k) || edits[k]"
+                    type="button"
+                    class="link-action tag-editor-actions"
+                    @click="edits[k] = { field: k, operation: 'clear' }"
+                  >
+                    恢复继承
+                  </button>
+                </div>
+                <SegmentedControl
+                  :model-value="String(fact(k) ?? 'unknown')"
+                  :options="triStateOptions"
+                  :aria-label="factLabels[k]"
+                  :disabled="locked || busy"
+                  @update:model-value="setFact(k, $event as ModelFacts[typeof k])"
+                />
+              </div>
             </div>
           </div>
-        </details>
-      </template>
-      <template v-if="tab === 'parameters'"
-        ><div class="graph-grid">
-          <ConfigField
-            v-for="k in parameterKeys"
-            :key="k"
-            :label="parameterLabels[k] ?? k"
-            :data-field="k"
-            :dirty="!!params[k]"
-            :source="parameterSource(k)"
-            :resettable="Object.hasOwn(own.parameters, k) || !!params[k]"
-            @reset="params[k] = { field: k, operation: 'clear' }"
-            ><input
-              v-if="k === 'thinkingEnabled' || k === 'returnFullReasoning'"
-              type="checkbox"
-              :checked="parameter(k) === true || (parameter(k) == null && k === 'thinkingEnabled')"
-              :disabled="
-                fact('reasoningMode') === 'none' ||
-                (k === 'returnFullReasoning' &&
-                  (parameter('thinkingEnabled') === false ||
-                    fact('reasoningOutputMode') !== 'full'))
-              "
-              @change="
-                params[k] = {
-                  field: k,
-                  operation: 'set',
-                  value: ($event.target as HTMLInputElement).checked,
-                }
-              " /><select
-              v-else-if="parameterSpec(k)?.choices?.length"
-              :value="parameter(k) ?? ''"
-              :disabled="
-                entry.fields.unsupportedParameters.value?.includes(k) ||
-                (k === 'effort' && parameter('thinkingEnabled') === false)
-              "
-              @change="setParam(k, val($event))"
+        </section>
+
+        <CollapsiblePanel
+          v-if="entry.operation === 'chat'"
+          variant="card"
+          title="推理能力配置"
+          :summary="reasoningSummary"
+        >
+          <div class="editor-collapsible-body">
+            <div class="editor-two-col">
+              <div data-field="reasoningMode">
+                <ConfigField
+                  :label="factLabels.reasoningMode"
+                  :dirty="!!edits.reasoningMode"
+                  :source="fieldSource('reasoningMode')"
+                  :details="factDetails('reasoningMode')"
+                  :resettable="Object.hasOwn(own.facts, 'reasoningMode') || !!edits.reasoningMode"
+                  @reset="edits.reasoningMode = { field: 'reasoningMode', operation: 'clear' }"
+                >
+                  <select
+                    :value="fact('reasoningMode') ?? 'unknown'"
+                    @change="setFact('reasoningMode', val($event) as ModelFacts['reasoningMode'])"
+                  >
+                    <option v-for="v in choices('reasoningMode')" :key="v" :value="v">
+                      {{ valueLabels[v] ?? v }}
+                    </option>
+                  </select>
+                </ConfigField>
+              </div>
+              <div data-field="reasoningOutputMode">
+                <ConfigField
+                  :label="factLabels.reasoningOutputMode"
+                  :dirty="!!edits.reasoningOutputMode"
+                  :source="fieldSource('reasoningOutputMode')"
+                  :details="factDetails('reasoningOutputMode')"
+                  :resettable="
+                    Object.hasOwn(own.facts, 'reasoningOutputMode') || !!edits.reasoningOutputMode
+                  "
+                  @reset="
+                    edits.reasoningOutputMode = {
+                      field: 'reasoningOutputMode',
+                      operation: 'clear',
+                    }
+                  "
+                >
+                  <select
+                    :value="fact('reasoningOutputMode') ?? 'unknown'"
+                    @change="
+                      setFact(
+                        'reasoningOutputMode',
+                        val($event) as ModelFacts['reasoningOutputMode'],
+                      )
+                    "
+                  >
+                    <option v-for="v in choices('reasoningOutputMode')" :key="v" :value="v">
+                      {{ valueLabels[v] ?? v }}
+                    </option>
+                  </select>
+                </ConfigField>
+              </div>
+            </div>
+
+            <div data-field="effortLevels" class="tag-editor-row">
+              <div class="tag-editor-head">
+                <span class="field-heading">{{ factLabels.effortLevels }}</span>
+                <span
+                  class="source-pill"
+                  :class="sourceBadgeClass(fieldSource('effortLevels'), !!edits.effortLevels)"
+                  :title="factDetails('effortLevels')"
+                >
+                  {{ edits.effortLevels ? "未保存" : fieldSource("effortLevels") }}
+                </span>
+                <div class="tag-editor-actions">
+                  <button
+                    v-if="fact('effortLevels') !== null"
+                    type="button"
+                    class="link-action"
+                    @click="setFact('effortLevels', null)"
+                  >
+                    设为未知
+                  </button>
+                  <button
+                    v-if="Object.hasOwn(own.facts, 'effortLevels') || edits.effortLevels"
+                    type="button"
+                    class="link-action"
+                    @click="edits.effortLevels = { field: 'effortLevels', operation: 'clear' }"
+                  >
+                    恢复继承
+                  </button>
+                </div>
+              </div>
+              <TagToggleGroup
+                :values="listValue('effortLevels')"
+                :options="listOptions('effortLevels')"
+                :disabled="locked || busy"
+                @toggle="pickList('effortLevels', $event)"
+              />
+            </div>
+
+            <div data-field="defaultEffort">
+              <ConfigField
+                :label="factLabels.defaultEffort"
+                :dirty="!!edits.defaultEffort"
+                :source="fieldSource('defaultEffort')"
+                :details="factDetails('defaultEffort')"
+                :resettable="Object.hasOwn(own.facts, 'defaultEffort') || !!edits.defaultEffort"
+                @reset="edits.defaultEffort = { field: 'defaultEffort', operation: 'clear' }"
+              >
+                <select
+                  :value="fact('defaultEffort') ?? ''"
+                  @change="setFact('defaultEffort', val($event) || null)"
+                >
+                  <option value="">未知</option>
+                  <option v-for="v in choices('defaultEffort')" :key="v" :value="v">
+                    {{ formatEffortLabel(v) }}
+                  </option>
+                </select>
+              </ConfigField>
+            </div>
+          </div>
+        </CollapsiblePanel>
+
+        <CollapsiblePanel
+          variant="card"
+          title="高级限制与参数约束"
+          :summary="entry.operation === 'chat' ? advancedFactsSummary : undefined"
+        >
+          <div class="editor-collapsible-body">
+            <div v-if="entry.operation === 'chat'" class="editor-two-col">
+              <div data-field="maxInputTokens">
+                <ConfigField
+                  :label="factLabels.maxInputTokens"
+                  unit="tokens"
+                  :dirty="!!edits.maxInputTokens"
+                  :source="fieldSource('maxInputTokens')"
+                  :details="factDetails('maxInputTokens')"
+                  :resettable="Object.hasOwn(own.facts, 'maxInputTokens') || !!edits.maxInputTokens"
+                  @reset="edits.maxInputTokens = { field: 'maxInputTokens', operation: 'clear' }"
+                >
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    :value="fact('maxInputTokens') ?? ''"
+                    placeholder="未知"
+                    @input="
+                      setFact('maxInputTokens', val($event) === '' ? null : Number(val($event)))
+                    "
+                  />
+                </ConfigField>
+              </div>
+
+              <div data-field="parallelToolCalling" class="segmented-field">
+                <div class="tag-editor-head">
+                  <span class="field-heading">{{ factLabels.parallelToolCalling }}</span>
+                  <span
+                    class="source-pill"
+                    :class="
+                      sourceBadgeClass(
+                        fieldSource('parallelToolCalling'),
+                        !!edits.parallelToolCalling,
+                      )
+                    "
+                    :title="factDetails('parallelToolCalling')"
+                  >
+                    {{ edits.parallelToolCalling ? "未保存" : fieldSource("parallelToolCalling") }}
+                  </span>
+                  <button
+                    v-if="
+                      Object.hasOwn(own.facts, 'parallelToolCalling') || edits.parallelToolCalling
+                    "
+                    type="button"
+                    class="link-action tag-editor-actions"
+                    @click="
+                      edits.parallelToolCalling = {
+                        field: 'parallelToolCalling',
+                        operation: 'clear',
+                      }
+                    "
+                  >
+                    恢复继承
+                  </button>
+                </div>
+                <SegmentedControl
+                  :model-value="String(fact('parallelToolCalling') ?? 'unknown')"
+                  :options="triStateOptions"
+                  :aria-label="factLabels.parallelToolCalling"
+                  :disabled="locked || busy"
+                  @update:model-value="
+                    setFact('parallelToolCalling', $event as ModelFacts['parallelToolCalling'])
+                  "
+                />
+              </div>
+            </div>
+
+            <div data-field="operations" class="tag-editor-row">
+              <div class="tag-editor-head">
+                <span class="field-heading">{{ factLabels.operations }}</span>
+                <span
+                  class="source-pill"
+                  :class="sourceBadgeClass(fieldSource('operations'), !!edits.operations)"
+                  :title="factDetails('operations')"
+                >
+                  {{ edits.operations ? "未保存" : fieldSource("operations") }}
+                </span>
+                <div class="tag-editor-actions">
+                  <button
+                    v-if="fact('operations') !== null"
+                    type="button"
+                    class="link-action"
+                    @click="setFact('operations', null)"
+                  >
+                    设为未知
+                  </button>
+                  <button
+                    v-if="Object.hasOwn(own.facts, 'operations') || edits.operations"
+                    type="button"
+                    class="link-action"
+                    @click="edits.operations = { field: 'operations', operation: 'clear' }"
+                  >
+                    恢复继承
+                  </button>
+                </div>
+              </div>
+              <TagToggleGroup
+                :values="listValue('operations')"
+                :options="listOptions('operations')"
+                :disabled="locked || busy"
+                @toggle="pickList('operations', $event)"
+              />
+            </div>
+
+            <div
+              v-if="entry.operation === 'chat'"
+              data-field="unsupportedParameters"
+              class="tag-editor-row"
             >
-              <option value="">协议默认</option>
-              <option v-for="choice in parameterSpec(k)?.choices" :value="choice">
-                {{ choice }}
-              </option></select
-            ><input
-              v-else
-              :type="numeric(k) ? 'number' : 'text'"
-              :step="parameterSpec(k)?.type === 'integer' ? 1 : 'any'"
-              :min="parameterSpec(k)?.minimum"
-              :max="parameterSpec(k)?.maximum"
-              :value="parameter(k) ?? ''"
-              :disabled="
-                entry.fields.unsupportedParameters.value?.includes(k) ||
-                (k === 'effort' && parameter('thinkingEnabled') === false)
-              "
-              placeholder="使用默认值"
-              @input="setParam(k, val($event))"
-          /></ConfigField></div
-      ></template>
-      <template v-if="tab === 'prices'"
-        ><ConfigField label="接入方案 / 套餐"
-          ><input
-            list="model-rate-plans"
-            :value="planKey ?? entry.ratePlanKey ?? 'default'"
-            @change="switchPlan($event)"
-            placeholder="default" /></ConfigField
-        ><datalist id="model-rate-plans">
-          <option value="default" />
-          <option v-for="id in Object.keys(entry.rateCards ?? {})" :value="id" /></datalist
-        ><ConfigField label="基础报价币种"
-          ><input v-model.trim="currency" maxlength="3" list="price-currencies" /></ConfigField
-        ><datalist id="price-currencies">
-          <option>USD</option>
-          <option>CNY</option>
-          <option>EUR</option>
-        </datalist>
-        <div class="graph-grid">
-          <ConfigField
-            v-for="k in priceKinds"
-            :data-field="k"
-            :key="k"
-            :label="(k === 'input' ? '输入单价' : '输出单价') + ' / 每 1,000,000 tokens'"
-            :source="priceRow(k).source"
-            :dirty="!!priceRow(k).change"
-            :resettable="priceRow(k).resettable || !!priceRow(k).change"
-            @reset="resetPrice(k)"
-            ><input
-              inputmode="decimal"
-              :value="priceRow(k).value ?? ''"
-              placeholder="未知"
-              @input="setPrice(k, val($event))"
-          /></ConfigField>
-        </div>
-        <details v-if="entry.referencePrices.length">
-          <summary>型号原厂参考价</summary>
-          <p v-for="p in entry.referencePrices" :key="priceId(p)">
-            {{ p.kind }} · {{ p.amount }} {{ p.currency }} / {{ p.unit }} {{ p.tier }}
-          </p>
-        </details>
-        <details v-if="remainingPrices.length">
-          <summary>其他已保存报价（{{ remainingPrices.length }}）</summary>
-          <p v-for="p in remainingPrices" :key="priceId(p.key)">
-            {{ p.key.kind }} · {{ p.amount.value ?? "未知" }} {{ p.key.currency }} /
-            {{ p.key.unit }} {{ p.key.tier }}
-            {{ p.key.durationSeconds ? p.key.durationSeconds + " 秒" : "" }}
-          </p>
-        </details></template
-      >
+              <div class="tag-editor-head">
+                <span class="field-heading">{{ factLabels.unsupportedParameters }}</span>
+                <span
+                  class="source-pill"
+                  :class="
+                    sourceBadgeClass(
+                      fieldSource('unsupportedParameters'),
+                      !!edits.unsupportedParameters,
+                    )
+                  "
+                  :title="factDetails('unsupportedParameters')"
+                >
+                  {{
+                    edits.unsupportedParameters ? "未保存" : fieldSource("unsupportedParameters")
+                  }}
+                </span>
+                <div class="tag-editor-actions">
+                  <button
+                    v-if="fact('unsupportedParameters') !== null"
+                    type="button"
+                    class="link-action"
+                    @click="setFact('unsupportedParameters', null)"
+                  >
+                    设为未知
+                  </button>
+                  <button
+                    v-if="
+                      Object.hasOwn(own.facts, 'unsupportedParameters') ||
+                      edits.unsupportedParameters
+                    "
+                    type="button"
+                    class="link-action"
+                    @click="
+                      edits.unsupportedParameters = {
+                        field: 'unsupportedParameters',
+                        operation: 'clear',
+                      }
+                    "
+                  >
+                    恢复继承
+                  </button>
+                </div>
+              </div>
+              <TagToggleGroup
+                :values="listValue('unsupportedParameters')"
+                :options="listOptions('unsupportedParameters')"
+                :disabled="locked || busy"
+                @toggle="pickList('unsupportedParameters', $event)"
+              />
+            </div>
+          </div>
+        </CollapsiblePanel>
+      </template>
+
+      <!-- ── 页签 2：调用参数 ────────────────────────────────────────────── -->
+      <template v-if="tab === 'parameters'">
+        <template v-if="entry.operation === 'chat'">
+          <section v-if="chatReasoningKeys.length" class="editor-section">
+            <h3>思考与推理</h3>
+            <div class="editor-stack">
+              <div
+                v-if="chatReasoningKeys.includes('thinkingEnabled')"
+                data-field="thinkingEnabled"
+                class="toggle-row"
+              >
+                <label class="toggle-control">
+                  <input
+                    type="checkbox"
+                    :checked="thinkingChecked"
+                    :disabled="fact('reasoningMode') === 'none'"
+                    @change="
+                      params.thinkingEnabled = {
+                        field: 'thinkingEnabled',
+                        operation: 'set',
+                        value: ($event.target as HTMLInputElement).checked,
+                      }
+                    "
+                  />
+                  <span class="toggle-track" aria-hidden="true" />
+                  <span class="toggle-copy">
+                    <span class="toggle-title">
+                      {{ parameterLabels.thinkingEnabled }}
+                      <span
+                        class="source-pill"
+                        :class="
+                          sourceBadgeClass(
+                            parameterSource('thinkingEnabled'),
+                            !!params.thinkingEnabled,
+                          )
+                        "
+                      >
+                        {{ params.thinkingEnabled ? "未保存" : parameterSource("thinkingEnabled") }}
+                      </span>
+                    </span>
+                    <small>
+                      {{
+                        fact("reasoningMode") === "none"
+                          ? "该模型声明不支持推理思考"
+                          : "默认开启；关闭后将不再发送推理强度，也不请求思考展示"
+                      }}
+                    </small>
+                  </span>
+                </label>
+                <button
+                  v-if="
+                    Object.hasOwn(own.parameters, 'thinkingEnabled') || !!params.thinkingEnabled
+                  "
+                  type="button"
+                  class="link-action"
+                  @click="params.thinkingEnabled = { field: 'thinkingEnabled', operation: 'clear' }"
+                >
+                  恢复继承
+                </button>
+              </div>
+
+              <div v-if="chatReasoningKeys.includes('effort')" data-field="effort">
+                <ConfigField
+                  :label="parameterLabels.effort ?? '推理强度'"
+                  :dirty="!!params.effort"
+                  :source="parameterSource('effort')"
+                  :hint="
+                    !thinkingChecked
+                      ? '开启「支持思考」后可调整推理强度'
+                      : entryUnsupported('effort')
+                        ? '当前绑定不支持该参数'
+                        : undefined
+                  "
+                  :resettable="Object.hasOwn(own.parameters, 'effort') || !!params.effort"
+                  @reset="params.effort = { field: 'effort', operation: 'clear' }"
+                >
+                  <select
+                    v-if="effortChoices.length"
+                    :value="parameter('effort') ?? ''"
+                    :disabled="entryUnsupported('effort') || !thinkingChecked"
+                    @change="setParam('effort', val($event))"
+                  >
+                    <option value="">协议默认</option>
+                    <option v-for="choice in effortChoices" :key="choice" :value="choice">
+                      {{ formatEffortLabel(choice) }}
+                    </option>
+                  </select>
+                  <input
+                    v-else
+                    type="text"
+                    :value="parameter('effort') ?? ''"
+                    :disabled="entryUnsupported('effort') || !thinkingChecked"
+                    placeholder="协议默认"
+                    @input="setParam('effort', val($event))"
+                  />
+                </ConfigField>
+              </div>
+
+              <div
+                v-if="chatReasoningKeys.includes('returnFullReasoning')"
+                data-field="returnFullReasoning"
+                class="toggle-row"
+              >
+                <label class="toggle-control">
+                  <input
+                    type="checkbox"
+                    :checked="parameter('returnFullReasoning') === true"
+                    :disabled="!!fullReasoningDisabledReason"
+                    @change="
+                      params.returnFullReasoning = {
+                        field: 'returnFullReasoning',
+                        operation: 'set',
+                        value: ($event.target as HTMLInputElement).checked,
+                      }
+                    "
+                  />
+                  <span class="toggle-track" aria-hidden="true" />
+                  <span class="toggle-copy">
+                    <span class="toggle-title">
+                      {{ parameterLabels.returnFullReasoning }}
+                      <span
+                        class="source-pill"
+                        :class="
+                          sourceBadgeClass(
+                            parameterSource('returnFullReasoning'),
+                            !!params.returnFullReasoning,
+                          )
+                        "
+                      >
+                        {{
+                          params.returnFullReasoning
+                            ? "未保存"
+                            : parameterSource("returnFullReasoning")
+                        }}
+                      </span>
+                    </span>
+                    <small>
+                      {{
+                        fullReasoningDisabledReason ||
+                        "默认关闭；开启后在测试对话中展示上游返回的完整公开思考文本"
+                      }}
+                    </small>
+                  </span>
+                </label>
+                <button
+                  v-if="
+                    Object.hasOwn(own.parameters, 'returnFullReasoning') ||
+                    !!params.returnFullReasoning
+                  "
+                  type="button"
+                  class="link-action"
+                  @click="
+                    params.returnFullReasoning = {
+                      field: 'returnFullReasoning',
+                      operation: 'clear',
+                    }
+                  "
+                >
+                  恢复继承
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section v-if="chatPrimaryKeys.length" class="editor-section">
+            <h3>常用生成参数</h3>
+            <div class="editor-two-col">
+              <div v-for="k in chatPrimaryKeys" :key="k" :data-field="k">
+                <ConfigField
+                  :label="parameterLabels[k] ?? k"
+                  :unit="k === 'maxOutputTokens' ? 'tokens' : undefined"
+                  :dirty="!!params[k]"
+                  :source="parameterSource(k)"
+                  :hint="paramHint(k)"
+                  :resettable="Object.hasOwn(own.parameters, k) || !!params[k]"
+                  @reset="params[k] = { field: k, operation: 'clear' }"
+                >
+                  <input
+                    :type="numeric(k) ? 'number' : 'text'"
+                    :step="parameterSpec(k)?.type === 'integer' ? 1 : 'any'"
+                    :min="parameterSpec(k)?.minimum"
+                    :max="parameterSpec(k)?.maximum"
+                    :value="parameter(k) ?? ''"
+                    :disabled="entryUnsupported(k)"
+                    :placeholder="paramPlaceholder(k)"
+                    @input="setParam(k, val($event))"
+                  />
+                </ConfigField>
+              </div>
+            </div>
+          </section>
+
+          <CollapsiblePanel
+            v-if="chatAdvancedKeys.length"
+            variant="card"
+            title="高级调用参数"
+            :default-open="hasAdvancedParamOverrides"
+            :summary="hasAdvancedParamOverrides ? '已设置自定义值' : '全部使用协议默认'"
+          >
+            <div class="editor-collapsible-body">
+              <div class="editor-two-col">
+                <div v-for="k in chatAdvancedKeys" :key="k" :data-field="k">
+                  <ConfigField
+                    :label="parameterLabels[k] ?? k"
+                    :unit="k === 'contextWindow' ? 'tokens' : undefined"
+                    :dirty="!!params[k]"
+                    :source="parameterSource(k)"
+                    :hint="paramHint(k)"
+                    :resettable="Object.hasOwn(own.parameters, k) || !!params[k]"
+                    @reset="params[k] = { field: k, operation: 'clear' }"
+                  >
+                    <select
+                      v-if="paramChoices(k).length"
+                      :value="parameter(k) ?? ''"
+                      :disabled="entryUnsupported(k)"
+                      @change="setParam(k, val($event))"
+                    >
+                      <option value="">协议默认</option>
+                      <option v-for="choice in paramChoices(k)" :key="choice" :value="choice">
+                        {{ valueLabels[choice] ?? choice }}
+                      </option>
+                    </select>
+                    <input
+                      v-else
+                      :type="numeric(k) ? 'number' : 'text'"
+                      :step="parameterSpec(k)?.type === 'integer' ? 1 : 'any'"
+                      :min="parameterSpec(k)?.minimum"
+                      :max="parameterSpec(k)?.maximum"
+                      :value="parameter(k) ?? ''"
+                      :disabled="entryUnsupported(k)"
+                      :placeholder="paramPlaceholder(k)"
+                      @input="setParam(k, val($event))"
+                    />
+                  </ConfigField>
+                </div>
+              </div>
+            </div>
+          </CollapsiblePanel>
+        </template>
+
+        <section v-else class="editor-section">
+          <h3>调用参数</h3>
+          <div v-if="parameterKeys.length" class="editor-two-col">
+            <div v-for="k in parameterKeys" :key="k" :data-field="k">
+              <ConfigField
+                :label="parameterLabels[k] ?? k"
+                :unit="parameterSpec(k)?.unit"
+                :dirty="!!params[k]"
+                :source="parameterSource(k)"
+                :hint="paramHint(k)"
+                :resettable="Object.hasOwn(own.parameters, k) || !!params[k]"
+                @reset="params[k] = { field: k, operation: 'clear' }"
+              >
+                <select
+                  v-if="paramChoices(k).length"
+                  :value="parameter(k) ?? ''"
+                  :disabled="entryUnsupported(k)"
+                  @change="setParam(k, val($event))"
+                >
+                  <option value="">协议默认</option>
+                  <option v-for="choice in paramChoices(k)" :key="choice" :value="choice">
+                    {{ valueLabels[choice] ?? choice }}
+                  </option>
+                </select>
+                <input
+                  v-else
+                  :type="numeric(k) ? 'number' : 'text'"
+                  :step="parameterSpec(k)?.type === 'integer' ? 1 : 'any'"
+                  :min="parameterSpec(k)?.minimum"
+                  :max="parameterSpec(k)?.maximum"
+                  :value="parameter(k) ?? ''"
+                  :disabled="entryUnsupported(k)"
+                  :placeholder="paramPlaceholder(k)"
+                  @input="setParam(k, val($event))"
+                />
+              </ConfigField>
+            </div>
+          </div>
+          <p v-else class="setting-hint">此操作暂无可编辑的默认调用参数。</p>
+        </section>
+      </template>
+
+      <!-- ── 页签 3：价格 ────────────────────────────────────────────────── -->
+      <template v-if="tab === 'prices'">
+        <section class="editor-section">
+          <div class="section-head-row">
+            <h3>基础单价</h3>
+            <span class="setting-hint">留空表示未知，允许填写 0 表示免费</span>
+          </div>
+          <div class="editor-two-col price-meta-grid">
+            <ConfigField label="接入方案 / 套餐">
+              <input
+                list="model-rate-plans"
+                :value="planKey ?? entry.ratePlanKey ?? 'default'"
+                placeholder="default"
+                @change="switchPlan($event)"
+              />
+            </ConfigField>
+            <ConfigField label="基础报价币种">
+              <input
+                v-model.trim="currency"
+                maxlength="3"
+                list="price-currencies"
+                placeholder="USD"
+              />
+            </ConfigField>
+          </div>
+          <datalist id="model-rate-plans">
+            <option value="default" />
+            <option v-for="id in Object.keys(entry.rateCards ?? {})" :key="id" :value="id" />
+          </datalist>
+          <datalist id="price-currencies">
+            <option>USD</option>
+            <option>CNY</option>
+            <option>EUR</option>
+          </datalist>
+
+          <div class="editor-two-col">
+            <div v-for="k in priceKinds" :key="k" :data-field="k">
+              <ConfigField
+                :label="priceFieldLabels[k]"
+                :unit="currency || 'USD'"
+                :source="priceRow(k).source"
+                :dirty="!!priceRow(k).change"
+                :resettable="priceRow(k).resettable || !!priceRow(k).change"
+                @reset="resetPrice(k)"
+              >
+                <input
+                  inputmode="decimal"
+                  :value="priceRow(k).value ?? ''"
+                  placeholder="未知"
+                  @input="setPrice(k, val($event))"
+                />
+              </ConfigField>
+            </div>
+          </div>
+
+          <CollapsiblePanel
+            v-if="entry.referencePrices.length"
+            variant="subtle"
+            title="型号原厂参考价"
+            :summary="entry.referencePrices.length + ' 项'"
+          >
+            <table class="mini-price-table">
+              <thead>
+                <tr>
+                  <th>类型</th>
+                  <th>金额</th>
+                  <th>单位</th>
+                  <th>档位</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="p in entry.referencePrices" :key="priceId(p)">
+                  <td>{{ priceKindLabels[p.kind] ?? p.kind }}</td>
+                  <td>{{ p.amount }} {{ p.currency }}</td>
+                  <td>{{ p.unit }}</td>
+                  <td>{{ p.tier ?? "默认" }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </CollapsiblePanel>
+
+          <CollapsiblePanel
+            v-if="remainingPrices.length"
+            variant="subtle"
+            title="其他已保存报价"
+            :summary="remainingPrices.length + ' 项（带时长缓存 / 分档 / 其他币种按原样保留）'"
+          >
+            <table class="mini-price-table">
+              <thead>
+                <tr>
+                  <th>类型</th>
+                  <th>金额</th>
+                  <th>单位</th>
+                  <th>条件</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="p in remainingPrices" :key="priceId(p.key)">
+                  <td>{{ priceKindLabels[p.key.kind] ?? p.key.kind }}</td>
+                  <td>{{ p.amount.value ?? "未知" }} {{ p.key.currency }}</td>
+                  <td>{{ p.key.unit }}</td>
+                  <td>
+                    {{
+                      [p.key.tier, p.key.durationSeconds ? p.key.durationSeconds + " 秒" : null]
+                        .filter(Boolean)
+                        .join(" · ") || "默认"
+                    }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </CollapsiblePanel>
+        </section>
+      </template>
     </fieldset>
+
     <RateCardEditor
       v-if="tab === 'prices'"
       :value="currentCard"
@@ -721,12 +1607,17 @@ const isSelected = computed(() => {
       :resettable="!!own.rateCard || card !== undefined"
       @change="card = $event"
     />
+
     <p v-if="error" role="alert" tabindex="-1" class="form-message">
-      {{ error.message }} <span v-for="f in error.fields">{{ f.path }} · {{ f.message }}</span>
+      {{ error.message }}
+      <span v-for="(f, fi) in error.fields" :key="fi"> {{ f.path }} · {{ f.message }}</span>
     </p>
-    <p v-if="message" role="status">{{ message }}</p>
-    <p v-if="stale && dirty" role="status">
-      配置已更新。<button
+
+    <p v-if="stale && dirty" role="status" class="stale-banner">
+      <span>配置已在别处更新。</span>
+      <button
+        type="button"
+        class="outline-action compact-btn"
         @click="
           baseline = snapshot.settingsRevision;
           packRevision = snapshot.pack.active;
@@ -735,43 +1626,70 @@ const isSelected = computed(() => {
         核对最新值并保留草稿
       </button>
     </p>
+
     <p v-if="locked" class="setting-hint">
       {{ entry.actions.edit.state === "disabled" ? entry.actions.edit.reason : "当前范围只读" }}
     </p>
-    <footer class="graph-actions">
-      <button class="primary-action" :disabled="!dirty || busy || stale || locked" @click="save">
-        保存配置</button
-      ><button class="outline-action" :disabled="!dirty || busy" @click="discard">放弃草稿</button>
-      <button
-        v-if="entry.operation === 'chat'"
-        class="outline-action"
-        :disabled="busy || stale || entry.actions.preview.state !== 'enabled'"
-        @click="previewDraft"
-      >
-        预览请求
-      </button>
-      <button
-        v-if="entry.operation === 'chat'"
-        class="outline-action"
-        :disabled="busy || stale || dirty || entry.actions.select.state !== 'enabled'"
-        @click="chooseTest"
-      >
-        用于测试对话</button
-      ><button v-if="isSelected" @click="emit('chat')">前往测试对话</button>
+
+    <pre v-if="preview" class="request-preview-box" aria-label="请求预览">{{
+      JSON.stringify(preview, null, 2)
+    }}</pre>
+
+    <footer class="editor-sticky-footer">
+      <div class="footer-status">
+        <span v-if="dirtyCount" class="dirty-counter">已更改 {{ dirtyCount }} 项</span>
+        <span v-else-if="message" role="status" class="saved-notice">{{ message }}</span>
+        <span v-else class="clean-notice">当前无未保存更改</span>
+      </div>
+      <div class="footer-actions">
+        <button
+          v-if="entry.operation === 'chat'"
+          type="button"
+          class="outline-action"
+          :disabled="busy || stale || entry.actions.preview.state !== 'enabled'"
+          @click="previewDraft"
+        >
+          预览请求
+        </button>
+        <button
+          v-if="entry.operation === 'chat'"
+          type="button"
+          class="outline-action"
+          :disabled="busy || stale || dirty || entry.actions.select.state !== 'enabled'"
+          @click="chooseTest"
+        >
+          用于测试对话
+        </button>
+        <button v-if="isSelected" type="button" class="outline-action" @click="emit('chat')">
+          前往测试对话 <AppIcon name="arrow-right" :size="14" />
+        </button>
+        <button type="button" class="outline-action" :disabled="!dirty || busy" @click="discard">
+          放弃草稿
+        </button>
+        <button
+          type="button"
+          class="primary-action"
+          :disabled="!dirty || busy || stale || locked"
+          @click="save"
+        >
+          保存配置
+        </button>
+      </div>
     </footer>
-    <pre v-if="preview" aria-label="请求预览">{{ JSON.stringify(preview, null, 2) }}</pre>
-    <FormDialog v-if="leaveOpen" title="离开前保存模型配置？" @close="closeDecision(false)"
-      ><p>{{ entry.displayName }} 有未保存的修改。</p>
+
+    <FormDialog v-if="leaveOpen" title="离开前保存模型配置？" @close="closeDecision(false)">
+      <p>{{ entry.displayName }} 有 {{ dirtyCount }} 项未保存的修改。</p>
       <footer>
-        <button @click="closeDecision(false)">继续编辑</button
-        ><button
+        <button @click="closeDecision(false)">继续编辑</button>
+        <button
           @click="
             discard();
             closeDecision(true);
           "
         >
-          放弃修改</button
-        ><button
+          放弃修改
+        </button>
+        <button
           class="primary-action"
           :disabled="busy || locked || stale"
           @click="
@@ -783,13 +1701,14 @@ const isSelected = computed(() => {
         >
           保存并离开
         </button>
-      </footer></FormDialog
-    >
-    <FormDialog v-if="publicTest" title="选择具体测试账号" @close="publicTest = false"
-      ><p>使用取样账号 {{ catalog.accountDisplayName }} 的协议和参数进行测试。</p>
+      </footer>
+    </FormDialog>
+
+    <FormDialog v-if="publicTest" title="选择具体测试账号" @close="publicTest = false">
+      <p>使用取样账号 {{ catalog.accountDisplayName }} 的协议和参数进行测试。</p>
       <footer>
-        <button @click="publicTest = false">取消</button
-        ><button
+        <button @click="publicTest = false">取消</button>
+        <button
           class="primary-action"
           @click="
             emit('pickAccount');
@@ -798,7 +1717,7 @@ const isSelected = computed(() => {
         >
           进入该账号配置
         </button>
-      </footer></FormDialog
-    >
+      </footer>
+    </FormDialog>
   </section>
 </template>

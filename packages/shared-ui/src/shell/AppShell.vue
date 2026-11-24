@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import AppIcon from "../components/AppIcon.vue";
+import { isIconName, type IconName } from "../components/icons";
+
 export interface AppBrand {
   name: string;
   icon: string;
@@ -8,7 +11,7 @@ export interface AppBrand {
 export interface NavigationItem {
   id: string;
   label: string;
-  icon?: string;
+  icon?: IconName | (string & {});
 }
 defineProps<{
   brand: AppBrand;
@@ -34,7 +37,9 @@ defineEmits<{ navigate: [id: string] }>();
           :aria-current="activeId === item.id ? 'page' : undefined"
           @click="$emit('navigate', item.id)"
         >
-          <span v-if="item.icon" aria-hidden="true">{{ item.icon }}</span
+          <span v-if="item.icon" class="nav-icon" aria-hidden="true">
+            <AppIcon v-if="isIconName(item.icon)" :name="item.icon" :size="18" />
+            <template v-else>{{ item.icon }}</template> </span
           >{{ item.label }}
         </button>
       </nav>

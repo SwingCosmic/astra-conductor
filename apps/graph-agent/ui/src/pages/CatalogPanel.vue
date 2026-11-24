@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, ref, watch } from "vue";
+import { AppIcon, CollapsiblePanel } from "@astra-conductor/shared-ui";
 import { modelEndpointDescriptors } from "@astra-conductor/contract/common";
 import type {
   CatalogQuote,
@@ -8,17 +9,26 @@ import type {
   ModelEntryView,
 } from "@astra-conductor/contract/graph-agent";
 import { graphServiceKey } from "../services/graph-agent-service";
-import { modalityLabels, operationLabels, typeLabels } from "./catalog-labels";
+import {
+  modalityLabels,
+  operationLabels,
+  operationShortLabels,
+  presenceLabels,
+  typeLabels,
+} from "./catalog-labels";
 import { compareAmount } from "./amounts";
 import ModelFactsPanel from "./ModelFactsPanel.vue";
+
 const props = defineProps<{
   snapshot: GraphModelSnapshot;
   catalog: ModelCatalogView;
   scope: "account" | "offering";
+  breadcrumb?: string;
   initialModel?: string;
 }>();
 const emit = defineEmits<{ reload: []; chat: []; pickAccount: [id: string, modelId: string] }>();
 const service = inject(graphServiceKey)!;
+
 const search = ref(""),
   operation = ref(""),
   input = ref(""),
@@ -36,10 +46,12 @@ const capability = ref(""),
 const model = ref(props.initialModel ?? "");
 const entry = computed(() => entries.value.find((e) => e.selection.modelId === model.value));
 const editor = ref<InstanceType<typeof ModelFactsPanel>>();
+
 async function mayLeave() {
   return (await editor.value?.mayLeave()) ?? true;
 }
 defineExpose({ mayLeave });
+
 const endpoint = computed(() =>
   modelEndpointDescriptors.find((d) => d.protocol === props.catalog.protocol),
 );
@@ -48,13 +60,45 @@ const mediaType = ref(endpoint.value?.modelType),
   manualName = ref(""),
   error = ref(""),
   busy = ref(false);
+
+watch(endpoint, (ep) => {
+  mediaType.value = ep?.modelType;
+});
+
 const compatible = computed(() => mediaType.value === endpoint.value?.modelType);
 const plan = ref("");
 const plans = computed(() => [...new Set(entries.value.flatMap((e) => Object.keys(e.rateCards)))]);
 const access = ref(""),
   tier = ref("");
-// Without an explicit plan the effective card covers base prices; with no card at
-// all the quoted rows are the flat prices (planKey null).
+
+const activeFilterCount = computed(
+  () =>
+    [
+      operation.value,
+      input.value,
+      output.value,
+      capability.value,
+      evidence.value,
+      plan.value,
+      access.value,
+      meter.value,
+    ].filter(Boolean).length,
+);
+
+function clearFilters() {
+  operation.value = "";
+  input.value = "";
+  output.value = "";
+  capability.value = "";
+  evidence.value = "";
+  requiredInput.value = false;
+  plan.value = "";
+  access.value = "";
+  meter.value = "";
+  maxPrice.value = "";
+  sort.value = false;
+}
+
 function planVisible(e: ModelEntryView, q: CatalogQuote) {
   if (plan.value) return q.planKey === plan.value;
   return e.rateCard ? q.planKey === e.ratePlanKey : q.planKey === null;
@@ -136,18 +180,31 @@ const filtered = computed(() => {
   }
   return rows;
 });
+
 watch(
   () => props.initialModel,
   (v) => {
     if (v) model.value = v;
   },
 );
+
 async function choose(id: string) {
   if (id !== model.value && (await mayLeave())) model.value = id;
 }
+
 const frozen = computed(
   () => props.scope === "offering" && props.catalog.refresh.state !== "enabled",
 );
+
+function isSavedTest(modelId: string) {
+  const v = props.snapshot.savedSelection?.selection;
+  return (
+    v?.accountId === props.catalog.accountId &&
+    v.protocol === props.catalog.protocol &&
+    v.modelId === modelId
+  );
+}
+
 async function mutate(action: "refresh" | "upsert" | "remove") {
   if (busy.value || !props.catalog.accountId || !(await mayLeave())) return;
   const selected = action === "upsert" ? manualId.value.trim() : model.value;
@@ -198,6 +255,8 @@ async function mutate(action: "refresh" | "upsert" | "remove") {
       model.value = selected;
       manualId.value = "";
       manualName.value = "";
+    } else if (action === "remove") {
+      model.value = "";
     }
     emit("reload");
   } catch (e) {
@@ -207,29 +266,37 @@ async function mutate(action: "refresh" | "upsert" | "remove") {
   }
 }
 </script>
+
 <template>
   <div class="catalog-layout">
     <section class="graph-card catalog-browser">
       <div class="graph-card-header">
-        <h2>模型目录</h2>
+        <div class="catalog-title-row">
+          <h2>模型</h2>
+          <span class="count-pill">{{ filtered.length }}</span>
+        </div>
         <button
-          class="outline-action"
+          class="icon-action-btn"
+          aria-label="刷新目录"
+          :title="catalog.refreshing ? '读取中…' : '刷新目录'"
           :disabled="busy || catalog.refreshing || catalog.refresh.state !== 'enabled'"
           @click="mutate('refresh')"
         >
-          {{ catalog.refreshing ? "读取中…" : "刷新目录" }}
+          <AppIcon name="refresh" :size="14" :class="{ 'is-spinning': catalog.refreshing }" />
         </button>
       </div>
-      <p class="setting-hint">
+
+      <p class="setting-hint catalog-status-line">
         {{ endpoint?.label }} · {{ catalog.accountDisplayName || "无可用取样账号"
         }}<template v-if="catalog.catalog.state === 'ready'">
           · {{ catalog.catalog.stale ? "上次成功" : "更新于" }}
           {{ new Date(catalog.catalog.fetchedAt).toLocaleString() }}</template
         >
       </p>
+
       <p
         v-if="catalog.lastRefreshError || catalog.catalog.state === 'unavailable' || frozen"
-        class="setting-hint"
+        class="catalog-warning"
       >
         {{
           catalog.lastRefreshError?.message ||
@@ -238,124 +305,210 @@ async function mutate(action: "refresh" | "upsert" | "remove") {
             : "暂无取样账号，供应商默认只读。")
         }}
       </p>
-      <label class="graph-field"
-        >搜索模型<input v-model.trim="search" type="search" placeholder="显示名称或上游 ID"
-      /></label>
-      <details>
-        <summary>筛选目录</summary>
-        <div class="graph-grid">
-          <label class="graph-field"
-            >用途<select v-model="operation">
-              <option value="">全部</option>
-              <option v-for="(title, id) in operationLabels" :value="id">{{ title }}</option>
-            </select></label
-          >
-          <label class="graph-field"
-            >输入<select v-model="input">
-              <option value="">全部</option>
-              <option v-for="(title, id) in modalityLabels" :value="id">{{ title }}</option>
-            </select></label
-          >
-          <label v-if="input"><input v-model="requiredInput" type="checkbox" />仅限必需输入</label>
-          <label class="graph-field"
-            >能力<select v-model="capability">
-              <option value="">全部</option>
-              <option value="call">可试聊</option>
-              <option value="tool">工具调用</option>
-              <option value="structured">结构化输出</option>
-            </select></label
-          ><label class="graph-field"
-            >模型来源<select v-model="evidence">
-              <option value="">全部</option>
-              <option value="manual">手工登记</option>
-              <option value="remote">远端目录</option>
-              <option value="missing">已缺失</option>
-            </select></label
-          >
-          <label class="graph-field"
-            >输出<select v-model="output">
-              <option value="">全部</option>
-              <option v-for="(title, id) in modalityLabels" :value="id">{{ title }}</option>
-            </select></label
-          >
-          <label class="graph-field"
-            >接入方案 / 套餐<select v-model="plan">
-              <option value="">当前方案</option>
-              <option v-for="p in plans" :value="p">{{ p }}</option>
-            </select></label
-          >
-          <label class="graph-field"
-            >接入方式<select v-model="access">
-              <option value="">全部</option>
-              <option value="api">API 按量</option>
-              <option value="subscription">订阅</option>
-            </select></label
-          ><label class="graph-field"
-            >可比较单价<select v-model="meter">
-              <option value="">全部</option>
-              <option v-for="[id, label] in priceOptions" :value="id">{{ label }}</option>
-            </select></label
-          >
-          <template v-if="meter"
-            ><label class="graph-field">币种<input v-model.trim="currency" /></label
-            ><label class="graph-field"
-              >适用档位<select v-model="tier">
-                <option value="">选择条件</option>
-                <option v-for="key in conditions" :value="key">{{ key }}</option>
-              </select></label
-            ><label class="graph-field"
-              >价格上限<input v-model="maxPrice" type="number" min="0" step="any" /></label
-            ><label><input v-model="sort" type="checkbox" />按价格升序</label></template
-          >
+
+      <div class="catalog-search-box">
+        <AppIcon name="search" :size="15" class="catalog-search-icon" />
+        <input
+          v-model.trim="search"
+          type="search"
+          aria-label="搜索模型"
+          placeholder="搜索模型或上游 ID"
+        />
+      </div>
+
+      <CollapsiblePanel class="catalog-filters" variant="subtle">
+        <template #title>
+          <span class="inline-icon">
+            <AppIcon name="filter" :size="14" />
+            筛选目录
+            <span v-if="activeFilterCount" class="count-pill is-brand">{{
+              activeFilterCount
+            }}</span>
+          </span>
+        </template>
+        <template v-if="activeFilterCount" #actions>
+          <button type="button" class="link-action" @click.stop="clearFilters">清除</button>
+        </template>
+        <div class="catalog-filter-body">
+          <div class="filter-grid">
+            <label class="graph-field">
+              用途
+              <select v-model="operation">
+                <option value="">全部</option>
+                <option v-for="(title, id) in operationLabels" :key="id" :value="id">
+                  {{ title }}
+                </option>
+              </select>
+            </label>
+            <label class="graph-field">
+              能力
+              <select v-model="capability">
+                <option value="">全部</option>
+                <option value="call">可试聊</option>
+                <option value="tool">工具调用</option>
+                <option value="structured">结构化输出</option>
+              </select>
+            </label>
+            <label class="graph-field">
+              输入
+              <select v-model="input">
+                <option value="">全部</option>
+                <option v-for="(title, id) in modalityLabels" :key="id" :value="id">
+                  {{ title }}
+                </option>
+              </select>
+            </label>
+            <label class="graph-field">
+              输出
+              <select v-model="output">
+                <option value="">全部</option>
+                <option v-for="(title, id) in modalityLabels" :key="id" :value="id">
+                  {{ title }}
+                </option>
+              </select>
+            </label>
+            <label class="graph-field">
+              模型来源
+              <select v-model="evidence">
+                <option value="">全部</option>
+                <option value="manual">手工登记</option>
+                <option value="remote">远端目录</option>
+                <option value="missing">已缺失</option>
+              </select>
+            </label>
+          </div>
+          <label v-if="input" class="inline-check">
+            <input v-model="requiredInput" type="checkbox" />
+            <span>仅限必需输入</span>
+          </label>
+
+          <CollapsiblePanel class="nested-filter" variant="inline" title="价格与套餐筛选">
+            <div class="filter-grid nested-filter-body">
+              <label class="graph-field">
+                接入方案 / 套餐
+                <select v-model="plan">
+                  <option value="">当前方案</option>
+                  <option v-for="p in plans" :key="p" :value="p">{{ p }}</option>
+                </select>
+              </label>
+              <label class="graph-field">
+                接入方式
+                <select v-model="access">
+                  <option value="">全部</option>
+                  <option value="api">API 按量</option>
+                  <option value="subscription">订阅</option>
+                </select>
+              </label>
+              <label class="graph-field">
+                可比较单价
+                <select v-model="meter">
+                  <option value="">全部</option>
+                  <option v-for="[id, label] in priceOptions" :key="id" :value="id">
+                    {{ label }}
+                  </option>
+                </select>
+              </label>
+              <template v-if="meter">
+                <label class="graph-field">币种<input v-model.trim="currency" /></label>
+                <label class="graph-field">
+                  适用档位
+                  <select v-model="tier">
+                    <option value="">选择条件</option>
+                    <option v-for="key in conditions" :key="key" :value="key">{{ key }}</option>
+                  </select>
+                </label>
+                <label class="graph-field">
+                  价格上限
+                  <input v-model="maxPrice" type="number" min="0" step="any" placeholder="不限" />
+                </label>
+                <label class="inline-check">
+                  <input v-model="sort" type="checkbox" />
+                  <span>按价格升序</span>
+                </label>
+              </template>
+            </div>
+          </CollapsiblePanel>
         </div>
-      </details>
-      <ul class="catalog-list">
+      </CollapsiblePanel>
+
+      <ul v-if="filtered.length" class="catalog-list">
         <li v-for="item in filtered" :key="item.selection.modelId">
           <button
             :aria-pressed="item.selection.modelId === model"
             @click="choose(item.selection.modelId)"
           >
-            <strong>{{ item.displayName }}</strong
-            ><small v-if="item.displayName !== item.selection.modelId">{{
+            <span class="catalog-item-head">
+              <strong>{{ item.displayName }}</strong>
+              <span v-if="isSavedTest(item.selection.modelId)" class="mini-badge is-brand">
+                测试中
+              </span>
+            </span>
+            <small v-if="item.displayName !== item.selection.modelId">{{
               item.selection.modelId
-            }}</small
-            ><span
-              >{{ operationLabels[item.operation] }} ·
-              {{
-                {
-                  remote: "目录",
-                  manual: "手工",
-                  "remote-and-manual": "目录 / 手工",
-                  missing: "已缺失",
-                }[item.presence]
-              }}</span
-            >
+            }}</small>
+            <span class="catalog-item-meta">
+              {{ operationShortLabels[item.operation] ?? operationLabels[item.operation] }} ·
+              {{ presenceLabels[item.presence] ?? item.presence }}
+            </span>
           </button>
         </li>
       </ul>
-      <p v-if="!filtered.length" class="setting-hint">
-        {{ entries.length ? "没有匹配的模型。" : "此端点尚无模型。" }}
-      </p>
-      <details v-if="scope === 'account'">
-        <summary>手工登记模型</summary>
-        <form class="graph-row" @submit.prevent="mutate('upsert')">
-          <label class="graph-field"
-            >模型类型<select v-model="mediaType">
-              <option v-for="(title, id) in typeLabels" :value="id">{{ title }}</option>
-            </select></label
-          ><label class="graph-field">上游模型 ID<input v-model.trim="manualId" required /></label
-          ><label class="graph-field"
-            >显示名称<input v-model.trim="manualName" placeholder="可选" /></label
-          ><span v-if="!compatible" class="setting-hint">所选类型与当前端点不匹配。</span
-          ><button
+      <div v-else class="catalog-empty">
+        <p>{{ entries.length ? "没有匹配的模型。" : "此端点尚无模型。" }}</p>
+        <button
+          v-if="activeFilterCount || search"
+          class="link-action"
+          @click="
+            search = '';
+            clearFilters();
+          "
+        >
+          清除筛选条件
+        </button>
+      </div>
+
+      <CollapsiblePanel v-if="scope === 'account'" class="manual-register" variant="subtle">
+        <template #title>
+          <span class="inline-icon"><AppIcon name="plus" :size="14" /> 手工登记模型</span>
+        </template>
+        <form class="manual-register-form" @submit.prevent="mutate('upsert')">
+          <label class="graph-field">
+            上游模型 ID
+            <input v-model.trim="manualId" required placeholder="例如：gpt-4.1-mini" />
+          </label>
+          <label class="graph-field">
+            显示名称
+            <input v-model.trim="manualName" placeholder="留空默认使用模型 ID" />
+          </label>
+          <CollapsiblePanel
+            class="nested-filter"
+            variant="inline"
+            :title="'模型类型（默认 ' + (typeLabels[mediaType ?? ''] ?? '当前端点类型') + '）'"
+          >
+            <div class="nested-filter-body">
+              <label class="graph-field">
+                模型类型
+                <select v-model="mediaType">
+                  <option v-for="(title, id) in typeLabels" :key="id" :value="id">
+                    {{ title }}
+                  </option>
+                </select>
+              </label>
+            </div>
+          </CollapsiblePanel>
+          <span v-if="!compatible" class="setting-hint">所选类型与当前端点不匹配。</span>
+          <button
+            class="primary-action compact-btn"
             :disabled="busy || !compatible || !manualId || catalog.register.state !== 'enabled'"
           >
             登记模型
           </button>
         </form>
-      </details>
+      </CollapsiblePanel>
+
       <p v-if="error" class="form-message" role="alert">{{ error }}</p>
     </section>
+
     <ModelFactsPanel
       v-if="entry"
       ref="editor"
@@ -364,19 +517,19 @@ async function mutate(action: "refresh" | "upsert" | "remove") {
       :snapshot="snapshot"
       :catalog="catalog"
       :scope="scope"
+      :breadcrumb="breadcrumb"
       :readonly="frozen"
+      :removable="entry.presence.includes('manual') && scope === 'account'"
+      :remove-busy="busy"
       @reload="emit('reload')"
       @chat="emit('chat')"
       @pick-account="emit('pickAccount', catalog.accountId, model)"
+      @remove-manual="mutate('remove')"
     />
-    <p v-else class="select-entry-hint">选择一个模型查看配置。</p>
+    <div v-else class="graph-card editor-empty-state">
+      <AppIcon name="models" :size="28" class="empty-icon" />
+      <p>从左侧选择一个模型查看和编辑配置</p>
+      <small v-if="scope === 'account'">找不到想要的模型？可在左侧底部「手工登记模型」。</small>
+    </div>
   </div>
-  <button
-    v-if="entry?.presence.includes('manual') && scope === 'account'"
-    class="outline-action danger-text"
-    :disabled="busy"
-    @click="mutate('remove')"
-  >
-    移除当前手工登记
-  </button>
 </template>

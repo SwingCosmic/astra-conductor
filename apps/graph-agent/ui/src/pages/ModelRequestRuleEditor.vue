@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
+import { CollapsiblePanel } from "@astra-conductor/shared-ui";
 import { parseModelRouteInput, type ModelRouteInput } from "@astra-conductor/contract/common";
 const props = defineProps<{ route: ModelRouteInput }>();
 const emit = defineEmits<{ change: [rule: ModelRouteInput["requestRule"]] }>();
@@ -28,23 +29,32 @@ function update(input: HTMLTextAreaElement) {
 }
 </script>
 <template>
-  <details>
-    <summary>模型别名与请求规则</summary>
-    <label class="graph-field"
-      >当前端点的聊天规则（JSON）
-      <textarea
-        v-model="raw"
-        rows="6"
-        spellcheck="false"
-        placeholder='{"operation":"chat","aliases":{"work":"vendor/model"},"targets":["vendor/model"]}'
-        @input="update($event.target as HTMLTextAreaElement)"
-      />
-    </label>
-    <p class="setting-hint">
-      可用 models 限定本地型号，targets 登记允许的上游型号。defaults 设置参数默认值，byModel
-      按精确型号覆盖。modelTemplate 可用 {model}、{effort} 和 {windowLabel}，consume
-      声明已写入名称的参数，headers、body 可追加扩展字段。
-    </p>
-    <p v-if="error" class="form-message" role="alert">{{ error }}</p>
-  </details>
+  <CollapsiblePanel variant="inline" title="模型别名与请求规则" :default-open="!!raw">
+    <div class="rule-editor-body">
+      <label class="graph-field"
+        >当前端点的聊天规则（JSON）
+        <textarea
+          v-model="raw"
+          rows="6"
+          spellcheck="false"
+          placeholder='{"operation":"chat","aliases":{"work":"vendor/model"},"targets":["vendor/model"]}'
+          @input="update($event.target as HTMLTextAreaElement)"
+        />
+      </label>
+      <p class="setting-hint">
+        可用 models 限定本地型号，targets 登记允许的上游型号。defaults 设置参数默认值，byModel
+        按精确型号覆盖。modelTemplate 可用 {model}、{effort} 和 {windowLabel}，consume
+        声明已写入名称的参数，headers、body 可追加扩展字段。
+      </p>
+      <p v-if="error" class="form-message" role="alert">{{ error }}</p>
+    </div>
+  </CollapsiblePanel>
 </template>
+<style scoped>
+.rule-editor-body {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--border-subtle, #e8edf4);
+}
+</style>

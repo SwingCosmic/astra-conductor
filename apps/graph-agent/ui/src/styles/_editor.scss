@@ -1,0 +1,332 @@
+@use "./mixins" as *;
+
+/* ── 模型编辑器面板 ──────────────────────────────────────────────────────── */
+.graph-editor {
+  padding: 22px 24px 0;
+  overflow: hidden;
+}
+
+.editor-empty-state {
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  padding: 72px 24px;
+  text-align: center;
+  color: $text-subtle;
+
+  .empty-icon {
+    color: $border-input;
+  }
+
+  p {
+    margin: 0;
+    font-size: 15px;
+    color: $text-secondary;
+  }
+
+  small {
+    color: var(--text-muted);
+  }
+}
+
+.editor-header {
+  @include flex-row(12px, space-between, flex-start);
+}
+
+.editor-header-copy {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.editor-breadcrumb {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.editor-title-row {
+  @include flex-row(10px);
+
+  h2 {
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+}
+
+.editor-subtitle-row {
+  @include flex-row(6px);
+}
+
+.model-id-code {
+  padding: 2px 6px;
+  border-radius: var(--radius-xs, 4px);
+  background: $surface-soft;
+  color: #334155;
+  font-size: 12px;
+}
+
+/* ── 页签栏 ──────────────────────────────────────────────────────────────── */
+.editor-tabs {
+  display: flex;
+  gap: 6px;
+  border-bottom: 1px solid $border;
+  margin: 18px 0;
+
+  button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    padding: 9px 14px;
+    background: transparent;
+    color: $text-secondary;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition:
+      color 0.14s ease,
+      border-color 0.14s ease;
+
+    &:hover {
+      color: var(--text-primary);
+    }
+
+    &[aria-pressed="true"] {
+      color: var(--brand-accent);
+      border-bottom-color: var(--brand-accent);
+      font-weight: 650;
+    }
+  }
+}
+
+.tab-dirty-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--brand-accent);
+}
+
+/* ── 编辑器分组卡片与折叠组 ─────────────────────────────────────────────── */
+.editor-body,
+.editor-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.editor-section {
+  padding: 14px 16px;
+  border: 1px solid $border-subtle;
+  border-radius: var(--radius-md, 8px);
+  background: $surface;
+  display: grid;
+  gap: 12px;
+}
+
+.preset-bar {
+  background: $surface-muted;
+  padding: 12px 14px;
+}
+
+.section-head-row {
+  @include flex-row(8px, space-between);
+}
+
+.editor-two-col {
+  @include auto-grid(240px, 12px 16px);
+}
+
+.tag-editor-row,
+.segmented-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tag-editor-head {
+  @include flex-row(8px);
+}
+
+.field-heading {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.tag-editor-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.editor-collapsible-body {
+  display: grid;
+  gap: 12px;
+  padding: 12px 14px 14px;
+  border-top: 1px solid $border-subtle;
+  background: $surface;
+}
+
+/* ── 开关控件（思考参数） ────────────────────────────────────────────────── */
+.toggle-row {
+  @include flex-row(12px, space-between, flex-start, nowrap);
+  padding: 10px 12px;
+  border: 1px solid $border-faint;
+  border-radius: 8px;
+  background: $surface-muted;
+}
+
+.toggle-control {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+
+  input {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+
+    &:checked + .toggle-track {
+      background: var(--brand-accent);
+
+      &::after {
+        transform: translateX(16px);
+      }
+    }
+
+    &:disabled + .toggle-track {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    &:focus-visible + .toggle-track {
+      outline: 2px solid var(--brand-accent);
+      outline-offset: 2px;
+    }
+  }
+}
+
+.toggle-track {
+  position: relative;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 20px;
+  margin-top: 2px;
+  border-radius: 99px;
+  background: $border-input;
+  transition: background-color 0.16s ease;
+
+  &::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: $surface;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.2);
+    transition: transform 0.16s ease;
+  }
+}
+
+.toggle-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+
+  small {
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+}
+
+.toggle-title {
+  @include flex-row(7px);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* ── 底部固定操作栏与请求预览 ────────────────────────────────────────────── */
+.stale-banner {
+  @include flex-row(10px, space-between);
+  margin: 14px 0 0;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #92400e;
+  font-size: 13px;
+}
+
+.request-preview-box {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border: 1px solid $border;
+  border-radius: 8px;
+  background: $surface-subtle;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.editor-sticky-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  @include flex-row(12px, space-between);
+  margin: 20px -24px 0;
+  padding: 14px 24px;
+  border-top: 1px solid $border;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(6px);
+}
+
+.footer-status {
+  font-size: 13px;
+}
+
+.dirty-counter {
+  @include pill(2px 9px, var(--radius-xs, 4px), 12.5px, 600);
+  background: var(--brand-selected);
+  color: var(--brand-hover);
+  font-variant-numeric: tabular-nums;
+}
+
+.saved-notice {
+  color: #15803d;
+  font-weight: 600;
+}
+
+.clean-notice {
+  color: var(--text-muted);
+}
+
+.footer-actions {
+  @include flex-row(8px);
+}
+
+@media (max-width: 640px) {
+  .graph-editor {
+    padding: 16px 16px 0;
+  }
+
+  .editor-sticky-footer {
+    margin: 16px -16px 0;
+    padding: 12px 16px;
+  }
+}

@@ -1,23 +1,23 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import type { PublicAccount } from "@astra-conductor/contract/common";
-import { AppShell, CredentialsPage, ProvidersPage } from "@astra-conductor/shared-ui";
+import { AppIcon, AppShell, CredentialsPage, ProvidersPage } from "@astra-conductor/shared-ui";
 import icon from "../../assets/icons/graphagent.svg";
 import TestChatPage from "./pages/TestChatPage.vue";
 import ModelsPage from "./pages/ModelsPage.vue";
 import CustomProvidersPanel from "./pages/CustomProvidersPanel.vue";
-import "./pages/models.css";
+import "./styles/index.scss";
 const active = ref("home"),
   account = ref<PublicAccount>(),
   editor = ref<InstanceType<typeof ModelsPage>>(),
   focusAccount = ref<PublicAccount>();
 const version = String(import.meta.env.VITE_APP_VERSION);
 const navigation = [
-  { id: "home", label: "测试对话", icon: "☏" },
-  { id: "models", label: "模型配置", icon: "◇" },
-  { id: "providers", label: "供应商", icon: "◈" },
-  { id: "credentials", label: "凭据管理", icon: "⚙" },
-];
+  { id: "home", label: "测试对话", icon: "chat" },
+  { id: "models", label: "模型配置", icon: "models" },
+  { id: "providers", label: "供应商", icon: "providers" },
+  { id: "credentials", label: "凭据管理", icon: "credentials" },
+] as const;
 async function navigate(id: string, fromAccount?: PublicAccount) {
   if (id === active.value) return;
   if (active.value === "models" && editor.value && !(await editor.value.mayLeave())) return;
@@ -49,13 +49,12 @@ async function navigate(id: string, fromAccount?: PublicAccount) {
         ><button
           v-if="connection?.routes?.length"
           :id="'model-for-' + a.id"
-          class="outline-action"
+          class="accent-action model-entry-action"
+          :aria-label="'配置 ' + a.displayName + ' 的模型'"
           @click="navigate('models', a)"
         >
-          模型配置
-        </button></template
-      ></ProvidersPage
-    >
+          模型配置 <AppIcon name="arrow-right" :size="14" /></button></template
+    ></ProvidersPage>
     <CredentialsPage v-else-if="active === 'credentials'" :show-back="false" />
     <ModelsPage
       v-else-if="active === 'models'"

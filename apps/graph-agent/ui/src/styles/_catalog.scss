@@ -1,0 +1,173 @@
+@use "./mixins" as *;
+
+/* ── 目录与编辑器双栏布局 ────────────────────────────────────────────────── */
+.catalog-layout {
+  display: grid;
+  grid-template-columns: minmax(250px, 310px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+
+  > .graph-card {
+    margin: 0;
+    min-width: 0;
+  }
+}
+
+.catalog-browser {
+  padding: 16px;
+  position: sticky;
+  top: 16px;
+}
+
+.catalog-title-row {
+  @include flex-row(8px, null, center, nowrap);
+}
+
+.catalog-status-line {
+  font-size: 12px !important;
+  line-height: 1.5 !important;
+  margin-bottom: 10px !important;
+}
+
+.catalog-warning {
+  margin: 0 0 10px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm, 6px);
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  color: #9a3412;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.catalog-search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+
+  input {
+    width: 100%;
+    height: var(--control-h-md, 32px);
+    padding: 0 10px 0 30px;
+    border: 1px solid $border-input;
+    border-radius: var(--radius-sm, 6px);
+    background: $surface;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 13px;
+
+    &:focus {
+      @include focus-ring;
+    }
+  }
+}
+
+.catalog-search-icon {
+  position: absolute;
+  left: 9px;
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+.catalog-filters,
+.manual-register {
+  margin-top: 10px;
+}
+
+.catalog-filter-body,
+.manual-register-form {
+  display: grid;
+  gap: 10px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid $border-subtle;
+}
+
+.filter-grid {
+  @include auto-grid(115px, 8px);
+}
+
+.nested-filter {
+  margin-top: 2px;
+
+  .nested-filter-body {
+    padding: 8px 10px 10px;
+    border-top: 1px solid $border-subtle;
+  }
+}
+
+.catalog-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  max-height: 52vh;
+  overflow-y: auto;
+  display: grid;
+  gap: 3px;
+
+  button {
+    display: grid;
+    text-align: start;
+    gap: 2px;
+    width: 100%;
+    border: 1px solid transparent;
+    padding: 8px 10px;
+    background: transparent;
+    border-radius: var(--radius-sm, 6px);
+    overflow-wrap: anywhere;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition:
+      background-color 0.12s ease,
+      border-color 0.12s ease;
+
+    &:hover:not([aria-pressed="true"]) {
+      background: var(--bg-canvas, #f4f6fa);
+    }
+
+    &[aria-pressed="true"] {
+      border-color: color-mix(in srgb, var(--brand-accent) 28%, transparent);
+      background: var(--brand-selected);
+      color: var(--brand-hover);
+    }
+  }
+
+  strong {
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  small,
+  .catalog-item-meta {
+    color: var(--text-muted);
+    font-size: 11.5px;
+  }
+}
+
+.catalog-item-head {
+  @include flex-row(6px, space-between, center, nowrap);
+}
+
+.catalog-empty {
+  padding: 20px 8px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+
+  p {
+    margin: 0 0 6px;
+  }
+}
+
+@media (max-width: 960px) {
+  .catalog-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .catalog-browser {
+    position: static;
+  }
+
+  .catalog-list {
+    max-height: 260px;
+  }
+}

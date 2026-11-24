@@ -12,6 +12,13 @@ export default defineConfig({
   root: fileURLToPath(new URL(".", import.meta.url)),
   base: "./",
   plugins: [vue()],
+  css: {
+    preprocessorOptions: {
+      scss: {
+        api: "modern",
+      },
+    },
+  },
   define: { "import.meta.env.VITE_APP_VERSION": JSON.stringify(version) },
   build: { outDir: "dist", emptyOutDir: true },
   server: {

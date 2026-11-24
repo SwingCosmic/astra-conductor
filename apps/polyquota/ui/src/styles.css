@@ -374,7 +374,16 @@
   color: #1475f7;
 }
 
+.inline-icon-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
 .disabled-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 13px 18px 0;
   color: #64748b;
   font-size: 12px;
@@ -391,6 +400,9 @@
 }
 
 .quota-card-foot button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   border: 0;
   color: #1475f7;
   background: transparent;

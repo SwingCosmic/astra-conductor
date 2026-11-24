@@ -8,6 +8,7 @@ GraphAgent 是以执行图为中心的智能体协作产品。产品级入口与
 
 - [GraphAgent SQLite 业务表结构](./design/business-database.md)说明每个 profile 中账号、自定义供应商与模型配置的表结构、凭据共享边界，以及 2B 的建库与重开流程。
 - [模型配置 UI 实施方案](./ui/model-configuration/ui-implementation-plan.md)与[供应商及 Core 数据实施方案](../common/core/provider/implementation-plan.md#模型配置改版的数据实施方案)。[专题现状](./ui/model-configuration/README.md)
+- [UI 交互优化与数据结构调整设计](./ui/interaction-refinement/design.md)与[实施计划](./ui/interaction-refinement/implementation-plan.md)：收口视觉密度、折叠过渡、服务商/凭据页布局与局部 Loading、凭据迁移独占向导及模型目录协议族解耦。
 - [概念设计](./concept-design.md)：产品构想与范围；首页 2.5D 办公室属于概念宣传，不进入排期。
 - [功能设计总览](./design/README.md)：领域对象、六层模块、运行主路径、工具专项与跨设备设计的阅读入口。
 - [前端服务契约](./design/frontend-contract.md)：`IGraphAgentService`、模型页 DTO、专属操作及产品事件；阶段二已提供目录、覆盖、选择、预览与单轮测试对话。

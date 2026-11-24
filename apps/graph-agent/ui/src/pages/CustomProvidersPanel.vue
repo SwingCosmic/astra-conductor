@@ -1,6 +1,15 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, ref, watch, nextTick } from "vue";
-import { ConnectionDialog, FormDialog, ProviderMark } from "@astra-conductor/shared-ui";
+import {
+  AppIcon,
+  authMethodLabel,
+  ChevronIcon,
+  CollapsiblePanel,
+  ConnectionDialog,
+  FormDialog,
+  ProviderMark,
+} from "@astra-conductor/shared-ui";
+import { modelEndpointDescriptors } from "@astra-conductor/contract/common";
 import type { ProviderManagementSnapshot, PublicAccount } from "@astra-conductor/contract/common";
 import type {
   CustomProvider,
@@ -14,6 +23,7 @@ import CustomProviderEditor from "./CustomProviderEditor.vue";
 import NewApiSiteCatalog from "./NewApiSiteCatalog.vue";
 import NewApiAccountDialog from "./NewApiAccountDialog.vue";
 import { graphServiceKey } from "../services/graph-agent-service";
+
 const props = defineProps<{ snapshot: ProviderManagementSnapshot | null; focusAccount?: string }>();
 const emit = defineEmits<{ reload: []; models: [account: PublicAccount] }>();
 const service = inject(graphServiceKey)!;
@@ -39,6 +49,7 @@ const impact = ref<Record<string, string[]>>({});
 const binding = ref<PublicAccount | null>(null),
   target = ref("");
 const expanded = ref<string[]>([]);
+
 const offeringLabel = computed(() => {
   const p = list.value.find((p) => p.providerId === connection.value?.providerId),
     o = p?.offerings.find((o) => o.offeringId === connection.value?.offeringId);
@@ -49,17 +60,28 @@ const ctx = computed(() =>
     ? { contextId: props.snapshot.backend.contextId, instanceId: props.snapshot.instanceId }
     : null,
 );
+
+const builtinProviderIds = computed(
+  () =>
+    new Set(
+      (props.snapshot?.providers ?? [])
+        .filter((p) => p.provider !== "compatible-api-key")
+        .map((p) => p.provider),
+    ),
+);
+
 const unbound = computed(() =>
   (props.snapshot?.accounts ?? []).filter(
     (a) =>
       !a.offeringId ||
-      (a.provider.startsWith("custom-") &&
+      (!builtinProviderIds.value.has(a.provider) &&
         !list.value.some(
           (p) =>
             p.providerId === a.provider && p.offerings.some((o) => o.offeringId === a.offeringId),
         )),
   ),
 );
+
 let generation = 0;
 async function reload() {
   const g = ++generation;
@@ -80,6 +102,7 @@ async function reload() {
 }
 watch(() => props.snapshot?.revision, reload, { immediate: true });
 onBeforeUnmount(() => generation++);
+
 watch([list, () => props.snapshot], () => {
   const q = catalog.value?.query;
   if (
@@ -110,6 +133,7 @@ watch([list, () => props.snapshot], () => {
   )
     keyDialog.value = null;
 });
+
 watch(
   () => props.snapshot?.backend.contextId,
   () => {
@@ -121,6 +145,7 @@ watch(
     if (editor.value?.account) editor.value = null;
   },
 );
+
 async function changed() {
   editor.value = null;
   deletion.value = null;
@@ -131,6 +156,7 @@ async function changed() {
   await reload();
   emit("reload");
 }
+
 async function perform(fn: () => Promise<void>) {
   if (busy.value) return;
   busy.value = true;
@@ -143,6 +169,7 @@ async function perform(fn: () => Promise<void>) {
     busy.value = false;
   }
 }
+
 function references(provider: CustomProvider) {
   void perform(async () => {
     const [r, models] = await Promise.all([
@@ -172,6 +199,7 @@ function references(provider: CustomProvider) {
     deletion.value = { provider, references: r.value };
   });
 }
+
 function remove() {
   const d = deletion.value;
   if (!d || d.references.length) return;
@@ -185,6 +213,7 @@ function remove() {
     await changed();
   });
 }
+
 async function detachRef(p: CustomProvider, a: CustomProviderReference) {
   await perform(async () => {
     const result = await service.customProviders.bindAccount({
@@ -201,17 +230,20 @@ async function detachRef(p: CustomProvider, a: CustomProviderReference) {
     emit("reload");
   });
 }
+
 function configureProvider(account: PublicAccount) {
   const record = props.snapshot?.connections.find((c) => c.accountId === account.id);
   if (!record) return;
   editor.value = { account: { accountId: account.id, expectedRevision: record.recordRevision } };
 }
+
 function changeBinding(account: PublicAccount) {
   binding.value = account;
   target.value = account.offeringId;
   deletion.value = null;
   error.value = "";
 }
+
 function bind() {
   const a = binding.value;
   if (!a) return;
@@ -229,12 +261,14 @@ function bind() {
     await changed();
   });
 }
+
 function accountAction(a: PublicAccount, name: string) {
   return (
     props.snapshot?.connections.find((c) => c.accountId === a.id)?.actions[name] ??
     props.snapshot?.actions[name]
   );
 }
+
 function deleteAccount(a: PublicAccount) {
   const revision = props.snapshot?.connections.find((c) => c.accountId === a.id)?.recordRevision;
   if (!revision || !ctx.value || !window.confirm("删除账号 " + a.displayName + " 及其关联凭据？"))
@@ -246,6 +280,7 @@ function deleteAccount(a: PublicAccount) {
     emit("reload");
   });
 }
+
 function toggle(a: PublicAccount) {
   void perform(async () => {
     const r = await service.providers.setAccountEnabled(a.id, !a.enabled, ctx.value ?? undefined);
@@ -253,9 +288,19 @@ function toggle(a: PublicAccount) {
     emit("reload");
   });
 }
+
 function members(p: string, o: string) {
   return props.snapshot?.accounts.filter((a) => a.provider === p && a.offeringId === o) ?? [];
 }
+
+function providerAccountCount(p: CustomProvider) {
+  return (props.snapshot?.accounts ?? []).filter((a) => a.provider === p.providerId).length;
+}
+
+function protocolShortName(protocol: string) {
+  return modelEndpointDescriptors.find((d) => d.protocol === protocol)?.label ?? protocol;
+}
+
 function openKeys(p: CustomProvider, offering: CustomOffering, a?: PublicAccount) {
   if (!ctx.value || !offering.siteBaseUrl) return;
   const record = a && props.snapshot?.connections.find((c) => c.accountId === a.id);
@@ -278,138 +323,230 @@ function openKeys(p: CustomProvider, offering: CustomOffering, a?: PublicAccount
       : props.snapshot?.actions.createConnection?.state === "enabled",
   };
 }
+
 function openGroup(id: string) {
   expanded.value = expanded.value.includes(id)
     ? expanded.value.filter((v) => v !== id)
     : [...expanded.value, id];
 }
 </script>
+
 <template>
   <section class="custom-providers">
-    <div class="graph-card-header">
-      <h2>自定义供应商</h2>
-      <button class="primary-action" @click="editor = {}">创建自定义供应商</button>
+    <div class="custom-providers-bar">
+      <div>
+        <h2>自定义供应商</h2>
+        <p class="setting-hint">接入 New API 中转站或任意 OpenAI / Anthropic 兼容服务</p>
+      </div>
+      <button class="primary-action" @click="editor = {}">
+        <AppIcon name="plus" :size="15" /> 创建自定义供应商
+      </button>
     </div>
+
     <p v-if="error && !deletion && !binding" role="alert" class="form-message">{{ error }}</p>
-    <article v-for="p in list" :key="p.providerId" class="provider-row">
-      <div class="provider-summary">
-        <ProviderMark :name="p.name" :icon="p.icon" />
-        <div class="provider-heading">
-          <h2>{{ p.name }}</h2>
-          <small>{{ p.offerings.length }} 个接入点</small>
-        </div>
-        <button class="outline-action" @click="editor = { provider: p }">编辑供应商</button
-        ><button class="outline-action danger-text" @click="references(p)">删除供应商</button>
-        <button
-          class="outline-action"
-          :aria-expanded="expanded.includes(p.providerId)"
-          @click="openGroup(p.providerId)"
-        >
-          {{ expanded.includes(p.providerId) ? "收起" : "查看接入点" }}
-        </button>
-      </div>
-      <div v-if="expanded.includes(p.providerId)" class="provider-accounts">
-        <section v-for="o in p.offerings" :key="o.offeringId" class="custom-offering">
-          <div class="graph-card-header">
-            <div>
-              <h3>{{ o.name }}</h3>
-              <small>{{ o.routes.length }} 个协议端点</small>
+
+    <div v-if="list.length" class="provider-list">
+      <article v-for="p in list" :key="p.providerId" class="provider-row">
+        <CollapsiblePanel variant="plain" :open="expanded.includes(p.providerId)">
+          <template #header="{ panelId }">
+            <div class="provider-summary">
+              <ProviderMark :name="p.name" :icon="p.icon" />
+              <div class="provider-heading">
+                <div class="provider-name-row">
+                  <h2>{{ p.name }}</h2>
+                  <p class="provider-status">
+                    <span class="status-dot" :class="{ connected: providerAccountCount(p) > 0 }" />
+                    {{
+                      providerAccountCount(p)
+                        ? `已接入 · ${providerAccountCount(p)} 个账号`
+                        : `${p.offerings.length} 个接入点`
+                    }}
+                  </p>
+                </div>
+                <p class="provider-description">
+                  {{ p.templateKind === "new-api" ? "New API 中转站" : "兼容接口" }} ·
+                  {{ p.offerings.map((o) => o.name).join(" / ") }}
+                </p>
+              </div>
+              <div class="custom-provider-actions">
+                <button
+                  class="icon-action-btn"
+                  aria-label="编辑供应商"
+                  title="编辑供应商"
+                  @click="editor = { provider: p }"
+                >
+                  <AppIcon name="edit" :size="15" />
+                </button>
+                <button
+                  class="icon-action-btn danger-text"
+                  aria-label="删除供应商"
+                  title="删除供应商"
+                  @click="references(p)"
+                >
+                  <AppIcon name="trash" :size="15" />
+                </button>
+                <button
+                  class="icon-button"
+                  :aria-label="expanded.includes(p.providerId) ? '收起接入点' : '展开接入点'"
+                  :title="expanded.includes(p.providerId) ? '收起接入点' : '展开接入点'"
+                  :aria-expanded="expanded.includes(p.providerId)"
+                  :aria-controls="panelId"
+                  @click="openGroup(p.providerId)"
+                >
+                  <ChevronIcon :collapsed="!expanded.includes(p.providerId)" />
+                </button>
+              </div>
             </div>
-            <button
-              v-if="p.templateKind === 'new-api' && o.siteBaseUrl"
-              class="outline-action"
-              @click="
-                catalog = {
-                  query: {
-                    providerId: p.providerId,
-                    offeringId: o.offeringId,
-                    expectedRevision: p.revision,
-                  },
-                  label: p.name + ' / ' + o.name,
-                }
-              "
-            >
-              站点模型目录
-            </button>
-            <button
-              class="outline-action"
-              :disabled="snapshot?.actions.createConnection?.state !== 'enabled'"
-              @click="connection = { providerId: p.providerId, offeringId: o.offeringId }"
-            >
-              添加账号
-            </button>
-            <button
-              v-if="p.templateKind === 'new-api' && o.siteBaseUrl"
-              class="outline-action"
-              :disabled="snapshot?.actions.createConnection?.state !== 'enabled'"
-              @click="openKeys(p, o)"
-            >
-              从站点 Key 添加账号
-            </button>
+          </template>
+
+          <div class="provider-accounts">
+            <section v-for="o in p.offerings" :key="o.offeringId" class="custom-offering">
+              <div class="offering-header">
+                <div class="offering-meta">
+                  <h3>{{ o.name }}</h3>
+                  <div class="method-chips">
+                    <span v-for="r in o.routes" :key="r.protocol">{{
+                      protocolShortName(r.protocol)
+                    }}</span>
+                  </div>
+                </div>
+                <div class="offering-header-actions">
+                  <button
+                    v-if="p.templateKind === 'new-api' && o.siteBaseUrl"
+                    class="outline-action compact-btn"
+                    @click="
+                      catalog = {
+                        query: {
+                          providerId: p.providerId,
+                          offeringId: o.offeringId,
+                          expectedRevision: p.revision,
+                        },
+                        label: p.name + ' / ' + o.name,
+                      }
+                    "
+                  >
+                    站点模型目录
+                  </button>
+                  <button
+                    v-if="p.templateKind === 'new-api' && o.siteBaseUrl"
+                    class="outline-action compact-btn"
+                    :disabled="snapshot?.actions.createConnection?.state !== 'enabled'"
+                    @click="openKeys(p, o)"
+                  >
+                    <AppIcon name="plus" :size="14" /> 从站点 Key 添加账号
+                  </button>
+                  <button
+                    class="accent-action compact-btn"
+                    :disabled="snapshot?.actions.createConnection?.state !== 'enabled'"
+                    @click="connection = { providerId: p.providerId, offeringId: o.offeringId }"
+                  >
+                    <AppIcon name="plus" :size="14" /> 添加账号
+                  </button>
+                </div>
+              </div>
+
+              <div
+                v-for="a in members(p.providerId, o.offeringId)"
+                :key="a.id"
+                class="provider-account-row custom-account-row"
+              >
+                <span class="account-avatar" aria-hidden="true">
+                  <AppIcon name="user" :size="15" />
+                </span>
+                <div class="account-identity">
+                  <strong>{{ a.displayName }}</strong>
+                </div>
+                <span class="method-chip">{{ authMethodLabel(a.authMethod) }}</span>
+                <span class="status-pill" :class="a.enabled ? 'is-enabled' : 'is-disabled'">
+                  {{ a.enabled ? "可用" : "已停用" }}
+                </span>
+                <div class="account-row-actions">
+                  <button
+                    :id="'model-for-' + a.id"
+                    class="accent-action model-entry-action"
+                    :aria-label="'配置 ' + p.name + ' 下 ' + a.displayName + ' 的模型'"
+                    @click="emit('models', a)"
+                  >
+                    模型配置 <AppIcon name="arrow-right" :size="13" />
+                  </button>
+                  <button
+                    v-if="p.templateKind === 'new-api' && o.siteBaseUrl"
+                    class="outline-action"
+                    :disabled="
+                      !a.enabled ||
+                      a.credentialState !== 'available' ||
+                      snapshot?.backend.active === 'unavailable'
+                    "
+                    @click="openKeys(p, o, a)"
+                  >
+                    Key 与用量
+                  </button>
+                  <button
+                    class="icon-action-btn"
+                    aria-label="编辑账号"
+                    title="编辑账号"
+                    :disabled="
+                      snapshot?.connections.find((c) => c.accountId === a.id)?.actions
+                        .editConnection?.state !== 'enabled'
+                    "
+                    @click="
+                      connection = {
+                        providerId: p.providerId,
+                        offeringId: o.offeringId,
+                        accountId: a.id,
+                      }
+                    "
+                  >
+                    <AppIcon name="edit" :size="14" />
+                  </button>
+                  <button class="outline-action" @click="changeBinding(a)">变更绑定</button>
+                  <button
+                    v-if="accountAction(a, 'setAccountEnabled')?.state !== 'hidden'"
+                    :disabled="accountAction(a, 'setAccountEnabled')?.state !== 'enabled'"
+                    class="outline-action"
+                    @click="toggle(a)"
+                  >
+                    {{ a.enabled ? "停用" : "启用" }}
+                  </button>
+                  <button
+                    v-if="accountAction(a, 'deleteAccount')?.state !== 'hidden'"
+                    :disabled="accountAction(a, 'deleteAccount')?.state !== 'enabled'"
+                    class="icon-action-btn danger-text"
+                    aria-label="删除账号"
+                    title="删除账号"
+                    @click="deleteAccount(a)"
+                  >
+                    <AppIcon name="trash" :size="14" />
+                  </button>
+                </div>
+              </div>
+              <p v-if="!members(p.providerId, o.offeringId).length" class="offering-empty">
+                该接入点尚未绑定账号，点击右上角「添加账号」即可接入。
+              </p>
+            </section>
           </div>
-          <div
-            v-for="a in members(p.providerId, o.offeringId)"
-            :key="a.id"
-            class="provider-account-row"
-          >
-            <strong>{{ a.displayName }}</strong
-            ><span class="method-chip">API Key</span>
-            <button class="outline-action" @click="changeBinding(a)">变更绑定</button>
-            <button
-              v-if="p.templateKind === 'new-api' && o.siteBaseUrl"
-              class="outline-action"
-              :disabled="
-                !a.enabled ||
-                a.credentialState !== 'available' ||
-                snapshot?.backend.active === 'unavailable'
-              "
-              @click="openKeys(p, o, a)"
-            >
-              Key 与用量
-            </button>
-            <button
-              class="outline-action"
-              :disabled="
-                snapshot?.connections.find((c) => c.accountId === a.id)?.actions.editConnection
-                  ?.state !== 'enabled'
-              "
-              @click="
-                connection = { providerId: p.providerId, offeringId: o.offeringId, accountId: a.id }
-              "
-            >
-              编辑账号
-            </button>
-            <button
-              v-if="accountAction(a, 'setAccountEnabled')?.state !== 'hidden'"
-              :disabled="accountAction(a, 'setAccountEnabled')?.state !== 'enabled'"
-              class="outline-action"
-              @click="toggle(a)"
-            >
-              {{ a.enabled ? "停用" : "启用" }}
-            </button>
-            <button
-              v-if="accountAction(a, 'deleteAccount')?.state !== 'hidden'"
-              :disabled="accountAction(a, 'deleteAccount')?.state !== 'enabled'"
-              class="outline-action danger-text"
-              @click="deleteAccount(a)"
-            >
-              删除账号
-            </button>
-            <button :id="'model-for-' + a.id" class="outline-action" @click="emit('models', a)">
-              模型配置
-            </button>
-          </div>
-        </section>
-      </div>
-    </article>
-    <section v-if="unbound.length" class="graph-card">
+        </CollapsiblePanel>
+      </article>
+    </div>
+
+    <section v-if="unbound.length" class="graph-card unbound-card">
       <h3>待绑定账号</h3>
-      <div v-for="a in unbound" :key="a.id" class="graph-card-header">
-        <span>{{ a.displayName }}</span
-        ><button v-if="list.some((p) => p.providerId === a.provider)" @click="changeBinding(a)">
-          选择接入点</button
-        ><button
+      <p class="setting-hint">以下凭据尚未关联到本地接入点，请先配置供应商或选择接入点。</p>
+      <div v-for="a in unbound" :key="a.id" class="unbound-row">
+        <span class="unbound-name">
+          <AppIcon name="user" :size="15" />
+          <strong>{{ a.displayName }}</strong>
+        </span>
+        <button
+          v-if="list.some((p) => p.providerId === a.provider)"
+          class="outline-action"
+          @click="changeBinding(a)"
+        >
+          选择接入点
+        </button>
+        <button
           v-else
+          class="outline-action"
           :disabled="!snapshot?.connections.some((c) => c.accountId === a.id)"
           @click="configureProvider(a)"
         >
@@ -417,6 +554,7 @@ function openGroup(id: string) {
         </button>
       </div>
     </section>
+
     <CustomProviderEditor
       v-if="editor"
       :provider="editor.provider"
@@ -439,32 +577,43 @@ function openGroup(id: string) {
       @close="connection = null"
       @saved="changed"
     />
-    <FormDialog v-if="deletion" :title="'删除 ' + deletion.provider.name" @close="deletion = null"
-      ><template v-if="deletion.references.length"
-        ><p>请先移走或解绑以下账号。</p>
-        <ul>
+
+    <FormDialog v-if="deletion" :title="'删除 ' + deletion.provider.name" @close="deletion = null">
+      <template v-if="deletion.references.length">
+        <p class="setting-hint">以下账号仍引用此供应商配置，请先移走或解绑后再删除。</p>
+        <ul class="reference-list">
           <li v-for="a in deletion.references" :key="a.accountId">
-            {{ a.displayName }} ·
-            {{
-              deletion.provider.offerings.find((o) => o.offeringId === a.offeringId)?.name ??
-              a.offeringId
-            }}
-            · {{ a.enabled ? "已启用" : "已停用" }}
-            <small v-if="impact[a.accountId]?.length">{{ impact[a.accountId]!.join("、") }}</small>
+            <div class="reference-copy">
+              <strong>{{ a.displayName }}</strong>
+              <small>
+                {{
+                  deletion.provider.offerings.find((o) => o.offeringId === a.offeringId)?.name ??
+                  a.offeringId
+                }}
+                · {{ a.enabled ? "已启用" : "已停用" }}
+              </small>
+              <small v-if="impact[a.accountId]?.length" class="reference-impact">
+                影响：{{ impact[a.accountId]!.join("、") }}
+              </small>
+            </div>
             <button
               v-if="snapshot?.accounts.some((x) => x.id === a.accountId)"
+              class="outline-action"
               @click="changeBinding(snapshot!.accounts.find((x) => x.id === a.accountId)!)"
             >
-              变更绑定</button
-            ><button v-else @click="detachRef(deletion.provider, a)">解绑账号</button>
+              变更绑定
+            </button>
+            <button v-else class="outline-action" @click="detachRef(deletion.provider, a)">
+              解绑账号
+            </button>
           </li>
-        </ul></template
-      >
-      <p v-else>确认删除这份供应商配置？</p>
-      <p v-if="error" role="alert">{{ error }}</p>
+        </ul>
+      </template>
+      <p v-else>确认删除这份供应商配置？已保存的凭据和共享授权不会被删除。</p>
+      <p v-if="error" role="alert" class="form-message">{{ error }}</p>
       <footer>
-        <button @click="deletion = null">取消</button
-        ><button
+        <button @click="deletion = null">取消</button>
+        <button
           class="primary-action"
           :disabled="busy || !!deletion.references.length"
           @click="remove"
@@ -473,9 +622,11 @@ function openGroup(id: string) {
         </button>
       </footer>
     </FormDialog>
-    <FormDialog v-if="binding" :title="'变更绑定 · ' + binding.displayName" @close="binding = null"
-      ><label class="graph-field"
-        >接入点<select v-model="target">
+
+    <FormDialog v-if="binding" :title="'变更绑定 · ' + binding.displayName" @close="binding = null">
+      <label class="graph-field">
+        接入点
+        <select v-model="target">
           <option value="">解绑，保留凭据</option>
           <option
             v-for="o in list.find((p) => p.providerId === binding?.provider)?.offerings ?? []"
@@ -484,19 +635,19 @@ function openGroup(id: string) {
           >
             {{ o.name }}
           </option>
-        </select></label
-      >
-      <p v-if="error" role="alert">{{ error }}</p>
+        </select>
+      </label>
+      <p v-if="error" role="alert" class="form-message">{{ error }}</p>
       <footer>
-        <button @click="binding = null">取消</button
-        ><button
+        <button @click="binding = null">取消</button>
+        <button
           class="primary-action"
           :disabled="busy || target === binding.offeringId"
           @click="bind"
         >
           保存绑定
         </button>
-      </footer></FormDialog
-    >
+      </footer>
+    </FormDialog>
   </section>
 </template>

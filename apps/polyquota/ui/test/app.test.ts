@@ -817,7 +817,7 @@ describe("desktop account UI", () => {
       .find((item) => item.text().includes("Z.ai Coding Plan"))!;
     expect(row.get(".provider-name-row h2").text()).toBe("Z.ai Coding Plan");
     expect(row.get(".provider-status").text()).toContain("尚未接入");
-    await row.get(".primary-action").trigger("click");
+    await row.get(".accent-action").trigger("click");
     expect(wrapper.text()).toContain("只读取现有凭据并保存应用自己的加密副本");
     expect(wrapper.find(".method-summary").exists()).toBe(false);
     wrapper.unmount();
@@ -843,7 +843,9 @@ describe("desktop account UI", () => {
     });
     await flushPromises();
     expect(wrapper.text()).toContain("令牌到期：");
-    const refreshButton = wrapper.findAll("button").find((button) => button.text() === "刷新令牌")!;
+    const refreshButton = wrapper
+      .findAll("button")
+      .find((button) => button.attributes("aria-label") === "刷新令牌")!;
     await refreshButton.trigger("click");
     await flushPromises();
     expect(refreshCredentials).toHaveBeenCalledWith(account.id);
@@ -1241,7 +1243,9 @@ describe("desktop account UI", () => {
       .find((button) => button.text().includes("服务商"));
     await providersButton!.trigger("click");
     await flushPromises();
-    const refreshButton = wrapper.findAll("button").find((button) => button.text() === "刷新令牌");
+    const refreshButton = wrapper
+      .findAll("button")
+      .find((button) => button.attributes("aria-label") === "刷新令牌");
     expect(refreshButton).toBeDefined();
     expect(refreshButton!.attributes("disabled")).toBeUndefined();
     await refreshButton!.trigger("click");

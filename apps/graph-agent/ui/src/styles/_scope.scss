@@ -1,0 +1,71 @@
+@use "./mixins" as *;
+
+/* ── 模型配置页：顶部作用域选择 ──────────────────────────────────────────── */
+.scope-card {
+  padding: 14px 18px;
+  margin-top: 0;
+}
+
+.scope-picker {
+  @include auto-grid(210px, 12px);
+  align-items: end;
+}
+
+.scope-notice {
+  @include flex-row(10px 14px, space-between);
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--brand-soft, #f5f2ff);
+  color: var(--brand-hover);
+  font-size: 12.5px;
+}
+
+.scope-notice-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 500;
+}
+
+.scope-sample-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+
+  select {
+    height: var(--control-h-sm, 28px);
+    padding: 0 8px;
+    border: 1px solid $border-input;
+    border-radius: var(--radius-sm, 6px);
+    background: $surface;
+    font: inherit;
+    font-weight: 400;
+  }
+}
+
+.scope-empty-state {
+  padding: 56px 20px;
+  text-align: center;
+  color: $text-subtle;
+  font-size: 14px;
+
+  p {
+    margin: 0;
+  }
+}
+
+/* ── 预置数据包折叠栏 ────────────────────────────────────────────────────── */
+.pack-bar {
+  margin: 12px 0;
+  padding: 0;
+  box-shadow: var(--shadow-card);
+
+  .pack-bar-body {
+    padding: 0 14px 12px;
+    border-top: 1px solid $border-subtle;
+  }
+}

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
-import { ChevronIcon } from "@astra-conductor/shared-ui";
+import { AppIcon, ChevronIcon } from "@astra-conductor/shared-ui";
 import type {
   PublicAccount,
   PublicProviderDescriptor,
@@ -249,8 +249,12 @@ function useAggregateResetCredit(type: string | null): void {
 
       <div v-if="resetCredits" class="extra-list">
         <button class="extra-button" type="button" @click="showResetCredits = true">
-          <span>↻&nbsp; 重置额度 {{ resetCreditsCount }}</span>
-          <span class="extra-detail">查看详情&nbsp; ›</span>
+          <span class="inline-icon-label"
+            ><AppIcon name="refresh" :size="13" /> 重置额度 {{ resetCreditsCount }}</span
+          >
+          <span class="extra-detail inline-icon-label"
+            >查看详情 <AppIcon name="chevron-right" :size="13"
+          /></span>
         </button>
       </div>
 
@@ -262,23 +266,35 @@ function useAggregateResetCredit(type: string | null): void {
           type="button"
           @click="selectedExtra = extra"
         >
-          <span>↻&nbsp; {{ extraLabel(extra) }} {{ extra.value }}</span>
-          <span class="extra-detail">查看详情&nbsp; ›</span>
+          <span class="inline-icon-label"
+            ><AppIcon name="refresh" :size="13" /> {{ extraLabel(extra) }} {{ extra.value }}</span
+          >
+          <span class="extra-detail inline-icon-label"
+            >查看详情 <AppIcon name="chevron-right" :size="13"
+          /></span>
         </button>
       </div>
 
-      <p v-if="!account.enabled" class="disabled-note">ⓘ 停用后不再自动刷新和通知</p>
+      <p v-if="!account.enabled" class="disabled-note">
+        <AppIcon name="info" :size="14" /> 停用后不再自动刷新和通知
+      </p>
       <footer class="quota-card-foot">
         <span>更新于：{{ new Date(usage.fetchedAt).toLocaleString("zh-CN") }}</span>
-        <button :disabled="busy || !account.enabled" @click="$emit('refresh')">↻&nbsp; 刷新</button>
+        <button :disabled="busy || !account.enabled" @click="$emit('refresh')">
+          <AppIcon name="refresh" :size="13" /> 刷新
+        </button>
       </footer>
     </template>
     <template v-else>
       <p class="empty-usage">尚无用量数据</p>
-      <p v-if="!account.enabled" class="disabled-note">ⓘ 停用后不再自动刷新和通知</p>
+      <p v-if="!account.enabled" class="disabled-note">
+        <AppIcon name="info" :size="14" /> 停用后不再自动刷新和通知
+      </p>
       <footer class="quota-card-foot">
         <span>刷新后展示套餐与额度</span>
-        <button :disabled="busy || !account.enabled" @click="$emit('refresh')">↻&nbsp; 刷新</button>
+        <button :disabled="busy || !account.enabled" @click="$emit('refresh')">
+          <AppIcon name="refresh" :size="13" /> 刷新
+        </button>
       </footer>
     </template>
 
@@ -289,7 +305,9 @@ function useAggregateResetCredit(type: string | null): void {
             <h2>{{ extraLabel(selectedExtra) }}</h2>
             <p>{{ presentation.name }}</p>
           </div>
-          <button class="icon-button" aria-label="关闭" @click="selectedExtra = null">×</button>
+          <button class="icon-button" aria-label="关闭" @click="selectedExtra = null">
+            <AppIcon name="close" :size="16" />
+          </button>
         </header>
         <div class="credit-summary">
           <span>当前值</span><strong>{{ selectedExtra.value }}</strong>
@@ -326,7 +344,9 @@ function useAggregateResetCredit(type: string | null): void {
             <h2>重置额度</h2>
             <p>{{ presentation.name }}</p>
           </div>
-          <button class="icon-button" aria-label="关闭" @click="showResetCredits = false">×</button>
+          <button class="icon-button" aria-label="关闭" @click="showResetCredits = false">
+            <AppIcon name="close" :size="16" />
+          </button>
         </header>
         <div class="credit-summary">
           <span>当前可用次数</span><strong>{{ resetCreditsCount }}</strong>

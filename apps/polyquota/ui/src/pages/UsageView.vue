@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { AppIcon } from "@astra-conductor/shared-ui";
 import QuotaCard from "../components/QuotaCard.vue";
 import UsageScoreRings from "../components/UsageScoreRings.vue";
 import type {
@@ -37,7 +38,7 @@ defineEmits<{
         :disabled="busy || !accounts.length"
         @click="$emit('refreshAll')"
       >
-        ↻&nbsp; 刷新全部
+        <AppIcon name="refresh" :size="14" /> 刷新全部
       </button>
     </header>
     <div v-if="accounts.length" class="quota-grid" aria-label="账号用量">

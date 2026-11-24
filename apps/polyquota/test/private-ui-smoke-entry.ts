@@ -187,7 +187,7 @@ void app.whenReady().then(async () => {
       await wait(()=>document.querySelectorAll('.provider-row').length===8);
       const row=[...document.querySelectorAll('.provider-row')].find(row=>row.textContent.includes('BigModel Coding Plan'));
       row.querySelector('[aria-label="展开账号"]').click(); await wait(()=>button(row,'启用'));
-      window.confirm=()=>true; button(row,'删除').click(); await wait(()=>row.textContent.includes('尚未接入'));
+      window.confirm=()=>true; row.querySelector('[aria-label="删除"]').click(); await wait(()=>row.textContent.includes('尚未接入'));
     `);
     adapter.abortRequests();
     await runtime.stop();

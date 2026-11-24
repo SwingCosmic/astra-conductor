@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import AppIcon from "../components/AppIcon.vue";
 import type {
   AuthStartResult,
   CommandContext,
@@ -222,7 +223,9 @@ onBeforeUnmount(() => {
           <h2>添加 {{ provider.name }}</h2>
           <p>选择接入方式并按步骤完成验证</p>
         </div>
-        <button class="icon-button" aria-label="关闭" @click="close">×</button>
+        <button class="icon-button" aria-label="关闭" @click="close">
+          <AppIcon name="close" :size="16" />
+        </button>
       </header>
       <div class="auth-tabs" role="tablist">
         <button

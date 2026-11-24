@@ -1,0 +1,125 @@
+@use "./mixins" as *;
+
+/* ── 自定义供应商区域 ────────────────────────────────────────────────────── */
+.custom-providers {
+  margin-bottom: 18px;
+
+  .provider-summary {
+    @include flex-row(14px);
+  }
+
+  .provider-heading {
+    flex: 1 1 200px;
+    min-width: 0;
+  }
+}
+
+.custom-providers-bar {
+  @include flex-row(12px, space-between);
+  margin-bottom: 12px;
+
+  .setting-hint {
+    margin: 3px 0 0;
+  }
+}
+
+.custom-provider-actions {
+  @include flex-row(6px);
+}
+
+.custom-offering {
+  padding: 14px 16px;
+  min-width: 0;
+
+  + .custom-offering {
+    border-top: 1px solid #e8edf3;
+  }
+}
+
+.offering-header {
+  @include flex-row(10px, space-between);
+  margin-bottom: 10px;
+}
+
+.offering-meta {
+  @include flex-row(10px);
+}
+
+.offering-header-actions {
+  @include flex-row(8px);
+}
+
+.custom-account-row {
+  @include flex-row(10px 12px);
+  padding: 10px 4px;
+
+  .account-identity {
+    flex: 1 1 160px;
+    min-width: 0;
+  }
+}
+
+.account-row-actions {
+  @include flex-row(6px);
+  margin-left: auto;
+}
+
+.offering-empty {
+  margin: 6px 0 2px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.unbound-card {
+  margin-top: 14px;
+  background: $surface-muted;
+}
+
+.unbound-row {
+  @include flex-row(10px, space-between);
+  padding: 8px 0;
+  border-top: 1px solid #eef2f6;
+}
+
+.unbound-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.reference-list {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+
+  li {
+    @include flex-row(12px, space-between, center, nowrap);
+    padding: 10px 12px;
+    border: 1px solid $border;
+    border-radius: 8px;
+    background: $surface-subtle;
+  }
+}
+
+.reference-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+
+  small {
+    color: var(--text-muted);
+  }
+}
+
+.reference-impact {
+  color: #b45309 !important;
+}
+
+@media (max-width: 640px) {
+  .account-row-actions {
+    margin-left: 0;
+    width: 100%;
+  }
+}

@@ -10,9 +10,9 @@ import polyquotaIcon from "./assets/icon/polyquota.svg";
 const appVersion = import.meta.env.VITE_APP_VERSION;
 type PageId = "usage" | "providers" | "settings";
 const navigation = [
-  { id: "usage", label: "用量", icon: "▥" },
-  { id: "providers", label: "服务商", icon: "▦" },
-  { id: "settings", label: "设置", icon: "⚙" },
+  { id: "usage", label: "用量", icon: "usage" },
+  { id: "providers", label: "服务商", icon: "providers" },
+  { id: "settings", label: "设置", icon: "settings" },
 ];
 function navigate(id: string): void {
   if (navigation.some((item) => item.id === id)) page.value = id as PageId;
