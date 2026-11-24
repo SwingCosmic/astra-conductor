@@ -348,6 +348,8 @@ export function migrateLegacyModelPackJson(
   return { document: validated.document, digest: validated.digest, changed: true };
 }
 export const maxModelPackBytes = 2 * 1024 * 1024;
+/** 分片相对路径:仅限 `[a-zA-Z0-9_-]` 段,天然排除 "."/".." 与绝对路径。 */
+export const packShardPathPattern = /^(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_-]+\.json$/;
 export function validateModelPack(raw: unknown): ValidatedPack {
   const row = record(raw, ["schemaVersion", "revision", "files", "manifest"], "manifest");
   if (Buffer.byteLength(JSON.stringify(row), "utf8") > maxModelPackBytes) invalid("预置包大小");
@@ -365,7 +367,7 @@ export function validateModelPack(raw: unknown): ValidatedPack {
         "file",
       );
       const path = text(f.path, "path");
-      if (!/^(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_-]+\.json$/.test(path)) invalid("path");
+      if (!packShardPathPattern.test(path)) invalid("path");
       const data = list(f.presets, "presets", 2048);
       const templateData =
           f.templates === undefined ? undefined : list(f.templates, "templates", 256),
@@ -476,12 +478,55 @@ export function validateModelPack(raw: unknown): ValidatedPack {
   };
 }
 let cachedBundledPack: ValidatedPack | undefined;
+/**
+ * 随包预置目录的装配:manifest.json 单独承载修订号与逐片 SHA-256,
+ * `families/*.json`(按家族的模型数据)与 `parameters/*.json`(按模型类型 /
+ * 厂商家族限定的参数模板)只含纯数据。装配结果仍走 validateModelPack,
+ * 分片摘要、清单对应关系与逐条引用在那一层统一校验。
+ */
+export function readModelPackDirectory(directory: URL): ModelPack {
+  const manifest = JSON.parse(readFileSync(new URL("manifest.json", directory), "utf8"));
+  const row = record(manifest, ["schemaVersion", "revision", "files"], "manifest");
+  if (row.schemaVersion !== 2) invalid("manifest.schemaVersion");
+  const revision = text(row.revision, "revision", 128);
+  const manifestEntries = list(row.files, "manifest.files", 128).map((entry) => {
+    const e = record(entry, ["path", "sha256"], "manifest.file");
+    const path = text(e.path, "path");
+    // 读取前先限定分片相对路径(不允许 "." 段),阻断清单被篡改时的越界读取。
+    if (!packShardPathPattern.test(path)) invalid("manifest.path");
+    return { path, sha256: text(e.sha256, "manifest.sha256") };
+  });
+  const files = manifestEntries.map(({ path, sha256 }) => {
+    const raw = JSON.parse(readFileSync(new URL(path, directory), "utf8")) as Record<
+      string,
+      unknown
+    >;
+    if (
+      !raw ||
+      typeof raw !== "object" ||
+      Array.isArray(raw) ||
+      Object.keys(raw).some((k) => !["presets", "templates", "sources", "rateCards"].includes(k))
+    )
+      return invalid(path);
+    // parameters/ 分片只含模板;装配时补齐校验器要求的空 presets 槽。
+    const contents: {
+      presets: unknown[];
+      templates?: unknown[];
+      sources?: unknown[];
+      rateCards?: unknown[];
+    } = { presets: Array.isArray(raw.presets) ? raw.presets : [] };
+    if (raw.templates !== undefined) contents.templates = raw.templates as unknown[];
+    if (raw.sources !== undefined) contents.sources = raw.sources as unknown[];
+    if (raw.rateCards !== undefined) contents.rateCards = raw.rateCards as unknown[];
+    return { path, sha256, ...contents };
+  });
+  return { schemaVersion: 2, revision, manifest: manifestEntries, files };
+}
+
 export function bundledModelPack(): ValidatedPack {
   if (!cachedBundledPack) {
     cachedBundledPack = validateModelPack(
-      JSON.parse(
-        readFileSync(new URL("../../resources/model-presets.json", import.meta.url), "utf8"),
-      ),
+      readModelPackDirectory(new URL("../../resources/model-presets/", import.meta.url)),
     );
   }
   return cachedBundledPack;

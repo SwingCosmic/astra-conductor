@@ -292,8 +292,8 @@ describe("provider plan catalog", () => {
     expect(planMultiplier("claude", "max")).toBe(20);
     expect(planMultiplier("claude", "default_claude_max_20x")).toBe(20);
     expect(planMultiplier("claude", "Max 5x")).toBe(5);
-    expect(planMultiplier("antigravity", "Free")).toBe(0.1);
-    expect(planMultiplier("antigravity", "Plus")).toBe(1);
+    expect(planMultiplier("antigravity", "Free")).toBe(0.25);
+    expect(planMultiplier("antigravity", "Plus")).toBe(0.5);
     // 官方已发布 Pro 为 1x 基线（2026-05-19 改版）。
     expect(planMultiplier("antigravity", "Pro")).toBe(1);
     expect(planMultiplier("antigravity", "Ultra 5x")).toBe(5);
@@ -342,6 +342,25 @@ describe("provider plan catalog", () => {
     expect(legacyPro).toMatchObject({ key: "supergrok-pro", legacy: true });
     const legacyHeavy = matchOfferingPlan("grok-build", "SuperGrok Heavy");
     expect(legacyHeavy).toMatchObject({ key: "supergrok-heavy", legacy: true });
+  });
+
+  it("recognizes Google One unified subscription tier names on antigravity", () => {
+    // loadCodeAssist 返回 `Google AI Pro` 等完整 paidTier.name（实测 2026-11-23），
+    // 不识别会以上游原文展示并追加未识别标记、按默认倍率估算。
+    expect(matchOfferingPlan("antigravity", "Google AI Pro")?.key).toBe("pro");
+    expect(planMultiplier("antigravity", "Google AI Pro")).toBe(1);
+    expect(matchOfferingPlan("antigravity", "google_ai_pro")?.key).toBe("pro");
+    expect(matchOfferingPlan("antigravity", "Google One AI Pro")?.key).toBe("pro");
+    // Plus 无独立倍率页，官方口径 1 Pro = 2 Plus = 4 Free → Plus 0.5x。
+    expect(matchOfferingPlan("antigravity", "Google AI Plus")?.key).toBe("plus");
+    expect(matchOfferingPlan("antigravity", "GOOGLE ONE AI PLUS")?.key).toBe("plus");
+    expect(planMultiplier("antigravity", "Google AI Plus")).toBe(0.5);
+    // Ultra 完整名默认落 20x rung；带 5x 标记的形态由 ultra-5x 精确键/正则抢先。
+    expect(matchOfferingPlan("antigravity", "Google AI Ultra")?.key).toBe("ultra");
+    expect(matchOfferingPlan("antigravity", "google-ai-ultra-20x")?.key).toBe("ultra");
+    expect(matchOfferingPlan("antigravity", "Google AI Ultra 5x")?.key).toBe("ultra-5x");
+    expect(planMultiplier("antigravity", "Google AI Ultra 5x")).toBe(5);
+    expect(planMultiplier("antigravity", "Google AI Ultra")).toBe(20);
   });
 
   it("adds Codex promax and folds B-side variants through regex fallback keys", () => {

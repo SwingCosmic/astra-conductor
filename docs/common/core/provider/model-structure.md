@@ -174,7 +174,14 @@
 
 ## 数据文件与更新
 
-GraphAgent 的随包资源为 `apps/graph-agent/resources/model-presets.json`，默认经 `model_state.active_pack = "$bundled"` 直接从打包资源读取并做进程内缓存，不再复制写入 SQLite `model_packs`；本地导入和在线更新使用相同的 UTF-8 JSON 包并存入 `model_packs`（支持回滚至 `$bundled`）。根对象的 `schemaVersion` 为 2，`revision` 标识内容版本，`manifest` 列出每个分片的相对路径和 SHA-256。`files` 内嵌分片，按顺序取 `{presets, templates?, sources?, rateCards?}`，对其紧凑 `JSON.stringify` 的 UTF-8 字节计算摘要；清单与实际分片一一对应。每个操作用 `parameterTemplateRef` 引用包内模板，型号用 `sourceRef` 引用资料。限于具体渠道的价卡用 ID、修订和套餐键绑定，保存与试算时校验供应商及 offering。宿主从 `GRAPH_AGENT_MODEL_PACK_URL` 读取管理员指定的更新地址，完整校验后在 SQLite 中切换活动版本。[随包模型与模板](../../../../apps/graph-agent/resources/model-presets.json) · [模型配置表](../../../graph-agent/design/business-database.md#模型配置表)
+GraphAgent 的随包资源为目录 `apps/graph-agent/resources/model-presets/`，默认经 `model_state.active_pack = "$bundled"` 直接从打包资源读取并做进程内缓存，不再复制写入 SQLite `model_packs`；本地导入和在线更新使用相同的 UTF-8 JSON 包并存入 `model_packs`（支持回滚至 `$bundled`）。目录内数据与校验信息分离：
+
+- `manifest.json` 单独承载 `schemaVersion`、`revision`（内容版本）与 `files`（每个分片的相对路径和 SHA-256），不含任何模型数据。
+- `parameters/operations.json` 存放模型类型限定的参数模板：每种 operation 一份默认模板（`id` 等于操作名），限定该类型可选参数及取值范围——例如聊天模板不提供图像尺寸字段。
+- `parameters/families.json` 存放厂商/家族限定的参数模板变体（如 `image.gpt-image-1` 的尺寸与画质枚举），变体模板在 UI 中按家族选择性地替换默认模板。
+- `families/<vendor>.json` 按模型家族陈列模型数据：`presets`（含 `operation`、`ioProfiles`、`facts`、`parameters`、`parameterTemplateRef`、`rateCardRefs`）、`sources`（`sourceRef` 指向的资料）与该家族的价卡。
+
+装配与校验：装载时按清单逐片读取，分片物理文件只含 `{presets?, templates?, sources?, rateCards?}`（模板分片物理上无 `presets` 键，装配补空槽），对 `{presets, templates?, sources?, rateCards?}` 的紧凑 `JSON.stringify` UTF-8 字节计算摘要并与清单比对，再走与导入包相同的 `validateModelPack`。清单与实际分片一一对应。每个操作用 `parameterTemplateRef` 引用包内模板，型号用 `sourceRef` 引用资料。限于具体渠道的价卡用 ID、修订和套餐键绑定，保存与试算时校验供应商及 offering。宿主从 `GRAPH_AGENT_MODEL_PACK_URL` 读取管理员指定的更新地址（单文件 JSON 包，导入/更新通道格式不变），完整校验后在 SQLite 中切换活动版本。[随包预置目录](../../../../apps/graph-agent/resources/model-presets/manifest.json) · [模型配置表](../../../graph-agent/design/business-database.md#模型配置表)
 
 已交付的数据包结构以上文为准：型号标识使用 `key / vendor / family / series / modelId`，能力内联 `operation`、`ioProfiles`（`kind / requiredInputs / optionalInputs / outputs`）、`facts`、`parameters`、`parameterTemplateRef` 与 `rateCardRefs`（`rateCardId + revision + planKey`），系列继承用预置上的 `inherit`（`presetKey + fields + referenceUrl`）表达。变体细分（`variantId / exactIds`）、按 profile 的参数 schema 引用（`parameterSchemaRef`）与决策输出契约（`decisionContractRef`）仍属后续设计，随后续数据包批次落地。
 

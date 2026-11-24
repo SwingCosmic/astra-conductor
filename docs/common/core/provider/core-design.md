@@ -10,7 +10,7 @@
 | `providers/<provider>/descriptor.ts`、`bundle.ts`、`contributions.ts` | 已在七个既有供应商之外登记普通 API Key 接入点。固定路由和账号自定义路由均按可执行能力装配。 |
 | `credential-service.ts`、`credential-vault.ts`、`shared-credential-service.ts` | 在同一个活动凭据后端提供新连接记录的读取与编辑，保留已有 adapter 使用的 `load/saveAccount/refresh`。私有密文和共享 payload 的格式分派收在这里                                                                                 |
 | `services/contracts.ts`、`ports.ts` | 复用 HTTP 与存储端口。GraphAgent 模型服务使用活动业务存储保存账号目录、字段覆盖和测试选择。[模型服务](../../../../apps/graph-agent/src/server/model-service.ts) |
-| `model-catalog/`、`providers/model-*.ts` | `facts.ts` 保存字段与报价的分层合并逻辑（`resolveModelFacts`），`model-discovery.ts` 解析列表，`model-chat.ts` 负责标准编码与发送。版本化预置数据包在 GraphAgent 侧交付（`apps/graph-agent/resources/model-presets.json`，按修订导入 SQLite）；自定义映射按阶段三扩展。 |
+| `model-catalog/`、`providers/model-*.ts` | `facts.ts` 保存字段与报价的分层合并逻辑（`resolveModelFacts`），`model-discovery.ts` 解析列表，`model-chat.ts` 负责标准编码与发送。版本化预置数据包在 GraphAgent 侧交付（`apps/graph-agent/resources/model-presets/`（manifest 与数据分片分离），按修订导入 SQLite）；自定义映射按阶段三扩展。 |
 
 实现和现状可分别在注册表、后端选择器及端口中核对。[ProviderRegistry](../../../../packages/core/src/providers/registry.ts) · [CredentialService](../../../../packages/core/src/credential-service.ts) · [CoreServices](../../../../packages/core/src/services/contracts.ts) · [StoragePort](../../../../packages/core/src/ports.ts)
 

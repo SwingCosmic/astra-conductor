@@ -20,7 +20,7 @@
 
 - **同构链式回调策略与固定 4 步请求管道**：用 `PolicyTransform<TValue, TContext>` / `AsyncPolicyTransform<TValue, TContext>` 统一表达 `ProviderOfferingModelPolicy` 的全部能力槽，通过 `applyPolicyChain` / `applyAsyncPolicyChain` 显式顺序组合；生成路径与原生只读校验共享同一份 `RequestPlan.constraints`。详见[供应商模型与请求策略分派设计](./provider/request-dispatch.md)与[扩展点取舍与出站契约](./provider/request-hooks.md)。
 - **枚举命名规范**：`xxxId` 仅用于数据库主键、运行时动态业务标识或上游动态条目编号；固定代码枚举统一采用 `EndpointProtocol` / `protocol`、`ProtocolFamily` / `protocolFamily`、`operation`、`ioProfile`、`vendor`、`planKey`、`NativeChatProtocol`。详见[类型与字段命名规范](./provider/request-dispatch.md#6-类型与字段命名规范)。
-- **随包预置直读与旧库兼容**：默认预置通过 `model_state.active_pack = "$bundled"` 直接读取打包资源 `resources/model-presets.json`，`model_packs` 仅保存用户手动导入或在线更新的外部预置包；SQLite v5 迁移自动清理旧库冗余随包副本并升级旧 JSON 文档字段名。详见[GraphAgent 业务数据库表结构](../graph-agent/design/business-database.md)。
+- **随包预置直读与旧库兼容**：默认预置通过 `model_state.active_pack = "$bundled"` 直接读取打包资源目录 `resources/model-presets/`，`model_packs` 仅保存用户手动导入或在线更新的外部预置包；SQLite v5 迁移自动清理旧库冗余随包副本并升级旧 JSON 文档字段名。详见[GraphAgent 业务数据库表结构](../graph-agent/design/business-database.md)。
 
 ## 实施阶段与完成状态
 

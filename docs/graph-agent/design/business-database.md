@@ -37,7 +37,7 @@ GraphAgent 新建的私有凭据文件只保存账号 ID、供应商 ID、账号
 
 | 表 | 主键和主要列 | 数据粒度与写入边界 |
 | --- | --- | --- |
-| `model_packs` | `revision` 主键，`schema_version, digest, content_json` | 仅保存用户手动导入或在线更新的预置包，含型号、精确 ID、操作、输入输出组合、模板、来源及随包报价；随应用打包的默认预置直接从资源文件 `resources/model-presets.json` 读取，不再复制写入数据库。导入失败保留原包。 |
+| `model_packs` | `revision` 主键，`schema_version, digest, content_json` | 仅保存用户手动导入或在线更新的预置包，含型号、精确 ID、操作、输入输出组合、模板、来源及随包报价；随应用打包的默认预置直接从资源目录 `resources/model-presets/` 读取（manifest.json 携带修订与逐片哈希），不再复制写入数据库。导入失败保留原包。 |
 | `model_catalogs` | `visibility_ref, provider_id, offering_id, account_id, protocol_family_id, family_binding_revision` 联合主键，另存 `retrieved_at, catalog_revision, entries_json`。`account_id` 引用账号，级联删除。 | 一行是当前账号在一个获准协议族上的完整目录快照。条目含原始模型 ID 和供应商实际返回的资料。完整成功后替换，`[]` 是合法空目录，失败保留原值。旧来源或旧绑定的记录不能证明当前可见。 |
 | `model_configs` | `id` 主键，`provider_id, offering_id, route_id, upstream_model_id, account_id, account_identity, model_type, config_json`。非空 `account_id` 引用账号，`account_identity` 记录该账号覆盖所属的已核验身份。 | 账号行存该模型的手工登记／确认、预置关联和用户修改。公共行仅用于内置 offering 的模型默认值，`account_id IS NULL`。同一模型在生成和编辑端点各有一行。单纯浏览远端目录不写用户覆盖；选中或编辑时可创建只有身份的账号行。 |
 | `model_state` | 固定单行，`settings_revision, active_pack, previous_pack, selected_config_id, operation_id, profile_id, binding_revision`。`active_pack`/`previous_pack` 使用 `$bundled` 指向随包资源或引用用户导入包修订，选择引用 `model_configs`。 | 空库默认指向 `$bundled`（直接读取打包资源）且未选模型。选择只指向具体账号、操作及其输入输出组合；不复制预算、价格或其他参数。启用及回滚包在事务内更新引用。目录刷新使用自己的修订，草稿保存与更改测试选择使用 `settings_revision` 做并发检查。 |

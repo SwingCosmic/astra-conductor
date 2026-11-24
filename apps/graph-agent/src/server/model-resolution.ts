@@ -250,6 +250,26 @@ export function projectEntry(
   const preset = chosen ? pack.byKey.get(chosen) : matches.length === 1 ? matches[0] : undefined;
   const cap = preset?.capabilities.find((c) => c.operation === ep.operation);
   const layers: ModelFactLayer[] = [];
+  const textLlmDefaults: Partial<ModelFacts> | undefined =
+    ep.modelType === "text-llm"
+      ? {
+          inputModalities: ["text"],
+          outputModalities: ["text"],
+          toolCalling: "supported",
+        }
+      : undefined;
+  if (textLlmDefaults) {
+    layers.push({
+      facts: textLlmDefaults,
+      prices: [],
+      source: {
+        kind: "preset",
+        revision: "text-llm-default",
+        checkedAt: null,
+        referenceUrl: null,
+      },
+    });
+  }
   let inheritedFacts: Partial<ModelFacts> | undefined;
   if (preset?.inherit && cap) {
     const parent = pack.byKey.get(preset.inherit.presetKey);
@@ -275,6 +295,7 @@ export function projectEntry(
   }
   if (policy?.transformModelFacts) {
     const baselineFacts: Partial<ModelFacts> = {
+      ...(textLlmDefaults ?? {}),
       ...(inheritedFacts ?? {}),
       ...(cap?.facts ?? {}),
       ...(remote?.facts ?? {}),

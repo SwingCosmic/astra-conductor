@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { createHash, createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import type { CredentialCipherPort } from "@astra-conductor/core/internal";
 import { createGraphServices } from "../src/server/services.js";
+import { readModelPackDirectory } from "../src/server/model-pack.js";
 import type { GraphServicesOptions } from "../src/server/services.js";
 import {
   BrokerError,
@@ -2245,8 +2246,7 @@ describe("2B model configuration transactions", () => {
 describe("2B model packs", () => {
   it("checks all shard digests and manifest references atomically, updates from the admin source, and reopens the selected revision", async () => {
     const directory = await temporaryDirectory();
-    const file = new URL("../resources/model-presets.json", import.meta.url);
-    const pack = JSON.parse(await readFile(file, "utf8"));
+    const pack = readModelPackDirectory(new URL("../resources/model-presets/", import.meta.url));
     const next = { ...pack, revision: "fixture-update" };
     const http = { fetch: vi.fn(async () => Response.json(next)) };
     vi.stubEnv("GRAPH_AGENT_MODEL_PACK_URL", "https://packs.example.test/models.json");
@@ -2265,14 +2265,23 @@ describe("2B model packs", () => {
       expect(initial.pack.active).toBe(pack.revision);
       const expanded = structuredClone(pack);
       expanded.revision = "large-local-fixture";
-      const file = expanded.files[0];
-      const example = file.presets[0];
+      const file = expanded.files.find((f) => f.path === "families/openai.json")!;
+      const example = file.presets[0] as Record<string, unknown>;
       for (let i = 0; i < 140; i++)
         file.presets.push({ ...example, key: "fixture/" + i, modelId: "fixture-" + i });
+      // 与校验器同口径：摘要在 {presets, templates?, sources?, rateCards?} 全量上计算。
       file.sha256 = createHash("sha256")
-        .update(JSON.stringify({ presets: file.presets }))
+        .update(
+          JSON.stringify({
+            presets: file.presets,
+            ...(file.templates !== undefined && { templates: file.templates }),
+            ...(file.sources !== undefined && { sources: file.sources }),
+            ...(file.rateCards !== undefined && { rateCards: file.rateCards }),
+          }),
+        )
         .digest("hex");
-      expanded.manifest[0].sha256 = file.sha256;
+      const manifestEntry = expanded.manifest.find((m) => m.path === file.path)!;
+      manifestEntry.sha256 = file.sha256;
       expect(Buffer.byteLength(JSON.stringify(expanded))).toBeGreaterThan(65536);
       const imported = await change("import", { pack: expanded });
       expect(imported.status, JSON.stringify((await imported.json()).error)).toBe(200);
@@ -2282,7 +2291,8 @@ describe("2B model packs", () => {
         await (await change("import", { pack: { ...next, files: next.files.slice(1) } })).json(),
       ).toMatchObject({ ok: false });
       const corrupt = structuredClone(next);
-      corrupt.files[0].presets[0].displayName = "tampered";
+      const dataShard = corrupt.files.find((f) => f.presets.length)!;
+      (dataShard.presets[0] as { displayName: unknown }).displayName = "tampered";
       expect((await change("import", { pack: corrupt })).status).toBe(400);
       expect((await snapshot()).settingsRevision).toBe(beforeInvalid);
       expect(await (await change("update")).json()).toMatchObject({

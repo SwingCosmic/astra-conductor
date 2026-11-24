@@ -16,33 +16,51 @@ export const antigravityDescriptor: ProviderDescriptor = {
       // （叶子透传原始 tier 名，由精确键与正则区分，ultra-5x 声明在 ultra
       // 之前保证正则先于宽泛模式求值）。防御性 rung 保留；tier 长名
       // （`Antigravity Starter Quota` 形态）由子串正则接住。
+      // Google One 统一订阅（Google AI Pro / Plus / Ultra）经 loadCodeAssist
+      // 返回的 paidTier.name 为 `Google AI Pro` 等完整形态，而非 `pro` 裸档位
+      // 名，须按完整名精确匹配后才能落到对应 rung（2026-11-23 实测）。
       plans: [
         {
           key: "pro",
           displayName: "Pro",
-          match: ["pro"],
+          match: ["pro", "google ai pro", /google\s*(one\s*)?ai\s*pro/],
           multiplier: 1,
           source: "published",
           sourceUrl: "https://antigravity.google/blog/changes-to-antigravity-plans",
-          verifiedAt: "2026-10-14",
+          verifiedAt: "2026-11-23",
         },
         {
           key: "ultra-5x",
           displayName: "Ultra 5x",
-          match: ["ultra 5x", "ultra5x", /ultra\s*5x/],
+          match: [
+            "ultra 5x",
+            "ultra5x",
+            "google ai ultra 5x",
+            /google\s*(one\s*)?ai\s*ultra\s*5x/,
+            /ultra\s*5x/,
+          ],
           multiplier: 5,
           source: "published",
           sourceUrl: "https://antigravity.google/blog/changes-to-antigravity-plans",
-          verifiedAt: "2026-10-14",
+          verifiedAt: "2026-11-23",
         },
         {
           key: "ultra",
           displayName: "Ultra 20x",
-          match: ["ultra", "ultra 20x", "ultra20x", /ultra\s*20x/, /\bultra\b/],
+          match: [
+            "ultra",
+            "ultra 20x",
+            "ultra20x",
+            "google ai ultra",
+            "google ai ultra 20x",
+            /google\s*(one\s*)?ai\s*ultra(\s*20x)?/,
+            /ultra\s*20x/,
+            /\bultra\b/,
+          ],
           multiplier: 20,
           source: "published",
           sourceUrl: "https://antigravity.google/blog/changes-to-antigravity-plans",
-          verifiedAt: "2026-10-14",
+          verifiedAt: "2026-11-23",
         },
         {
           key: "starter",
@@ -54,9 +72,12 @@ export const antigravityDescriptor: ProviderDescriptor = {
         {
           key: "free",
           displayName: "Free",
+          // 官方口径 1 Pro = 2 Plus = 4 Free（Pro 1x 基线下 Free 为 0.25x）。
           match: ["free"],
-          multiplier: 0.1,
-          source: "inferred",
+          multiplier: 0.25,
+          source: "published",
+          sourceUrl: "https://antigravity.google/blog/changes-to-antigravity-plans",
+          verifiedAt: "2026-11-23",
         },
         {
           key: "lite",
@@ -68,9 +89,13 @@ export const antigravityDescriptor: ProviderDescriptor = {
         {
           key: "plus",
           displayName: "Plus",
-          match: ["plus"],
-          multiplier: 1,
-          source: "inferred",
+          // 官方口径 1 Pro = 2 Plus = 4 Free（Pro 1x 基线下 Plus 为 0.5x）；
+          // Google One 统一订阅的 Plus 经 `Google AI Plus` 完整名识别。
+          match: ["plus", "google ai plus", /google\s*(one\s*)?ai\s*plus/],
+          multiplier: 0.5,
+          source: "published",
+          sourceUrl: "https://antigravity.google/blog/changes-to-antigravity-plans",
+          verifiedAt: "2026-11-23",
         },
         {
           key: "business",
