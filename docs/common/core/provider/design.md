@@ -1,134 +1,103 @@
 # 供应商平台总体设计
 
-| 项目     | 内容                                                                                                            |
-| -------- | --------------------------------------------------------------------------------------------------------------- |
-| 状态 | 共用管理、目录、原生试聊、参数转换、别名及供应商请求策略拆分均已落地。 |
-| 更新日期 | 2026-11-20 |
-| 范围     | 两产品共用的供应商、接入点、账号、凭据、协议路由、模型事实与能力边界                                            |
-| 架构依据 | [项目架构](../../../architecture.md)：包边界、依赖方向、Hono 请求路径和产品交付形态                             |
+| 项目 | 内容 |
+| --- | --- |
+| 范围 | PolyQuota 与 GraphAgent 共用的供应商、接入点、账号、凭据、协议路由、模型事实与能力边界 |
+| 架构依据 | [项目架构](../../../architecture.md)：包边界、依赖方向、Hono 请求路径与交付形态 |
 
-本文确定整体职责与不变量。字段、接口、缓存算法、产品 DTO 和历史迁移分别由下列文档维护。
+本文定义供应商平台的整体职责、领域模型与不变量。字段细节、协议编解码、实施顺序与历史演进分别由以下专项文档维护：
 
-| 文档                                                                    | 拥有的内容                                                           |
-| ----------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| [接入与模型目录](./connections-and-models.md)                           | 普通 Key、多协议地址、订阅用量资格、模型来源与请求映射的用户场景     |
-| [Core 详细设计](./core-design.md)                                       | 声明、注册、认证、组合、连接记录、目录缓存、字段合并、请求编译及测试 |
-| [协议与推理端口](./protocol-design.md)                                  | API 协议、操作、模型基础事实、能力 facet、准备调用和 codec/IR 边界   |
-| [供应商模型与请求策略分派](./request-dispatch.md) | 现状审查、同构链式回调策略、固定 4 步管道、DeepSeek 详细设计、命名规范与精简规则 |
-| [GraphAgent 前端契约](../../../graph-agent/design/frontend-contract.md) | 产品 Service、模型页投影、专属命令、路径与产品事件                   |
-| [PolyQuota 前端契约](../../../polyquota/frontend-contract.md)           | 产品快照、用量操作、IPolyQuotaService 与通知并发规则                 |
-| [共用 UI](../../ui/design.md)                                           | 共用壳、页面、组件端口、主题与 Web/Electron 前端接线                 |
-| [产品 Service 与共享传输](../../contract/service-composition.md)        | 产品门面、公共/专属接口组合、单一传输与 Hono 子应用装配              |
-| [实施方案](./implementation-plan.md)                                    | 结构与 UI 抽离 → Core 扩展 → 新页面和双产品联调的三阶段交付          |
-| [参考取舍与迁移沿革](./migration-history.md)                            | OmniRoute 等参考分析、原问题清单与 A–G 历史阶段                      |
+| 文档 | 覆盖内容 |
+| --- | --- |
+| [接入与模型目录](./connections-and-models.md) | 普通 API Key、多协议地址、订阅用量资格、模型来源与请求映射场景 |
+| [New API 中转站模板](./new-api-template.md) | New API 站点目录浏览、Key 模型发现、用量查询与 PAT 选 Key |
+| [Core 详细设计](./core-design.md) | 声明、注册、认证、连接记录、目录缓存、字段合并与请求编译 |
+| [协议与推理端口](./protocol-design.md) | API 协议族、操作类型、模型基础事实、能力 facet 与 codec/IR 边界 |
+| [供应商请求策略分派](./request-dispatch.md) | 供应商请求策略接口与链式分派管道 |
+| [模型结构与报价](./model-structure.md) · [模型报价](./model-pricing.md) | 模型预置目录结构、订阅权益与条件费率 |
+| [GraphAgent 前端契约](../../../graph-agent/design/frontend-contract.md) · [PolyQuota 前端契约](../../../polyquota/frontend-contract.md) | 两产品各自的 Service、DTO 与事件契约 |
+| [共用 UI 设计](../../ui/design.md) · [Service 组合设计](../../contract/service-composition.md) | 共用供应商/凭据页面与传输组合 |
+| [实施方案](./implementation-plan.md) · [迁移沿革](./migration-history.md) | 分阶段实施验收与历史演进记录 |
 
-## 1. 目标与现状
+## 1. 目标与能力边界
 
-两个产品复用 Provider Platform：PolyQuota 负责订阅用量，GraphAgent 负责模型配置与后续 Agent 执行。新供应商通过稳定标识和能力注册接入，页面依据目录与操作能力工作。
+两款产品共同复用 Provider Platform：PolyQuota 使用账号管理与订阅用量能力，GraphAgent 使用账号管理、模型目录、原生协议代理与后续 Agent 推理能力。
 
-统一的是注册、能力发现、调用生命周期、错误、安全边界和可序列化事实。认证方式、协议、计费、能力和原生状态的差异保留在接入点、路由、能力 facet 与版本化扩展中。
+平台统一的是**注册机制、能力发现、调用生命周期、错误模型、安全边界与可序列化事实**；各服务商在认证方式、协议格式、计费与原生状态上的差异，保留在接入点（offering）、路由、能力 facet 与版本化扩展中。
 
-七个既有供应商继续提供账号与用量能力。阶段二增加普通 Key 接入点，并为具备条件的接入点注册目录与推理实现。GraphAgent 已通过本产品 Hono 提供模型页和单轮对话；各接入点的协议与实机验证结果见[阶段二记录](./implementation-plan.md#本阶段实现与实机验证)，当前注册组合见 [providers/contributions.ts](../../../../packages/core/src/providers/contributions.ts)。
-
-**内置 DeepSeek。** 服务商列表提供 `providerId: "deepseek"` 的 API Key 接入点。用户可沿用官方默认地址，也可为所选协议族保存自定义 endpoint。GraphAgent 使用该账号的目录与推理能力，PolyQuota 按普通推理 Key 管理账号。DeepSeek 的路由声明、模型事实默认与三条协议参数映射统一收口在 [providers/deepseek/index.ts](../../../../packages/core/src/providers/deepseek/index.ts)，共用连接表单由 `offering.routeConfig` 数据驱动。已有自定义供应商保留其身份、地址和模型选择。[接入、原生参数与兼容迁移](./core-design.md#46-deepseek-内置-api-key-绑定)
-
-两款桌面产品已支持双向导入导出、经授权的共享写入及显式切回私有存储。独立发行和后续升级分别由凭据专项 B4、B5/B6 跟踪。[凭据实施方案](../credential-sharing/implementation-plan.md)
-
-OmniRoute 当前搬运的是认证、刷新和用量协议叶子。推理 translator、Executor 和模型目录仍属后续选择性引入范围。固定来源及产物清单见[手工抽取基线](../omniroute-manual-extraction-baseline.md)，分析与取舍见[迁移沿革](./migration-history.md)。
+支持三类主要接入形态：
+- **内置订阅服务商**：Codex、GLM（BigModel / Z.ai）、Grok Build、Antigravity、Claude Code、OpenCode Go、GitHub Copilot，支持各自原生认证与用量/推理能力。
+- **内置官方 API 服务商**：OpenAI API、DeepSeek、Google Gemini 等，支持 API Key 接入、自定义协议根地址与模型目录发现。
+- **自定义供应商与模板**：通用兼容接口与 New API 中转站模板，按自定义 `providerId` 独立保存地址、协议族配置与模型目录。
 
 ## 2. 标识、枚举与领域关系
 
-下表区分两类命名：**动态业务标识/数据库主键**以 `Id` 结尾，**固定代码枚举**使用语义名或 `Type`/`kind`（不加 `Id` 后缀）。[协议族与明细协议枚举](../../contract/common-api.md#21-协议族与明细协议枚举)
+动态业务标识/主键以 `Id` 结尾，固定代码枚举使用语义名或 `Type` / `kind`（详见[公共 API 契约](../../contract/common-api.md#21-协议族与明细协议枚举)）：
 
-| 字段 / 枚举 | 类别与所有者 |
+| 字段 / 枚举 | 类别与语义 |
 | --- | --- |
-| `providerId` | 动态/内置业务标识：服务商实现与凭据所有权域（自定义供应商为 `custom-<uuid>` 主键） |
-| `offeringId` | 动态/内置业务标识：服务商声明或用户创建的接入点，绑定可用协议族、明细协议和套餐 |
-| `accountId` | 数据库主键：一次实际接入的稳定账号标识，由账号存储持有 |
-| `modelId` | 上游动态标识：账号族目录中返回的精确上游模型名称，或手工登记的目标 |
-| `authMethod` | 固定枚举：接入点支持的一种认证交互方式（`oauth-browser` / `device-code` / `cli-import` / `api-key`） |
-| `protocolFamily` | 固定枚举（`ProtocolFamily`）：原生 API 协议族，声明共同认证机制、额外参数与目录协议，offering 绑定族根地址 |
-| `protocol` | 固定枚举（`EndpointProtocol`）：归属某个协议族的明细端点协议，决定本次操作的原生路径和格式 |
+| `providerId` | 内置或自定义服务商标识，界定实现与凭据所有权域 |
+| `offeringId` | 服务商声明或用户创建的接入点，绑定协议族、明细协议与套餐体系 |
+| `accountId` | 一次实际接入的稳定账号主键 |
+| `modelId` | 上游目录返回的精确模型 ID 或手工登记目标 |
+| `authMethod` | 认证方式枚举：`oauth-browser` / `device-code` / `cli-import` / `api-key` |
+| `protocolFamily` | 原生 API 协议族，声明共同认证机制、附加参数与目录协议 |
+| `protocol` | 归属协议族的明细端点协议，决定实际请求路径与数据格式 |
 
-一个实现可以提供多个接入点和协议族。BigModel 与 Z.ai 共享 glm 实现，差异由两个 offering 承载。同一网关的 OpenAI 与 Anthropic 入口分别绑定到对应协议族，OpenAI 族内可同时启用 Chat Completions 和 Responses。订阅 OAuth、按量 API Key 和独立部署分别记录其适用的认证与计费条件。
-
-账号保存 `providerId`、`offeringId` 与认证方式。同一地址的两把 Key 是两个账号。长期模型选择保留 `providerId + accountId + protocol + modelId` 四元组。专用单端点族可在输入时省略明细，保存前解析为注册的具体端点；通用 LLM 始终显式选择明细。执行时从账号反查 offering 并交叉验证。[默认选择规则](../../contract/common-api.md#专用单端点族的默认选择)
-
-`familyBindingRevision` 固定某账号在该 offering 下的族连接和授权，用于目录读取与缓存失效。明细端点的有效 `bindingRevision` 同时反映族绑定与端点配置，用于固定一次执行。普通目录刷新更新目录修订，长期模型选择仍指向原明细端点。模型别名和出站模板在已登记的账号路由范围内解析。
+- 一个服务商实现可提供多个接入点与协议族（如 GLM 同时提供 BigModel 与 Z.ai；同一网关可同时绑定 OpenAI 与 Anthropic 协议族）。
+- 账号保存 `providerId`、`offeringId` 与认证方式；长期模型选择由 `providerId + accountId + protocol + modelId` 四元组锚定。
+- `familyBindingRevision` 固定账号在该接入点下的族连接与授权，用于目录读取与缓存失效；执行期结合明细端点配置构成完整 `bindingRevision`。
 
 ## 3. 共享能力与产品所有权
 
 ```mermaid
 flowchart LR
-  R[ProviderRegistry] --> A[账号与凭据服务]
-  R --> U[用量能力]
-  R --> M[模型目录与推理能力]
-  A --> V[当前产品的活动凭据后端]
-  U --> P[PolyQuota 应用服务]
+  R["ProviderRegistry"] --> A["账号与凭据服务"]
+  R --> U["用量能力"]
+  R --> M["模型目录与推理能力"]
+  A --> V["当前产品的活动凭据后端"]
+  U --> P["PolyQuota 应用服务"]
   A --> P
-  A --> G[GraphAgent 应用服务]
+  A --> G["GraphAgent 应用服务"]
   M --> G
-  P --> PH[PolyQuota Hono]
-  G --> GH[GraphAgent Hono]
-  PH --> PU[PolyQuota 前端]
-  GH --> GU[GraphAgent 前端]
+  P --> PH["PolyQuota Hono"]
+  G --> GH["GraphAgent Hono"]
+  PH --> PU["PolyQuota 前端"]
+  GH --> GU["GraphAgent 前端"]
 ```
 
-| 所有者          | 职责                                                                                                                  |
-| --------------- | --------------------------------------------------------------------------------------------------------------------- |
-| contract/common | 两端共用的标识、公开事实、管理 API、错误、事件与纯格式校验，无业务实现和宿主依赖                                      |
-| Core            | 服务商声明与注册，认证/刷新、账号用途、用量、模型发现、参数合并、请求映射和协议能力端口                               |
-| PolyQuota       | 产品快照、订阅用量视图、评分、轮询、通知与设置；专属 API 归 contract/polyquota                                        |
-| GraphAgent      | 模型配置与选择、ModelPolicy、ModelLease、预算、任务归因、并发/回退和 Agent/工具循环；专属 API 归 contract/graph-agent |
-| shared-ui       | 共用布局、表单、供应商接入页和凭据管理页；产品注入品牌与业务页面                                                      |
-| 产品宿主        | Hono 装配、数据存储、网络与平台端口；Web/Electron 使用同一业务路径                                                    |
-| 独立 broker     | 不透明凭据记录、授权、修订、更新许可与事件；自身仓库、发布与安装周期独立                                              |
+| 所有者 | 职责 |
+| --- | --- |
+| `contract/common` | 两产品共用的标识、公开事实、管理 API、错误、事件与纯格式校验 |
+| `core` | 服务商声明与注册、认证/刷新、账号用途、用量、模型发现、参数合并、请求映射与协议端口 |
+| PolyQuota | 订阅用量快照、综合评分、轮询、托盘与通知 |
+| GraphAgent | 模型配置与选择、`ModelPolicy`、`ModelLease`、预算归因、回退策略与 Agent 执行循环 |
+| `shared-ui` | 共用外壳、供应商接入页与凭据管理页 |
+| 产品宿主 | Hono 装配、产品业务库、网络与系统能力适配 |
+| 独立 Broker | 不透明凭据存储、授权、修订、记录级更新许可与变更通知 |
 
-GraphAgent 不调用 IPolyQuotaService，不读取 PolyQuota 的数据库、快照或设置。需要的基础用量事实通过 Core 在本产品上下文取得，自己的推理 usage 与成本记录归自己的存储。共用类型与共用页面不产生共用业务数据库；两产品业务库彼此独立。
+GraphAgent 不调用 PolyQuota 服务，也不访问 PolyQuota 数据库；两款产品共用类型、Core 逻辑与公共页面，但业务数据库彼此独立。
 
-## 4. 前端契约与调用路径
+## 4. 前后端契约与调用边界
 
-每款产品的 Web 与 Electron 前端通过本产品 Service 调用业务。`IPolyQuotaService` 和 `IGraphAgentService` 各自组合公共管理接口与产品专属接口，复用底层 `IServiceTransport` 经 fetch/SSE 访问本产品 Hono 应用。公共 handler 由 Core 的可选 `/http` 子入口提供，产品组合公共与专属 Hono 子应用；Core 业务保持框架无关。Electron 平台桥只承担窗口、目录选择等系统能力，不增加绕过 Hono 的业务通道。
-
-两端供应商和凭据页复用 contract/common 的管理操作。GraphAgent 模型页使用自己的目录视图、覆盖、手工条目、长期选择和请求预览契约；PolyQuota 用量页使用产品快照与刷新/兑换契约。前端不导入 Core、broker SDK、能力 facet 或 PreparedProviderCall。
-
-GraphAgent 独立 Web 的凭据只来自 broker，Electron 可使用私有加密后端或 broker。2B 将账号业务字段、自定义供应商及模型配置放入产品 SQLite，未接入或授权不足时由宿主返回受限操作与原因。两个入口共用 DTO、业务校验与事件语义，按实际后端报告操作能力。
-
-模型配置预览使用受限样本和纯编译器，不触发供应商请求。实际推理只能由受信任的 GraphAgent 服务发起，在执行前校验活动后端、路由和修订。完整聊天、任务、图与逐 token 事件尚待对应产品专项固定，不能以 Core 的 ModelStreamEvent 直接充当前端契约。
+- 每款产品的 Web 与 Electron 前端通过各自产品 Service（`IPolyQuotaService` / `IGraphAgentService`）经共享传输以 fetch/SSE 访问本产品 Hono 应用，不直接导入 Core、Broker SDK 或宿主原生能力。
+- 公共管理路由由 Core 的可选 `/http` 子入口提供，产品组合公共与专属 Hono 子应用。
+- 模型配置预览仅使用受限样本与纯编译器，不发起外部请求；真实推理与代理调用由受信任的产品后端校验活动凭据后端、路由与修订后发起。
 
 ## 5. 注册、状态与安全不变量
 
-- 应用组合根创建唯一 ProviderRegistry；声明与全部 facet 同 providerId 注册，重复、归属错误或能力不匹配使构造整体失败。
-- 每种能力可选，只声明实际可执行的能力。API Key 不需要伪造 refresh，用量实现也不暗示存在模型或推理能力。
-- 未知 provider、offering、路由或 codec 显式失败；不回退第一家，不因协议相似替换账号或路由，不执行用户提供的供应商代码。
-- 族目录按后端可见范围、供应商、offering、账号、协议族和族绑定修订隔离。完整成功才替换；失败保留有时点的旧快照，改绑和切后端后丢弃迟到结果。
-- 模型字段按用户覆盖 → 账号路由明确事实 → 精确预置 → 未知合并，false 与零价属于明确事实；每字段保留来源。
-- 普通推理 Key 可管理且不参与 PolyQuota 用量、评分、轮询或告警；订阅资格以 offering 和账号事实统一计算。
-- 公开快照和失效事件只在本地状态提交后发布。实例标识、快照修订和命令预期修订分工明确，事件重连后重读。
-- token、Key、授权内部状态、原始认证文件和上游错误体不进入公开 DTO、事件或日志；用户本次秘密输入只经专用写操作提交。
-- 共享模式每次业务操作按权威修订读取凭据，刷新须持记录级许可；过期 revision/fence 不能提交。跨产品数据库不宣称原子提交。
-- 模型原生 response/tool/reasoning 状态只交回匹配的 codec/route，转换有损或不支持必须显式报告。
+- 应用组合根创建唯一 `ProviderRegistry`；声明与全部能力 facet 按 `providerId` 匹配注册，冲突或归属不匹配时立即失败。
+- 能力按需声明：只声明实际可执行的能力，API Key 无需伪造刷新，具备用量能力不暗示具备推理能力。
+- 未知 provider、offering、路由或 codec 显式报错，不静默回退到其他供应商或账号，不执行用户提交的任意代码。
+- 族目录按后端可见范围、服务商、接入点、账号、协议族与绑定修订隔离；失败保留带时点的旧快照，换绑或切后端后丢弃迟到结果。
+- 模型字段合并优先级固定为：`用户覆盖 → 账号路由事实 → 精确预置 → 未知`，保留字段来源，`false` 与零价视为明确事实。
+- 普通按量 API Key 不参与 PolyQuota 订阅用量轮询与预警；订阅资格由接入点与账号事实统一判定。
+- 凭据秘密、内部授权状态与原始上游错误体不进入公开 DTO、前端状态、事件或日志。
+- 共享模式下每次业务操作按权威修订读取凭据，刷新须持记录级更新许可，过期 revision/fence 拒绝提交。
+- 供应商原生响应/推理状态（如 tool/reasoning 状态）只交回匹配的 codec/route，有损转换显式声明。
 
-字段级校验、未知实现和新服务商测试分别见 [Core 安全边界](./core-design.md#9-安全边界)、[接入流程](./core-design.md#10-新服务商接入流程)与[协议编解码](./protocol-design.md#4-规范消息与协议编解码边界)。凭据迁移、许可、密钥和切换规则由[凭据共享设计](../credential-sharing/design.md)统一维护。
+## 6. 范围边界
 
-## 6. 实施与验收
-
-本轮交付分三阶段：先迁移统一契约、产品目录与构建，再抽取共用 UI；随后实现 Core 的连接、目录与请求配置；最后接通新页面和双产品联调。历史 A–G 是演进记录；当前实施状态以本方案三阶段为准。
-
-验收需要同时观察服务端和前端：
-
-1. 原有七家账号/用量、Codex 与 GLM 的认证刷新及 groups + extras 展示保持可用；服务商组合由 Core 工厂提供，产品组合根注入平台端口。
-2. provider、offering、route、模型能力和账号归属可独立校验，错误绑定在构造或输入边界失败；BigModel/Z.ai 不再依赖 region/presentationId 恢复展示。
-3. 两产品供应商与凭据管理使用同一契约和共用页面；PolyQuota 的产品快照与通知保持一致，重置额度聚合/分体的获得、消耗与对账保持原行为。
-4. GraphAgent 前端契约覆盖目录读取/刷新、手工条目、字段来源与覆盖、长期选择、请求预览以及错误/冲突/事件重连，不只交付 Core 类型。
-5. 正式 GraphAgent Web/Electron 和 PolyQuota Electron 从各自入口验证 DTO、错误和 SSE；PolyQuota Web 作为开发测试入口。Web 的 broker 约束和 Electron 的私有能力分别验收。
-6. fixture 与 fake 端口覆盖每个已声明能力。至少四类首要 API 协议具有协议样本；完整 IR、codec 和真实推理接入按后续执行需求逐步交付，不以类型草案冒充实现。
-7. 当前和后续 vendor 产物均保留上游 commit、来源、范围与离线特征测试，references 不成为运行时依赖；renderer、日志和通知不暴露秘密。
-
-模型数据包、账号作用域与计费的交付见[供应商数据实施方案](./implementation-plan.md#模型配置改版的数据实施方案)。布局、筛选和组件交付见[GraphAgent UI 实施方案](../../../graph-agent/ui/model-configuration/ui-implementation-plan.md)。各阶段退出条件与凭据 B2/B3 的回归范围见[实施方案](./implementation-plan.md)，Core 样本见[交付和验证](./core-design.md#11-交付和验证)，前端样本见两款产品的契约文档。
-
-## 7. 范围边界
-
-本轮不引入第三方可执行插件、不复制 OmniRoute 的 chatCore/代理宿主/数据库，不以通用 JSON map 替代共同领域模型。完整规范消息字段、路由评分、故障转移算法与插件 ABI 留给后续专项。
-
-模型推理不进入 IPolyQuotaService。GraphAgent 的模型页也不提供任意 URL/任意请求代理；其完整 Agent 运行和工作台契约由[功能模块设计](../../../graph-agent/design/README.md)逐项定义。凭据 broker 的进程、存储与共享切换继续遵循凭据专项。
+- 不引入第三方可执行插件，不复制上游网关的完整运行时或代理宿主，不以无类型 JSON map 替代领域模型。
+- 模型推理与代理调用不属于 PolyQuota；GraphAgent 的完整多智能体调度与工作台契约由[GraphAgent 功能模块设计总览](../../../graph-agent/design/README.md)定义；凭据共享与进程生命周期遵循[凭据共享设计](../credential-sharing/design.md)。
+- 分阶段实施验收与演进沿革见[实施方案](./implementation-plan.md)与[迁移沿革](./migration-history.md)。

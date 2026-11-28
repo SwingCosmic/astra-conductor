@@ -1,10 +1,10 @@
 # AstraConductor 项目架构
 
-**状态：2026-11-15 两产品共用供应商连接管理，GraphAgent Web/Electron 经同一 Hono 路由提供模型配置与单轮测试聊天。** 本文是 PolyQuota 与 GraphAgent 的 workspace 包边界、依赖方向、业务通信和启动形式的权威说明。产品设计定义各自的业务，专项文档定义实现和验收，涉及这些项目级约束时引用本文。当前代码与目标的差异列在末节。
+本文是 PolyQuota 与 GraphAgent 的 workspace 包边界、依赖方向、业务通信和启动形式的权威说明。产品设计定义各自业务，专项文档定义详细实现与验收；涉及项目级边界约束时以本文为准。
 
 ## 1. 目标：两个应用，四个共享包
 
-下面是迁移完成后的目录。`ui/`、`src/server/`、`src/platform/` 都属于所在产品的同一个 workspace 应用。
+工作区采用「两个独立产品应用 + 四个共享包」的结构。每个应用内的 `ui/`、`src/server/`、`src/platform/` 属于所在产品的同一个 workspace 包。
 
 ```text
 apps/
@@ -27,22 +27,16 @@ packages/
 
 | 包 | 对外职责 | 可使用的 workspace 包 |
 | --- | --- | --- |
-| `@astra-conductor/contract` | 通过 `/common`、`/polyquota`、`/graph-agent` 子入口发布领域接口、产品 Service、共享传输抽象、HTTP 方法与路径、DTO、公开错误、事件及纯格式校验。浏览器与 Node 均可加载 | 无。契约不引入业务实现、Hono、Vue、Electron 或 broker SDK |
-| `@astra-conductor/credentials` | 主入口提供产品无关的 broker 协议、迁移包校验、记录许可和事件。`/host/windows` 子入口提供 Windows 本机安装、发现和认证连接，按需加载。SDK 保留独立发布能力 | 无。broker 的线协议随 SDK 管理，产品 Hono API 归 `contract` |
-| `@astra-conductor/core` | 实现供应商、账号、凭据、用量、模型目录与请求映射，提供公共应用服务和宿主端口。业务主入口无框架依赖；可选 `/http` 后端子入口提供公共 Hono 路由适配 | `contract/common`、`credentials` 的通用客户端。`/http` 按需使用 Hono，具体平台入口由宿主装配 |
-| `@astra-conductor/shared-ui` | 共用布局、主题、组件与页面；无 Vue 依赖的 `/services` 子入口实现共享 fetch/SSE 传输及公共服务客户端。产品注入品牌、导航和产品 Service 的公共分组 | `contract/common`，Vue 为组件的 peer 依赖。前端不能直接调用 Core、broker 或宿主系统 API |
+| `@astra-conductor/contract` | 通过 `/common`、`/polyquota`、`/graph-agent` 子入口发布领域接口、产品 Service、共享传输抽象、HTTP 方法与路径、DTO、公开错误、事件及纯格式校验，浏览器与 Node 均可加载 | 无。不引入业务实现、Hono、Vue、Electron 或 broker SDK |
+| `@astra-conductor/credentials` | 主入口提供产品无关的 broker 协议、迁移包校验、记录许可和事件；平台子入口（如 `/host/windows`）按需提供本机安装、发现与认证连接，保留独立发布能力 | 无。broker 线协议随 SDK 管理，产品 HTTP API 归 `contract` |
+| `@astra-conductor/core` | 实现供应商、账号、凭据、用量、模型目录与请求映射，提供公共应用服务和宿主端口；业务主入口无框架依赖，可选 `/http` 子入口提供公共 Hono 路由适配 | `contract/common`、`credentials` 通用客户端；`/http` 按需使用 Hono |
+| `@astra-conductor/shared-ui` | 共用布局、主题、组件与页面；无 Vue 依赖的 `/services` 子入口实现共享 fetch/SSE 传输及公共服务客户端 | `contract/common`（Vue 为 peer 依赖）。前端不直接调用 Core、broker 或宿主系统 API |
 
-每个产品的 `ui/` 依赖 `shared-ui`、通用契约和自己的产品契约，组合并注入本产品 Service。`src/server/` 使用对应契约、Core 和本产品服务，将公共 Hono 子应用与产品专属子应用统一挂载。`src/platform/` 负责具体宿主的组合，可以按需使用凭据 SDK 的平台入口。Core 业务保持框架无关，HTTP 适配经独立子入口按需加载。两个应用独立构建、独立交付、独占各自的业务数据目录，彼此没有源码依赖。GraphAgent 模型页和 PolyQuota 用量页分别由各自的 Web/Electron 前端共用。共用页面的布局与交互维护一份，主题图标和配色由产品提供。
-
-凭据组件由独立仓库发行。两款桌面产品通过公共凭据 Service 的 `installRelease` 请求进入 Core，Windows 宿主通过产品网络适配器下载，验证签名、平台、协议及文件完整性后调用独立控制器安装。当前用户的已验 ZIP 缓存供两款产品复用。GraphAgent 独立 Web 入口继续使用已安装组件与已有授权。[发行版本与验收](./common/core/credential-sharing/implementation-plan.md#b4-独立发布与生产下载)
-
-两款 Electron 产品共用 Core 的 `CredentialMigrationService`，按产品 profile 持久化迁移状态。私有账号数据和各共享绑定的凭据投影分别保存，供应商通过同一服务引用切换后端。这样在任一端导入、准备回退或清理旧授权时，另一端可继续使用原后端。迁移入口与状态见[凭据共享实施方案](./common/core/credential-sharing/implementation-plan.md#双向导出与存储切换)。
-
-PolyQuota 和 GraphAgent 桌面端共用导出流程。已有共享库无法继续导出时，共用页面显示目标路径并询问是否清空。确认后后端核对失败操作和库身份，由 broker 检查会话与更新租约并清空目录。页面收到清空成功的响应后才重新提交一次导出。空目录的旧登记由 broker 在新建库前清理。普通非空目录及混有其他文件的库拒绝清空。
-
-独立 .NET Credential Broker 是通过本机 RPC 访问的进程，有自己的仓库、安装和升级周期。两端通过它共享获准的凭据，各自的用量、模型缓存和业务数据库留在产品内。`references/` 只提供研究和受控提取的输入。[凭据共享设计](./common/core/credential-sharing/design.md)
-
-契约包的子入口、公开类型归属和旧包迁移由[统一契约包设计](./common/contract/design.md)展开，通用 API、错误与 fetch/SSE 协定统一在 `docs/common/contract/` 维护；`docs/common/ui/` 只展开前端重构和通用组件设计。
+- 每个产品的 `ui/` 依赖 `shared-ui`、通用契约和本产品契约，注入品牌、导航和本产品 Service；共用页面的布局与交互只维护一份。
+- 每个产品的 `src/server/` 挂载 Core 公共 Hono 子应用与本产品专属子应用；`src/platform/` 装配具体宿主能力。
+- 两个应用独立构建、独立交付、独占各自的业务数据目录，彼此没有源码依赖。
+- 独立 Credential Broker 通过本机 RPC 运行，拥有独立仓库、发布和升级周期；两产品通过它共享获准凭据，各自的用量、模型缓存与业务库留在产品内部。详见[凭据共享设计](./common/core/credential-sharing/design.md)。
+- `references/` 仅作为协议研究与受控提取参考，不参与构建或运行时依赖。
 
 ## 2. 一条业务请求怎样到达 Core
 
@@ -62,71 +56,54 @@ flowchart LR
   SDK -->|本机 RPC| Broker["独立凭据 broker"]
 ```
 
-图中的私有加密存储适用于 PolyQuota 及 GraphAgent Electron。GraphAgent 独立 Web 没有 Electron 的 `safeStorage`，凭据只经已启用的 broker 访问，不另设 Node 私有凭据库。未设置成对 broker 环境变量时，使用 profile 中已记住的共享目录和客户端身份；成对的环境变量只覆盖本次进程。[Web 共享目录记忆](./graph-agent/design/web-shared-vault.md)。阶段 2B 起，模型配置由 GraphAgent 自己的 SQLite 业务库保存，应用偏好由设置服务管理。
-
-每个产品有自己的 Hono 应用工厂。Node 和 Electron 宿主装配同一组路由、应用服务和错误/事件投影。浏览器通过 HTTP 进入 Hono；Electron 可用受限内部协议把标准 `Request` 转交给同一 Hono 应用，无须额外监听 TCP 端口。前端入口为本产品 Service 创建一个共享传输实例，宿主差异收在请求基址和底层 fetch 适配。业务组件只调用 Service，服务客户端使用同一契约的方法、路径、DTO 和 SSE，凭据、模型和用量操作都经 Hono。
-
-例如，目标中的 `GET /api/v1/providers` 在两产品、两种宿主中均由 `contract/common` 定义含义，并绑定同一组 Core 目录与权限判断。GraphAgent 的模型配置、PolyQuota 的用量快照分别通过产品契约注册自己的路由。Hono 做入站校验、应用服务分派和公开投影。账号用途、租约、模型解析等业务规则只维护在所属服务。Electron 的窗口、托盘、系统密钥库或目录选择器由平台适配器实现；Web 入口使用适合 Node 的实现，并向前端公开实际可用的宿主能力。
-
-GraphAgent 和 PolyQuota 的 Node 宿主都从 Core 的 `/host/node-directory-picker` 子入口取得 `DirectoryPicker`。Windows 工具的源码在仓库级 `native/directory-picker/`，按 Node 架构构建一次，两个产品和其他 Node 命令共用 Core 的 `bin/win32-<arch>/directory-picker.exe`。两个 Electron 宿主注入各自的窗口和对话框对象，由公共适配器决定父窗口、构造选项并返回结果。[目录选择器设计](./graph-agent/design/web-shared-vault.md#73-目录选择器)
+- **统一请求通路**：每个产品拥有自己的 Hono 应用工厂，Node 与 Electron 宿主装配同一组路由、应用服务和错误/事件投影。浏览器通过 HTTP 访问，Electron 通过受限内部协议转发标准 `Request`，不另建绕开 Hono 的业务 IPC 通道。
+- **凭据后端边界**：私有加密存储适用于 PolyQuota 及 GraphAgent Electron；GraphAgent 独立 Web 仅经已授权的 broker 访问凭据，不另设 Node 私有凭据库。
+- **宿主能力抽象**：窗口、托盘、系统密钥库、目录选择器等系统交互由各宿主的平台适配器提供，并向前端公开实际可用能力。
 
 ### 2.1 产品 Service 与共享传输
 
-`IPolyQuotaService` 由公共管理接口和 PolyQuota 产品接口组合；`IGraphAgentService` 由相同公共管理接口和 GraphAgent 模型接口组合。两者以 `.providers`、`.credentials` 暴露共用能力，产品专属方法保留在各自门面顶层。共用页面接收这些公共分组，产品页面注入自己的完整 Service，不依靠一组零散组件端口替代产品入口。
-
-接口定义归 `contract`，公共客户端与 `IServiceTransport` 的 fetch/SSE 实现归 `shared-ui/services`，产品客户端归各自 `ui/src/services`。每个产品 Service 的公共与专属功能切片复用一个传输实例和一条 SSE；传输负责握手、重连、错误转换和取消，业务命令保留自己的上下文与修订。新建 GraphAgent Service，同时从现有 PolyQuota 大客户端抽出传输，避免两端复制网络实现。
-
-客户端实现按方向拆成独立功能切片类，通过共享泛型 mixin 辅助方法合成最终 `HttpPolyQuotaService` / `HttpGraphAgentService`，由 `implements` 校验产品接口；最终类文件只保留组合清单，创建工厂只负责实例化。基类统一持有传输与生命周期，具体切片及类型推断约定见[Service 切片组合设计](./common/contract/service-composition.md#11-通过泛型-mixin-合成功能切片类)。
-
-**GraphAgent 按协议族挂载原生代理。** Web 与 Electron 共用同一 Hono 应用。以 `/api/v1/graph-agent/proxy/openai/v1` 和 `/api/v1/graph-agent/proxy/anthropic/v1` 为独立根，各自提供原生 `GET /models`。前者另挂 Chat Completions 与 Responses，后者挂 Messages。Hono 按族、方法和路径派发，Core 按同一供应商的族配置解析所选账号的认证与公共附加参数。唯一的 `GET /api/v1/events` 继续承载视图失效。族描述符由公共契约提供，GraphAgent 负责代理与试聊，PolyQuota 经既有供应商管理接口读取其获准范围。[协议族与代理入口](./common/core/provider/protocol-design.md#41-单轮试聊使用同协议代理)
-
-**供应商行为的依赖方向。** GraphAgent 和 PolyQuota 的公共请求入口依赖 Core 的能力接口。具体供应商的可执行策略由 Core 组合入口从 `providers/<id>/` 注册，公共模型、认证、传输、计量和界面代码禁止自行识别厂商并选择实现。按协议族选择原生格式、按当前授权核对绑定及凭据所有权由公共层负责。策略接口与 4 步链式分派流程见[请求策略设计](./common/core/provider/request-dispatch.md)。
+- `IPolyQuotaService` 组合公共管理接口（`.providers`、`.credentials`）与 PolyQuota 用量接口；`IGraphAgentService` 组合相同公共管理接口与 GraphAgent 模型及后续业务接口。
+- 公共与产品专属客户端复用单一 `IServiceTransport`（负责 fetch、SSE 握手、重连、错误转换与取消），客户端内部按业务切片组合并由产品契约接口校验。详见[产品 Service 与传输组合设计](./common/contract/service-composition.md)。
+- **GraphAgent 原生协议代理**：Web 与 Electron 共用同一 Hono 应用，按协议族提供原生代理入口（OpenAI `/models`、Chat Completions、Responses 与 Anthropic `/models`、Messages），Core 负责解析所选账号的认证与公共附加参数。详见[协议与推理端口设计](./common/core/provider/protocol-design.md#41-单轮试聊使用同协议代理)。
+- **供应商策略依赖方向**：公共请求入口依赖 Core 能力接口，各供应商策略由组合根统一注册；公共模型、认证、传输、计量和界面代码不直接按厂商分支。详见[供应商请求策略设计](./common/core/provider/request-dispatch.md)。
 
 ### 2.2 公共与专属 Hono 子应用
 
-Core 提供无框架的公共应用服务；可选子入口 `@astra-conductor/core/http` 仅封装这些服务的公共 Hono handler、契约校验和结果投影。两产品在各自 `src/server/` 中挂载同一个公共子应用工厂，再组合产品专属子应用、统一中间件和唯一 SSE 端点。Core 主入口不重导出 `/http`，浏览器和纯业务调用方不加载 Hono，公共适配器也不引用产品包。
-
-这一补充让两产品共享公共 handler，并保留各自的 Hono 组合根；无需增加 workspace 包。PolyQuota 从现有 Hono 工厂拆出公共适配，GraphAgent 复用该适配并补模型路由。每个产品内部，公共与专属子应用共用该产品的一套 Core 服务实例和事件中心，不因拆分路由而重复构造状态；两个产品的服务实例与业务数据库保持独立。产品专属 handler 和业务仍留在产品目录。
-
-完整接口、客户端工厂、后端组合示例与迁移约束见[产品 Service 与传输组合设计](./common/contract/service-composition.md)。阶段一已实现 `core/http`、公共应用服务、共享传输和两个产品 Service；阶段二模型专属操作与单轮测试聊天均复用此传输，协议调用与认证留在宿主后端。实现和验证见[阶段一交付结果](./common/core/provider/stage-one-implementation.md)。
+Core 主入口保持无框架依赖；可选子入口 `@astra-conductor/core/http` 封装公共应用服务的 Hono handler、契约校验与脱敏投影。两产品在各自 `src/server/` 挂载公共子应用，再组合产品专属子应用、统一中间件与唯一 `GET /api/v1/events` SSE 端点。同一产品内共用一套 Core 服务实例与事件中心；两产品之间的服务实例与业务数据库完全独立。
 
 ## 3. 产品启动与交付
 
-| 产品及形态 | 用途 | 启动后的行为与验收 |
+| 产品及形态 | 用途 | 启动后的行为与约束 |
 | --- | --- | --- |
-| PolyQuota · Electron | 正式桌面交付 | 桌面宿主启动 Hono 与产品服务，加载 PolyQuota 前端，连接私有加密存储或已启用的 broker，提供托盘和通知 |
-| PolyQuota · 独立 Web | 开发、测试和联调 | 独立 Node 进程运行相同业务路由，可配合 Vite 或测试前端。缺少可用 cipher 时如实报告凭据操作不可用。显式 demo 使用夹具 |
-| GraphAgent · 独立 Web | 正式交付 | 无 Electron 的机器上可单独启动 Node 宿主，提供构建后的前端静态资源、Hono API 和 SSE。账号凭据只使用已启用的 broker；未接入或断连时显示原因并禁用依赖凭据的操作 |
-| GraphAgent · Electron | 正式桌面交付 | 桌面宿主加载同一 GraphAgent 前端、装配同一 Hono 应用，可使用 `safeStorage` 保存私有凭据，也可接入 broker。管理账号、配置模型和凭据共享遵守与 Web 相同的业务契约，操作能力反映实际后端和授权 |
+| PolyQuota · Electron | 正式桌面交付 | 启动 Hono 与产品服务，加载 PolyQuota 前端，连接私有加密存储或已授权 broker，提供托盘与通知 |
+| PolyQuota · 独立 Web | 开发、测试与联调 | 独立 Node 进程运行相同业务路由，可配合前端或显式演示模式 |
+| GraphAgent · 独立 Web | 正式交付 | 无 Electron 环境下独立运行 Node 宿主，提供同源前端、Hono API 与 SSE；账号凭据仅经已授权 broker，未接入或断连时受限提示 |
+| GraphAgent · Electron | 正式桌面交付 | 加载同一 GraphAgent 前端与 Hono 应用，支持系统私有加密存储或接入 broker，业务契约与 Web 保持一致 |
 
-GraphAgent 独立 Web 的基础交付是可单独运行的本地服务。宿主差异可以影响系统交互的呈现，例如桌面选择目录、Web 选择服务端可用位置；同一业务操作的权限、输入约束、状态变化和错误语义由应用服务统一。两个宿主默认使用同一个 GraphAgent profile，Windows 路径为 `%APPDATA%\GraphAgent`。切换入口前先退出当前进程；并行启动时显式指定不同 profile。Web 优先使用本端的绑定覆盖，首次可从桌面已提交的共享迁移状态取得目录和客户端身份，通过已有授权连接 broker。
+GraphAgent 的桌面端与独立 Web 默认共用同一个本机 profile；切换入口前先退出当前进程，并行运行时指定独立 profile。Web 侧共享目录与绑定规则见[Web 共享目录记忆](./graph-agent/design/web-shared-vault.md)。
 
 ## 4. 新功能落点与变更规则
 
-1. **先决定功能归属。** 新供应商和模型规则进 Core，两个产品复用的页面进 `shared-ui`，只属于某个产品的功能进该产品的 `ui/` 或 `server/`。宿主差异放在 `platform/` 或现有 SDK 的平台子入口。用目录和子路径导出表达内部边界。
-2. **API 契约只有一个来源。** 同一操作在 `contract` 定义一次，由 Hono 和前端分别实现、消费。新增业务能力不单设 contract/UI/IPC 包，也不为 Electron 增加绕开 Hono 的业务通道。
-3. **改变项目边界时先改本文。** 若确需增加 workspace 包，说明调用方、独立依赖或发布边界，以及现有目录或子入口为何无法满足。调整请求路径或启动形式时同步说明对两个产品和两类宿主的影响。专项方案和仓库指引链接到这项决定。
-4. **以正式入口验证一致性。** 同一契约样本覆盖 Web HTTP 和 Electron 内部入口，核对 DTO、错误与 SSE 失效行为。GraphAgent 另验无 Electron 的独立启动、静态页面、broker 接入与重启恢复，以及未接入、断连和授权不足时的受限状态；Electron 验证私有凭据持久化。PolyQuota 分别验正式桌面交付与开发 Web 联调。
+1. **先决定功能归属**：新供应商与模型规则进 `core`，两产品复用的页面进 `shared-ui`，单产品业务进各自 `ui/` 或 `server/`，宿主差异留在 `platform/` 或凭据 SDK 平台子入口。
+2. **单一契约来源**：同一操作仅在 `contract` 定义一次，由 Hono 与前端分别实现与消费；不为 Electron 新增绕开 Hono 的业务通道。
+3. **变更边界先改本文**：新增 workspace 包、调整业务请求路径或交付形态时，先在本文说明理由及对两产品、两类宿主的影响。
+4. **以正式入口验证一致性**：同一契约覆盖 Web HTTP 与 Electron 内部入口，分别校验 DTO、错误、SSE 失效与凭据后端约束。
 
 ## 5. 从当前仓库迁移
 
-截至 2026-11-08，工作区已归位为两个应用与四个共享包。阶段一沿用既有供应商协议和凭据共享范围，未扩大 broker 的记录权限。以下结构迁移已落地。普通 Key 与协议地址在阶段二接入两产品共用页，目录、模型设置及测试聊天在 GraphAgent 交付。可运行命令见[根 README](../README.md)和[工作区脚本](../package.json)。
+工作区已完成「两应用 + 四共享包」归位，下表保留旧路径到现行结构的对照，供查阅早期文档时定位。
 
-| 迁移来源 | 当前落点和行为 |
+| 迁移来源 | 现行落点与行为 |
 | --- | --- |
-| `polyquota-contract`、GraphAgent 原 `src/contract.ts` | `contract/common`、`contract/polyquota`、`contract/graph-agent`；旧契约包移除。Core 只使用公共入口 |
-| `credentials`（原 `credential-host`） | 主入口保留协议 SDK，`/host/windows` 提供本机安装和连接；Core 不加载平台子入口 |
-| `polyquota-ui`、GraphAgent 手写 renderer | 产品各自的 `apps/<product>/ui`，共享 `packages/shared-ui` 的 Vue 壳、供应商/凭据页与独立 `/services` 传输入口；旧 UI 包和 GraphAgent 业务 preload 移除 |
-| PolyQuota 服务端和宿主平铺代码 | `src/server` 保存 Hono、用量和轮询，`src/platform` 保存 Electron、Node、SQLite 和系统适配；桌面资源随新产品 UI 构建 |
-| GraphAgent 仅有 Electron 导入设置 | `src/server` 组合 Core 公共 Hono、导入服务与持久业务仓储；`src/platform/node` 正式提供同源 UI/API/SSE，`src/platform/electron` 使用内部协议与 safeStorage 私有密文。两个宿主都不使用业务 IPC |
-| 原产品独立公共管理请求 | 两端使用 `/api/v1/providers`、认证/账号/凭据公共路径和唯一 `/api/v1/events`。写操作校验读取时的实例与后端上下文，公共和产品切片共享一条传输 |
+| `polyquota-contract`、GraphAgent 原 `src/contract.ts` | `contract/common`、`contract/polyquota`、`contract/graph-agent` |
+| `credential-host` | `credentials`（主入口协议 SDK，`/host/windows` 本机安装与连接） |
+| `polyquota-ui`、GraphAgent 手写 renderer | 各产品 `apps/<product>/ui`，共享 `packages/shared-ui` 壳、公共页与 `/services` 传输 |
+| PolyQuota 服务端与宿主平铺代码 | `src/server` 承载 Hono、用量与轮询；`src/platform` 承载 Electron、Node 与存储适配 |
+| GraphAgent 原 Electron 最小导入壳 | `src/server` 组合公共 Hono 与产品服务；`src/platform/node` 与 `src/platform/electron` 提供同源服务 |
+| 原各产品独立管理接口 | 统一 `/api/v1/providers`、认证/账号/凭据公共路径与 `/api/v1/events` |
 
 ### GraphAgent 业务数据库
 
-**2A 基线。** 当前 GraphAgent 把模型配置写在私有或共享业务 JSON 的设置键里。独立 Node/Web 使用 broker，Electron 可用 safeStorage；正式 profile 由单个宿主独占。
+每个 GraphAgent profile 独占一座 `graph-agent.sqlite3`，保存账号展示与启停、自定义供应商、模型目录配置、价卡以及后续按 Workspace 隔离的会话、任务与执行记录；应用偏好由设置服务单独管理。
 
-**2B 实现。** 每个 GraphAgent profile 使用一座 `graph-agent.sqlite3`。账号展示与启停、自定义供应商和模型配置属于这座业务库。一个账号绑定一个 offering，供应商记录保存名称、可选图标、各 offering 的端点 URL 和后续非秘密传参配置。私有／共享凭据只含账号 ID、供应商 ID、账号标识文本及不透明凭据内容。PolyQuota 忽略不认识的自定义供应商。切换后端时重新核实账号身份与授权，出站前验证该账号绑定的端点。后续会话、消息和请求同库按 Workspace 隔离，其表结构及关联由对应功能设计。
-
-GraphAgent 在现有产品服务端和平台目录装配 SQLite，保留 Vue → 产品 Service → Hono 的业务路径。Node 加载本运行时的 `better-sqlite3`。Electron 开发及安装包加载按 Electron ABI 编译、随各产品分发的本地模块。两款产品复用原生构建脚本，各自装配驱动与库路径。[原生模块构建](../scripts/prepare-sqlite-native.mjs)PolyQuota 继续独占自己的业务数据库；两产品可参照相同的迁移与事务做法，各自交付和管理库文件。启动时按业务 schema 区分空库和已建库：空库建表并载入随包预置，已建库读取持久化配置。[GraphAgent 业务表结构](./graph-agent/design/business-database.md) · [2B 实施顺序](./common/core/provider/implementation-plan.md#模型配置改版的数据实施方案)
-
-迁移分属两个计划。凭据 SDK 与 Windows 宿主合包已完成[凭据共享实施方案](./common/core/credential-sharing/implementation-plan.md)二期第一步，落点与验证见 [B1 实施记录](./common/core/credential-sharing/b1-credentials-package-implementation.md)。其余工作区结构调整已按[供应商平台三阶段实施方案](./common/core/provider/implementation-plan.md)一期完成，结果见[阶段一交付结果](./common/core/provider/stage-one-implementation.md)。Core 与 UI 的实现细节分别见[Core 详细设计](./common/core/provider/core-design.md)和[UI 详细设计](./common/ui/design.md)；产品前端契约分别见 [GraphAgent](./graph-agent/design/frontend-contract.md)和 [PolyQuota](./polyquota/frontend-contract.md)。
+私有或共享凭据库仅保存账号 ID、供应商 ID、账号标识与不透明凭据密文，与业务数据库解耦；PolyQuota 忽略其不识别的自定义供应商。表结构与初始化约定见[GraphAgent 业务表结构](./graph-agent/design/business-database.md)，Core 与 UI 详细设计见[Core 详细设计](./common/core/provider/core-design.md)与[共用 UI 设计](./common/ui/design.md)。
