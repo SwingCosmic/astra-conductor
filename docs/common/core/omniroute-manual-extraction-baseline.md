@@ -107,16 +107,16 @@ Grok Build 同时保留设备码、浏览器 OAuth PKCE 和完整 CLI 导入。�
 
 | 上游相对路径                                         | 处理方式           | 当前保留内容                                   |
 | ---------------------------------------------------- | ------------------ | ---------------------------------------------- |
-| `open-sse/config/antigravityUpstream.ts`             | 整文件复制         | Code Assist 上游端点、onboard 与模型发现 URL   |
+| `open-sse/config/antigravityUpstream.ts`             | 最小补丁（端点同步） | Code Assist 上游端点、onboard 与模型发现 URL；同步 OmniRoute `ANTIGRAVITY_GENERATION_BASE_URLS`（仅 `daily-cloudcode-pa.googleapis.com`） |
 | `open-sse/config/antigravitySharedModels.ts`        | 整文件复制         | 共享模型目录（id / 展示名，`buildSurfaceCatalog`） |
-| `open-sse/config/antigravityModelAliases.ts`        | 整文件复制         | 模型别名、retired/internal 过滤与按模型可见性、展示名解析 |
-| `open-sse/services/antigravityHeaders.ts`            | 最小签名保形补丁   | 全部 IDE 身份请求头函数与 profile 参数         |
+| `open-sse/config/antigravityModelAliases.ts`        | 最小补丁（过滤同步） | 模型别名、retired/internal 及 `chat_*`/`tab_*`/`*_weekly` 过滤（对齐 OmniRoute PR #16559）与按模型可见性、展示名解析 |
+| `open-sse/services/antigravityHeaders.ts`            | 最小补丁（上游指纹同步） | 全部 IDE / CLI 身份请求头函数与 profile 参数；对齐 OmniRoute `release/v3.8.55`（`3e23a8afe0`，PR #16512 / #16559 / #17913）：IDE 下限 `2.5.5`、CLI 固定为原生抓包形态 `1.4.4`（含 Go `os_type`/`arch` 与 `cl=1003595037`）；截至 2026-11-28 官方实际最新版本为 CLI `1.5.18`（2026-11-26 发布）、IDE/App `2.6.x` |
 | `open-sse/services/codeAssistSubscription.ts`        | 声明裁剪、传输注入 | 套餐查询及套餐 ID 提取                         |
 | `open-sse/services/tokenRefresh/providers/google.ts` | 宿主解耦、传输注入 | Google refresh token 换票                      |
 | `src/lib/oauth/providers/antigravity.ts`             | 宿主解耦、传输注入 | Google 授权码换票、身份读取和 Cloud Code 项目发现 |
-| `open-sse/services/usage/antigravity.ts`             | 宿主解耦、传输注入、档位名透传、按模型原始额度 | 三源组装：`fetchAvailableModels`（按模型目录视图）+ `retrieveUserQuota`（按模型实时消耗，优先覆盖目录刻度）+ `retrieveUserQuotaSummary`（按族 5h/周聚合）。按模型 5 小时额度归入其模型族（Gemini Models / Claude and GPT models）展示，有按模型数据的族不再重复展示族级 5h 聚合桶。模型行展示名 live 目录条目自带的 displayName/name 优先（供应商反复改模型目录、营销名可挂在静态快照不认识的新引擎 id 上），静态目录只兜底 live 视图里只有裸 id 的模型；桶的原始 modelId 随 `detail` 字段透传到 UI 供核对。套餐 tier 名停止关键词折叠、原文透传（Ultra 5x / 20x 的区分上移到 core 目录正则） |
+| `open-sse/services/usage/antigravity.ts` | 宿主解耦、官方额度窗口 | `retrieveUserQuotaSummary` 改用 `"cli"` 指纹（对齐 OmniRoute PR #18026，避免旧 IDE 指纹导致服务端裁掉 `Gemini Models` 组），额度三源仅请求 `daily-cloudcode-pa.googleapis.com`（瞬时 429/5xx/网络错误短重试一次，不回退到会返回假 100% 的 prod `cloudcode-pa.googleapis.com`），优先读取每周和 5 小时窗口并兼容 `bucket.remaining` 嵌套结构（PR #13739）与独立的 `Gemini 4 Argon` 组。缺少短窗口时用同族可见模型的最低剩余比例估算，实时桶优先于模型目录。缺少周数据时显示“未提供”。无法识别分组的模型在“其它”中单独汇总，不指定周期。满额且无重置时间仍为 100%。 |
 
-Antigravity 不复制上游数据库、连接记录和版本探测网络请求。`antigravityHeaders.ts` 恢复上游签名（含 `AntigravityClientProfile` 参数，默认 `"ide"`），唯一补丁是用固定回退版本（IDE `2.1.1`、CLI `1.1.5`，即上游缓存模块自身的回退值）替换在线版本缓存依赖。项目标识、OAuth 客户端选择与套餐信息由适配器保存为公开元数据，刷新凭证仍只进入加密信封；无法发现项目时明确拒绝接入，不用伪造项目 ID 继续请求。按模型额度组装对齐上游 `getAntigravityUsage` 的三源语义，但裁掉宿主特有部分：无本地用量历史回填、无消耗积分的余额探测、无模块级缓存（刷新节奏由宿主轮询负责）。模型展示名解析与上游相反（上游静态目录优先、live 名兜底）：静态表落后于线上改版时会展示错误的名字，这里改为 live 目录 displayName 优先、静态目录只兜底裸 id 模型，并把桶的原始 modelId 随 `detail` 透传，名称漂移始终可核对。
+Antigravity 不复制上游数据库、连接记录和版本探测网络请求。`antigravityHeaders.ts` 恢复上游签名（含 `AntigravityClientProfile` 参数，默认 `"ide"`），同步 OmniRoute `release/v3.8.55`（`3e23a8afe0`）的客户端指纹更新（PR #16512 / #16559 / #17913），用固定版本（IDE `2.5.5`、CLI `1.4.4` + `cl=1003595037`）替换在线版本缓存依赖，同时在源码注释中标注截至 2026-11-28 的官方实际最新版本（CLI `1.5.18`、IDE/App `2.6.x`）。项目标识、OAuth 客户端选择与套餐信息由适配器保存为公开元数据，刷新凭证仍只进入加密信封；无法发现项目时明确拒绝接入，不用伪造项目 ID 继续请求。用量查询保留上游三源：`retrieveUserQuotaSummary` 使用 `"cli"` profile 获取完整的 `Gemini Models` 与 `Claude and GPT models`（及独立 `Gemini 4 Argon` 组），模型级数据仅作短窗口缺失时的降级补缺。已声明的配额组成员优先于引擎 ID 或目录展示名的族名识别。接入时保存订阅名称，刷新时优先采用实时订阅，缺失时沿用当前账号的快照。Google AI Pro 的付费标识为 `g1-pro-tier`，同一账号的接入档位可为 `free-tier`。
 
 ### 3.6 Claude Code 与 OpenCode Go
 

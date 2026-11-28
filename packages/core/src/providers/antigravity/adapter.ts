@@ -10,6 +10,7 @@ import type {
   StoragePort,
   UsageProviderAdapter,
 } from "../../ports.js";
+import { matchOfferingPlan } from "../catalog.js";
 import { includedQuotas } from "../quota-inclusion.js";
 import type { CredentialService } from "../../credential-service.js";
 import { generateState } from "@omniroute/src/lib/oauth/utils/pkce.ts";
@@ -20,7 +21,10 @@ import {
 } from "@omniroute/src/lib/oauth/providers/antigravity.ts";
 import { ANTIGRAVITY_CONFIG } from "@omniroute/src/lib/oauth/constants/oauth.ts";
 import { refreshGoogleToken } from "@omniroute/open-sse/services/tokenRefresh/providers/google.ts";
-import { getAntigravityUsage } from "@omniroute/open-sse/services/usage/antigravity.ts";
+import {
+  antigravitySubscriptionPlan,
+  getAntigravityUsage,
+} from "@omniroute/open-sse/services/usage/antigravity.ts";
 
 export interface AntigravityBrowserAuthorization {
   url: string;
@@ -47,6 +51,18 @@ function maskIdentifier(value: string): string {
 function metadataText(account: Account, key: string): string | null {
   const value = account.publicMetadata[key];
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+// A rollout can rename the paid tier while keeping its catalogued billing ID.
+function planIdentifier(name: string, paidTierId?: string | null): string {
+  if (
+    paidTierId &&
+    !matchOfferingPlan("antigravity", name) &&
+    matchOfferingPlan("antigravity", paidTierId)
+  ) {
+    return paidTierId;
+  }
+  return name;
 }
 
 export class AntigravityAdapter implements UsageProviderAdapter {
@@ -93,7 +109,10 @@ export class AntigravityAdapter implements UsageProviderAdapter {
       publicMetadata: {
         projectId: discovered.projectId,
         clientProfile: "ide",
-        tier: discovered.tierId,
+        tier: planIdentifier(
+          discovered.subscriptionTier ?? discovered.tierId,
+          discovered.paidTierId,
+        ),
         oauthClient: discovered.oauthClient,
       },
       credentials: {
@@ -151,11 +170,16 @@ export class AntigravityAdapter implements UsageProviderAdapter {
     };
   }
 
-  async fetchUsage(account: Account, envelope: CredentialEnvelope): Promise<UsageSnapshot> {
+  async fetchUsage(
+    account: Account,
+    envelope: CredentialEnvelope,
+    previousPlan?: string,
+  ): Promise<UsageSnapshot> {
     const result = await getAntigravityUsage(
       envelope.secrets.accessToken,
       metadataText(account, "projectId") ?? undefined,
-      metadataText(account, "tier"),
+      antigravitySubscriptionPlan(previousPlan ?? null) ??
+        antigravitySubscriptionPlan(metadataText(account, "tier")),
       this.fetchImpl,
     );
     if ("message" in result) {
@@ -171,7 +195,7 @@ export class AntigravityAdapter implements UsageProviderAdapter {
       .filter((value): value is number => value !== null);
     return {
       accountId: account.id,
-      plan: result.plan,
+      plan: planIdentifier(result.plan, result.paidTierId),
       overallRemainingPercentage: percentages.length ? Math.min(...percentages) : null,
       groups,
       extras: [],

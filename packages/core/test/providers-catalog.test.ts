@@ -349,6 +349,9 @@ describe("provider plan catalog", () => {
     // 不识别会以上游原文展示并追加未识别标记、按默认倍率估算。
     expect(matchOfferingPlan("antigravity", "Google AI Pro")?.key).toBe("pro");
     expect(planMultiplier("antigravity", "Google AI Pro")).toBe(1);
+    expect(matchOfferingPlan("antigravity", "g1-pro-tier")?.key).toBe("pro");
+    expect(matchOfferingPlan("antigravity", "Antigravity Pro Quota")?.key).toBe("pro");
+    expect(matchOfferingPlan("antigravity", "free-tier")).toBeNull();
     expect(matchOfferingPlan("antigravity", "google_ai_pro")?.key).toBe("pro");
     expect(matchOfferingPlan("antigravity", "Google One AI Pro")?.key).toBe("pro");
     // Plus 无独立倍率页，官方口径 1 Pro = 2 Plus = 4 Free → Plus 0.5x。

@@ -165,7 +165,14 @@ export function isUserCallableAntigravityModelId(modelId: string): boolean {
  */
 export function isDiscoverableAntigravityModelId(modelId: string): boolean {
   const id = modelId.trim();
-  if (!id || ANTIGRAVITY_NON_CHAT_MODEL_IDS.has(id) || ANTIGRAVITY_RETIRED_MODEL_IDS.has(id)) {
+  if (
+    !id ||
+    id.startsWith("chat_") ||
+    id.startsWith("tab_") ||
+    id.endsWith("_weekly") ||
+    ANTIGRAVITY_NON_CHAT_MODEL_IDS.has(id) ||
+    ANTIGRAVITY_RETIRED_MODEL_IDS.has(id)
+  ) {
     return false;
   }
   return !ANTIGRAVITY_NON_CHAT_MODEL_PATTERN.test(id);

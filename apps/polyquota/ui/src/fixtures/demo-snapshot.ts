@@ -471,60 +471,43 @@ function demoUsage(): Record<string, PublicUsage | null> {
       extras: [],
       resetCredits: null,
     }),
-    // Antigravity：未识别档位（目录未命中的长 tier 名）+ 按模型原始额度归入
-    // 模型族（族级周配额 + 按模型 5 小时额度，对齐 vendor 叶子三源组装）。
+    // 未识别套餐仍保留原名，已知模型族按官方窗口展示。
     "demo-antigravity-edge": usage({
       plan: "Antigravity Edge Quota",
       planKey: null,
       planLabel: "Antigravity Edge Quota",
       overallRemainingPercentage: 30,
       groups: [
-        group(
-          "gemini_models",
-          [
-            percentQuota("weekly", 45, {
-              displayName: "Weekly Quota",
-              windowSeconds: 604_800,
-              resetAt: inMinutes(4 * 24 * 60),
-            }),
-            percentQuota("gemini_3_1_flash_lite", 55, {
-              displayName: "Gemini 3.1 Flash Lite",
-              // 上游真实桶 id：营销名与引擎 id 漂移的真实案例，演示 detail 行。
-              detail: "gemini-3.8-flash-tiered",
-              windowSeconds: 18_000,
-              resetAt: inMinutes(190),
-            }),
-            percentQuota("gemini_pro_agent", 70, {
-              displayName: "Gemini 3.1 Pro (High)",
-              detail: "gemini-pro-agent",
-              windowSeconds: 18_000,
-              resetAt: inMinutes(190),
-            }),
-          ],
-          "Gemini Models",
+        ...[
+          { key: "gemini_models", name: "Gemini Models", weekly: 45, fiveHour: 70 },
+          { key: "claude_and_gpt_models", name: "Claude and GPT models", weekly: 60, fiveHour: 30 },
+        ].map(({ key, name, weekly, fiveHour }) =>
+          group(
+            key,
+            [
+              percentQuota("weekly", weekly, {
+                displayName: "Weekly Limit Remaining",
+                windowSeconds: 604_800,
+                resetAt: inMinutes(4 * 24 * 60),
+              }),
+              percentQuota("five_hour", fiveHour, {
+                displayName: "Five Hour Limit Remaining",
+                windowSeconds: 18_000,
+                resetAt: inMinutes(190),
+              }),
+            ],
+            name,
+          ),
         ),
         group(
-          "claude_gpt_models",
+          "other_models",
           [
-            percentQuota("weekly", 60, {
-              displayName: "Weekly Quota",
-              windowSeconds: 604_800,
-              resetAt: inMinutes(4 * 24 * 60),
-            }),
-            percentQuota("claude_opus_4_6_thinking", 30, {
-              displayName: "Claude Opus 4.6 (Thinking)",
-              detail: "claude-opus-4-6-thinking",
-              windowSeconds: 18_000,
-              resetAt: inMinutes(230),
-            }),
-            percentQuota("gpt_oss_120b_medium", 85, {
-              displayName: "GPT-OSS 120B (Medium)",
-              detail: "gpt-oss-120b-medium",
-              windowSeconds: 18_000,
-              resetAt: inMinutes(230),
+            percentQuota("remaining", 0, {
+              displayName: "模型最低剩余额度",
+              detail: "上游未提供模型分组或额度周期",
             }),
           ],
-          "Claude and GPT Models",
+          "其它",
         ),
       ],
       extras: [],

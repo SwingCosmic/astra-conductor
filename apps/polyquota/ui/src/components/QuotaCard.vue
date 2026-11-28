@@ -40,8 +40,7 @@ const autoCollapseSettled = ref(false);
 const selectedExtra = ref<UsageExtra | null>(null);
 const showResetCredits = ref(false);
 
-// 多组卡片（如 antigravity 的两个模型族）默认只展开第一组，避免卡片过长；
-// 只在首次拿到用量时收起，之后用户手动展开的状态不随刷新回弹。
+// 首次收到用量时只展开第一组，后续刷新保留用户选择。
 watch(
   () => props.usage,
   (usage) => {

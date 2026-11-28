@@ -282,10 +282,16 @@ describe("desktop account UI", () => {
     expect(wrapper.text()).not.toContain("还没有接入账号");
     expect(wrapper.text()).not.toContain("桌面接口不可用");
     expect(wrapper.text()).toContain("SuperGrok Pro");
-    // antigravity 演示行携带上游原始模型 id（营销名与引擎 id 漂移的真实案例）。
-    const details = wrapper.findAll(".quota-detail").map((item) => item.text());
-    expect(details).toContain("gemini-3.8-flash-tiered");
-    expect(details).toContain("claude-opus-4-6-thinking");
+    const card = wrapper
+      .findAll(".quota-card")
+      .find((item) => item.get("h2").text() === "Antigravity");
+    expect(card?.findAll(".quota-window h3").map((row) => row.text())).toEqual([
+      "Weekly Limit Remaining",
+      "Five Hour Limit Remaining",
+      "Weekly Limit Remaining",
+      "Five Hour Limit Remaining",
+      "模型最低剩余额度",
+    ]);
     // 评分环消费演示聚合剩余度（文字在环左侧，数值来自演示读数）。
     expect(wrapper.get(".usage-score-rings").text()).toContain("5h");
     expect(wrapper.get(".usage-score-rings").text()).toContain("周");
@@ -297,33 +303,44 @@ describe("desktop account UI", () => {
     expect(header.find(".outline-action").exists()).toBe(true);
   });
 
-  it("collapses all but the first group on multi-group cards", async () => {
-    const wrapper = mountApp(emptyService);
-    await flushPromises();
+  it.each(["antigravity", "codex"])(
+    "opens only the first quota group and preserves manual toggles on refresh for %s",
+    async (provider) => {
+      const usage: PublicUsage = {
+        accountId: account.id,
+        plan: "Pro",
+        planKey: "pro",
+        planLabel: "Pro",
+        overallRemainingPercentage: null,
+        groups: ["first", "second", "third"].map((key) => ({ key, displayName: key, quotas: [] })),
+        extras: [],
+        resetCredits: null,
+        fetchedAt: "2026-11-28T00:00:00Z",
+      };
+      const wrapper = mount(QuotaCard, {
+        props: {
+          account: { ...account, provider, offeringId: provider },
+          busy: false,
+          usage: null,
+        },
+      });
+      await wrapper.setProps({ usage });
+      const expanded = () =>
+        wrapper.findAll(".group-toggle").map((toggle) => toggle.attributes("aria-expanded"));
+      expect(expanded()).toEqual(["true", "false", "false"]);
 
-    // v-show 折叠：display 内联为 none；展开时移除。
-    const quotaListDisplay = (section: Element | null | undefined): string | null => {
-      const list = section?.querySelector(".quota-list");
-      return list instanceof HTMLElement ? list.style.display : null;
-    };
-
-    // 演示数据里唯一的多组卡片是 antigravity（Gemini Models + Claude and GPT
-    // Models）：默认只展开第一组，其余收起只留聚合摘要，避免卡片过长。
-    const toggles = wrapper.findAll(".group-toggle");
-    expect(toggles).toHaveLength(2);
-    expect(toggles[0]?.attributes("aria-expanded")).toBe("true");
-    expect(quotaListDisplay(toggles[0]?.element.closest(".quota-group"))).not.toBe("none");
-    expect(toggles[1]?.attributes("aria-expanded")).toBe("false");
-    const collapsedSection = toggles[1]?.element.closest(".quota-group");
-    expect(quotaListDisplay(collapsedSection)).toBe("none");
-    expect(collapsedSection?.querySelector(".group-summary")?.textContent).toBe("15%");
-
-    // 手动展开收起的组：额度行重新可见，聚合摘要消失。
-    await toggles[1]?.trigger("click");
-    expect(toggles[1]?.attributes("aria-expanded")).toBe("true");
-    expect(quotaListDisplay(collapsedSection)).not.toBe("none");
-    expect(collapsedSection?.querySelector(".group-summary")).toBeNull();
-  });
+      const [first, second] = wrapper.findAll(".group-toggle");
+      await first!.trigger("click");
+      await second!.trigger("click");
+      await wrapper.setProps({ usage: { ...usage, fetchedAt: "2026-11-28T00:05:00Z" } });
+      expect(expanded()).toEqual(["false", "true", "false"]);
+      expect(
+        wrapper
+          .findAll(".quota-list")
+          .map((list) => (list.element as HTMLElement).style.display !== "none"),
+      ).toEqual([false, true, false]);
+    },
+  );
 
   it("shows session and weekly rings from the snapshot remaining scores", async () => {
     const wrapper = mountApp(
@@ -437,6 +454,19 @@ describe("desktop account UI", () => {
       }),
     ).toBe("5 Hours");
     // 原生名已携带窗口信息时不再追加时长后缀（分隔符/复数差异不算新信息）：
+    expect(
+      quotaLabel({
+        key: "3p-5h",
+        displayName: "Five Hour Limit Remaining",
+        windowSeconds: 18000,
+        used: 0,
+        total: 100,
+        remaining: 100,
+        remainingPercentage: 100,
+        resetAt: null,
+        unlimited: false,
+      }),
+    ).toBe("Five Hour Limit Remaining");
     // GLM 的 "5 Hours Quota" 不再展示成 "5 Hours Quota · 5-hour"。
     expect(
       quotaLabel({

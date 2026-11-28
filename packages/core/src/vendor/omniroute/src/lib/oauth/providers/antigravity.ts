@@ -4,7 +4,7 @@ import {
   getAntigravityLoadCodeAssistMetadata,
   getAntigravityOAuthUserAgent,
 } from "@omniroute/open-sse/services/antigravityHeaders.ts";
-import { extractCodeAssistOnboardTierId } from "@omniroute/open-sse/services/codeAssistSubscription.ts";
+import { extractCodeAssistOnboardTierId, extractCodeAssistSubscriptionTier } from "@omniroute/open-sse/services/codeAssistSubscription.ts";
 
 export interface AntigravityTokens {
   access_token: string;
@@ -16,6 +16,8 @@ export interface AntigravityTokens {
 export interface AntigravityPostExchange {
   projectId: string;
   tierId: string;
+  subscriptionTier?: string | null;
+  paidTierId?: string;
   email: string | null;
   oauthClient: "builtin" | `custom:${string}`;
   projectDiscoveryOutcome?: "requires_manual_project" | "discovery_failed";
@@ -167,8 +169,11 @@ export async function finishAntigravityExchange(
       };
     }
   }
+  const paidTierId = record(subscription.paidTier).id;
   return {
     projectId: discoveredProject,
+    paidTierId: typeof paidTierId === "string" ? paidTierId : undefined,
+    subscriptionTier: extractCodeAssistSubscriptionTier(subscription),
     tierId,
     email,
     oauthClient: "builtin",

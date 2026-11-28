@@ -1,13 +1,11 @@
-import {
-  ANTIGRAVITY_RUNTIME_BASE_URLS,
-  getAntigravityFetchAvailableModelsUrls,
-} from "../../config/antigravityUpstream.ts";
+import type { AntigravityClientProfile } from "@omniroute/src/shared/constants/antigravityClientProfile.ts";
+import { ANTIGRAVITY_GENERATION_BASE_URLS } from "../../config/antigravityUpstream.ts";
 import {
   getAntigravityContentHeaders,
   getAntigravityLoadCodeAssistMetadata,
 } from "../antigravityHeaders.ts";
 import {
-  getClientVisibleAntigravityModelName,
+  resolveAntigravityModelId,
   isUserVisibleAntigravityQuotaModelId,
   toClientAntigravityQuotaModelId,
 } from "../../config/antigravityModelAliases.ts";
@@ -17,7 +15,7 @@ import { ANTIGRAVITY_CONFIG } from "@omniroute/src/lib/oauth/constants/oauth.ts"
 interface AntigravityQuota {
   key: string;
   displayName: string | null;
-  /** 上游原始模型/桶标识（改版前的旧 id 也保留原文），供 UI 核对改名漂移。 */
+  /** 汇总窗口缺失时说明替代读数的来源。 */
   detail?: string;
   windowSeconds: number | null;
   used: number;
@@ -34,8 +32,9 @@ export interface AntigravityQuotaGroup {
   quotas: AntigravityQuota[];
 }
 
-/** 按模型原始额度的模型族键：gemini 独立成族，其余（claude/gpt 等）归一族。 */
-export type AntigravityModelFamily = "gemini" | "other";
+const weekly = { bucketId: "weekly", displayName: "Weekly Limit Remaining", window: "weekly" };
+const fiveHour = { bucketId: "five_hour", displayName: "Five Hour Limit Remaining", window: "5h" };
+const otherModels = "其它";
 
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -70,183 +69,178 @@ function resetTime(value: unknown): string | null {
 }
 
 function windowSeconds(label: string): number | null {
-  if (/weekly/i.test(label)) return 604_800;
-  if (/5\s*[- ]?hour|five\s*[- ]?hour/i.test(label)) return 18_000;
+  const normalized = label.replaceAll("_", " ");
+  if (/\b(?:weekly|7d)\b|seven[\s-]*day/i.test(normalized)) return 604_800;
+  if (/(?:5|five)[\s-]*(?:hours?|h)\b|\bsession\b/i.test(normalized)) return 18_000;
   return null;
 }
 
-function quota(bucketValue: unknown, index: number): AntigravityQuota | null {
-  const bucket = record(bucketValue);
-  if (bucket.disabled === true) return null;
+function bucketWindow(bucket: Record<string, unknown>): number | null {
+  return (
+    windowSeconds(text(bucket.window) ?? "") ??
+    windowSeconds([text(bucket.bucketId), text(bucket.displayName)].join(" "))
+  );
+}
+
+function quota(bucket: Record<string, unknown>): AntigravityQuota {
   const displayName = text(bucket.displayName);
-  const keySource = text(bucket.bucketId) ?? displayName ?? `quota_${index + 1}`;
-  const rawFraction = bucket.remainingFraction;
+  const keySource = text(bucket.bucketId) ?? displayName ?? "quota";
+  // OmniRoute PR #13739: retrieveUserQuotaSummary may nest remainingFraction/resetTime
+  // under `bucket.remaining`, unlike retrieveUserQuota's flat bucket shape. Accept both.
+  const remainingData = record(bucket.remaining);
+  const rawFraction = remainingData.remainingFraction ?? bucket.remainingFraction;
   const fraction =
     typeof rawFraction === "number" && Number.isFinite(rawFraction)
       ? Math.max(0, Math.min(1, rawFraction))
       : null;
-  const resetAt = resetTime(bucket.resetTime);
-  const unlimited = fraction !== null && fraction >= 1 && !resetAt;
-  const total = fraction === null || unlimited ? 0 : 1000;
-  const remaining = fraction === null ? null : unlimited ? 0 : Math.round(total * fraction);
+  const resetAt = resetTime(remainingData.resetTime ?? bucket.resetTime);
+  const total = fraction === null ? 0 : 1000;
+  const remaining = fraction === null ? null : Math.round(total * fraction);
   return {
     key: slug(keySource),
     displayName,
-    windowSeconds: windowSeconds(`${keySource} ${displayName ?? ""}`),
-    used: remaining === null || unlimited ? 0 : total - remaining,
+    windowSeconds: bucketWindow(bucket),
+    used: remaining === null ? 0 : total - remaining,
     total,
     remaining,
     remainingPercentage: fraction === null ? null : fraction * 100,
     resetAt,
-    unlimited,
+    unlimited: false,
   };
 }
 
-export function parseAntigravityQuotaGroups(value: unknown): AntigravityQuotaGroup[] {
-  const root = record(value);
-  const groups = Array.isArray(root.groups)
-    ? root.groups
-    : Array.isArray(record(root.quotaSummary).groups)
-      ? (record(root.quotaSummary).groups as unknown[])
-      : [];
-  return groups.flatMap((groupValue, groupIndex) => {
-    const group = record(groupValue);
-    const displayName = text(group.displayName);
-    const buckets = Array.isArray(group.buckets) ? group.buckets : [];
-    const quotas = buckets.flatMap((value, index) => {
-      const parsed = quota(value, index);
-      return parsed ? [parsed] : [];
-    });
-    return displayName && quotas.length
-      ? [{ key: slug(displayName) || `group_${groupIndex + 1}`, displayName, quotas }]
-      : [];
-  });
+function isArgonGroupName(value: string): boolean {
+  return /\bargon\b/i.test(value);
 }
 
-// [astra] deviation from upstream: the per-model quota assembly mirrors upstream
-// `getAntigravityUsage` (fetchAvailableModels catalog view + retrieveUserQuota live
-// buckets, live preferred over catalog) but the host-specific parts are dropped —
-// no local-usage-history fallback, no credit-balance probe (it spends credits), no
-// module-level caches (the host refresh cycle owns cadence). Model display names
-// resolve live-first — the fetchAvailableModels entry's own displayName/name beats
-// the ported static catalog (Google renames model families and re-points old
-// marketing names at new engine ids, e.g. "Gemini 3.1 Flash Lite" served by
-// `gemini-3.8-flash-tiered`, faster than any vendored catalog snapshot can track);
-// the static catalog only fills models the live view names by bare id. The raw
-// upstream bucket id rides along as `detail` so a drifted name is always checkable.
-/** 模型族聚合桶（summary）没有模型 id，detail 恒空。 */
-function modelQuota(
-  modelId: string,
-  bucketValue: unknown,
-  detailId: string | null,
-  liveName: string | null,
-): AntigravityQuota | null {
-  const bucket = record(bucketValue);
-  const rawFraction = bucket.remainingFraction;
-  const fraction =
-    typeof rawFraction === "number" && Number.isFinite(rawFraction)
-      ? Math.max(0, Math.min(1, rawFraction))
-      : null;
-  if (fraction === null) return null;
-  const resetAt = resetTime(bucket.resetTime);
-  const unlimited = fraction >= 1 && !resetAt;
-  const total = unlimited ? 0 : 1000;
-  const remaining = unlimited ? 0 : Math.round(total * fraction);
-  return {
-    key: slug(modelId),
-    displayName: liveName ?? getClientVisibleAntigravityModelName(modelId),
-    ...(detailId ? { detail: detailId } : {}),
-    windowSeconds: 18_000,
-    used: unlimited ? 0 : total - remaining,
-    total,
-    remaining,
-    remainingPercentage: fraction * 100,
-    resetAt,
-    unlimited,
-  };
+function familyName(value: string): string | null {
+  if (/^gemini(?:$|[-_ ])/i.test(value)) return "Gemini Models";
+  if (/^(?:claude|gpt)(?:$|[-_ ])/i.test(value)) return "Claude and GPT models";
+  return null;
 }
 
-/** live 目录条目自带的展示名：displayName 优先，name 与 id 相同时不算真名。 */
-function liveModelName(info: Record<string, unknown>, rawKey: string): string | null {
-  const displayName = text(info.displayName);
-  if (displayName) return displayName;
-  const name = text(info.name);
-  return name && name !== rawKey ? name : null;
-}
-
-/**
- * 按模型原始额度（5 小时窗口），按模型族（gemini / 其余）分桶返回。
- * 第一遍扫 fetchAvailableModels 的目录视图（跳过 internal、无 quotaInfo、
- * 不可见模型），顺带收集条目自带展示名；实时桶（retrieveUserQuota）优先
- * 覆盖目录刻度并带上桶的原始 modelId；第二遍收目录外新增模型的实时桶——
- * 名字退回静态目录，再退回原始 id。未上报 remainingFraction 的桶不展示。
- */
-export function parseAntigravityModelQuotas(
-  modelsData: unknown,
-  userQuotaData: unknown,
-): Map<AntigravityModelFamily, AntigravityQuota[]> {
-  const families = new Map<AntigravityModelFamily, AntigravityQuota[]>();
-  const liveBuckets = new Map<string, { bucket: unknown; rawId: string }>();
-  const userQuotaBuckets = record(userQuotaData).buckets;
-  if (Array.isArray(userQuotaBuckets)) {
-    for (const bucketValue of userQuotaBuckets) {
-      const rawId = String(record(bucketValue).modelId ?? "").trim();
-      const modelId = toClientAntigravityQuotaModelId(rawId);
-      if (modelId) liveBuckets.set(modelId, { bucket: bucketValue, rawId });
+function modelMembership(groups: Record<string, unknown>[]): Map<string, string> {
+  const membership = new Map<string, string>();
+  for (const group of groups) {
+    const name = text(group.displayName);
+    if (!name) continue;
+    const ids = Array.isArray(group.modelIds) ? group.modelIds : [];
+    const description = text(group.description)?.match(/^Models within this group:\s*(.*)$/i);
+    for (const member of [...ids, ...(description?.[1]?.split(",") ?? [])]) {
+      const label = text(member);
+      if (label) membership.set(label.toLowerCase(), name);
     }
   }
-  const liveNames = new Map<string, string>();
-  const push = (
-    modelId: string,
-    bucketValue: unknown,
-    detailId: string | null,
-    liveName: string | null,
-  ): void => {
-    const parsed = modelQuota(modelId, bucketValue, detailId, liveName);
-    if (!parsed) return;
-    const family: AntigravityModelFamily = modelId.startsWith("gemini") ? "gemini" : "other";
-    const list = families.get(family) ?? [];
-    list.push(parsed);
-    families.set(family, list);
-  };
-
-  const seen = new Set<string>();
-  for (const [rawModelKey, infoValue] of Object.entries(record(record(modelsData).models))) {
-    const info = record(infoValue);
-    if (info.isInternal === true) continue;
-    const modelKey = toClientAntigravityQuotaModelId(rawModelKey);
-    if (!modelKey || !isUserVisibleAntigravityQuotaModelId(modelKey)) continue;
-    const quotaInfo = record(info.quotaInfo);
-    if (!Object.keys(quotaInfo).length) continue;
-    const name = liveModelName(info, rawModelKey);
-    if (name) liveNames.set(modelKey, name);
-    seen.add(modelKey);
-    const live = liveBuckets.get(modelKey);
-    push(modelKey, live?.bucket ?? quotaInfo, live?.rawId ?? rawModelKey, name);
-  }
-  for (const [modelKey, { bucket, rawId }] of liveBuckets) {
-    if (seen.has(modelKey) || !isUserVisibleAntigravityQuotaModelId(modelKey)) continue;
-    push(modelKey, bucket, rawId, liveNames.get(modelKey) ?? null);
-  }
-  return families;
+  return membership;
 }
 
-/** summary 组名 → 模型族：组名含 gemini 归 gemini 族，其余归 claude/gpt 族。 */
-function familyOfGroupName(displayName: string): AntigravityModelFamily {
-  return /gemini/i.test(displayName) ? "gemini" : "other";
+// [astra] Use the live bucket before its catalog reading. An opaque id alone
+// does not establish a model family, a completion surface, or a quota window.
+function modelMinima(modelsData: unknown, userQuotaData: unknown, membership: Map<string, string>) {
+  const catalog = record(record(modelsData).models);
+  const buckets = new Map<string, Record<string, unknown>>();
+  for (const [id, model] of Object.entries(catalog))
+    buckets.set(id, record(record(model).quotaInfo));
+  const live = record(userQuotaData).buckets;
+  if (Array.isArray(live)) {
+    for (const value of live) {
+      const bucket = record(value);
+      const id = text(bucket.modelId);
+      if (id && typeof bucket.remainingFraction === "number") buckets.set(id, bucket);
+    }
+  }
+  const minima = new Map<string, AntigravityQuota>();
+  for (const [rawId, bucket] of buckets) {
+    const id = toClientAntigravityQuotaModelId(rawId);
+    const info = record(catalog[rawId]);
+    if (
+      !id ||
+      info.isInternal === true ||
+      bucket.disabled === true ||
+      !isUserVisibleAntigravityQuotaModelId(id)
+    )
+      continue;
+    const label = text(info.displayName) ?? text(info.name) ?? "";
+    const family =
+      membership.get(rawId.toLowerCase()) ??
+      membership.get(label.toLowerCase()) ??
+      familyName(resolveAntigravityModelId(id)) ??
+      familyName(label) ??
+      otherModels;
+    const item = quota({
+      ...bucket,
+      ...(family === otherModels
+        ? { bucketId: "remaining", displayName: "模型最低剩余额度", window: null }
+        : fiveHour),
+    });
+    if (item.remainingPercentage === null) continue;
+    if (item.remainingPercentage < (minima.get(family)?.remainingPercentage ?? Infinity))
+      minima.set(family, item);
+  }
+  return minima;
 }
 
-// [astra] deviation from upstream: stop folding tier names into coarse labels
-// (ULTRA → "Ultra", PRO/PREMIUM → "Pro", …). The fold collapsed Ultra 5x /
-// Ultra 20x into one value and overwrote every keyword-matching tier with a
-// synthesized label, so the raw upstream identifier never reached the snapshot.
-// The tier name now passes through verbatim as the data-layer identifier; tier
-// distinction and display resolution live in the core plan catalog. Only the
-// locally synthesized "(Restricted)" marker (added by
-// extractCodeAssistSubscriptionTier for ineligible default tiers) is stripped.
-function planLabel(subscription: unknown, fallbackTier: string | null): string {
-  const source = extractCodeAssistSubscriptionTier(subscription) ?? fallbackTier ?? "Free";
-  return source.replace(/\s*\(Restricted\)\s*$/i, "").trim() || "Free";
+// [astra] Keep official weekly/5h windows, including unknown readings.
+// Missing family summaries can only be estimated from short-window model data.
+export function parseAntigravityQuotaGroups(
+  value: unknown,
+  models?: unknown,
+  userQuota?: unknown,
+): AntigravityQuotaGroup[] {
+  const root = record(value);
+  const rawGroups = root.groups ?? record(root.quotaSummary).groups;
+  const summary = Array.isArray(rawGroups) ? rawGroups.map(record) : [];
+  const minima = modelMinima(models, userQuota, modelMembership(summary));
+  const result: AntigravityQuotaGroup[] = [];
+  function append(name: string, buckets: Record<string, unknown>[]) {
+    const family = isArgonGroupName(name) ? null : familyName(name);
+    if (!family) {
+      // Dedicated upstream pools (e.g. Gemini 4 Argon) keep only the buckets upstream reported.
+      const quotas = buckets
+        .filter((bucket) => bucket.disabled !== true)
+        .map((bucket) => quota(bucket));
+      if (quotas.length) result.push({ key: slug(name), displayName: name, quotas });
+      return;
+    }
+    const estimate = minima.get(name) ?? minima.get(family);
+    minima.delete(name);
+    minima.delete(family);
+    const quotas = [weekly, fiveHour].flatMap((window) => {
+      const bucket = buckets.find((b) => bucketWindow(b) === windowSeconds(window.window));
+      if (bucket) return bucket.disabled === true ? [] : [quota({ ...window, ...bucket })];
+      if (window === fiveHour && estimate)
+        return [{ ...estimate, detail: "按组内模型最低剩余量估算" }];
+      return [quota(window)];
+    });
+    if (quotas.length) result.push({ key: slug(name), displayName: name, quotas });
+  }
+  for (const group of summary) {
+    const name = text(group.displayName);
+    if (name && Array.isArray(group.buckets) && group.buckets.length)
+      append(name, group.buckets.map(record));
+  }
+  for (const name of ["Gemini Models", "Claude and GPT models"]) {
+    if (minima.has(name)) append(name, []);
+  }
+  const other = minima.get(otherModels);
+  if (other)
+    result.push({
+      key: "other_models",
+      displayName: otherModels,
+      quotas: [{ ...other, detail: "上游未提供模型分组或额度周期" }],
+    });
+  // Keep Gemini Models first even when its windows came from the fallback source.
+  return result.sort(
+    (a, b) =>
+      Number(!isArgonGroupName(b.displayName) && familyName(b.displayName) === "Gemini Models") -
+      Number(!isArgonGroupName(a.displayName) && familyName(a.displayName) === "Gemini Models"),
+  );
+}
+
+// free-tier is also the onboarding tier of paid Pro accounts.
+export function antigravitySubscriptionPlan(value: string | null): string | null {
+  const plan = value?.replace(/\s*\(Restricted\)\s*$/i, "").trim();
+  return plan && !/^(?:antigravity|free-tier|legacy-tier|standard-tier)$/i.test(plan) ? plan : null;
 }
 
 async function subscriptionInfo(accessToken: string, fetchImpl: typeof fetch): Promise<unknown> {
@@ -258,12 +252,18 @@ async function subscriptionInfo(accessToken: string, fetchImpl: typeof fetch): P
         body: JSON.stringify({ metadata: getAntigravityLoadCodeAssistMetadata() }),
         signal: AbortSignal.timeout(10_000),
       });
-      if (response.ok) return response.json();
+      if (response.ok) return await response.json();
     } catch {
       // Try the next configured endpoint.
     }
   }
   return null;
+}
+
+const DAILY_RETRY_DELAY_MS = 150;
+
+function isTransientQuotaStatus(status: number): boolean {
+  return status === 429 || status >= 500;
 }
 
 async function postFirstOk(
@@ -271,33 +271,51 @@ async function postFirstOk(
   accessToken: string,
   projectId: string,
   fetchImpl: typeof fetch,
+  profile: AntigravityClientProfile = "ide",
 ): Promise<unknown> {
   for (const url of urls) {
-    try {
-      const response = await fetchImpl(url, {
-        method: "POST",
-        headers: getAntigravityContentHeaders("ide", accessToken),
-        body: JSON.stringify({ project: projectId }),
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (response.ok) return response.json();
-    } catch {
-      // Try the next configured endpoint.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const response = await fetchImpl(url, {
+          method: "POST",
+          headers: getAntigravityContentHeaders(profile, accessToken),
+          body: JSON.stringify({ project: projectId }),
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (response.ok) return await response.json();
+        if (attempt === 0 && isTransientQuotaStatus(response.status)) {
+          await new Promise((resolve) => setTimeout(resolve, DAILY_RETRY_DELAY_MS));
+          continue;
+        }
+        break;
+      } catch {
+        if (attempt === 0) {
+          await new Promise((resolve) => setTimeout(resolve, DAILY_RETRY_DELAY_MS));
+          continue;
+        }
+      }
     }
   }
   return null;
 }
 
+// OmniRoute PR #18026: retrieveUserQuotaSummary uses the `cli` fingerprint so Cloud Code
+// returns the full Gemini Models group (and dedicated Argon pools when entitled).
+// [astra] Never fall back to prod cloudcode-pa.googleapis.com for Antigravity quota RPCs:
+// prod returns HTTP 200 with fake 100% (remainingFraction: 1) and rolling now+window resets.
 function quotaSummary(
   accessToken: string,
   projectId: string,
   fetchImpl: typeof fetch,
 ): Promise<unknown> {
   return postFirstOk(
-    ANTIGRAVITY_RUNTIME_BASE_URLS.map((baseUrl) => `${baseUrl}/v1internal:retrieveUserQuotaSummary`),
+    ANTIGRAVITY_GENERATION_BASE_URLS.map(
+      (baseUrl) => `${baseUrl}/v1internal:retrieveUserQuotaSummary`,
+    ),
     accessToken,
     projectId,
     fetchImpl,
+    "cli",
   );
 }
 
@@ -312,46 +330,33 @@ export async function getAntigravityUsage(
   const [subscription, summary, models, userQuota] = await Promise.all([
     subscriptionInfo(accessToken, fetchImpl),
     quotaSummary(accessToken, projectId, fetchImpl),
-    // [astra] deviation: per-model sources (catalog view + live buckets) join the
-    // summary family groups so the card shows the raw per-model quotas upstream
-    // displays, grouped under their model family ("Gemini Models" /
-    // "Claude and GPT models").
-    postFirstOk(getAntigravityFetchAvailableModelsUrls(), accessToken, projectId, fetchImpl),
     postFirstOk(
-      ANTIGRAVITY_RUNTIME_BASE_URLS.map((baseUrl) => `${baseUrl}/v1internal:retrieveUserQuota`),
+      ANTIGRAVITY_GENERATION_BASE_URLS.map(
+        (baseUrl) => `${baseUrl}/v1internal:fetchAvailableModels`,
+      ),
+      accessToken,
+      projectId,
+      fetchImpl,
+    ),
+    postFirstOk(
+      ANTIGRAVITY_GENERATION_BASE_URLS.map((baseUrl) => `${baseUrl}/v1internal:retrieveUserQuota`),
       accessToken,
       projectId,
       fetchImpl,
     ),
   ]);
-  const modelQuotas = parseAntigravityModelQuotas(models, userQuota);
-  const groups: AntigravityQuotaGroup[] = [];
-  const coveredFamilies = new Set<AntigravityModelFamily>();
-  for (const group of parseAntigravityQuotaGroups(summary)) {
-    const family = familyOfGroupName(group.displayName);
-    coveredFamilies.add(family);
-    const modelList = modelQuotas.get(family) ?? [];
-    // 有按模型 5 小时数据时不再重复展示族级 5 小时聚合桶，周配额保留。
-    const quotas = modelList.length
-      ? [...group.quotas.filter((item) => item.windowSeconds === 604_800), ...modelList]
-      : group.quotas;
-    if (quotas.length) groups.push({ ...group, quotas });
-  }
-  for (const family of ["gemini", "other"] as const) {
-    if (coveredFamilies.has(family)) continue;
-    const modelList = modelQuotas.get(family) ?? [];
-    if (!modelList.length) continue;
-    groups.push({
-      key: family === "gemini" ? "gemini_models" : "claude_gpt_models",
-      displayName: family === "gemini" ? "Gemini Models" : "Claude and GPT Models",
-      quotas: modelList,
-    });
-  }
+  const groups = parseAntigravityQuotaGroups(summary, models, userQuota);
+  const paidTierId = text(record(record(subscription).paidTier).id);
+  const plan =
+    antigravitySubscriptionPlan(extractCodeAssistSubscriptionTier(subscription)) ??
+    antigravitySubscriptionPlan(paidTierId) ??
+    fallbackTier ??
+    "";
   if (!groups.length) {
     return {
-      plan: planLabel(subscription, fallbackTier),
+      plan,
       message: "Antigravity quota summary is unavailable",
     } as const;
   }
-  return { plan: planLabel(subscription, fallbackTier), groups } as const;
+  return { plan, paidTierId, groups } as const;
 }

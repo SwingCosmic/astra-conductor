@@ -23,7 +23,13 @@ export const antigravityDescriptor: ProviderDescriptor = {
         {
           key: "pro",
           displayName: "Pro",
-          match: ["pro", "google ai pro", /google\s*(one\s*)?ai\s*pro/],
+          match: [
+            "pro",
+            "google ai pro",
+            "g1-pro-tier",
+            "Antigravity Pro Quota",
+            /google\s*(one\s*)?ai\s*pro/,
+          ],
           multiplier: 1,
           source: "published",
           sourceUrl: "https://antigravity.google/blog/changes-to-antigravity-plans",
@@ -66,7 +72,7 @@ export const antigravityDescriptor: ProviderDescriptor = {
           key: "starter",
           displayName: "Starter",
           match: ["starter", /starter/],
-          multiplier: 0.1,
+          multiplier: 0.25,
           source: "inferred",
         },
         {
@@ -83,7 +89,7 @@ export const antigravityDescriptor: ProviderDescriptor = {
           key: "lite",
           displayName: "Lite",
           match: ["lite"],
-          multiplier: 0.1,
+          multiplier: 0.25,
           source: "inferred",
         },
         {

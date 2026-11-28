@@ -7,10 +7,8 @@ import { createAntigravityAuthFlow } from "./auth-flow.js";
 
 export function createAntigravityProvider(services: ServiceResolver): ProviderContribution {
   const adapter = new AntigravityAdapter(services);
-  const provisioner = new AntigravityAccountProvisioner(
-    services.get(CoreServices.storage),
-    services.get(CoreServices.vault),
-  );
+  const storage = services.get(CoreServices.storage);
+  const provisioner = new AntigravityAccountProvisioner(storage, services.get(CoreServices.vault));
   const authFlow = createAntigravityAuthFlow({
     adapter,
     provisioner,
@@ -28,7 +26,8 @@ export function createAntigravityProvider(services: ServiceResolver): ProviderCo
     },
     usage: {
       providerId: "antigravity",
-      fetchUsage: (account, envelope) => adapter.fetchUsage(account, envelope),
+      fetchUsage: (account, envelope) =>
+        adapter.fetchUsage(account, envelope, storage.snapshots.get(account.id)?.plan),
     },
   };
 }

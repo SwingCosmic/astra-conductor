@@ -62,6 +62,7 @@ function windowLabel(seconds: number | null): string | null {
 /** 比较前折叠分隔符与大小写："5 Hours Quota" 与 "5-hour" 视为同一信息。 */
 function labelCarriesDuration(name: string, duration: string): boolean {
   const fold = (value: string) => value.toLowerCase().replace(/[\s_-]+/g, "");
+  if (duration === "5 Hours" && /\b(?:five|5)[\s_-]*hours?\b/i.test(name)) return true;
   return fold(name).includes(fold(duration));
 }
 
