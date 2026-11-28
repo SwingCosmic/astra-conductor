@@ -19,7 +19,7 @@ import type { NativeChatProtocol, TestChatRequest } from "@astra-conductor/contr
 import { approvedProxyBytes } from "./native-proxy-body.js";
 
 export interface NativeDirectory extends CommandContext {
-  family: "openai" | "anthropic";
+  family: "openai" | "anthropic" | "gemini";
   accountId: string;
   revision: string;
   query: URLSearchParams;
@@ -79,7 +79,11 @@ export function nativeDestination(
     : modelDirectoryUrl(account, route, policy, source);
   if (!chat) {
     const allowed =
-      input.family === "anthropic" ? ["before_id", "after_id", "limit"] : ["after", "limit"];
+      input.family === "anthropic"
+        ? ["before_id", "after_id", "limit"]
+        : input.family === "gemini"
+          ? ["pageToken", "pageSize"]
+          : ["after", "limit"];
     const fixed = new Set(url.searchParams.keys());
     for (const [key, value] of input.query) {
       if (
@@ -181,14 +185,20 @@ export async function transferNative(input: NativeInput, options: Transfer) {
   const reader = response.body.getReader();
   const bytes = approvedProxyBytes(reader, stream, secrets, signal, (value) => {
     if (!chat) {
-      const list = value as { data?: unknown; object?: unknown; has_more?: unknown } | null;
-      if (
-        !Array.isArray(list?.data) ||
-        (input.family === "openai"
-          ? list.object !== undefined && list.object !== "list"
-          : typeof list.has_more !== "boolean")
-      )
-        throw new AppError("upstream", "上游响应不符合该协议族的模型目录格式");
+      const list = value as {
+        data?: unknown;
+        models?: unknown;
+        object?: unknown;
+        has_more?: unknown;
+      } | null;
+      const valid =
+        input.family === "gemini"
+          ? Array.isArray(list?.models) || Array.isArray(list?.data)
+          : Array.isArray(list?.data) &&
+            (input.family === "openai"
+              ? list.object === undefined || list.object === "list"
+              : typeof list.has_more === "boolean");
+      if (!valid) throw new AppError("upstream", "上游响应不符合该协议族的模型目录格式");
     }
     options.observe(value);
   });

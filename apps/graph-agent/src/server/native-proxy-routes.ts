@@ -1,5 +1,9 @@
 import { Hono } from "hono";
-import { nativeChatPaths, type NativeChatProtocol } from "@astra-conductor/contract/graph-agent";
+import {
+  nativeChatPaths,
+  protocolFamilyDescriptors,
+  type NativeChatProtocol,
+} from "@astra-conductor/contract/graph-agent";
 import { AppError } from "@astra-conductor/core/internal";
 import { errorStatus, publicError } from "@astra-conductor/core/http";
 import { UpstreamStatus, type NativeInput } from "./native-proxy.js";
@@ -99,7 +103,7 @@ export function createNativeProxyRoutes(services: GraphServices) {
   const app = new Hono();
   const respond = async (
     request: Request,
-    family: "openai" | "anthropic",
+    family: "openai" | "anthropic" | "gemini",
     protocol?: NativeChatProtocol,
   ) => {
     try {
@@ -129,8 +133,9 @@ export function createNativeProxyRoutes(services: GraphServices) {
     app.post(nativeChatPaths[protocol], (c) =>
       respond(c.req.raw, protocol === "anthropic-messages" ? "anthropic" : "openai", protocol),
     );
-  for (const family of ["openai", "anthropic"] as const) {
-    app.get(base + "/" + family + "/v1/models", (c) => respond(c.req.raw, family));
+  for (const family of ["openai", "anthropic", "gemini"] as const) {
+    const versionPath = protocolFamilyDescriptors[family].nativeVersionPath;
+    app.get(base + "/" + family + versionPath + "/models", (c) => respond(c.req.raw, family));
     app.all(base + "/" + family + "/*", () =>
       fault(family, new AppError("not-found", "未知协议端点")),
     );

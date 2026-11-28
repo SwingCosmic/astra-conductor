@@ -28,7 +28,7 @@ export function projectNewApiFamilyModels(
     if (!endpointTypes) return descriptor.canDiscover ? [entry] : [];
     if (
       !required ||
-      (endpointTypes.length ? !endpointTypes.includes(required) : !descriptor.canDiscover)
+      (endpointTypes.length ? !endpointTypes.includes(required) : !descriptor.chatExecutable)
     ) {
       return [];
     }

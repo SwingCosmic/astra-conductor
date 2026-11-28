@@ -223,10 +223,12 @@ describe("service mode backend", () => {
     const initial = await fetch(`${instance.url}/v1/polyquota/snapshot`).then(
       (response) => response.json() as Promise<{ ok: true; value: PolyQuotaSnapshot }>,
     );
-    expect(initial.value.providers).toHaveLength(9);
-    expect(initial.value.providers).toContainEqual(
-      expect.objectContaining({ provider: "deepseek" }),
-    );
+    expect(initial.value.providers).toHaveLength(7);
+    expect(initial.value.providers.map((p) => p.provider)).not.toContain("deepseek");
+    expect(initial.value.providers.map((p) => p.provider)).not.toContain("gemini");
+    expect(initial.value.providers.map((p) => p.provider)).not.toContain("compatible-api-key");
+    const codex = initial.value.providers.find((p) => p.provider === "codex");
+    expect(codex?.offerings.map((o) => o.id)).toEqual(["codex"]);
     expect(initial.value.instanceId).toBe(instance.runtime.application.instanceId);
     expect(
       (
@@ -271,6 +273,80 @@ describe("service mode backend", () => {
     expect(snapshot.value.settings).toEqual(settings);
     expect(snapshot.value.instanceId).not.toBe(initial.value.instanceId);
     expect(snapshot.value.revision).toBeLessThan(initial.value.revision + 3);
+  });
+
+  it("filters out non-usage offerings in provider management and rejects API-key connections without deleting existing records", async () => {
+    const instance = await server();
+    // Seed a non-usage account directly in storage (simulating a shared vault containing GraphAgent API keys).
+    const storage = instance.runtime.registry.get(
+      (await import("@astra-conductor/core/internal")).CoreServices.storage,
+    );
+    const seededAt = "2026-11-24T00:00:00.000Z";
+    storage.accounts.save({
+      id: "shared-deepseek-1",
+      provider: "deepseek",
+      offeringId: "deepseek-api-key",
+      authMethod: "api-key",
+      stableIdentity: "shared-deepseek-1",
+      displayName: "DeepSeek Key",
+      maskedIdentifier: "API Key ••••",
+      publicMetadata: { supportsUsage: false, supportsInference: true },
+      enabled: true,
+      credentialState: "available",
+      createdAt: seededAt,
+      updatedAt: seededAt,
+    });
+
+    const providerSnapshot = await fetch(`${instance.url}/v1/providers`).then(
+      (response) =>
+        response.json() as Promise<{
+          ok: true;
+          value: {
+            providers: Array<{
+              provider: string;
+              capabilities?: string[];
+              offerings: Array<{ id: string; supportsSubscriptionUsage?: boolean }>;
+            }>;
+            accounts: Array<{ id: string }>;
+          };
+        }>,
+    );
+    expect(providerSnapshot.ok).toBe(true);
+    const ids = providerSnapshot.value.providers.map((p) => p.provider);
+    expect(ids).not.toContain("deepseek");
+    expect(ids).not.toContain("gemini");
+    expect(ids).not.toContain("compatible-api-key");
+    const codex = providerSnapshot.value.providers.find((p) => p.provider === "codex");
+    expect(codex?.offerings.map((o) => o.id)).toEqual(["codex"]);
+    expect(codex?.offerings[0]?.supportsSubscriptionUsage).toBe(true);
+    expect(providerSnapshot.value.accounts).toEqual([]);
+
+    for (const [providerId, offeringId] of [
+      ["codex", "openai-api-key"],
+      ["deepseek", "deepseek-api-key"],
+      ["gemini", "gemini-api-key"],
+    ] as const) {
+      const response = await fetch(`${instance.url}/v1/accounts/connections/create`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          instanceId: instance.runtime.providers.instanceId,
+          contextId: instance.runtime.providers.getBackend().contextId,
+          providerId,
+          offeringId,
+          displayName: "Blocked Key",
+          operationId: `blocked-${offeringId}`,
+          apiKey: "sk-fictional-polyquota-test",
+          routes: [],
+        }),
+      });
+      expect(response.status).toBe(409);
+      const body = (await response.json()) as { ok: false; error: { code: string } };
+      expect(body.error.code).toBe("capability-unavailable");
+    }
+
+    // Existing non-usage record remains untouched in storage.
+    expect(storage.accounts.get("shared-deepseek-1")).toBeDefined();
   });
 
   it("rejects untrusted origins, Host headers, extra ids, malformed JSON and business bodies before mutation", async () => {

@@ -5,6 +5,39 @@ export type CredentialMigrationState =
   | "private-ready"
   | "shared";
 
+export type CredentialWizardFlow = "export" | "import" | "return-private" | "revalidate";
+
+export type CredentialWizardStepCode =
+  | "select-directory"
+  | "publish-verify"
+  | "resolve-conflict"
+  | "deliver-key"
+  | "verify-key"
+  | "preview-import"
+  | "review-migrate"
+  | "confirm-snapshot"
+  | "prepare-snapshot"
+  | "switch-private"
+  | "reconcile-switch"
+  | "cleanup-old-key";
+
+export interface CredentialWizardProjection {
+  /** 当前存在未完成或待确认流程时非空；正常态 A / 已确认的 C 为 null */
+  flow: CredentialWizardFlow | null;
+  stepCode: CredentialWizardStepCode | null;
+  /** 1-based 步骤索引与总步数，用于顶部横幅与进度条 */
+  stepIndex: number;
+  totalSteps: number;
+  /** 概览页是否应置顶展示「待续办流程横幅」 */
+  resumable: boolean;
+  /** 侧栏「凭据管理」是否显示提醒角标 */
+  requiresAttention: boolean;
+  /** 当前步骤是否允许用户执行显式取消（仅 A 中未提交操作为 true） */
+  canCancelOperation: boolean;
+  /** 给续办横幅与角标 Tooltip 使用的单句状态摘要 */
+  summary: string | null;
+}
+
 export interface CredentialSharingStatus {
   migrationState: CredentialMigrationState | null;
   operation?: {
@@ -12,6 +45,7 @@ export interface CredentialSharingStatus {
     kind: string;
     vaultDirectory?: string;
     step?: string;
+    stepCode?: CredentialWizardStepCode;
     failedVaultId?: string;
   } | null;
   importPreview?: CredentialImportPreview | null;
@@ -73,6 +107,7 @@ export interface CredentialManagementStatus extends CredentialSharingStatus {
   connected?: boolean;
   accounts?: CredentialAccountPreview[];
   capabilities?: Record<string, import("../service.js").ActionAvailability>;
+  wizard?: CredentialWizardProjection | null;
   instanceId?: string;
   contextId?: string;
 }

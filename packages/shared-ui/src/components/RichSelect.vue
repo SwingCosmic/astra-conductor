@@ -22,12 +22,14 @@ const props = withDefaults(
     modelValue: string;
     options: readonly RichSelectOption[];
     label?: string;
+    ariaLabel?: string;
     placeholder?: string;
     disabledPlaceholder?: string;
     searchPlaceholder?: string;
     emptyText?: string;
     searchable?: boolean;
     disabled?: boolean;
+    size?: "sm" | "md";
   }>(),
   {
     placeholder: "请选择",
@@ -35,16 +37,18 @@ const props = withDefaults(
     emptyText: "没有匹配项",
     searchable: false,
     disabled: false,
+    size: "md",
   },
 );
 
-const emit = defineEmits<{ select: [value: string] }>();
+const emit = defineEmits<{ select: [value: string]; "update:modelValue": [value: string] }>();
 
 const root = ref<HTMLElement>();
 const trigger = ref<HTMLButtonElement>();
 const searchInput = ref<HTMLInputElement>();
 const open = ref(false);
 const openAbove = ref(false);
+const popoverStyle = ref<Record<string, string>>({});
 const query = ref("");
 const activeIndex = ref(0);
 const listboxId = useId();
@@ -54,7 +58,38 @@ function updatePlacement() {
   if (typeof window === "undefined" || !trigger.value) return;
   const rect = trigger.value.getBoundingClientRect();
   const spaceBelow = window.innerHeight - rect.bottom;
-  openAbove.value = spaceBelow < 280 && rect.top > spaceBelow;
+  const spaceAbove = rect.top;
+  const hasRichMeta =
+    props.searchable ||
+    props.options.some((item) => Boolean(item.subtitle || item.tag || item.showMark));
+  const estimatedHeight = Math.min(
+    280,
+    (props.searchable ? 46 : 0) + Math.max(1, filtered.value.length) * 34 + 12,
+  );
+  openAbove.value = spaceBelow < estimatedHeight && spaceAbove > spaceBelow;
+  if (rect.width === 0 && rect.height === 0) {
+    popoverStyle.value = {};
+    return;
+  }
+  const minPopoverWidth = hasRichMeta ? 220 : 140;
+  const popoverWidth = Math.min(Math.max(rect.width, minPopoverWidth), window.innerWidth - 16);
+  const left = Math.min(Math.max(8, rect.left), window.innerWidth - popoverWidth - 8);
+  const availableHeight = openAbove.value ? spaceAbove - 12 : spaceBelow - 12;
+  popoverStyle.value = {
+    position: "fixed",
+    left: `${left}px`,
+    right: "auto",
+    width: `${popoverWidth}px`,
+    minWidth: "0",
+    maxHeight: `${Math.max(120, Math.min(300, availableHeight))}px`,
+    ...(openAbove.value
+      ? { top: "auto", bottom: `${window.innerHeight - rect.top + 4}px` }
+      : { top: `${rect.bottom + 4}px`, bottom: "auto" }),
+  };
+}
+
+function isControlDisabled() {
+  return props.disabled || Boolean(trigger.value?.disabled);
 }
 
 const selected = computed(() => props.options.find((item) => item.value === props.modelValue));
@@ -69,15 +104,30 @@ const filtered = computed(() => {
   );
 });
 
+function attachPositionListeners() {
+  if (typeof window === "undefined") return;
+  window.addEventListener("scroll", updatePlacement, true);
+  window.addEventListener("resize", updatePlacement);
+}
+
+function detachPositionListeners() {
+  if (typeof window === "undefined") return;
+  window.removeEventListener("scroll", updatePlacement, true);
+  window.removeEventListener("resize", updatePlacement);
+}
+
 watch(open, async (isOpen) => {
   if (!isOpen) {
+    detachPositionListeners();
     query.value = "";
     return;
   }
   updatePlacement();
+  attachPositionListeners();
   const idx = filtered.value.findIndex((item) => item.value === props.modelValue && !item.disabled);
   activeIndex.value = idx >= 0 ? idx : filtered.value.findIndex((item) => !item.disabled);
   await nextTick();
+  updatePlacement();
   if (props.searchable) searchInput.value?.focus();
 });
 
@@ -93,7 +143,7 @@ watch(
 );
 
 function toggle() {
-  if (props.disabled) return;
+  if (isControlDisabled()) return;
   open.value = !open.value;
 }
 
@@ -106,7 +156,10 @@ function close(restoreFocus = false) {
 function choose(option: RichSelectOption) {
   if (option.disabled) return;
   open.value = false;
-  if (option.value !== props.modelValue) emit("select", option.value);
+  if (option.value !== props.modelValue) {
+    emit("update:modelValue", option.value);
+    emit("select", option.value);
+  }
   void nextTick(() => trigger.value?.focus());
 }
 
@@ -124,7 +177,7 @@ function move(delta: number) {
 }
 
 function onKeydown(event: KeyboardEvent) {
-  if (props.disabled) return;
+  if (isControlDisabled()) return;
   if (!open.value) {
     if (
       event.key === "ArrowDown" ||
@@ -171,11 +224,18 @@ function onDocumentPointerDown(event: PointerEvent) {
 }
 
 onMounted(() => document.addEventListener("pointerdown", onDocumentPointerDown));
-onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPointerDown));
+onBeforeUnmount(() => {
+  detachPositionListeners();
+  document.removeEventListener("pointerdown", onDocumentPointerDown);
+});
 </script>
 
 <template>
-  <div ref="root" class="rich-select" :class="{ 'is-open': open, 'is-disabled': disabled }">
+  <div
+    ref="root"
+    class="rich-select"
+    :class="[`rich-select--${size}`, { 'is-open': open, 'is-disabled': disabled }]"
+  >
     <span v-if="label" :id="labelId" class="rich-select-label">{{ label }}</span>
     <button
       ref="trigger"
@@ -185,9 +245,10 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
       :disabled="disabled"
       :aria-expanded="open"
       :aria-controls="listboxId"
+      :aria-label="!label ? ariaLabel : undefined"
       :aria-labelledby="label ? labelId : undefined"
       aria-haspopup="listbox"
-      @click="toggle"
+      @click.stop="toggle"
       @keydown="onKeydown"
     >
       <span class="rich-select-value">
@@ -224,9 +285,11 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
       v-if="open"
       class="rich-select-popover"
       :class="{ 'is-above': openAbove }"
+      :style="popoverStyle"
+      @click.stop
       @keydown="onKeydown"
     >
-      <div v-if="searchable" class="rich-select-search">
+      <div v-if="searchable" class="rich-select-search" @click.stop>
         <AppIcon name="search" :size="15" class="rich-select-search-icon" />
         <input
           ref="searchInput"
@@ -239,14 +302,17 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
       <ul
         :id="listboxId"
         role="listbox"
+        :aria-label="!label ? ariaLabel : undefined"
         :aria-labelledby="label ? labelId : undefined"
         class="rich-select-list"
+        @click.stop.prevent
       >
         <li
           v-for="(option, index) in filtered"
           :key="option.value"
           role="option"
           class="rich-select-option"
+          :data-value="option.value"
           :class="{
             'is-selected': option.value === modelValue,
             'is-active': index === activeIndex,
@@ -256,7 +322,7 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
           :aria-disabled="option.disabled || undefined"
           @mouseenter="activeIndex = index"
           @mousedown.prevent
-          @click="choose(option)"
+          @click.stop.prevent="choose(option)"
         >
           <ProviderMark
             v-if="option.showMark"
@@ -295,13 +361,16 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   position: relative;
   display: grid;
   gap: 6px;
+  width: 100%;
   min-width: 0;
+  font-weight: 400;
 }
 
 .rich-select-label {
   color: var(--text-primary);
   font-size: 12.5px;
   font-weight: 600;
+  line-height: 1.4;
 }
 
 .rich-select-trigger {
@@ -322,11 +391,20 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   color: var(--text-primary);
   font: inherit;
   font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
   text-align: left;
   cursor: pointer;
   transition:
     border-color 0.15s ease,
     box-shadow 0.15s ease;
+}
+
+.rich-select--sm .rich-select-trigger {
+  height: var(--control-h-sm, 28px);
+  min-height: var(--control-h-sm, 28px);
+  padding: 0 8px;
+  font-size: 12.5px;
 }
 
 .rich-select-trigger:hover:not(:disabled) {
@@ -396,14 +474,19 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
 
 .rich-select-popover {
   position: absolute;
-  z-index: 40;
+  z-index: 120;
   top: calc(100% + 4px);
   left: 0;
   right: 0;
-  min-width: 240px;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--border, #dde3ec);
   border-radius: var(--radius-md, 8px);
   background: var(--surface, #ffffff);
+  color: var(--text-primary);
+  font-weight: 400;
+  text-align: left;
   box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
   overflow: hidden;
 }
@@ -414,6 +497,7 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
 }
 
 .rich-select-search {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -445,6 +529,8 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
 }
 
 .rich-select-list {
+  flex: 1 1 auto;
+  min-height: 0;
   list-style: none;
   margin: 0;
   padding: 4px;

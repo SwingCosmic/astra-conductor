@@ -1,4 +1,8 @@
-import type { BillingEstimate, JsonValue } from "../common/index.js";
+import {
+  protocolFamilyDescriptors,
+  type BillingEstimate,
+  type JsonValue,
+} from "../common/index.js";
 import { apiOperation } from "../common/api.js";
 import type { ServiceResult } from "../common/dto/errors.js";
 import type { CommandContext } from "../common/service.js";
@@ -54,7 +58,7 @@ export interface NativeChatRequest extends Omit<TestChatRequest, "prompt"> {
   body: Record<string, JsonValue>;
 }
 export interface NativeModelsRequest extends CommandContext {
-  family: "openai" | "anthropic";
+  family: "openai" | "anthropic" | "gemini";
   accountId: string;
   familyBindingRevision: string;
   query?: Record<string, string>;
@@ -79,8 +83,10 @@ export const nativeModelsOperation = {
   method: "GET" as const,
   path: (input: NativeModelsRequest) => {
     const query = new URLSearchParams(input.query).toString();
-    if (input.family !== "openai" && input.family !== "anthropic") throw new Error("未知的协议族");
-    return proxy + "/" + input.family + "/v1/models" + (query ? "?" + query : "");
+    if (input.family !== "openai" && input.family !== "anthropic" && input.family !== "gemini")
+      throw new Error("未知的协议族");
+    const versionPath = protocolFamilyDescriptors[input.family].nativeVersionPath;
+    return proxy + "/" + input.family + versionPath + "/models" + (query ? "?" + query : "");
   },
   headers: (input: NativeModelsRequest) => ({
     ...localHeaders(input),

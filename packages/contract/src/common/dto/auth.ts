@@ -21,6 +21,7 @@ export interface PublicPlanDescriptor {
 export interface PublicOfferingDescriptor {
   connectionKind?: "editable-routes" | "fixed-routes";
   routeConfig?: OfferingRouteConfig;
+  supportsSubscriptionUsage?: boolean;
   id: string;
   provider: string;
   displayName: string;
@@ -34,6 +35,8 @@ export interface PublicOfferingDescriptor {
 export interface PublicProviderDescriptor {
   provider: string;
   displayName: string;
+  isCustom?: boolean;
+  capabilities?: readonly string[];
   offerings: PublicOfferingDescriptor[];
 }
 

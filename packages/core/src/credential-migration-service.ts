@@ -25,6 +25,9 @@ import type {
   CredentialExportDelivery,
   CredentialImportPreview,
   CredentialManagementStatus,
+  CredentialMigrationState,
+  CredentialWizardProjection,
+  CredentialWizardStepCode,
 } from "@astra-conductor/contract/common";
 import { credentialDirectoryRequest, type DirectoryPicker } from "./directory-picker.js";
 import { AppError } from "./errors.js";
@@ -1322,13 +1325,36 @@ export class CredentialMigrationService {
             ? "核对导出发布回执"
             : "准备内置凭据快照";
       case "import":
-        return this.pending ? "等待确认导入" : "等待验证迁移密钥";
+        return this.pending && this.pending.expiresAt > Date.now()
+          ? "等待确认导入"
+          : "等待验证迁移密钥";
       case "enable-shared":
         return "正在核对迁移到共享的结果";
       case "prepare-private":
         return "核验并写入内置快照";
       case "switch-private":
         return "正在核对切换到内置的结果";
+    }
+  }
+  private operationStepCode(
+    op: MigrationOperation,
+    hasValidImportPreview: boolean,
+  ): CredentialWizardStepCode {
+    switch (op.kind) {
+      case "export":
+        return op.failedVaultId
+          ? "resolve-conflict"
+          : op.version || op.recordDigest
+            ? "publish-verify"
+            : "select-directory";
+      case "import":
+        return hasValidImportPreview ? "preview-import" : "verify-key";
+      case "enable-shared":
+        return "reconcile-switch";
+      case "prepare-private":
+        return "prepare-snapshot";
+      case "switch-private":
+        return "reconcile-switch";
     }
   }
   async getStatus(): Promise<CredentialManagementStatus> {
@@ -1371,6 +1397,29 @@ export class CredentialMigrationService {
         : { state: "disabled", reason: reason ?? "当前迁移状态不支持此操作" };
     const ready = migrationState === "export-ready" || migrationState === "import-ready";
     const delivery = !!binding?.exportOperationId && !binding.deliveryAcknowledged;
+    const activeBackend =
+      this.activeBackend === "private" && !available ? "unavailable" : this.activeBackend;
+    const keyCleanupPending = !!cleanup?.some((t) => t.keyCleanupPending);
+    const sessionCleanupPending = !!cleanup?.some((t) => t.sessionCleanupPending);
+    const hasValidImportPreview = Boolean(this.pending && this.pending.expiresAt > Date.now());
+    const deliveryAcknowledged = binding?.deliveryAcknowledged ?? false;
+    const wizard = computeCredentialWizardProjection({
+      migrationState,
+      activeBackend,
+      deliveryAcknowledged,
+      canRecoverDelivery: delivery,
+      rememberedKey,
+      keyCleanupPending,
+      sessionCleanupPending,
+      hasValidImportPreview,
+      operation: operation
+        ? {
+            kind: operation.kind,
+            stepCode: this.operationStepCode(operation, hasValidImportPreview),
+            failedVaultId: operation.failedVaultId,
+          }
+        : null,
+    });
     return {
       ...installation,
       requiredApiLevel: BROKER_COMPATIBILITY.requiredApiLevel,
@@ -1385,8 +1434,7 @@ export class CredentialMigrationService {
       brokerOwnership: runtime?.brokerOwnership ?? "NOT_CHECKED",
       migrationState,
       selectedBackend,
-      activeBackend:
-        this.activeBackend === "private" && !available ? "unavailable" : this.activeBackend,
+      activeBackend,
       vaultDirectory:
         binding?.vaultDirectory ??
         operation?.vaultDirectory ??
@@ -1405,25 +1453,25 @@ export class CredentialMigrationService {
         null,
       rememberedKey,
       frozen: this.options.mutations.isFrozen,
-      deliveryAcknowledged: binding?.deliveryAcknowledged ?? false,
+      deliveryAcknowledged,
       connected: !!this.shared,
       accounts: this.shared ? this.previews : (binding?.accounts ?? []),
       lastError: this.lastError,
-      keyCleanupPending: !!cleanup?.some((t) => t.keyCleanupPending),
-      sessionCleanupPending: !!cleanup?.some((t) => t.sessionCleanupPending),
+      keyCleanupPending,
+      sessionCleanupPending,
       operation: operation
         ? {
             id: operation.id,
             kind: operation.kind,
             vaultDirectory: operation.vaultDirectory,
             step: this.operationStep(operation),
+            stepCode: this.operationStepCode(operation, hasValidImportPreview),
             ...(operation.failedVaultId ? { failedVaultId: operation.failedVaultId } : {}),
           }
         : null,
       migrationReview: this.review,
-      ...(this.pending && this.pending.expiresAt > Date.now()
-        ? { importPreview: this.pending.preview }
-        : {}),
+      ...(hasValidImportPreview && this.pending ? { importPreview: this.pending.preview } : {}),
+      wizard,
       capabilities: {
         recoverDelivery: capability(delivery),
         resumeExport: capability(delivery),
@@ -1433,7 +1481,7 @@ export class CredentialMigrationService {
         verifyImport: capability(
           (!binding || !rememberedKey) && (!operation || operation.kind === "import"),
         ),
-        confirmImport: capability(!!this.pending),
+        confirmImport: capability(hasValidImportPreview),
         enableShared: capability(ready),
         returnToPrivate: capability(
           this.isSharedSelected() && (!!this.shared || !!binding?.privateSnapshot),
@@ -1543,4 +1591,263 @@ export class CredentialMigrationService {
     this.broker = undefined;
     this.shared = undefined;
   }
+}
+
+export interface CredentialWizardProjectionInput {
+  migrationState: CredentialMigrationState | null;
+  activeBackend: "private" | "shared" | "unavailable";
+  deliveryAcknowledged: boolean;
+  canRecoverDelivery: boolean;
+  rememberedKey: boolean;
+  keyCleanupPending: boolean;
+  sessionCleanupPending: boolean;
+  hasValidImportPreview: boolean;
+  operation: {
+    kind: MigrationOperation["kind"];
+    stepCode: CredentialWizardStepCode;
+    failedVaultId?: string;
+  } | null;
+}
+
+export function computeCredentialWizardProjection(
+  input: CredentialWizardProjectionInput,
+): CredentialWizardProjection | null {
+  const {
+    migrationState,
+    activeBackend,
+    deliveryAcknowledged,
+    canRecoverDelivery,
+    rememberedKey,
+    keyCleanupPending,
+    sessionCleanupPending,
+    hasValidImportPreview,
+    operation,
+  } = input;
+
+  if (!migrationState) return null;
+
+  if (migrationState === "private") {
+    if (operation?.kind === "export") {
+      if (operation.failedVaultId || operation.stepCode === "resolve-conflict") {
+        return {
+          flow: "export",
+          stepCode: "resolve-conflict",
+          stepIndex: 2,
+          totalSteps: 4,
+          resumable: true,
+          requiresAttention: true,
+          canCancelOperation: true,
+          summary: "导出目标目录存在冲突，等待处理",
+        };
+      }
+      if (operation.stepCode === "publish-verify") {
+        return {
+          flow: "export",
+          stepCode: "publish-verify",
+          stepIndex: 2,
+          totalSteps: 4,
+          resumable: true,
+          requiresAttention: true,
+          canCancelOperation: true,
+          summary: "导出到共享库尚未完成，可继续核验发布结果",
+        };
+      }
+      return {
+        flow: "export",
+        stepCode: "select-directory",
+        stepIndex: 1,
+        totalSteps: 4,
+        resumable: true,
+        requiresAttention: true,
+        canCancelOperation: true,
+        summary: "导出到共享库尚未完成，可继续确认目标目录",
+      };
+    }
+    if (operation?.kind === "import") {
+      if (hasValidImportPreview) {
+        return {
+          flow: "import",
+          stepCode: "preview-import",
+          stepIndex: 3,
+          totalSteps: 4,
+          resumable: true,
+          requiresAttention: true,
+          canCancelOperation: true,
+          summary: "共享库预览已就绪，等待确认导入",
+        };
+      }
+      return {
+        flow: "import",
+        stepCode: "verify-key",
+        stepIndex: 2,
+        totalSteps: 4,
+        resumable: true,
+        requiresAttention: true,
+        canCancelOperation: true,
+        summary: "从共享库导入尚未完成，等待验证迁移密钥",
+      };
+    }
+    if (keyCleanupPending || sessionCleanupPending) {
+      return {
+        flow: "return-private",
+        stepCode: "cleanup-old-key",
+        stepIndex: 3,
+        totalSteps: 3,
+        resumable: true,
+        requiresAttention: true,
+        canCancelOperation: false,
+        summary: "已切回内置存储，旧共享密钥待清理",
+      };
+    }
+    return null;
+  }
+
+  if (migrationState === "export-ready") {
+    if (operation?.kind === "enable-shared") {
+      return {
+        flow: "export",
+        stepCode: "reconcile-switch",
+        stepIndex: 4,
+        totalSteps: 4,
+        resumable: true,
+        requiresAttention: true,
+        canCancelOperation: false,
+        summary: "正在核对迁移到共享存储的结果",
+      };
+    }
+    if (!deliveryAcknowledged) {
+      return {
+        flow: "export",
+        stepCode: "deliver-key",
+        stepIndex: 3,
+        totalSteps: 4,
+        resumable: true,
+        requiresAttention: true,
+        canCancelOperation: false,
+        summary: "导出已完成，请保存并确认迁移密钥",
+      };
+    }
+    return {
+      flow: "export",
+      stepCode: "review-migrate",
+      stepIndex: 4,
+      totalSteps: 4,
+      resumable: true,
+      requiresAttention: true,
+      canCancelOperation: false,
+      summary: "导出已完成，等待切换到共享存储",
+    };
+  }
+
+  if (migrationState === "import-ready") {
+    if (operation?.kind === "enable-shared") {
+      return {
+        flow: "import",
+        stepCode: "reconcile-switch",
+        stepIndex: 4,
+        totalSteps: 4,
+        resumable: true,
+        requiresAttention: true,
+        canCancelOperation: false,
+        summary: "正在核对迁移到共享存储的结果",
+      };
+    }
+    if (!rememberedKey) {
+      return {
+        flow: "revalidate",
+        stepCode: "verify-key",
+        stepIndex: 2,
+        totalSteps: 4,
+        resumable: true,
+        requiresAttention: true,
+        canCancelOperation: false,
+        summary: "导入成功，需重新验证迁移密钥",
+      };
+    }
+    return {
+      flow: "import",
+      stepCode: "review-migrate",
+      stepIndex: 4,
+      totalSteps: 4,
+      resumable: true,
+      requiresAttention: true,
+      canCancelOperation: false,
+      summary: "导入已确认，等待切换到共享存储",
+    };
+  }
+
+  if (migrationState === "private-ready") {
+    if (operation?.kind === "switch-private") {
+      return {
+        flow: "return-private",
+        stepCode: "reconcile-switch",
+        stepIndex: 3,
+        totalSteps: 3,
+        resumable: true,
+        requiresAttention: true,
+        canCancelOperation: false,
+        summary: "正在核对切换到内置存储的结果",
+      };
+    }
+    return {
+      flow: "return-private",
+      stepCode: "switch-private",
+      stepIndex: 3,
+      totalSteps: 3,
+      resumable: true,
+      requiresAttention: true,
+      canCancelOperation: false,
+      summary: "内置快照已校验，等待切换到内置存储",
+    };
+  }
+
+  if (operation?.kind === "prepare-private") {
+    return {
+      flow: "return-private",
+      stepCode: "prepare-snapshot",
+      stepIndex: 2,
+      totalSteps: 3,
+      resumable: true,
+      requiresAttention: true,
+      canCancelOperation: false,
+      summary: "正在写入内置快照并进行回读校验",
+    };
+  }
+  if (activeBackend === "shared" && !deliveryAcknowledged && canRecoverDelivery) {
+    return {
+      flow: "export",
+      stepCode: "deliver-key",
+      stepIndex: 3,
+      totalSteps: 4,
+      resumable: true,
+      requiresAttention: true,
+      canCancelOperation: false,
+      summary: "当前使用共享存储，迁移密钥尚未确认保存",
+    };
+  }
+  if (activeBackend === "unavailable") {
+    if (!rememberedKey) {
+      return {
+        flow: "revalidate",
+        stepCode: "verify-key",
+        stepIndex: 2,
+        totalSteps: 4,
+        resumable: true,
+        requiresAttention: true,
+        canCancelOperation: false,
+        summary: "共享存储当前不可用，需重新验证迁移密钥",
+      };
+    }
+    return {
+      flow: null,
+      stepCode: null,
+      stepIndex: 0,
+      totalSteps: 0,
+      resumable: false,
+      requiresAttention: true,
+      canCancelOperation: false,
+      summary: "共享存储当前不可用，可重试连接",
+    };
+  }
+  return null;
 }

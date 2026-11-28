@@ -5,8 +5,10 @@ import {
   CollapsiblePanel,
   ConfigField,
   FormDialog,
+  RichSelect,
   SegmentedControl,
   TagToggleGroup,
+  type RichSelectOption,
 } from "@astra-conductor/shared-ui";
 import type {
   GraphModelSnapshot,
@@ -98,6 +100,40 @@ function tabDirtyCount(id: "facts" | "parameters" | "prices") {
   if (id === "facts") return factsDirtyCount.value;
   if (id === "parameters") return paramsDirtyCount.value;
   return pricesDirtyCount.value;
+}
+
+const presetOptions = computed<RichSelectOption[]>(() => [
+  { value: "", label: "自动匹配" },
+  ...props.snapshot.presets
+    .filter((p) => p.operations.includes(props.entry.operation))
+    .map((item) => ({
+      value: item.key,
+      label: item.displayName,
+      subtitle: `${item.family} / ${item.series}`,
+    })),
+]);
+
+function factChoiceOptions(
+  field: "structuredOutput" | "reasoningMode" | "reasoningOutputMode",
+): RichSelectOption[] {
+  return choices(field).map((v) => ({ value: v, label: valueLabels[v] ?? v }));
+}
+
+const defaultEffortOptions = computed<RichSelectOption[]>(() => [
+  { value: "", label: "未知" },
+  ...choices("defaultEffort").map((v) => ({ value: v, label: formatEffortLabel(v) })),
+]);
+
+const effortChoiceOptions = computed<RichSelectOption[]>(() => [
+  { value: "", label: "协议默认" },
+  ...effortChoices.value.map((choice) => ({ value: choice, label: formatEffortLabel(choice) })),
+]);
+
+function paramChoiceOptions(k: keyof ModelParameters): RichSelectOption[] {
+  return [
+    { value: "", label: "协议默认" },
+    ...paramChoices(k).map((choice) => ({ value: choice, label: valueLabels[choice] ?? choice })),
+  ];
 }
 
 const stale = computed(
@@ -698,21 +734,15 @@ const isSelected = computed(() => {
             :dirty="preset !== undefined"
             hint="未手工覆盖的字段将继承所选参考型号的预置能力。"
           >
-            <select
-              :value="preset === undefined ? (entry.presetKey ?? '') : (preset ?? '')"
-              @change="preset = val($event) || null"
-            >
-              <option value="">自动匹配</option>
-              <option
-                v-for="item in snapshot.presets.filter((p) =>
-                  p.operations.includes(entry.operation),
-                )"
-                :key="item.key"
-                :value="item.key"
-              >
-                {{ item.family }} / {{ item.series }} · {{ item.displayName }}
-              </option>
-            </select>
+            <RichSelect
+              :model-value="preset === undefined ? (entry.presetKey ?? '') : (preset ?? '')"
+              :options="presetOptions"
+              placeholder="自动匹配"
+              search-placeholder="搜索参考型号"
+              searchable
+              :disabled="locked || busy"
+              @select="preset = $event || null"
+            />
           </ConfigField>
         </section>
 
@@ -851,19 +881,17 @@ const isSelected = computed(() => {
                     edits.structuredOutput = { field: 'structuredOutput', operation: 'clear' }
                   "
                 >
-                  <select
-                    :value="fact('structuredOutput') ?? 'unknown'"
-                    @change="
+                  <RichSelect
+                    :model-value="String(fact('structuredOutput') ?? 'unknown')"
+                    :options="factChoiceOptions('structuredOutput')"
+                    :disabled="locked || busy"
+                    @select="
                       setFact(
                         'structuredOutput',
-                        (val($event) || 'unknown') as ModelFacts['structuredOutput'],
+                        ($event || 'unknown') as ModelFacts['structuredOutput'],
                       )
                     "
-                  >
-                    <option v-for="v in choices('structuredOutput')" :key="v" :value="v">
-                      {{ valueLabels[v] ?? v }}
-                    </option>
-                  </select>
+                  />
                 </ConfigField>
               </div>
 
@@ -920,14 +948,12 @@ const isSelected = computed(() => {
                   :resettable="Object.hasOwn(own.facts, 'reasoningMode') || !!edits.reasoningMode"
                   @reset="edits.reasoningMode = { field: 'reasoningMode', operation: 'clear' }"
                 >
-                  <select
-                    :value="fact('reasoningMode') ?? 'unknown'"
-                    @change="setFact('reasoningMode', val($event) as ModelFacts['reasoningMode'])"
-                  >
-                    <option v-for="v in choices('reasoningMode')" :key="v" :value="v">
-                      {{ valueLabels[v] ?? v }}
-                    </option>
-                  </select>
+                  <RichSelect
+                    :model-value="String(fact('reasoningMode') ?? 'unknown')"
+                    :options="factChoiceOptions('reasoningMode')"
+                    :disabled="locked || busy"
+                    @select="setFact('reasoningMode', $event as ModelFacts['reasoningMode'])"
+                  />
                 </ConfigField>
               </div>
               <div data-field="reasoningOutputMode">
@@ -946,19 +972,14 @@ const isSelected = computed(() => {
                     }
                   "
                 >
-                  <select
-                    :value="fact('reasoningOutputMode') ?? 'unknown'"
-                    @change="
-                      setFact(
-                        'reasoningOutputMode',
-                        val($event) as ModelFacts['reasoningOutputMode'],
-                      )
+                  <RichSelect
+                    :model-value="String(fact('reasoningOutputMode') ?? 'unknown')"
+                    :options="factChoiceOptions('reasoningOutputMode')"
+                    :disabled="locked || busy"
+                    @select="
+                      setFact('reasoningOutputMode', $event as ModelFacts['reasoningOutputMode'])
                     "
-                  >
-                    <option v-for="v in choices('reasoningOutputMode')" :key="v" :value="v">
-                      {{ valueLabels[v] ?? v }}
-                    </option>
-                  </select>
+                  />
                 </ConfigField>
               </div>
             </div>
@@ -1009,15 +1030,12 @@ const isSelected = computed(() => {
                 :resettable="Object.hasOwn(own.facts, 'defaultEffort') || !!edits.defaultEffort"
                 @reset="edits.defaultEffort = { field: 'defaultEffort', operation: 'clear' }"
               >
-                <select
-                  :value="fact('defaultEffort') ?? ''"
-                  @change="setFact('defaultEffort', val($event) || null)"
-                >
-                  <option value="">未知</option>
-                  <option v-for="v in choices('defaultEffort')" :key="v" :value="v">
-                    {{ formatEffortLabel(v) }}
-                  </option>
-                </select>
+                <RichSelect
+                  :model-value="String(fact('defaultEffort') ?? '')"
+                  :options="defaultEffortOptions"
+                  :disabled="locked || busy"
+                  @select="setFact('defaultEffort', $event || null)"
+                />
               </ConfigField>
             </div>
           </div>
@@ -1268,17 +1286,13 @@ const isSelected = computed(() => {
                   :resettable="Object.hasOwn(own.parameters, 'effort') || !!params.effort"
                   @reset="params.effort = { field: 'effort', operation: 'clear' }"
                 >
-                  <select
+                  <RichSelect
                     v-if="effortChoices.length"
-                    :value="parameter('effort') ?? ''"
-                    :disabled="entryUnsupported('effort') || !thinkingChecked"
-                    @change="setParam('effort', val($event))"
-                  >
-                    <option value="">协议默认</option>
-                    <option v-for="choice in effortChoices" :key="choice" :value="choice">
-                      {{ formatEffortLabel(choice) }}
-                    </option>
-                  </select>
+                    :model-value="String(parameter('effort') ?? '')"
+                    :options="effortChoiceOptions"
+                    :disabled="locked || busy || entryUnsupported('effort') || !thinkingChecked"
+                    @select="setParam('effort', $event)"
+                  />
                   <input
                     v-else
                     type="text"
@@ -1403,17 +1417,13 @@ const isSelected = computed(() => {
                     :resettable="Object.hasOwn(own.parameters, k) || !!params[k]"
                     @reset="params[k] = { field: k, operation: 'clear' }"
                   >
-                    <select
+                    <RichSelect
                       v-if="paramChoices(k).length"
-                      :value="parameter(k) ?? ''"
-                      :disabled="entryUnsupported(k)"
-                      @change="setParam(k, val($event))"
-                    >
-                      <option value="">协议默认</option>
-                      <option v-for="choice in paramChoices(k)" :key="choice" :value="choice">
-                        {{ valueLabels[choice] ?? choice }}
-                      </option>
-                    </select>
+                      :model-value="String(parameter(k) ?? '')"
+                      :options="paramChoiceOptions(k)"
+                      :disabled="locked || busy || entryUnsupported(k)"
+                      @select="setParam(k, $event)"
+                    />
                     <input
                       v-else
                       :type="numeric(k) ? 'number' : 'text'"
@@ -1445,17 +1455,13 @@ const isSelected = computed(() => {
                 :resettable="Object.hasOwn(own.parameters, k) || !!params[k]"
                 @reset="params[k] = { field: k, operation: 'clear' }"
               >
-                <select
+                <RichSelect
                   v-if="paramChoices(k).length"
-                  :value="parameter(k) ?? ''"
-                  :disabled="entryUnsupported(k)"
-                  @change="setParam(k, val($event))"
-                >
-                  <option value="">协议默认</option>
-                  <option v-for="choice in paramChoices(k)" :key="choice" :value="choice">
-                    {{ valueLabels[choice] ?? choice }}
-                  </option>
-                </select>
+                  :model-value="String(parameter(k) ?? '')"
+                  :options="paramChoiceOptions(k)"
+                  :disabled="locked || busy || entryUnsupported(k)"
+                  @select="setParam(k, $event)"
+                />
                 <input
                   v-else
                   :type="numeric(k) ? 'number' : 'text'"

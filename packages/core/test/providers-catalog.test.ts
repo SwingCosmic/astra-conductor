@@ -38,6 +38,7 @@ describe("provider catalog", () => {
       "github-copilot",
       "compatible-api-key",
       "deepseek",
+      "gemini",
     ]);
     expect(getProviderDescriptor("glm").offerings.map((offering) => offering.id)).toEqual([
       "bigmodel-coding-plan",
@@ -87,9 +88,10 @@ describe("provider catalog", () => {
         "opencode-go",
         "compatible-api-key",
         "deepseek",
+        "gemini",
       ].includes(descriptor.provider);
       expect(descriptor.capabilities.includes("usage")).toBe(
-        !["deepseek", "compatible-api-key"].includes(descriptor.provider),
+        !["deepseek", "gemini", "compatible-api-key"].includes(descriptor.provider),
       );
       expect(descriptor.capabilities.includes("model-catalog")).toBe(modelProvider);
       expect(descriptor.capabilities.includes("inference")).toBe(modelProvider);

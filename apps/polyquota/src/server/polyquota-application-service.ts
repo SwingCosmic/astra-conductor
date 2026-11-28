@@ -27,6 +27,7 @@ import {
   computeCompositeRemaining,
   supportsSubscriptionUsage,
   toPublicAccount,
+  toPublicProviderDescriptor,
   toPublicUsage,
   type Account,
   type AuthCoordinator,
@@ -190,28 +191,19 @@ export class PolyQuotaApplicationService {
         instanceId: this.instanceId,
         revision,
         generatedAt: this.now().toISOString(),
-        providers: this.options.registry.descriptors.map((descriptor) => ({
-          provider: descriptor.provider,
-          displayName: descriptor.displayName,
-          offerings: descriptor.offerings.map((offering) => ({
-            id: offering.id,
-            provider: offering.provider,
-            displayName: offering.displayName,
-            ...(offering.description ? { description: offering.description } : {}),
-            ...(offering.websiteUrl ? { websiteUrl: offering.websiteUrl } : {}),
-            ...(offering.iconKey ? { iconKey: offering.iconKey } : {}),
-            authMethods: offering.authMethods.map((method) => ({
-              method: method.method,
-              interaction: method.interaction,
-              ...(method.sourceLabel ? { sourceLabel: method.sourceLabel } : {}),
-              ...(method.sourcePathHint ? { sourcePathHint: method.sourcePathHint } : {}),
-            })),
-            plans: offering.plans.map((plan) => ({
-              key: plan.key,
-              displayName: plan.displayName,
-            })),
-          })),
-        })),
+        providers: this.options.registry.descriptors
+          .filter((descriptor) => descriptor.capabilities.includes("usage"))
+          .map((descriptor) => {
+            const offerings = descriptor.offerings.filter(
+              (offering) => offering.supportsSubscriptionUsage !== false,
+            );
+            return offerings.length
+              ? toPublicProviderDescriptor({ ...descriptor, offerings })
+              : null;
+          })
+          .filter(
+            (descriptor): descriptor is NonNullable<typeof descriptor> => descriptor !== null,
+          ),
         accounts: publicAccounts,
         usageByAccountId,
         compositeRemaining: this.compositeRemaining(publicAccounts, usageByAccountId),
@@ -360,6 +352,16 @@ export class PolyQuotaApplicationService {
   async startAuth(request: StartAuthRequest): Promise<AuthStartResult> {
     this.assertPrivate();
     this.options.mutations?.assertAvailable();
+    const found = this.options.registry.findOffering(request.offeringId);
+    const descriptor = found ? this.options.registry.getDescriptor(found.provider) : undefined;
+    if (
+      !found ||
+      !descriptor ||
+      !descriptor.capabilities.includes("usage") ||
+      found.offering.supportsSubscriptionUsage === false
+    ) {
+      throw new AppError("capability-unavailable", "当前产品不支持此服务商接入点");
+    }
     const operationId = this.startOperation("auth", null, null);
     try {
       const options = request.apiKey === undefined ? {} : { apiKey: request.apiKey };

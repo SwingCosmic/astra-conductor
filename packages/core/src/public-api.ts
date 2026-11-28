@@ -1,16 +1,20 @@
 import type { PublicAccount, PublicUsage } from "@astra-conductor/contract/common";
 import type { Account, UsageSnapshot } from "./models.js";
-import { matchOfferingPlan } from "./providers/catalog.js";
+import { matchOfferingPlan, resolveAuthMethodLabel } from "./providers/catalog.js";
+import { isCustomProviderId } from "./providers/model-policy.js";
 
 export function toPublicAccount(
   account: Account,
   tokenExpiresAt: string | null = null,
+  options?: { isCustom?: boolean; authMethodLabel?: string },
 ): PublicAccount {
   return {
     id: account.id,
     provider: account.provider,
     offeringId: account.offeringId,
     authMethod: account.authMethod,
+    isCustom: options?.isCustom ?? isCustomProviderId(account.provider),
+    authMethodLabel: options?.authMethodLabel ?? resolveAuthMethodLabel(account),
     displayName: account.displayName,
     maskedIdentifier: account.maskedIdentifier,
     enabled: account.enabled,

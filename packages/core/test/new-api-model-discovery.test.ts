@@ -183,9 +183,16 @@ describe("New API site listings and selected-key model discovery", () => {
     expect(await media.run()).toMatchObject([
       { modelId: "confirmed", facts: { operations: ["image-generation"] } },
     ]);
+    // Generic OpenAI family media endpoints now discover via the shared family /models endpoint.
     const generic = fixture("openai-images-generations", false);
-    await expect(generic.run()).rejects.toMatchObject({ code: "capability-unavailable" });
-    expect(generic.fetch).not.toHaveBeenCalled();
+    generic.fetch.mockResolvedValueOnce(
+      Response.json({ object: "list", data: [{ id: "gpt-image-1" }] }),
+    );
+    expect(await generic.run()).toMatchObject([{ modelId: "gpt-image-1" }]);
+    // Families without catalog discovery (such as Cohere) preserve manual registration.
+    const cohere = fixture("cohere-rerank", false);
+    await expect(cohere.run()).rejects.toMatchObject({ code: "capability-unavailable" });
+    expect(cohere.fetch).not.toHaveBeenCalled();
   });
   it.each(["https://other.example", "https://relay.example/another-tenant"])(
     "keeps a separately configured relay isolated from site metadata (%s)",

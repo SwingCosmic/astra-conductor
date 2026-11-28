@@ -135,6 +135,41 @@ interface ModelCatalogView {
   refresh: ActionAvailability;
 }
 
+interface FamilyEndpointSummary {
+  protocol: EndpointProtocol;
+  label: string;
+  modelType: ModelType;
+  operation: ProviderOperation;
+  bindingRevision: string;
+  register: ActionAvailability;
+}
+
+interface FamilyModelItem {
+  modelId: string;
+  displayName: string;
+  presence: "remote" | "manual" | "remote-and-manual" | "missing";
+  availableProtocols: EndpointProtocol[];
+  configuredProtocols: EndpointProtocol[];
+  inferredOperations: ProviderOperation[];
+  isSavedTestModel: boolean;
+}
+
+interface FamilyCatalogView {
+  providerId: string;
+  offeringId: string;
+  accountId: string;
+  accountDisplayName: string;
+  protocolFamily: ProtocolFamily;
+  familyBindingRevision?: string;
+  catalog: CatalogState;
+  refreshing: boolean;
+  lastRefreshError: PublicError | null;
+  refresh: ActionAvailability;
+  endpoints: FamilyEndpointSummary[];
+  models: FamilyModelItem[];
+  publicModels: FamilyModelItem[];
+}
+
 interface GraphModelSnapshot {
   stamp: ViewStamp<"graph-agent.models">;
   backend: BackendContext;
@@ -147,6 +182,7 @@ interface GraphModelSnapshot {
     operations: ProviderOperation[];
   })[];
   catalogs: ModelCatalogView[];
+  familyCatalogs: FamilyCatalogView[];
   savedSelection: {
     selection: ModelSelection;
     parameters: ModelParameters;
@@ -210,11 +246,19 @@ interface BoundModelCommand extends CommandContext {
   expectedBindingRevision: string;
 }
 
-interface RefreshCatalogRequest extends CommandContext {
+interface RouteBindingRequest extends CommandContext {
   accountId: string;
   protocol: EndpointProtocol;
   expectedBindingRevision: string;
 }
+
+interface FamilyCatalogRequest extends CommandContext {
+  accountId: string;
+  protocolFamily: ProtocolFamily;
+  expectedFamilyBindingRevision: string;
+}
+
+type RefreshCatalogRequest = FamilyCatalogRequest | RouteBindingRequest;
 
 interface EditManualModelRequest extends BoundModelCommand {
   expectedSettingsRevision: string;

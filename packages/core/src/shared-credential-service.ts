@@ -29,12 +29,8 @@ import { subscriptionUsageEligibility } from "./providers/usage-eligibility.js";
 import type { ProviderRegistry } from "./providers/registry.js";
 import { isOutsideRefreshWindow } from "./providers/credential-reuse-policy.js";
 import { endpointProtocols, protocolFamilies } from "@astra-conductor/contract/common";
-import { findOffering, isLocalKeyAccount } from "./providers/catalog.js";
-import {
-  compatibleKeyId,
-  isCustomProviderId,
-  officialOpenAiOffering,
-} from "./providers/compatible-api-key/descriptor.js";
+import { findOffering, isLocalKeyAccount, providerCatalog } from "./providers/catalog.js";
+import { compatibleKeyId, isCustomProviderId } from "./providers/compatible-api-key/descriptor.js";
 import {
   resolveModelRoutes,
   routeRevisionKey,
@@ -170,8 +166,7 @@ export function decodeSharedCredential(record: {
       requireValue(
         payload.version === 3 &&
           description.credentialId === accountId &&
-          description.metadata.provider === provider &&
-          (provider === "codex" || provider === "deepseek" || isCustomProviderId(provider)),
+          description.metadata.provider === provider,
         "credential-ownership-mismatch",
       );
       const material = object(payload.credential, ["apiKey", "bindingRevision"]);
@@ -181,16 +176,20 @@ export function decodeSharedCredential(record: {
         /^[!-~]+$/.test(apiKey) && !accountIdentifier.includes(apiKey),
         "invalid-account-payload",
       );
+      // The shared key contains no local offering selection. Restore it only if unambiguous.
+      const offerings = providerCatalog
+        .find((descriptor) => descriptor.provider === provider)
+        ?.offerings.filter(
+          (offering) =>
+            offering.supportsSubscriptionUsage === false &&
+            offering.routeConfig &&
+            offering.authMethods.some(({ method }) => method === "api-key"),
+        );
       const account: Account = {
         credentialProjection: "minimal",
         id: accountId,
         provider,
-        offeringId:
-          provider === "deepseek"
-            ? "deepseek-api-key"
-            : provider === "codex"
-              ? officialOpenAiOffering
-              : "",
+        offeringId: offerings?.length === 1 ? offerings[0].id : "",
         authMethod: "api-key",
         stableIdentity: accountId,
         displayName: accountIdentifier,
@@ -704,10 +703,9 @@ export class SharedCredentialService implements CredentialService {
     if (description.contentType === localKeyContentType)
       return (
         !this.options.usageOnly &&
-        (description.metadata.provider === "codex" ||
-          description.metadata.provider === "deepseek" ||
-          (this.options.includeCustomProviders !== false &&
-            isCustomProviderId(description.metadata.provider ?? "")))
+        !!description.metadata.provider &&
+        (this.options.includeCustomProviders !== false ||
+          !isCustomProviderId(description.metadata.provider))
       );
     const providers = this.options.providers;
     if (!providers) return true;

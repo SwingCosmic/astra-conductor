@@ -46,6 +46,8 @@ export interface PublicConnectionSummary {
   accountId: string;
   providerId: string;
   offeringId: string;
+  isCustom?: boolean;
+  authMethodLabel?: string;
   displayName: string;
   recordRevision: string;
   routes: ModelRouteSummary[] | null;

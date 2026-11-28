@@ -27,6 +27,7 @@ import { githubCopilotDescriptor } from "./github-copilot/descriptor.js";
 import { createGithubCopilotProvider } from "./github-copilot/bundle.js";
 import { compatibleKeyDescriptor, compatibleKeyId } from "./compatible-api-key/descriptor.js";
 import { deepSeekDescriptor, deepSeekModelPolicy } from "./deepseek/index.js";
+import { geminiDescriptor, geminiModelPolicy } from "./gemini/index.js";
 import { genericModelPolicy } from "./custom-templates/generic.js";
 import { newApiModelPolicy } from "./new-api/model-policy.js";
 import { openRouterReceiptPolicy } from "./openrouter-receipt.js";
@@ -90,6 +91,10 @@ const builtInProviderSpecs: readonly BuiltInProviderSpec[] = [
   {
     descriptor: deepSeekDescriptor,
     modelPolicies: [deepSeekModelPolicy],
+  },
+  {
+    descriptor: geminiDescriptor,
+    modelPolicies: [geminiModelPolicy],
   },
 ];
 

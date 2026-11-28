@@ -186,17 +186,37 @@ const protocols = computed(() => [
   ),
 ]);
 
-async function changeType(event: Event) {
-  const el = event.target as HTMLSelectElement;
-  const value = el.value;
-  el.value = typeFilter.value;
+async function changeType(value: string) {
   if (!(await mayLeave())) return;
   typeFilter.value = value;
   if (!protocols.value.some((p) => p === protocol.value)) protocol.value = "";
   applyDefaults();
 }
 
+const typeSelectOptions = computed<RichSelectOption[]>(() => [
+  { value: "", label: "全部类型" },
+  ...[...routeTypes.value].map((type) => ({
+    value: type,
+    label: typeLabels[type] ?? type,
+  })),
+]);
+
+const protocolSelectOptions = computed<RichSelectOption[]>(() =>
+  protocols.value.map((p) => ({
+    value: p,
+    label: routeName(p),
+  })),
+);
+
 const samples = computed(() => scopeRows.value.filter((c) => c.protocol === protocol.value));
+const sampleSelectOptions = computed<RichSelectOption[]>(() =>
+  samples.value
+    .filter((r) => r.accountId && r.refresh.state === "enabled")
+    .map((r) => ({
+      value: r.accountId,
+      label: acctLabel(r),
+    })),
+);
 const catalog = computed(
   () =>
     samples.value.find((c) => c.accountId === source.value && c.refresh.state === "enabled") ??
@@ -246,10 +266,7 @@ defineExpose({ mayLeave });
 async function change(
   kind: "owner" | "offering" | "account" | "protocol" | "source",
   value: string,
-  event?: Event,
 ) {
-  const control = event?.target as HTMLSelectElement | undefined;
-  if (control) control.value = { owner, offering, account, protocol, source }[kind].value;
   if (!(await mayLeave())) return;
   controlsError.value = "";
   initialModel.value = "";
@@ -294,8 +311,6 @@ async function openSaved() {
   protocol.value = r.protocol;
   initialModel.value = sel.modelId;
 }
-
-const val = (e: Event) => (e.target as HTMLSelectElement).value;
 
 function acctLabel(row: ModelCatalogView) {
   const a = management.value?.accounts.find((v) => v.id === row.accountId);
@@ -427,27 +442,25 @@ async function pack(action: ChangeModelPackRequest["action"], file?: File) {
           @select="change('account', $event)"
         />
 
-        <label v-if="account && routeTypes.size > 1" class="graph-field">
-          模型类型
-          <select :value="typeFilter" @change="changeType">
-            <option value="">全部类型</option>
-            <option v-for="type in routeTypes" :key="type" :value="type">
-              {{ typeLabels[type] }}
-            </option>
-          </select>
-        </label>
+        <RichSelect
+          v-if="account && routeTypes.size > 1"
+          label="模型类型"
+          :model-value="typeFilter"
+          :options="typeSelectOptions"
+          placeholder="全部类型"
+          @select="changeType"
+        />
 
-        <label v-if="account" class="graph-field">
-          协议端点
-          <select
-            :value="protocol"
-            :disabled="!account || !protocols.length"
-            @change="change('protocol', val($event), $event)"
-          >
-            <option value="">选择协议</option>
-            <option v-for="p in protocols" :key="p" :value="p">{{ routeName(p) }}</option>
-          </select>
-        </label>
+        <RichSelect
+          v-if="account"
+          label="协议端点"
+          :model-value="protocol"
+          :options="protocolSelectOptions"
+          :disabled="!account || !protocols.length"
+          placeholder="选择协议"
+          empty-text="暂无可用协议端点"
+          @select="change('protocol', $event)"
+        />
       </div>
 
       <div v-if="publicScope" class="scope-notice">
@@ -455,21 +468,19 @@ async function pack(action: ChangeModelPackRequest["action"], file?: File) {
           <AppIcon name="info" :size="15" />
           此配置应用于本接入点的所有账号，账号覆盖优先。
         </span>
-        <label v-if="protocol" class="scope-sample-picker">
+        <div v-if="protocol" class="scope-sample-picker">
           <span>目录取样账号</span>
-          <select :value="catalog?.accountId ?? ''" @change="change('source', val($event), $event)">
-            <option v-if="!samples.some((r) => r.refresh.state === 'enabled')" value="">
-              暂无可用账号
-            </option>
-            <option
-              v-for="r in samples.filter((r) => r.accountId && r.refresh.state === 'enabled')"
-              :key="r.accountId"
-              :value="r.accountId"
-            >
-              {{ acctLabel(r) }}
-            </option>
-          </select>
-        </label>
+          <RichSelect
+            size="sm"
+            aria-label="目录取样账号"
+            :model-value="catalog?.accountId ?? ''"
+            :options="sampleSelectOptions"
+            :disabled="!sampleSelectOptions.length"
+            disabled-placeholder="暂无可用账号"
+            placeholder="选择取样账号"
+            @select="change('source', $event)"
+          />
+        </div>
       </div>
     </section>
 

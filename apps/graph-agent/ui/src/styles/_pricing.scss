@@ -121,9 +121,19 @@
   label {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
     margin: 4px 10px 2px 0;
     font-size: 12.5px;
+    cursor: pointer;
+  }
+
+  input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    margin: 0;
+    flex: 0 0 auto;
+    accent-color: var(--brand-accent);
+    cursor: pointer;
   }
 }
 

@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 import {
   assertFamilyRoots,
   endpointProtocols,
+  modelEndpointDescriptor,
   parseHttpBaseUrl,
   type ActionAvailability,
   type EndpointProtocol,
@@ -360,8 +361,11 @@ export function validateNativeBody(
     throw new AppError("validation", message);
   };
 
-  // 1. Model matches compiled upstreamModelId
-  if (parsedBody.model !== plan.upstreamModelId) {
+  // 1. Model matches compiled upstreamModelId (skipped when protocol puts modelId in URL path)
+  if (
+    modelEndpointDescriptor(protocol).modelIdLocation === "body" &&
+    parsedBody.model !== plan.upstreamModelId
+  ) {
     throw new AppError("conflict", "请求模型标识与当前绑定映射结果不符");
   }
 
@@ -428,6 +432,18 @@ export function validateNativeBody(
       ) {
         reject();
       }
+    } else if (protocol === "gemini-generate-content") {
+      const genConfig = isPlainObject(parsedBody.generationConfig)
+        ? parsedBody.generationConfig
+        : undefined;
+      if (genConfig && isPlainObject(genConfig.thinkingConfig)) {
+        const tc = genConfig.thinkingConfig;
+        if (tc.includeThoughts === true) reject();
+        if (typeof tc.thinkingBudget === "number" && tc.thinkingBudget > 0) reject();
+        if (typeof tc.thinkingLevel === "string" && tc.thinkingLevel.toUpperCase() !== "NONE") {
+          reject();
+        }
+      }
     }
   }
 
@@ -438,6 +454,11 @@ export function validateNativeBody(
       reject();
     }
     if (protocol === "anthropic-messages" && readDotPath(parsedBody, "output_config.effort").exists)
+      reject();
+    if (
+      protocol === "gemini-generate-content" &&
+      readDotPath(parsedBody, "generationConfig.thinkingConfig.thinkingLevel").exists
+    )
       reject();
   }
 }

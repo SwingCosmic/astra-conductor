@@ -8,6 +8,8 @@ import {
   ConnectionDialog,
   FormDialog,
   ProviderMark,
+  RichSelect,
+  type RichSelectOption,
 } from "@astra-conductor/shared-ui";
 import { modelEndpointDescriptors } from "@astra-conductor/contract/common";
 import type { ProviderManagementSnapshot, PublicAccount } from "@astra-conductor/contract/common";
@@ -48,6 +50,12 @@ const keyDialog = ref<{
 const impact = ref<Record<string, string[]>>({});
 const binding = ref<PublicAccount | null>(null),
   target = ref("");
+const bindingOfferingOptions = computed<RichSelectOption[]>(() => [
+  { value: "", label: "解绑，保留凭据" },
+  ...(list.value.find((p) => p.providerId === binding.value?.provider)?.offerings ?? []).map(
+    (o) => ({ value: o.offeringId, label: o.name }),
+  ),
+]);
 const expanded = ref<string[]>([]);
 
 const offeringLabel = computed(() => {
@@ -624,19 +632,7 @@ function openGroup(id: string) {
     </FormDialog>
 
     <FormDialog v-if="binding" :title="'变更绑定 · ' + binding.displayName" @close="binding = null">
-      <label class="graph-field">
-        接入点
-        <select v-model="target">
-          <option value="">解绑，保留凭据</option>
-          <option
-            v-for="o in list.find((p) => p.providerId === binding?.provider)?.offerings ?? []"
-            :key="o.offeringId"
-            :value="o.offeringId"
-          >
-            {{ o.name }}
-          </option>
-        </select>
-      </label>
+      <RichSelect v-model="target" label="接入点" :options="bindingOfferingOptions" />
       <p v-if="error" role="alert" class="form-message">{{ error }}</p>
       <footer>
         <button @click="binding = null">取消</button>

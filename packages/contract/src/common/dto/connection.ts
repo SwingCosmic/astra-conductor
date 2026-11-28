@@ -65,6 +65,8 @@ const reservedQueryParams = new Set([
   "before",
   "before_id",
   "after_id",
+  "pagetoken",
+  "pagesize",
   "client_version",
 ]);
 export function parseFamilyPolicy(value: unknown): ProtocolFamilyPolicy {
@@ -186,10 +188,7 @@ export function parseModelRouteInput(value: unknown): ModelRouteInput {
     "routes",
   );
   const protocol = resolveEndpointProtocol(r.protocol, r.protocolFamily);
-  if (
-    r.requestRule !== undefined &&
-    !["openai-chat", "openai-responses", "anthropic-messages"].includes(protocol)
-  )
+  if (r.requestRule !== undefined && !modelEndpointDescriptor(protocol).chatExecutable)
     return fail("requestRule");
   if (
     r.chatOutputLimitField !== undefined &&

@@ -164,6 +164,46 @@ export interface ModelCatalogView {
   refresh: ActionAvailability;
 }
 
+export interface FamilyEndpointSummary {
+  protocol: EndpointProtocol;
+  label: string;
+  modelType: ModelType;
+  operation: ProviderOperation;
+  bindingRevision: string;
+  register: ActionAvailability;
+}
+
+export interface FamilyModelItem {
+  modelId: string;
+  displayName: string;
+  /** 来自远端目录、手工登记或预置的综合存在标记 */
+  presence: "remote" | "manual" | "remote-and-manual" | "missing";
+  /** 该模型在当前接入点下匹配或已配置覆盖的明细端点列表 */
+  availableProtocols: EndpointProtocol[];
+  configuredProtocols: EndpointProtocol[];
+  /** 若远端或预置已声明，可直接用于目录筛选 */
+  inferredOperations: ProviderOperation[];
+  isSavedTestModel: boolean;
+}
+
+export interface FamilyCatalogView {
+  providerId: string;
+  offeringId: string;
+  accountId: string;
+  accountDisplayName: string;
+  protocolFamily: ProtocolFamily;
+  familyBindingRevision?: string;
+  catalog: CatalogState;
+  refreshing: boolean;
+  lastRefreshError: PublicError | null;
+  refresh: ActionAvailability;
+  /** 该接入点在此协议族下启用的全部明细端点 */
+  endpoints: FamilyEndpointSummary[];
+  /** 去重后的族模型列表（远端发现 ∪ 各端点手工登记 ∪ 各端点已保存覆盖） */
+  models: FamilyModelItem[];
+  publicModels: FamilyModelItem[];
+}
+
 export interface GraphModelSnapshot {
   stamp: ViewStamp<"graph-agent.models">;
   backend: BackendContext;
@@ -176,6 +216,7 @@ export interface GraphModelSnapshot {
     operations: ProviderOperation[];
   })[];
   catalogs: ModelCatalogView[];
+  familyCatalogs: FamilyCatalogView[];
   savedSelection: {
     selection: ModelSelection;
     parameters: ModelParameters;

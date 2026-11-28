@@ -1,4 +1,5 @@
 import { mount } from "@vue/test-utils";
+import { defineComponent } from "vue";
 import { describe, expect, it, vi } from "vitest";
 import {
   ActionButton,
@@ -108,6 +109,35 @@ describe("shared UI icons and form controls", () => {
 
     await trigger.trigger("click");
     await trigger.trigger("keydown", { key: "Escape" });
+    expect(wrapper.find('[role="listbox"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("works cleanly inside ConfigField without label re-opening and supports size='sm' + v-model", async () => {
+    const onUpdate = vi.fn();
+    const Host = defineComponent({
+      components: { ConfigField, RichSelect },
+      setup() {
+        return {
+          onUpdate,
+          options: [
+            { value: "", label: "全部" },
+            { value: "gemini-generate-content", label: "Gemini GenerateContent" },
+          ],
+        };
+      },
+      template:
+        '<ConfigField label="协议端点"><RichSelect size="sm" model-value="" :options="options" @update:model-value="onUpdate" /></ConfigField>',
+    });
+    const wrapper = mount(Host);
+    expect(wrapper.get(".rich-select").classes()).toContain("rich-select--sm");
+    const trigger = wrapper.get('[role="combobox"]');
+    expect(trigger.text()).toContain("全部");
+    await trigger.trigger("click");
+    expect(wrapper.find('[role="listbox"]').exists()).toBe(true);
+    const opt = wrapper.get('[data-value="gemini-generate-content"]');
+    await opt.trigger("click");
+    expect(onUpdate).toHaveBeenCalledWith("gemini-generate-content");
     expect(wrapper.find('[role="listbox"]').exists()).toBe(false);
     wrapper.unmount();
   });

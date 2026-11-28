@@ -348,6 +348,7 @@ async function assembleGraphServices(
         privateAvailable: false,
         connected: runtime.isConnected,
         accounts,
+        wizard: null,
         instanceId,
         contextId: webContextId,
         capabilities: {

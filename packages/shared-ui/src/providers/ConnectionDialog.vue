@@ -373,10 +373,17 @@ onBeforeUnmount(() => {
               :placeholder="group.example"
               spellcheck="false"
             />
-            <div v-if="group.protocols.length > 1 && familyUrls[group.family]?.trim()">
-              <label v-for="entry in group.protocols" :key="entry.protocol">
+            <div
+              v-if="group.protocols.length > 1 && familyUrls[group.family]?.trim()"
+              class="protocol-check-list"
+            >
+              <label
+                v-for="entry in group.protocols"
+                :key="entry.protocol"
+                class="protocol-check-item"
+              >
                 <input v-model="enabledProtocols[entry.protocol]" type="checkbox" />
-                {{ entry.label }}
+                <span>{{ entry.label }}</span>
               </label>
             </div>
           </template>
@@ -430,5 +437,33 @@ fieldset {
 legend {
   padding: 0 0 6px;
   font-weight: 650;
+}
+.protocol-check-list {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle, #e8edf4);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--surface, #ffffff);
+}
+.protocol-check-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.4;
+  cursor: pointer;
+  user-select: none;
+}
+.protocol-check-item input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  flex: 0 0 auto;
+  accent-color: var(--brand-accent);
+  cursor: pointer;
 }
 </style>

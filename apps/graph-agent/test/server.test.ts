@@ -2999,3 +2999,240 @@ describe("provider request policy, preview and proxy boundaries", () => {
     }
   });
 });
+
+describe("Batch 2 protocol-family catalog decoupling and Gemini provider", () => {
+  it("discovers models for a non-chat-only OpenAI family and shares one FamilyCatalogView across multiple endpoints", async () => {
+    const directory = await temporaryDirectory(),
+      protection = cipher();
+    let modelCalls = 0;
+    const http: GraphServicesOptions["http"] = {
+      async fetch(url) {
+        modelCalls++;
+        expect(String(url)).toMatch(/\/v1\/models$/);
+        return Response.json({
+          object: "list",
+          data: [{ id: "gpt-4o" }, { id: "gpt-image-1" }],
+        });
+      },
+    };
+    const graph = await fixture(directory, protection, { http });
+
+    // 1. Non-chat-only custom provider (openai-images-generations only)
+    const imageOnly = (
+      await (
+        await graph.command("/api/v1/graph-agent/custom-providers/create", {
+          operationId: "image-only-provider",
+          name: "Image Relay",
+          icon: null,
+          templateKind: "generic",
+          offerings: [
+            {
+              name: "Images",
+              offeringId: "images",
+              routes: [
+                { protocol: "openai-images-generations", baseUrl: "https://img.example/v1" },
+              ],
+            },
+          ],
+        })
+      ).json()
+    ).value;
+    const imageConn: PublicConnection = (
+      await (
+        await graph.command("/api/v1/accounts/connections/create", {
+          providerId: imageOnly.providerId,
+          offeringId: "images",
+          displayName: "Img Key",
+          operationId: "img-key-1",
+          apiKey: fictionalSecret,
+        })
+      ).json()
+    ).value;
+
+    const imgRefresh = await graph.command("/api/v1/graph-agent/models/catalogs/refresh", {
+      accountId: imageConn.accountId,
+      protocolFamily: "openai",
+      expectedFamilyBindingRevision: imageConn.routes[0].familyBindingRevision,
+    });
+    expect(imgRefresh.status).toBe(200);
+    const imgSnap = (await imgRefresh.json()).value as GraphModelSnapshot;
+    const imgFamily = imgSnap.familyCatalogs.find(
+      (f) => f.accountId === imageConn.accountId && f.protocolFamily === "openai",
+    );
+    expect(imgFamily).toBeDefined();
+    expect(imgFamily!.refresh.state).toBe("enabled");
+    expect(imgFamily!.models.map((m) => m.modelId)).toEqual(["gpt-4o", "gpt-image-1"]);
+
+    // 2. Multi-endpoint OpenAI family shares 1 FamilyCatalogView across chat + responses + images
+    const multi = (
+      await (
+        await graph.command("/api/v1/graph-agent/custom-providers/create", {
+          operationId: "multi-openai-provider",
+          name: "Multi OpenAI",
+          icon: null,
+          templateKind: "generic",
+          offerings: [
+            {
+              name: "Unified",
+              offeringId: "unified",
+              routes: [
+                { protocol: "openai-chat", baseUrl: "https://multi.example/v1" },
+                { protocol: "openai-responses", baseUrl: "https://multi.example/v1" },
+                { protocol: "openai-images-generations", baseUrl: "https://multi.example/v1" },
+              ],
+            },
+          ],
+        })
+      ).json()
+    ).value;
+    const multiConn: PublicConnection = (
+      await (
+        await graph.command("/api/v1/accounts/connections/create", {
+          providerId: multi.providerId,
+          offeringId: "unified",
+          displayName: "Multi Key",
+          operationId: "multi-key-1",
+          apiKey: fictionalSecret,
+        })
+      ).json()
+    ).value;
+
+    modelCalls = 0;
+    const multiRefresh = await graph.command("/api/v1/graph-agent/models/catalogs/refresh", {
+      accountId: multiConn.accountId,
+      protocolFamily: "openai",
+      expectedFamilyBindingRevision: multiConn.routes[0].familyBindingRevision,
+    });
+    expect(multiRefresh.status).toBe(200);
+    expect(modelCalls).toBe(1);
+    const multiSnap = (await multiRefresh.json()).value as GraphModelSnapshot;
+    const multiFamilies = multiSnap.familyCatalogs.filter(
+      (f) => f.accountId === multiConn.accountId,
+    );
+    expect(multiFamilies).toHaveLength(1);
+    expect(multiFamilies[0].endpoints.map((e) => e.protocol)).toEqual([
+      "openai-chat",
+      "openai-responses",
+      "openai-images-generations",
+    ]);
+    expect(multiFamilies[0].models).toMatchObject([
+      {
+        modelId: "gpt-4o",
+        availableProtocols: ["openai-chat", "openai-responses", "openai-images-generations"],
+      },
+      {
+        modelId: "gpt-image-1",
+        availableProtocols: ["openai-chat", "openai-responses", "openai-images-generations"],
+      },
+    ]);
+    const chatCatalog = multiSnap.catalogs.find(
+      (c) => c.accountId === multiConn.accountId && c.protocol === "openai-chat",
+    );
+    expect(chatCatalog?.entries[0]?.parameterTemplate.fields.effort?.choices).toContain("high");
+  });
+
+  it("discovers Gemini /v1beta/models across pages and previews gemini-generate-content requests", async () => {
+    const directory = await temporaryDirectory(),
+      protection = cipher();
+    const http: GraphServicesOptions["http"] = {
+      async fetch(url, init) {
+        const parsed = new URL(String(url));
+        expect(new Headers(init?.headers).get("x-goog-api-key")).toBe(fictionalSecret);
+        if (!parsed.searchParams.get("pageToken")) {
+          return Response.json({
+            models: [
+              {
+                name: "models/gemini-2.5-pro",
+                displayName: "Gemini 2.5 Pro",
+                inputTokenLimit: 1048576,
+                outputTokenLimit: 65536,
+                thinking: true,
+                supportedGenerationMethods: ["generateContent"],
+              },
+            ],
+            nextPageToken: "next-p2",
+          });
+        }
+        expect(parsed.searchParams.get("pageToken")).toBe("next-p2");
+        return Response.json({
+          models: [
+            {
+              name: "models/gemini-2.5-flash-preview-tts",
+              displayName: "Gemini 2.5 Flash TTS",
+              supportedGenerationMethods: ["generateContent"],
+            },
+            {
+              name: "models/text-embedding-004",
+              displayName: "Text Embedding 004",
+              supportedGenerationMethods: ["embedContent"],
+            },
+          ],
+        });
+      },
+    };
+    const graph = await fixture(directory, protection, { http });
+    const created: PublicConnection = (
+      await (
+        await graph.command("/api/v1/accounts/connections/create", {
+          providerId: "gemini",
+          offeringId: "gemini-api-key",
+          displayName: "Google Gemini",
+          operationId: "gemini-e2e-1",
+          apiKey: fictionalSecret,
+          routes: [],
+        })
+      ).json()
+    ).value;
+    expect(created.routes.map((r) => r.protocol)).toEqual([
+      "gemini-generate-content",
+      "gemini-tts",
+    ]);
+
+    const refreshed = await graph.command("/api/v1/graph-agent/models/catalogs/refresh", {
+      accountId: created.accountId,
+      protocolFamily: "gemini",
+      expectedFamilyBindingRevision: created.routes[0].familyBindingRevision,
+    });
+    expect(refreshed.status).toBe(200);
+    const snap = (await refreshed.json()).value as GraphModelSnapshot;
+    const gemFamily = snap.familyCatalogs.find(
+      (f) => f.accountId === created.accountId && f.protocolFamily === "gemini",
+    );
+    expect(gemFamily).toBeDefined();
+    expect(gemFamily!.endpoints.map((e) => e.protocol)).toEqual([
+      "gemini-generate-content",
+      "gemini-tts",
+    ]);
+    expect(gemFamily!.models).toMatchObject([
+      { modelId: "gemini-2.5-flash-preview-tts", availableProtocols: ["gemini-tts"] },
+      { modelId: "gemini-2.5-pro", availableProtocols: ["gemini-generate-content"] },
+    ]);
+
+    const chatRoute = created.routes.find((r) => r.protocol === "gemini-generate-content")!;
+    const previewRes = await graph.command("/api/v1/graph-agent/models/request-preview", {
+      selection: {
+        accountId: created.accountId,
+        providerId: "gemini",
+        protocol: "gemini-generate-content",
+        modelId: "gemini-2.5-pro",
+      },
+      expectedBindingRevision: chatRoute.bindingRevision,
+      expectedSettingsRevision: snap.settingsRevision,
+      operation: "chat",
+      parameters: {
+        contextWindow: null,
+        maxOutputTokens: 2048,
+        effort: "medium",
+        thinkingEnabled: true,
+      },
+    });
+    expect(previewRes.status).toBe(200);
+    const preview = (await previewRes.json()).value;
+    expect(preview.relativePath).toBe("models/gemini-2.5-pro:generateContent");
+    expect(preview.headers["x-goog-api-key"]).toBe("<redacted>");
+    expect(preview.body).toMatchObject({
+      contents: [{ role: "user", parts: [{ text: "Hello from GraphAgent." }] }],
+      generationConfig: { maxOutputTokens: 2048 },
+    });
+  });
+});

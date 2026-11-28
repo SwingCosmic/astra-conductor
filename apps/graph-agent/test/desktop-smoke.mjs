@@ -167,8 +167,37 @@ app.whenReady().then(async () => {
       const wait = async predicate => { const deadline = Date.now() + 15000; while (!predicate()) { if (Date.now() > deadline) throw new Error('render-timeout: '+String(predicate)+' (focused '+document.activeElement?.tagName+' '+document.activeElement?.id+') '+document.body.innerText); await new Promise(resolve => setTimeout(resolve, 25)); } };
       const button = (root, label) => [...(root?.querySelectorAll('button')??[])].find(item => item.textContent.trim().endsWith(label));
       const fill = (selector, value) => { const input = document.querySelector(selector); input.value = value; input.dispatchEvent(new Event('input', { bubbles: true })); };
-      const field=(root,label)=>[...(root?.querySelectorAll('label')??[])].filter(el=>el.firstElementChild?.matches('span')?el.firstElementChild.textContent.trim()===label:el.firstChild?.textContent.trim()===label).map(el=>el.querySelector('input,select,textarea')).find(Boolean);
-      const set=(el,value)=>{if(!el)throw Error('field-missing: '+value); el.value=value; el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));};
+      const field=(root,label)=>{
+        const byLabel=[...(root?.querySelectorAll('label')??[])].filter(el=>el.firstElementChild?.matches('span')?el.firstElementChild.textContent.trim()===label:el.firstChild?.textContent.trim()===label).map(el=>el.querySelector('input,select,textarea,[role="combobox"]')).find(Boolean);
+        if(byLabel)return byLabel;
+        const rich=[...(root?.querySelectorAll('.rich-select')??[])].find(el=>el.querySelector('.rich-select-label')?.textContent.trim()===label);
+        return rich?.querySelector('[role="combobox"]')??null;
+      };
+      const set=async(el,value)=>{
+        if(!el)throw Error('field-missing: '+value);
+        if(el.getAttribute('role')==='combobox'){
+          if(el.getAttribute('aria-expanded')!=='true') el.click();
+          const listId=el.getAttribute('aria-controls');
+          await wait(()=>document.getElementById(listId)?.querySelectorAll('[role="option"]').length);
+          const list=document.getElementById(listId);
+          const option=[...list.querySelectorAll('[role="option"]')].find(item=>item.dataset.value===value||item.textContent.trim()===value);
+          if(!option)throw Error('option-missing: '+value);
+          option.click();
+          await wait(()=>el.getAttribute('aria-expanded')==='false');
+          return;
+        }
+        el.value=value; el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));
+      };
+      const comboOptions=async(el)=>{
+        if(!el)return [];
+        const wasOpen=el.getAttribute('aria-expanded')==='true';
+        if(!wasOpen) el.click();
+        const listId=el.getAttribute('aria-controls');
+        await wait(()=>document.getElementById(listId));
+        const values=[...document.getElementById(listId).querySelectorAll('[role="option"]')].map(item=>item.dataset.value??'');
+        if(!wasOpen&&el.getAttribute('aria-expanded')==='true') el.click();
+        return values;
+      };
       ${body}
     })()`);
     await evaluate(`
@@ -239,7 +268,7 @@ app.whenReady().then(async () => {
         await wait(()=>dialog.querySelectorAll('.endpoint-row').length===routes.length+1);
         routes=dialog.querySelectorAll('.endpoint-row');
         const row=routes[routes.length-1];
-        set(field(row,'端点种类'),id);
+        await set(field(row,'端点种类'),id);
         set(field(row,'API 根地址'),'https://models.example.test/v1');
       }
       button(dialog,'保存供应商').click();
@@ -265,9 +294,9 @@ app.whenReady().then(async () => {
       if(!button(document.querySelector('dialog'),'删除供应商').disabled)throw Error('provider-delete-enabled-with-reference');
       button(document.querySelector('dialog'),'取消').click();
       button(provider,'模型配置').click();
-      await wait(()=>document.querySelector('.scope-picker') && field(document,'协议端点')?.options.length>=4);
+      await wait(async()=>Boolean(document.querySelector('.scope-picker') && field(document,'协议端点')) && (await comboOptions(field(document,'协议端点'))).length>=3);
       for(const route of ['openai-images-generations','openai-images-edits']){
-        set(field(document,'协议端点'),route);
+        await set(field(document,'协议端点'),route);
         const title=route==='openai-images-edits'?'OpenAI 图片编辑':'OpenAI 图片生成';
         await wait(()=>document.querySelector('.catalog-browser .setting-hint')?.textContent.includes(title)&&document.querySelector('.catalog-browser .manual-register form'));
         const form=document.querySelector('.catalog-browser .manual-register form');
@@ -284,7 +313,7 @@ app.whenReady().then(async () => {
           const pricing=editor.querySelector('.rate-card-editor');
           if(pricing?.dataset.open==='false') pricing.querySelector('.collapsible-trigger')?.click();
           button(pricing,'新建条件价卡').click();await wait(()=>field(pricing,'计量项'));
-          set(field(pricing,'接入与计费方式'),'api');set(field(pricing,'计量项'),'images');set(field(pricing,'单位'),'image');set(field(pricing,'金额'),'0.06');
+          await set(field(pricing,'接入与计费方式'),'api');set(field(pricing,'计量项'),'images');set(field(pricing,'单位'),'image');set(field(pricing,'金额'),'0.06');
           button(pricing,'添加条件覆盖').click();await wait(()=>pricing.querySelector('.rate-rule'));
           const rule=pricing.querySelector('.rate-rule');set(field(rule,'质量'),'HD');set(field(rule,'时区'),'Asia/Shanghai');set(field(rule,'排除日历'),'business');set(field(rule,'覆盖金额'),'0.08');
           button(rule,'添加时段').click();
@@ -299,7 +328,7 @@ app.whenReady().then(async () => {
           button(editor,'保存配置').click();await wait(()=>button(editor,'保存配置').disabled&&!editor.querySelector('[role=alert]'));
         }
       }
-      set(field(document,'协议端点'),'openai-chat');
+      await set(field(document,'协议端点'),'openai-chat');
       await wait(()=>document.querySelector('.catalog-list button')?.textContent.includes('fixture-chat'));
       document.querySelector('.catalog-list button').click();
       await wait(()=>document.querySelector('.graph-editor'));
@@ -394,7 +423,7 @@ app.whenReady().then(async () => {
       provider.querySelector('[aria-label="删除供应商"]').click();await wait(()=>document.querySelector('dialog')?.textContent.includes('已停用'));
       button(document.querySelector('dialog'),'变更绑定').click();
       await wait(()=>field(document.querySelector('dialog'),'接入点'));
-      set(field(document.querySelector('dialog'),'接入点'),'');
+      await set(field(document.querySelector('dialog'),'接入点'),'');
       await wait(()=>!button(document.querySelector('dialog'),'保存绑定').disabled);
       button(document.querySelector('dialog'),'保存绑定').click();
       await wait(()=>!document.querySelector('dialog')&&document.querySelector('.custom-providers').textContent.includes('待绑定账号'));
@@ -406,8 +435,8 @@ app.whenReady().then(async () => {
       set(field(restored,'供应商名称'),'重新配置的 Smoke 中转站');set(field(restored,'接入点名称'),'US');set(field(restored,'API 根地址'),'https://models.example.test/v1');
       button(restored,'保存供应商').click();
       await wait(()=>!document.querySelector('dialog')&&button(document.querySelector('.custom-providers'),'选择接入点'));
-      button(document.querySelector('.custom-providers'),'选择接入点').click();await wait(()=>field(document.querySelector('dialog'),'接入点')?.options.length===2);
-      const picker=field(document.querySelector('dialog'),'接入点');set(picker,picker.options[1].value);
+      button(document.querySelector('.custom-providers'),'选择接入点').click();await wait(()=>field(document.querySelector('dialog'),'接入点'));
+      const picker=field(document.querySelector('dialog'),'接入点');const choices=await comboOptions(picker);if(choices.length!==2)throw Error('rebind-options-mismatch');await set(picker,choices[1]);
       await wait(()=>!button(document.querySelector('dialog'),'保存绑定').disabled);button(document.querySelector('dialog'),'保存绑定').click();
       await wait(()=>!document.querySelector('dialog')&&!document.querySelector('.custom-providers').textContent.includes('待绑定账号'));
     `);

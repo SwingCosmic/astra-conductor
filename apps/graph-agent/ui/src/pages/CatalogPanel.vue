@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { computed, inject, ref, watch } from "vue";
-import { AppIcon, CollapsiblePanel } from "@astra-conductor/shared-ui";
+import {
+  AppIcon,
+  CollapsiblePanel,
+  RichSelect,
+  type RichSelectOption,
+} from "@astra-conductor/shared-ui";
 import { modelEndpointDescriptors } from "@astra-conductor/contract/common";
 import type {
   CatalogQuote,
@@ -70,6 +75,48 @@ const plan = ref("");
 const plans = computed(() => [...new Set(entries.value.flatMap((e) => Object.keys(e.rateCards)))]);
 const access = ref(""),
   tier = ref("");
+
+const operationOptions: RichSelectOption[] = [
+  { value: "", label: "全部" },
+  ...Object.entries(operationLabels).map(([value, label]) => ({ value, label })),
+];
+const capabilityOptions: RichSelectOption[] = [
+  { value: "", label: "全部" },
+  { value: "call", label: "可试聊" },
+  { value: "tool", label: "工具调用" },
+  { value: "structured", label: "结构化输出" },
+];
+const modalityOptions: RichSelectOption[] = [
+  { value: "", label: "全部" },
+  ...Object.entries(modalityLabels).map(([value, label]) => ({ value, label })),
+];
+const evidenceOptions: RichSelectOption[] = [
+  { value: "", label: "全部" },
+  { value: "manual", label: "手工登记" },
+  { value: "remote", label: "远端目录" },
+  { value: "missing", label: "已缺失" },
+];
+const accessOptions: RichSelectOption[] = [
+  { value: "", label: "全部" },
+  { value: "api", label: "API 按量" },
+  { value: "subscription", label: "订阅" },
+];
+const mediaTypeOptions: RichSelectOption[] = Object.entries(typeLabels).map(([value, label]) => ({
+  value,
+  label,
+}));
+const planOptions = computed<RichSelectOption[]>(() => [
+  { value: "", label: "当前方案" },
+  ...plans.value.map((p) => ({ value: p, label: p })),
+]);
+const meterOptions = computed<RichSelectOption[]>(() => [
+  { value: "", label: "全部" },
+  ...priceOptions.value.map(([value, label]) => ({ value, label })),
+]);
+const tierOptions = computed<RichSelectOption[]>(() => [
+  { value: "", label: "选择条件" },
+  ...conditions.value.map((key) => ({ value: key, label: key })),
+]);
 
 const activeFilterCount = computed(
   () =>
@@ -331,51 +378,11 @@ async function mutate(action: "refresh" | "upsert" | "remove") {
         </template>
         <div class="catalog-filter-body">
           <div class="filter-grid">
-            <label class="graph-field">
-              用途
-              <select v-model="operation">
-                <option value="">全部</option>
-                <option v-for="(title, id) in operationLabels" :key="id" :value="id">
-                  {{ title }}
-                </option>
-              </select>
-            </label>
-            <label class="graph-field">
-              能力
-              <select v-model="capability">
-                <option value="">全部</option>
-                <option value="call">可试聊</option>
-                <option value="tool">工具调用</option>
-                <option value="structured">结构化输出</option>
-              </select>
-            </label>
-            <label class="graph-field">
-              输入
-              <select v-model="input">
-                <option value="">全部</option>
-                <option v-for="(title, id) in modalityLabels" :key="id" :value="id">
-                  {{ title }}
-                </option>
-              </select>
-            </label>
-            <label class="graph-field">
-              输出
-              <select v-model="output">
-                <option value="">全部</option>
-                <option v-for="(title, id) in modalityLabels" :key="id" :value="id">
-                  {{ title }}
-                </option>
-              </select>
-            </label>
-            <label class="graph-field">
-              模型来源
-              <select v-model="evidence">
-                <option value="">全部</option>
-                <option value="manual">手工登记</option>
-                <option value="remote">远端目录</option>
-                <option value="missing">已缺失</option>
-              </select>
-            </label>
+            <RichSelect v-model="operation" size="sm" label="用途" :options="operationOptions" />
+            <RichSelect v-model="capability" size="sm" label="能力" :options="capabilityOptions" />
+            <RichSelect v-model="input" size="sm" label="输入" :options="modalityOptions" />
+            <RichSelect v-model="output" size="sm" label="输出" :options="modalityOptions" />
+            <RichSelect v-model="evidence" size="sm" label="模型来源" :options="evidenceOptions" />
           </div>
           <label v-if="input" class="inline-check">
             <input v-model="requiredInput" type="checkbox" />
@@ -384,39 +391,12 @@ async function mutate(action: "refresh" | "upsert" | "remove") {
 
           <CollapsiblePanel class="nested-filter" variant="inline" title="价格与套餐筛选">
             <div class="filter-grid nested-filter-body">
-              <label class="graph-field">
-                接入方案 / 套餐
-                <select v-model="plan">
-                  <option value="">当前方案</option>
-                  <option v-for="p in plans" :key="p" :value="p">{{ p }}</option>
-                </select>
-              </label>
-              <label class="graph-field">
-                接入方式
-                <select v-model="access">
-                  <option value="">全部</option>
-                  <option value="api">API 按量</option>
-                  <option value="subscription">订阅</option>
-                </select>
-              </label>
-              <label class="graph-field">
-                可比较单价
-                <select v-model="meter">
-                  <option value="">全部</option>
-                  <option v-for="[id, label] in priceOptions" :key="id" :value="id">
-                    {{ label }}
-                  </option>
-                </select>
-              </label>
+              <RichSelect v-model="plan" size="sm" label="接入方案 / 套餐" :options="planOptions" />
+              <RichSelect v-model="access" size="sm" label="接入方式" :options="accessOptions" />
+              <RichSelect v-model="meter" size="sm" label="可比较单价" :options="meterOptions" />
               <template v-if="meter">
                 <label class="graph-field">币种<input v-model.trim="currency" /></label>
-                <label class="graph-field">
-                  适用档位
-                  <select v-model="tier">
-                    <option value="">选择条件</option>
-                    <option v-for="key in conditions" :key="key" :value="key">{{ key }}</option>
-                  </select>
-                </label>
+                <RichSelect v-model="tier" size="sm" label="适用档位" :options="tierOptions" />
                 <label class="graph-field">
                   价格上限
                   <input v-model="maxPrice" type="number" min="0" step="any" placeholder="不限" />
@@ -486,14 +466,12 @@ async function mutate(action: "refresh" | "upsert" | "remove") {
             :title="'模型类型（默认 ' + (typeLabels[mediaType ?? ''] ?? '当前端点类型') + '）'"
           >
             <div class="nested-filter-body">
-              <label class="graph-field">
-                模型类型
-                <select v-model="mediaType">
-                  <option v-for="(title, id) in typeLabels" :key="id" :value="id">
-                    {{ title }}
-                  </option>
-                </select>
-              </label>
+              <RichSelect
+                :model-value="mediaType ?? ''"
+                label="模型类型"
+                :options="mediaTypeOptions"
+                @select="mediaType = $event as typeof mediaType"
+              />
             </div>
           </CollapsiblePanel>
           <span v-if="!compatible" class="setting-hint">所选类型与当前端点不匹配。</span>

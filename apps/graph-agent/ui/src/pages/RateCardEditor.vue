@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { computed, inject, ref, watch } from "vue";
-import { AppIcon, CollapsiblePanel, ConfigField } from "@astra-conductor/shared-ui";
+import {
+  AppIcon,
+  CollapsiblePanel,
+  ConfigField,
+  RichSelect,
+  type RichSelectOption,
+} from "@astra-conductor/shared-ui";
 import type {
   BillingEstimate,
   BillingWorkload,
@@ -73,6 +79,42 @@ const hasQualityOrRegionRules = computed(
     card.value?.overrides.some(
       (r) => r.mode === "replace" && (!!r.when.quality || !!r.when.region),
     ) ?? false,
+);
+
+const accessOptions: RichSelectOption[] = [
+  { value: "", label: "未指定" },
+  { value: "api", label: "API 按量" },
+  { value: "subscription", label: "订阅" },
+];
+const roundingModeOptions: RichSelectOption[] = [
+  { value: "exact", label: "精确计量" },
+  { value: "ceil", label: "向上取整" },
+];
+const roundingScopeOptions: RichSelectOption[] = [
+  { value: "total", label: "合并用量" },
+  { value: "per-item", label: "逐项取整" },
+];
+const applyToOptions: RichSelectOption[] = [
+  { value: "single", label: "本次用量" },
+  { value: "accountBillingCycle", label: "账号账期累计" },
+];
+const billingPeriodOptions: RichSelectOption[] = [
+  { value: "month", label: "每月" },
+  { value: "year", label: "每年" },
+];
+const resetPeriodOptions: RichSelectOption[] = [
+  { value: "", label: "未指定" },
+  { value: "account-billing-month", label: "按账号账期月重置" },
+];
+const overagePolicyOptions: RichSelectOption[] = [
+  { value: "block", label: "阻止" },
+  { value: "charge", label: "按量计费" },
+];
+const chargeLineOptions = computed<RichSelectOption[]>(() =>
+  (card.value?.chargeLines ?? []).map((l) => ({
+    value: l.lineId,
+    label: moneyMeters[l.meter] ?? l.meter,
+  })),
 );
 
 const isSubscription = computed(
@@ -324,21 +366,19 @@ async function estimate() {
           <div class="rate-card-top">
             <div class="editor-two-col rate-card-basics">
               <ConfigField label="接入与计费方式">
-                <select
-                  :value="card.scope?.access ?? ''"
-                  @change="
+                <RichSelect
+                  :model-value="card.scope?.access ?? ''"
+                  :options="accessOptions"
+                  :disabled="readonly"
+                  @select="
                     card.scope = {
                       ...props.scope,
                       ...card.scope,
-                      access: (val($event) || undefined) as 'api' | 'subscription' | undefined,
+                      access: ($event || undefined) as 'api' | 'subscription' | undefined,
                     };
                     publish();
                   "
-                >
-                  <option value="">未指定</option>
-                  <option value="api">API 按量</option>
-                  <option value="subscription">订阅</option>
-                </select>
+                />
               </ConfigField>
               <ConfigField label="价卡币种">
                 <input
@@ -455,29 +495,27 @@ async function estimate() {
               >
                 <div class="rate-row nested-advanced-body">
                   <ConfigField label="取整">
-                    <select
-                      :value="line.rounding?.mode ?? 'exact'"
-                      @change="
+                    <RichSelect
+                      :model-value="line.rounding?.mode ?? 'exact'"
+                      :options="roundingModeOptions"
+                      :disabled="readonly"
+                      @select="
                         line.rounding =
-                          val($event) === 'ceil' ? { mode: 'ceil', step: 1 } : { mode: 'exact' };
+                          $event === 'ceil' ? { mode: 'ceil', step: 1 } : { mode: 'exact' };
                         publish();
                       "
-                    >
-                      <option value="exact">精确计量</option>
-                      <option value="ceil">向上取整</option>
-                    </select>
+                    />
                   </ConfigField>
                   <ConfigField v-if="line.rounding?.mode === 'ceil'" label="取整范围">
-                    <select
-                      :value="line.rounding.scope ?? 'total'"
-                      @change="
-                        line.rounding.scope = val($event) === 'per-item' ? 'per-item' : 'total';
+                    <RichSelect
+                      :model-value="line.rounding.scope ?? 'total'"
+                      :options="roundingScopeOptions"
+                      :disabled="readonly"
+                      @select="
+                        line.rounding.scope = $event === 'per-item' ? 'per-item' : 'total';
                         publish();
                       "
-                    >
-                      <option value="total">合并用量</option>
-                      <option value="per-item">逐项取整</option>
-                    </select>
+                    />
                   </ConfigField>
                   <ConfigField v-if="line.rounding?.mode === 'ceil'" label="取整步长">
                     <input
@@ -536,14 +574,12 @@ async function estimate() {
               <template v-if="rule.mode === 'replace'">
                 <div class="rate-row">
                   <ConfigField label="目标收费行">
-                    <select
-                      :value="Object.keys(rule.setAmounts)[0]"
-                      @change="setTarget(rule, val($event))"
-                    >
-                      <option v-for="l in card.chargeLines" :key="l.lineId" :value="l.lineId">
-                        {{ moneyMeters[l.meter] ?? l.meter }}
-                      </option>
-                    </select>
+                    <RichSelect
+                      :model-value="Object.keys(rule.setAmounts)[0] ?? ''"
+                      :options="chargeLineOptions"
+                      :disabled="readonly"
+                      @select="setTarget(rule, $event)"
+                    />
                   </ConfigField>
                   <ConfigField
                     v-for="id in Object.keys(rule.setAmounts)"
@@ -676,24 +712,27 @@ async function estimate() {
               <template v-else>
                 <div class="editor-two-col">
                   <ConfigField label="阶梯累计范围">
-                    <select
-                      :value="rule.applyTo ?? 'single'"
-                      @change="
+                    <RichSelect
+                      :model-value="rule.applyTo ?? 'single'"
+                      :options="applyToOptions"
+                      :disabled="readonly"
+                      @select="
                         rule.applyTo =
-                          val($event) === 'accountBillingCycle' ? 'accountBillingCycle' : undefined;
+                          $event === 'accountBillingCycle' ? 'accountBillingCycle' : undefined;
                         publish();
                       "
-                    >
-                      <option value="single">本次用量</option>
-                      <option value="accountBillingCycle">账号账期累计</option>
-                    </select>
+                    />
                   </ConfigField>
                   <ConfigField label="阶梯计量项">
-                    <select v-model="rule.lineId" @change="publish">
-                      <option v-for="l in card.chargeLines" :key="l.lineId" :value="l.lineId">
-                        {{ moneyMeters[l.meter] ?? l.meter }}
-                      </option>
-                    </select>
+                    <RichSelect
+                      :model-value="rule.lineId"
+                      :options="chargeLineOptions"
+                      :disabled="readonly"
+                      @select="
+                        rule.lineId = $event;
+                        publish();
+                      "
+                    />
                   </ConfigField>
                 </div>
 
@@ -768,10 +807,15 @@ async function estimate() {
                   />
                 </ConfigField>
                 <ConfigField label="收费周期">
-                  <select v-model="card.subscriptionFee.period" @change="publish">
-                    <option value="month">每月</option>
-                    <option value="year">每年</option>
-                  </select>
+                  <RichSelect
+                    :model-value="card.subscriptionFee.period"
+                    :options="billingPeriodOptions"
+                    :disabled="readonly"
+                    @select="
+                      card.subscriptionFee.period = $event as 'month' | 'year';
+                      publish();
+                    "
+                  />
                 </ConfigField>
                 <button
                   type="button"
@@ -814,27 +858,31 @@ async function estimate() {
                   <input v-model="ent.included.unit" @change="publish" />
                 </ConfigField>
                 <ConfigField label="权益重置">
-                  <select
-                    :value="ent.reset?.period ?? ''"
-                    @change="
-                      ent.reset = val($event)
+                  <RichSelect
+                    :model-value="ent.reset?.period ?? ''"
+                    :options="resetPeriodOptions"
+                    :disabled="readonly"
+                    @select="
+                      ent.reset = $event
                         ? { period: 'account-billing-month', timeZone: 'UTC' }
                         : undefined;
                       publish();
                     "
-                  >
-                    <option value="">未指定</option>
-                    <option value="account-billing-month">按账号账期月重置</option>
-                  </select>
+                  />
                 </ConfigField>
                 <ConfigField v-if="ent.reset" label="账期时区">
                   <input v-model.trim="ent.reset.timeZone" @change="publish" />
                 </ConfigField>
                 <ConfigField label="超额处理">
-                  <select v-model="ent.overagePolicy" @change="publish">
-                    <option value="block">阻止</option>
-                    <option value="charge">按量计费</option>
-                  </select>
+                  <RichSelect
+                    :model-value="ent.overagePolicy"
+                    :options="overagePolicyOptions"
+                    :disabled="readonly"
+                    @select="
+                      ent.overagePolicy = $event as 'block' | 'charge';
+                      publish();
+                    "
+                  />
                 </ConfigField>
                 <button
                   type="button"

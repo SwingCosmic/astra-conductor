@@ -5,10 +5,15 @@ import {
   modelEndpointDescriptors,
   protocolFamilyDescriptors,
   type EndpointProtocol,
+  type FamilyCatalogView,
+  type FamilyEndpointSummary,
+  type FamilyModelItem,
   type ModelEndpointDescriptor,
   type ModelRoute,
   type ModelRouteSummary,
   type ModelSelection,
+  type ProtocolFamily,
+  type ProviderOperation,
   type ActionAvailability,
   type CommandContext,
   type ModelEntryView,
@@ -458,7 +463,10 @@ export class GraphModelService {
     if (!route?.familyBindingRevision || route.familyCatalog === "none") return false;
     const policy = this.getPolicy(account.provider, account.offeringId);
     if (!policy || policy.catalogMode === "none") return false;
-    return ep.canDiscover || Boolean(policy.discoverableProtocols?.includes(ep.protocol));
+    return (
+      protocolFamilyDescriptors[ep.protocolFamily].supportsCatalog ||
+      Boolean(policy.discoverableProtocols?.includes(ep.protocol))
+    );
   }
   private catalogView(
     account: Account,
@@ -536,10 +544,175 @@ export class GraphModelService {
         ? disabled("请先统一同一协议族的地址和版本")
         : canDiscover
           ? source
-          : disabled("该端点通过手工登记模型"),
+          : disabled("该协议族通过手工登记模型"),
       entries: entries(false),
       publicEntries: isPublicOffering(account.provider) ? entries(true) : [],
     };
+  }
+  private buildFamilyCatalogs(
+    catalogs: ModelCatalogView[],
+    savedSelection: GraphModelSnapshot["savedSelection"],
+  ): FamilyCatalogView[] {
+    const groups = new Map<string, ModelCatalogView[]>();
+    for (const catalog of catalogs) {
+      const protocolFamily: ProtocolFamily =
+        catalog.protocolFamily ?? endpoint(catalog.protocol).protocolFamily;
+      const key = JSON.stringify([
+        catalog.providerId,
+        catalog.offeringId,
+        catalog.accountId,
+        protocolFamily,
+      ]);
+      const list = groups.get(key) ?? [];
+      list.push(catalog);
+      groups.set(key, list);
+    }
+
+    const hasConfiguredOverrides = (entry: ModelEntryView) =>
+      Object.keys(entry.accountOverrides.facts).length > 0 ||
+      entry.accountOverrides.prices.length > 0 ||
+      Object.keys(entry.accountOverrides.parameters).length > 0 ||
+      entry.accountOverrides.presetKey !== undefined ||
+      entry.accountOverrides.rateCard !== undefined ||
+      Object.keys(entry.offeringOverrides.facts).length > 0 ||
+      entry.offeringOverrides.prices.length > 0 ||
+      Object.keys(entry.offeringOverrides.parameters).length > 0 ||
+      entry.offeringOverrides.presetKey !== undefined ||
+      entry.offeringOverrides.rateCard !== undefined;
+
+    const aggregateModels = (
+      group: ModelCatalogView[],
+      getEntries: (catalog: ModelCatalogView) => ModelEntryView[],
+    ): FamilyModelItem[] => {
+      const first = group[0];
+      const byModel = new Map<
+        string,
+        {
+          displayName: string;
+          hasRemote: boolean;
+          hasManual: boolean;
+          availableProtocols: EndpointProtocol[];
+          configuredProtocols: EndpointProtocol[];
+          inferredOperations: Set<ProviderOperation>;
+          explicitOperations: Set<ProviderOperation>;
+        }
+      >();
+      for (const catalog of group) {
+        for (const entry of getEntries(catalog)) {
+          const id = entry.selection.modelId;
+          let item = byModel.get(id);
+          if (!item) {
+            item = {
+              displayName: entry.displayName,
+              hasRemote: false,
+              hasManual: false,
+              availableProtocols: [],
+              configuredProtocols: [],
+              inferredOperations: new Set(),
+              explicitOperations: new Set(),
+            };
+            byModel.set(id, item);
+          } else if (item.displayName === id && entry.displayName !== id) {
+            item.displayName = entry.displayName;
+          }
+          if (entry.presence === "remote" || entry.presence === "remote-and-manual") {
+            item.hasRemote = true;
+          }
+          if (entry.presence === "manual" || entry.presence === "remote-and-manual") {
+            item.hasManual = true;
+          }
+          if (!item.availableProtocols.includes(catalog.protocol)) {
+            item.availableProtocols.push(catalog.protocol);
+          }
+          if (
+            hasConfiguredOverrides(entry) &&
+            !item.configuredProtocols.includes(catalog.protocol)
+          ) {
+            item.configuredProtocols.push(catalog.protocol);
+          }
+          const declaredOps = entry.fields.operations.value;
+          if (declaredOps?.length) {
+            for (const op of declaredOps) item.explicitOperations.add(op);
+          } else {
+            item.inferredOperations.add(entry.operation);
+          }
+        }
+      }
+
+      return [...byModel.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([modelId, item]) => {
+          const presence: FamilyModelItem["presence"] =
+            item.hasRemote && item.hasManual
+              ? "remote-and-manual"
+              : item.hasRemote
+                ? "remote"
+                : item.hasManual
+                  ? "manual"
+                  : "missing";
+          const operations = item.explicitOperations.size
+            ? [...item.explicitOperations]
+            : [...item.inferredOperations];
+          const isSavedTestModel = Boolean(
+            savedSelection &&
+              savedSelection.selection.accountId === first.accountId &&
+              savedSelection.selection.providerId === first.providerId &&
+              savedSelection.selection.modelId === modelId &&
+              item.availableProtocols.includes(savedSelection.selection.protocol),
+          );
+          return {
+            modelId,
+            displayName: item.displayName,
+            presence,
+            availableProtocols: item.availableProtocols,
+            configuredProtocols: item.configuredProtocols,
+            inferredOperations: operations,
+            isSavedTestModel,
+          };
+        });
+    };
+
+    const result: FamilyCatalogView[] = [];
+    for (const group of groups.values()) {
+      const first = group[0];
+      const protocolFamily: ProtocolFamily =
+        first.protocolFamily ?? endpoint(first.protocol).protocolFamily;
+      const endpoints: FamilyEndpointSummary[] = group.map((catalog) => {
+        const ep = endpoint(catalog.protocol);
+        return {
+          protocol: catalog.protocol,
+          label: ep.label,
+          modelType: ep.modelType,
+          operation: ep.operation,
+          bindingRevision: catalog.bindingRevision,
+          register: catalog.register,
+        };
+      });
+      const catalogState =
+        group.find((c) => c.catalog.state === "ready")?.catalog ??
+        group.find((c) => c.catalog.state === "unavailable")?.catalog ??
+        first.catalog;
+      const refresh = group.find((c) => c.refresh.state === "enabled")?.refresh ?? first.refresh;
+      const familyBindingRevision = group.find(
+        (c) => c.familyBindingRevision,
+      )?.familyBindingRevision;
+      result.push({
+        providerId: first.providerId,
+        offeringId: first.offeringId,
+        accountId: first.accountId,
+        accountDisplayName: first.accountDisplayName,
+        protocolFamily,
+        ...(familyBindingRevision ? { familyBindingRevision } : {}),
+        catalog: catalogState,
+        refreshing: group.some((c) => c.refreshing),
+        lastRefreshError: group.find((c) => c.lastRefreshError)?.lastRefreshError ?? null,
+        refresh,
+        endpoints,
+        models: aggregateModels(group, (c) => c.entries),
+        publicModels: aggregateModels(group, (c) => c.publicEntries),
+      });
+    }
+    return result;
   }
   getSnapshot(_refreshExpired = false): GraphModelSnapshot {
     const { instanceId } = this.options.providers,
@@ -669,6 +842,7 @@ export class GraphModelService {
           }),
         ),
       catalogs,
+      familyCatalogs: this.buildFamilyCatalogs(catalogs, savedSelection),
       savedSelection,
     };
   }
@@ -1048,7 +1222,11 @@ export class GraphModelService {
     this.options.providers.assertContext(context);
   }
   readFamilyDirectory(
-    input: CommandContext & { accountId: string; family: "openai" | "anthropic"; revision: string },
+    input: CommandContext & {
+      accountId: string;
+      family: "openai" | "anthropic" | "gemini";
+      revision: string;
+    },
   ) {
     const source = this.options.connectionProviders;
     const current = () => {

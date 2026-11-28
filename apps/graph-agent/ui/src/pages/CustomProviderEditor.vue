@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed, inject, ref } from "vue";
-import { AppIcon, CollapsiblePanel, ConfigField, FormDialog } from "@astra-conductor/shared-ui";
+import {
+  AppIcon,
+  CollapsiblePanel,
+  ConfigField,
+  FormDialog,
+  RichSelect,
+  type RichSelectOption,
+} from "@astra-conductor/shared-ui";
 import {
   modelEndpointDescriptors,
   parseFamilyPolicy,
@@ -165,6 +172,42 @@ function setRequestRule(route: ModelRouteInput, rule: ModelRouteInput["requestRu
   else route.requestRule = rule;
 }
 
+const templateKindOptions: RichSelectOption[] = [
+  { value: "generic", label: "通用兼容接口" },
+  { value: "new-api", label: "New API 中转站" },
+];
+
+const chatOutputLimitOptions: RichSelectOption[] = [
+  { value: "max_completion_tokens", label: "max_completion_tokens（推荐）" },
+  { value: "max_tokens", label: "max_tokens（旧兼容）" },
+];
+
+const authOptions: RichSelectOption[] = [
+  { value: "", label: "协议默认" },
+  { value: "bearer", label: "Bearer" },
+  { value: "x-api-key", label: "x-api-key" },
+  { value: "x-goog-api-key", label: "x-goog-api-key" },
+];
+
+function endpointOptions(
+  offering: CustomOffering,
+  ri: number,
+  route: ModelRouteInput,
+): RichSelectOption[] {
+  const list: RichSelectOption[] = [];
+  if (!info(route)) {
+    list.push({ value: route.protocol, label: `未注册 · ${route.protocol}`, disabled: true });
+  }
+  for (const d of modelEndpointDescriptors) {
+    list.push({
+      value: d.protocol,
+      label: d.label,
+      disabled: offering.routes.some((r, i) => i !== ri && r.protocol === d.protocol),
+    });
+  }
+  return list;
+}
+
 function selectEndpoint(offering: CustomOffering, route: ModelRouteInput) {
   delete route.requestRule;
   delete route.chatOutputLimitField;
@@ -272,10 +315,15 @@ async function save() {
       <fieldset class="plain-fields" :disabled="busy">
         <div class="editor-two-col">
           <ConfigField label="供应商模板">
-            <select v-model="draft.templateKind" :disabled="!!original" @change="selectTemplate">
-              <option value="generic">通用兼容接口</option>
-              <option value="new-api">New API 中转站</option>
-            </select>
+            <RichSelect
+              :model-value="draft.templateKind ?? 'generic'"
+              :options="templateKindOptions"
+              :disabled="!!original"
+              @select="
+                draft.templateKind = $event as CustomProviderTemplateKind;
+                selectTemplate();
+              "
+            />
           </ConfigField>
           <ConfigField label="供应商名称">
             <input
@@ -335,21 +383,14 @@ async function save() {
             <div v-for="(route, ri) in offering.routes" :key="ri" class="endpoint-row">
               <div class="endpoint-main-grid">
                 <ConfigField label="端点种类">
-                  <select v-model="route.protocol" @change="selectEndpoint(offering, route)">
-                    <option v-if="!info(route)" :value="route.protocol" disabled>
-                      未注册 · {{ route.protocol }}
-                    </option>
-                    <option
-                      v-for="d in modelEndpointDescriptors"
-                      :key="d.protocol"
-                      :value="d.protocol"
-                      :disabled="
-                        offering.routes.some((r, i) => i !== ri && r.protocol === d.protocol)
-                      "
-                    >
-                      {{ d.label }}
-                    </option>
-                  </select>
+                  <RichSelect
+                    :model-value="route.protocol"
+                    :options="endpointOptions(offering, ri, route)"
+                    @select="
+                      route.protocol = $event as ModelRouteInput['protocol'];
+                      selectEndpoint(offering, route);
+                    "
+                  />
                 </ConfigField>
                 <ConfigField
                   label="API 根地址"
@@ -405,16 +446,15 @@ async function save() {
                 <div class="advanced-panel-body">
                   <div class="editor-two-col">
                     <ConfigField v-if="route.protocol === 'openai-chat'" label="输出上限字段">
-                      <select
-                        :value="route.chatOutputLimitField ?? 'max_completion_tokens'"
-                        @change="
-                          route.chatOutputLimitField = ($event.target as HTMLSelectElement)
-                            .value as 'max_completion_tokens' | 'max_tokens'
+                      <RichSelect
+                        :model-value="route.chatOutputLimitField ?? 'max_completion_tokens'"
+                        :options="chatOutputLimitOptions"
+                        @select="
+                          route.chatOutputLimitField = $event as
+                            | 'max_completion_tokens'
+                            | 'max_tokens'
                         "
-                      >
-                        <option value="max_completion_tokens">max_completion_tokens（推荐）</option>
-                        <option value="max_tokens">max_tokens（旧兼容）</option>
-                      </select>
+                      />
                     </ConfigField>
                     <ConfigField v-if="route.protocol === 'anthropic-messages'" label="协议版本">
                       <input v-model="route.protocolVersion" placeholder="2023-06-01" />
@@ -484,12 +524,7 @@ async function save() {
             >
               <div class="advanced-panel-body">
                 <ConfigField label="认证机制">
-                  <select v-model="policy(family).authentication">
-                    <option value="">协议默认</option>
-                    <option value="bearer">Bearer</option>
-                    <option value="x-api-key">x-api-key</option>
-                    <option value="x-goog-api-key">x-goog-api-key</option>
-                  </select>
+                  <RichSelect v-model="policy(family).authentication" :options="authOptions" />
                 </ConfigField>
                 <label class="inline-check">
                   <input v-model="policy(family).disabledCatalog" type="checkbox" />

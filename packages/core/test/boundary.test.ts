@@ -88,11 +88,11 @@ describe("core boundary", () => {
       "packages/core/src/providers/registry.ts",
     ];
     const forbiddenImport =
-      /from\s+["'](?:\.\/(?:codex|deepseek|grok-build|glm|opencode-go|claude|antigravity|github-copilot|new-api|custom-templates|compatible-api-key|openrouter-receipt)(?:\/|\.js)?|@omniroute\/)/;
+      /from\s+["'](?:\.\/(?:codex|deepseek|gemini|grok-build|glm|opencode-go|claude|antigravity|github-copilot|new-api|custom-templates|compatible-api-key|openrouter-receipt)(?:\/|\.js)?|@omniroute\/)/;
     const forbiddenVendorLiteral =
-      /["'](?:deepseek|deepseek-api-key|codex|openai-api-key|grok-build|bigmodel-coding-plan|zai-coding-plan|opencode-go|compatible-api-key|openrouter-receipt)["']/;
+      /["'](?:deepseek|deepseek-api-key|gemini-api-key|codex|openai-api-key|grok-build|bigmodel-coding-plan|zai-coding-plan|opencode-go|compatible-api-key|openrouter-receipt)["']/;
     const forbiddenHostname =
-      /(?:api\.deepseek\.com|api\.openai\.com|chatgpt\.com|open\.bigmodel\.cn|api\.z\.ai|cli-chat-proxy\.grok\.com|opencode\.ai|openrouter\.ai)/;
+      /(?:api\.deepseek\.com|api\.openai\.com|chatgpt\.com|generativelanguage\.googleapis\.com|open\.bigmodel\.cn|api\.z\.ai|cli-chat-proxy\.grok\.com|opencode\.ai|openrouter\.ai)/;
 
     for (const relativePath of commonProviderFiles) {
       const text = readFileSync(path.join(repoRoot, relativePath), "utf8");

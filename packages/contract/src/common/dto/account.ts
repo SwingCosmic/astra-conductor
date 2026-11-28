@@ -8,6 +8,8 @@ export interface PublicAccount {
   provider: string;
   offeringId: string;
   authMethod: string;
+  isCustom?: boolean;
+  authMethodLabel?: string;
   displayName: string;
   maskedIdentifier: string;
   enabled: boolean;

@@ -32,6 +32,8 @@ export async function startRuntime(
     const browserNotifications = registry.get(Services.browserNotifications);
     const providers = new CommonProviderApplicationService({
       allowLegacyConnections: false,
+      offeringFilter: (offering, provider) =>
+        offering.supportsSubscriptionUsage !== false && provider.capabilities.includes("usage"),
       storage: registry.get(CoreServices.storage),
       credentials: registry.get(CoreServices.vault),
       auth,

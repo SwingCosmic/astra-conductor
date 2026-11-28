@@ -126,6 +126,35 @@ export function encodeProtocolDraft(
         body.thinking = { type: "adaptive", display: "summarized" };
       }
       break;
+    case "gemini-generate-content": {
+      relativePath = `models/${encodeURIComponent(plan.upstreamModelId)}:generateContent`;
+      const generationConfig: Record<string, JsonValue> = {};
+      if (maxOutputTokens !== null) generationConfig.maxOutputTokens = maxOutputTokens;
+      if (temperature != null) generationConfig.temperature = temperature;
+      if (topP != null) generationConfig.topP = topP;
+      if (effort !== null && effort !== "none") {
+        generationConfig.thinkingConfig = {
+          thinkingLevel: effort.toUpperCase(),
+          ...(plan.thinkingActive && !plan.suppressSummaryRequest && outputMode === "summary"
+            ? { includeThoughts: true }
+            : {}),
+        };
+      } else if (!plan.thinkingActive && facts.reasoningMode !== "none") {
+        generationConfig.thinkingConfig = { thinkingBudget: 0 };
+      }
+      return {
+        relativePath,
+        body: {
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          ...(Object.keys(generationConfig).length ? { generationConfig } : {}),
+        },
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json",
+        },
+        query: { ...(route.familyPolicy?.query ?? {}) },
+      };
+    }
     default:
       throw new AppError("capability-unavailable", "所选路由不支持测试对话");
   }
@@ -300,6 +329,19 @@ function readReply(protocol: EndpointProtocol, value: unknown): string {
   const result = object(value);
   if (protocol === "anthropic-messages") return blocks(result.content, "text");
   if (protocol === "openai-responses") return responsesText(result);
+  if (protocol === "gemini-generate-content") {
+    const candidate = object(Array.isArray(result.candidates) ? result.candidates[0] : null);
+    if (candidate.finishReason === "SAFETY" || candidate.finishReason === "PROHIBITED_CONTENT") {
+      return replyError("模型服务过滤了本次回答");
+    }
+    const content = object(candidate.content);
+    if (!Array.isArray(content.parts)) return "";
+    return content.parts
+      .map(object)
+      .filter((part) => part.thought !== true && typeof part.text === "string")
+      .map((part) => part.text as string)
+      .join("");
+  }
   const choice = object(Array.isArray(result.choices) ? result.choices[0] : null);
   const message = object(choice.message);
   if (choice.finish_reason === "content_filter") return replyError("模型服务过滤了本次回答");
@@ -338,21 +380,26 @@ export function measuredReply(
   },
 ): ModelChatResult {
   const response = object(value);
-  const usage = object(response.usage);
+  const usage = object(response.usage ?? response.usageMetadata);
   const inputDetails = object(usage.input_tokens_details ?? usage.prompt_tokens_details);
   const outputDetails = object(usage.output_tokens_details ?? usage.completion_tokens_details);
   const cacheReadTokens = count(
-    inputDetails.cached_tokens ?? usage.cache_read_input_tokens ?? usage.prompt_cache_hit_tokens,
+    inputDetails.cached_tokens ??
+      usage.cache_read_input_tokens ??
+      usage.prompt_cache_hit_tokens ??
+      usage.cachedContentTokenCount,
   );
   const cacheWriteTokens = count(
     usage.cache_creation_input_tokens ?? inputDetails.cache_write_tokens,
   );
-  let inputTokens = count(usage.input_tokens ?? usage.prompt_tokens);
+  let inputTokens = count(usage.input_tokens ?? usage.prompt_tokens ?? usage.promptTokenCount);
   if (route.protocol === "anthropic-messages" && inputTokens !== undefined) {
     inputTokens = count(inputTokens + (cacheReadTokens ?? 0) + (cacheWriteTokens ?? 0));
   }
-  const outputTokens = count(usage.output_tokens ?? usage.completion_tokens);
-  const reasoningTokens = count(outputDetails.reasoning_tokens);
+  const outputTokens = count(
+    usage.output_tokens ?? usage.completion_tokens ?? usage.candidatesTokenCount,
+  );
+  const reasoningTokens = count(outputDetails.reasoning_tokens ?? usage.thoughtsTokenCount);
   const baseUsage: ModelChatUsage = {
     ...(inputTokens !== undefined && { inputTokens }),
     ...(outputTokens !== undefined && { outputTokens }),

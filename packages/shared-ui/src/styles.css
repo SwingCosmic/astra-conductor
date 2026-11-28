@@ -96,6 +96,11 @@ textarea {
   font: inherit;
 }
 
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--brand-accent);
+}
+
 button {
   color: inherit;
 }
@@ -858,7 +863,7 @@ button:disabled {
   font-weight: 650;
 }
 
-.api-key-panel input {
+.api-key-panel input:not([type="checkbox"]):not([type="radio"]) {
   width: 100%;
   height: var(--control-h-md);
   box-sizing: border-box;

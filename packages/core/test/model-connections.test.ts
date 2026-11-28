@@ -102,6 +102,52 @@ function setup(connectionProviders?: ConnectionProviderSource) {
 }
 
 describe("managed API key offerings", () => {
+  it.each([
+    ["gemini", "gemini-api-key"],
+    ["codex", "openai-api-key"],
+    ["deepseek", "deepseek-api-key"],
+  ])(
+    "saves and reopens a shared %s API key without local account data",
+    async (provider, offeringId) => {
+      const { service, storage, vault } = setup();
+      const connection = await service.createConnection({
+        providerId: provider,
+        offeringId,
+        displayName: "Shared key",
+        operationId: "shared-" + provider,
+        apiKey: key,
+        routes: [],
+      });
+      const account = storage.accounts.get(connection.accountId)!;
+      const records: BrokerCredential[] = [];
+      const broker = {
+        listCredentials: async () => records.map((record) => record.description),
+        createCredential: vi.fn(
+          async ({ credentialId, contentType, payloadFormatVersion, metadata, payload }) => {
+            const description = {
+              credentialId,
+              contentType,
+              payloadFormatVersion,
+              metadata,
+              revision: "1",
+              createdByClientId: "writer",
+              lastUpdatedByClientId: "writer",
+            };
+            const record = { description, payload };
+            records.push(record);
+            return record;
+          },
+        ),
+        getCredential: vi.fn(async () => records[0]),
+        update: vi.fn(),
+      };
+      await new SharedCredentialService(broker).saveAccount(account, await vault.load(account.id));
+      const reader = new SharedCredentialService(broker);
+      expect(await reader.listAccounts()).toMatchObject([{ id: account.id, provider, offeringId }]);
+      expect((await reader.load(account.id)).secrets.apiKey).toBe(key);
+    },
+  );
+
   it("keeps DeepSeek destinations local to the profile and uses its policy on custom roots", async () => {
     const { service, vault, storage, registry } = setup();
     for (const custom of [false, true]) {

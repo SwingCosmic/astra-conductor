@@ -1,9 +1,12 @@
 import {
   modelEndpointDescriptor,
+  protocolFamilyDescriptors,
   type EndpointProtocol,
   type ModelFacts,
   type ModelPrice,
   type ModelRoute,
+  type ProtocolFamily,
+  type ProviderOperation,
 } from "@astra-conductor/contract/common";
 import { AppError } from "../errors.js";
 import type { Account, CredentialEnvelope } from "../models.js";
@@ -48,7 +51,61 @@ function labels(value: unknown): string[] | undefined {
     : undefined;
 }
 
-function parseModel(value: unknown, anthropic: boolean): DiscoveredModel {
+function parseGeminiModel(value: unknown): DiscoveredModel {
+  const m = record(value);
+  const rawName = label(m.name ?? m.id) ?? invalidCatalog();
+  const normalizedId = rawName.startsWith("models/") ? rawName.slice("models/".length) : rawName;
+  const modelId = label(normalizedId) ?? invalidCatalog();
+  const facts: Partial<ModelFacts> = {};
+  if (
+    typeof m.inputTokenLimit === "number" &&
+    Number.isSafeInteger(m.inputTokenLimit) &&
+    m.inputTokenLimit > 0
+  ) {
+    facts.maxInputTokens = m.inputTokenLimit;
+    facts.contextWindow = m.inputTokenLimit;
+  }
+  if (
+    typeof m.outputTokenLimit === "number" &&
+    Number.isSafeInteger(m.outputTokenLimit) &&
+    m.outputTokenLimit > 0
+  ) {
+    facts.maxOutputTokens = m.outputTokenLimit;
+  }
+  if (typeof m.thinking === "boolean") {
+    facts.reasoningMode = m.thinking ? "effort" : "none";
+  }
+  const methods = labels(m.supportedGenerationMethods);
+  if (methods?.length) {
+    const ops: ProviderOperation[] = [];
+    if (methods.includes("generateContent")) {
+      if (/(?:^|[-_.])tts(?:$|[-_.])/i.test(modelId)) ops.push("audio-speech");
+      else ops.push("chat");
+    }
+    if (methods.includes("embedContent") || methods.includes("batchEmbedContents")) {
+      ops.push("embeddings");
+    }
+    if (methods.includes("predict") && /imagen/i.test(modelId)) {
+      ops.push("image-generation");
+    }
+    if (ops.length) facts.operations = [...new Set(ops)];
+  }
+  return {
+    modelId,
+    displayName: label(m.displayName ?? m.display_name) ?? modelId,
+    facts,
+    prices: [],
+  };
+}
+
+function parseModel(value: unknown, family: ProtocolFamily): DiscoveredModel {
+  if (family === "gemini") {
+    const m = record(value);
+    if (m.name !== undefined || m.supportedGenerationMethods !== undefined) {
+      return parseGeminiModel(value);
+    }
+  }
+  const anthropic = family === "anthropic";
   const m = record(value);
   const modelId = label(m.id) ?? invalidCatalog();
   const facts: Partial<ModelFacts> = {};
@@ -174,7 +231,9 @@ export function modelDirectoryUrl(
   const query = applyPolicyChain({ ...(route.familyPolicy?.query ?? {}) }, { account, route }, [
     activePolicy?.transformCatalogQuery,
   ]);
-  const url = new URL(route.baseUrl + "/models");
+  const family = modelEndpointDescriptor(route.protocol).protocolFamily;
+  const catalogPath = protocolFamilyDescriptors[family].catalogPath ?? "models";
+  const url = new URL(route.baseUrl.replace(/\/+$/, "") + "/" + catalogPath);
   for (const [name, value] of Object.entries(query)) {
     url.searchParams.set(name, value);
   }
@@ -186,8 +245,14 @@ export function projectDiscoveredModels(
   protocol: EndpointProtocol,
 ): DiscoveredModel[] {
   const descriptor = modelEndpointDescriptor(protocol);
-  if (!descriptor.canDiscover) return [];
-  return models.map(({ endpointTypes: _, ...entry }) => entry);
+  if (!protocolFamilyDescriptors[descriptor.protocolFamily].supportsCatalog) return [];
+  return models
+    .filter((entry) => {
+      const ops = entry.facts.operations;
+      if (ops?.length && !ops.includes(descriptor.operation)) return false;
+      return true;
+    })
+    .map(({ endpointTypes: _, ...entry }) => entry);
 }
 
 /** A partial page sequence never becomes a successful catalog. */
@@ -202,14 +267,21 @@ export async function discoverRouteModels(
   policy?: ProviderOfferingModelPolicy,
 ): Promise<DiscoveredModel[]> {
   const activePolicy = resolveDiscoveryPolicy(account, source, policy);
-  if (route.familyCatalog === "none" || (route.protocolFamily && !route.familyBindingRevision)) {
+  const descriptor = modelEndpointDescriptor(route.protocol);
+  const family = descriptor.protocolFamily;
+  const familyDescriptor = protocolFamilyDescriptors[family];
+  if (
+    route.familyCatalog === "none" ||
+    (route.protocolFamily && !route.familyBindingRevision) ||
+    activePolicy?.catalogMode === "none"
+  ) {
     throw new AppError("capability-unavailable", "该协议族没有可用目录，请检查族配置或手工登记");
   }
   const canDiscover =
-    modelEndpointDescriptor(route.protocol).canDiscover ||
+    familyDescriptor.supportsCatalog ||
     Boolean(activePolicy?.discoverableProtocols?.includes(route.protocol));
   if (!canDiscover) {
-    throw new AppError("capability-unavailable", "该媒体端点使用手工模型登记");
+    throw new AppError("capability-unavailable", "该协议族使用手工模型登记");
   }
 
   const headers = modelAuthorization(
@@ -233,7 +305,7 @@ export async function discoverRouteModels(
     let response: Response;
     try {
       boundSignal.throwIfAborted();
-      response = await http.fetch(url, {
+      response = await http.fetch(new URL(url.href), {
         headers,
         credentials: "omit",
         redirect: "error",
@@ -261,11 +333,22 @@ export async function discoverRouteModels(
     if (data.has_more !== undefined && typeof data.has_more !== "boolean") {
       return invalidCatalog();
     }
-    const initialPage: CatalogPage = {
-      entries: Array.isArray(data.data) ? data.data : null,
-      hasMore: data.has_more === true,
-      ...(label(data.last_id) ? { lastId: label(data.last_id) } : {}),
-    };
+    if (data.nextPageToken !== undefined && typeof data.nextPageToken !== "string") {
+      return invalidCatalog();
+    }
+    const geminiList = family === "gemini" && Array.isArray(data.models);
+    const nextPageToken = geminiList ? label(data.nextPageToken) : undefined;
+    const initialPage: CatalogPage = geminiList
+      ? {
+          entries: data.models as unknown[],
+          hasMore: Boolean(nextPageToken),
+          ...(nextPageToken ? { lastId: nextPageToken } : {}),
+        }
+      : {
+          entries: Array.isArray(data.data) ? data.data : null,
+          hasMore: data.has_more === true,
+          ...(label(data.last_id) ? { lastId: label(data.last_id) } : {}),
+        };
     const parsedPage = applyPolicyChain(initialPage, { account, route, raw }, [
       activePolicy?.transformCatalogPage,
     ]);
@@ -274,7 +357,7 @@ export async function discoverRouteModels(
     }
 
     for (const entry of parsedPage.entries) {
-      const model = parseModel(entry, route.protocol === "anthropic-messages");
+      const model = parseModel(entry, family);
       // Do not let a misbehaving upstream reflect credential material into model metadata.
       if (containsCredential(model, envelope.secrets)) return invalidCatalog();
       const existing = models.get(model.modelId);
@@ -316,7 +399,10 @@ export async function discoverRouteModels(
       return invalidCatalog();
     }
     cursors.add(cursor);
-    url.searchParams.set(route.protocol === "anthropic-messages" ? "after_id" : "after", cursor);
+    url.searchParams.set(
+      family === "gemini" ? "pageToken" : family === "anthropic" ? "after_id" : "after",
+      cursor,
+    );
   }
   return invalidCatalog();
 }

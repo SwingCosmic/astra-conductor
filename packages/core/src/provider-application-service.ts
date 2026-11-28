@@ -23,7 +23,11 @@ import type { CredentialService } from "./credential-service.js";
 import { AppError } from "./errors.js";
 import type { Account, CredentialEnvelope } from "./models.js";
 import type { StoragePort } from "./ports.js";
-import { isLocalKeyAccount, toPublicProviderDescriptor } from "./providers/catalog.js";
+import {
+  isLocalKeyAccount,
+  resolveAuthMethodLabel,
+  toPublicProviderDescriptor,
+} from "./providers/catalog.js";
 import { compatibleKeyId } from "./providers/compatible-api-key/descriptor.js";
 import { isCustomProviderId } from "./providers/model-policy.js";
 import {
@@ -35,6 +39,7 @@ import {
   type ConnectionProviderSource,
 } from "./providers/model-routes.js";
 import type { ProviderRegistry } from "./providers/registry.js";
+import type { ProviderDescriptor, ProviderOfferingDescriptor } from "./providers/types.js";
 import { toPublicAccount } from "./public-api.js";
 import { RefreshCoordinator } from "./refresh-coordinator.js";
 
@@ -43,6 +48,7 @@ export interface CommonProviderApplicationOptions {
   credentials: CredentialService;
   auth: AuthCoordinator;
   registry: ProviderRegistry;
+  offeringFilter?: (offering: ProviderOfferingDescriptor, provider: ProviderDescriptor) => boolean;
   connectionProviders?: ConnectionProviderSource;
   allowLegacyConnections?: boolean;
   accountDeleted?(accountId: string): void;
@@ -162,6 +168,24 @@ export class CommonProviderApplicationService {
     return isLocalKeyAccount(account, (id) => this.options.registry.findOffering(id));
   }
 
+  private isOfferingAllowed(providerId: string, offeringId: string): boolean {
+    const filter = this.options.offeringFilter;
+    if (!filter) return true;
+    if (isCustomProviderId(providerId)) return false;
+    const descriptor = this.options.registry.descriptors.find((d) => d.provider === providerId);
+    const offering = descriptor?.offerings.find((o) => o.id === offeringId);
+    return Boolean(descriptor && offering && filter(offering, descriptor));
+  }
+
+  private projectAccount(account: Account): PublicAccount {
+    return toPublicAccount(account, null, {
+      isCustom: isCustomProviderId(account.provider),
+      authMethodLabel: resolveAuthMethodLabel(account, (id) =>
+        this.options.registry.findOffering(id),
+      ),
+    });
+  }
+
   private resolveAccountPolicy(account: Pick<Account, "provider" | "offeringId">) {
     return (
       this.options.registry.getModelPolicy({
@@ -234,11 +258,23 @@ export class CommonProviderApplicationService {
       .filter(
         (account) =>
           (visibleAccountIds?.has(account.id) ?? true) &&
-          (this.options.connectionProviders || !isCustomProviderId(account.provider)),
+          (this.options.connectionProviders || !isCustomProviderId(account.provider)) &&
+          this.isOfferingAllowed(account.provider, account.offeringId),
       )
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
       // Management listings never decrypt credential payloads just to fill display fields.
-      .map((account) => toPublicAccount(account));
+      .map((account) => this.projectAccount(account));
+    const providers = this.options.registry.descriptors
+      .filter((d) => d.provider !== compatibleKeyId || this.legacyConnections)
+      .map((descriptor) => {
+        const offerings = this.options.offeringFilter
+          ? descriptor.offerings.filter((offering) =>
+              this.options.offeringFilter!(offering, descriptor),
+            )
+          : descriptor.offerings;
+        return offerings.length ? toPublicProviderDescriptor({ ...descriptor, offerings }) : null;
+      })
+      .filter((descriptor): descriptor is NonNullable<typeof descriptor> => descriptor !== null);
     return {
       schemaVersion: 1,
       instanceId: this.instanceId,
@@ -247,9 +283,7 @@ export class CommonProviderApplicationService {
       stamp: { instanceId: this.instanceId, scope: "providers", revision: this.revision },
       backend,
       modelEndpoints: modelEndpointDescriptors,
-      providers: this.options.registry.descriptors
-        .filter((d) => d.provider !== compatibleKeyId || this.legacyConnections)
-        .map((descriptor) => toPublicProviderDescriptor(descriptor)),
+      providers,
       accounts,
       connections: accounts.map((account) => {
         const stored = this.account(account.id);
@@ -257,6 +291,8 @@ export class CommonProviderApplicationService {
           accountId: account.id,
           providerId: account.provider,
           offeringId: account.offeringId,
+          isCustom: account.isCustom,
+          authMethodLabel: account.authMethodLabel,
           displayName: account.displayName,
           recordRevision: this.connectionRevision(account),
           routes: resolveModelRoutes(
@@ -296,6 +332,7 @@ export class CommonProviderApplicationService {
     if (
       !account ||
       (isCustomProviderId(account.provider) && !this.options.connectionProviders) ||
+      !this.isOfferingAllowed(account.provider, account.offeringId) ||
       this.options.visibleAccountIds?.()?.has(accountId) === false
     ) {
       throw new AppError("not-found", "账号不存在或不可访问");
@@ -350,13 +387,16 @@ export class CommonProviderApplicationService {
     const id = connectionAccountId(request.operationId);
     return this.refresh.runAccountOperation(id, async () => {
       this.assertContext(baseline);
+      const provider = request.providerId ?? compatibleKeyId;
+      const offeringId = request.offeringId ?? compatibleKeyId;
+      if (this.options.offeringFilter && !this.isOfferingAllowed(provider, offeringId)) {
+        throw new AppError("capability-unavailable", "当前产品不支持创建此类型连接");
+      }
       this.writable();
       // The operation's id is committed with the account, including in the shared broker.
       if (!this.legacyConnections && !request.providerId) {
         throw new AppError("validation", "请创建自定义供应商并选择接入点，或选择官方 API");
       }
-      const provider = request.providerId ?? compatibleKeyId;
-      const offeringId = request.offeringId ?? compatibleKeyId;
       if (request.providerId) {
         const knownCustom =
           isCustomProviderId(provider) &&
@@ -607,10 +647,16 @@ export class CommonProviderApplicationService {
 
   async getAuthSession(sessionId: string): Promise<PublicAuthSession> {
     const { account, ...state } = this.options.auth.getSession(sessionId);
-    return { ...state, ...(account ? { account: toPublicAccount(account) } : {}) };
+    return { ...state, ...(account ? { account: this.projectAccount(account) } : {}) };
   }
 
   async startAuth(request: StartAuthRequest) {
+    if (this.options.offeringFilter) {
+      const found = this.options.registry.findOffering(request.offeringId);
+      if (!found || !this.isOfferingAllowed(found.provider, found.offering.id)) {
+        throw new AppError("capability-unavailable", "当前产品不支持此服务商接入点");
+      }
+    }
     this.writable();
     const contextId = this.getBackend().contextId;
     const result = await this.options.auth.start(
@@ -621,7 +667,7 @@ export class CommonProviderApplicationService {
     if (result.status === "pending") this.sessions.set(result.sessionId, contextId);
     this.changed();
     return result.status === "completed"
-      ? { ...result, account: toPublicAccount(result.account) }
+      ? { ...result, account: this.projectAccount(result.account) }
       : result;
   }
 
@@ -629,7 +675,7 @@ export class CommonProviderApplicationService {
     this.writable();
     this.assertSession(sessionId);
     try {
-      return toPublicAccount(await this.options.auth.finish(sessionId));
+      return this.projectAccount(await this.options.auth.finish(sessionId));
     } finally {
       this.changed();
     }

@@ -15,6 +15,7 @@ export const endpointProtocols = [
   "openai-chat",
   "openai-responses",
   "anthropic-messages",
+  "gemini-generate-content",
   "openai-images-generations",
   "openai-images-edits",
   "gemini-tts",
@@ -32,6 +33,7 @@ const routeFamilies: Record<EndpointProtocol, ProtocolFamily> = {
   "openai-chat": "openai",
   "openai-responses": "openai",
   "anthropic-messages": "anthropic",
+  "gemini-generate-content": "gemini",
   "openai-images-generations": "openai",
   "openai-images-edits": "openai",
   "gemini-tts": "gemini",
@@ -44,20 +46,47 @@ const routeFamilies: Record<EndpointProtocol, ProtocolFamily> = {
 };
 export interface ProtocolFamilyDescriptor {
   family: ProtocolFamily;
+  label: string;
   nativeVersionPath: string;
   catalogPath?: string;
+  supportsCatalog: boolean;
   defaultProtocol?: EndpointProtocol;
 }
 export const protocolFamilyDescriptors: Record<ProtocolFamily, ProtocolFamilyDescriptor> = {
-  openai: { family: "openai", nativeVersionPath: "/v1", catalogPath: "models" },
-  anthropic: { family: "anthropic", nativeVersionPath: "/v1", catalogPath: "models" },
-  gemini: { family: "gemini", nativeVersionPath: "/v1beta" },
+  openai: {
+    family: "openai",
+    label: "OpenAI 协议族",
+    nativeVersionPath: "/v1",
+    catalogPath: "models",
+    supportsCatalog: true,
+  },
+  anthropic: {
+    family: "anthropic",
+    label: "Anthropic 协议族",
+    nativeVersionPath: "/v1",
+    catalogPath: "models",
+    supportsCatalog: true,
+  },
+  gemini: {
+    family: "gemini",
+    label: "Gemini 协议族",
+    nativeVersionPath: "/v1beta",
+    catalogPath: "models",
+    supportsCatalog: true,
+  },
   "grok-video": {
     family: "grok-video",
+    label: "Grok 视频协议族",
     nativeVersionPath: "/v1",
+    supportsCatalog: false,
     defaultProtocol: "grok-video-generations",
   },
-  cohere: { family: "cohere", nativeVersionPath: "/v2" },
+  cohere: {
+    family: "cohere",
+    label: "Cohere 协议族",
+    nativeVersionPath: "/v2",
+    supportsCatalog: false,
+  },
 };
 export function resolveEndpointProtocol(protocol: unknown, family?: unknown): EndpointProtocol {
   if (family !== undefined && !protocolFamilies.includes(family as ProtocolFamily))
@@ -125,7 +154,8 @@ function endpoint(
     outputs,
     relativePath,
     method: "POST",
-    modelIdLocation: protocol === "gemini-tts" ? "path" : "body",
+    modelIdLocation:
+      protocol === "gemini-tts" || protocol === "gemini-generate-content" ? "path" : "body",
     bodyEncodings:
       protocol === "openai-images-edits"
         ? ["multipart", "json"]
@@ -136,7 +166,7 @@ function endpoint(
     ...(protocol === "grok-video-generations" && { statusPath: "videos/{request_id}" }),
     authentication,
     result,
-    canDiscover: operation === "chat",
+    canDiscover: protocolFamilyDescriptors[routeFamilies[protocol]].supportsCatalog,
     chatExecutable: operation === "chat",
   };
 }
@@ -178,6 +208,19 @@ export const modelEndpointDescriptors: readonly ModelEndpointDescriptor[] = [
     ["text"],
     "text",
     "x-api-key",
+  ),
+  endpoint(
+    "gemini-generate-content",
+    "Gemini GenerateContent",
+    "text-llm",
+    "chat",
+    "text",
+    "models/{model}:generateContent",
+    ["text"],
+    ["image", "audio", "video"],
+    ["text"],
+    "text",
+    "x-goog-api-key",
   ),
   endpoint(
     "openai-images-generations",

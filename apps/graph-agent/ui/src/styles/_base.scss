@@ -135,7 +135,7 @@
   font-weight: 600;
   color: var(--text-primary);
 
-  input,
+  input:not([type="checkbox"]):not([type="radio"]),
   select {
     width: 100%;
     min-width: 0;
@@ -148,6 +148,7 @@
     font: inherit;
     font-size: 13px;
     font-weight: 400;
+    line-height: 1.2;
 
     &:focus {
       @include focus-ring;
@@ -170,6 +171,26 @@
     &:focus {
       @include focus-ring;
     }
+  }
+}
+
+.inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-primary);
+  cursor: pointer;
+  user-select: none;
+
+  input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    margin: 0;
+    flex: 0 0 auto;
+    accent-color: var(--brand-accent);
+    cursor: pointer;
   }
 }
 

@@ -209,7 +209,9 @@ export function projectEntry(
     const normalized = vendor.toLowerCase();
     if (normalized === selection.providerId.toLowerCase()) return true;
     const displayName = providerDescriptor?.displayName.toLowerCase();
-    return Boolean(displayName && normalized === displayName);
+    return Boolean(
+      displayName && (normalized === displayName || displayName.split(/\s+/).includes(normalized)),
+    );
   };
   const ratePlanKey =
     local?.document.operations[opKey]?.ratePlanKey ??
@@ -475,7 +477,24 @@ export function projectEntry(
     },
   ];
   const revision = state.revision;
-  const parameterTemplate = pack.templates.get(cap?.parameterTemplateRef ?? ep.operation)!;
+  const baseTemplate = pack.templates.get(cap?.parameterTemplateRef ?? ep.operation)!;
+  const defaultEffortChoices = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+  const effortChoices =
+    effective.fields.effortLevels.value && effective.fields.effortLevels.value.length > 0
+      ? [...effective.fields.effortLevels.value]
+      : defaultEffortChoices;
+  const parameterTemplate = baseTemplate.fields.effort
+    ? {
+        ...baseTemplate,
+        fields: {
+          ...baseTemplate.fields,
+          effort: {
+            ...baseTemplate.fields.effort,
+            choices: baseTemplate.fields.effort.choices ?? effortChoices,
+          },
+        },
+      }
+    : baseTemplate;
   const presetCards: Record<string, RateCard> = {};
   for (const ref of cap?.rateCardRefs ?? []) {
     const card = pack.rates.get(JSON.stringify([ref.rateCardId, ref.revision]));

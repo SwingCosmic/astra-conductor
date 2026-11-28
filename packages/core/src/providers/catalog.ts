@@ -248,12 +248,38 @@ export function isLocalKeyAccount(
   );
 }
 
+export function resolveAuthMethodLabel(
+  account: { offeringId: string; authMethod: string },
+  lookupOffering: (
+    offeringId: string,
+  ) => { provider: ProviderId; offering: ProviderOfferingDescriptor } | null = findOffering,
+): string {
+  const sourceLabel = lookupOffering(account.offeringId)?.offering.authMethods.find(
+    (item) => item.method === account.authMethod,
+  )?.sourceLabel;
+  if (sourceLabel) return sourceLabel;
+  switch (account.authMethod) {
+    case "api-key":
+      return "API Key";
+    case "browser-oauth":
+      return "浏览器 OAuth";
+    case "device-code":
+      return "设备码";
+    case "cli-import":
+      return "CLI 导入";
+    default:
+      return account.authMethod.replaceAll("-", " ");
+  }
+}
+
 export function toPublicProviderDescriptor(
   descriptor: ProviderDescriptor,
 ): PublicProviderDescriptor {
   return {
     provider: descriptor.provider,
     displayName: descriptor.displayName,
+    isCustom: isCustomProviderId(descriptor.provider),
+    capabilities: [...descriptor.capabilities],
     offerings: descriptor.offerings.map((offering) => {
       const connectionKind =
         offering.connectionKind ??
@@ -264,6 +290,8 @@ export function toPublicProviderDescriptor(
           : undefined);
       return {
         id: offering.id,
+        supportsSubscriptionUsage:
+          offering.supportsSubscriptionUsage ?? descriptor.capabilities.includes("usage"),
         ...(connectionKind ? { connectionKind } : {}),
         ...(offering.routeConfig ? { routeConfig: offering.routeConfig } : {}),
         provider: offering.provider,

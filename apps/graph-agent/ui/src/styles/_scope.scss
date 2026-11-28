@@ -36,14 +36,9 @@
   font-weight: 600;
   color: var(--text-primary);
 
-  select {
-    height: var(--control-h-sm, 28px);
-    padding: 0 8px;
-    border: 1px solid $border-input;
-    border-radius: var(--radius-sm, 6px);
-    background: $surface;
-    font: inherit;
-    font-weight: 400;
+  .rich-select {
+    width: auto;
+    min-width: 180px;
   }
 }
 
